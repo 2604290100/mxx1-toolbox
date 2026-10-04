@@ -19,7 +19,7 @@
 | --- | --- | --- |
 | 1 | 工程形态 | 独立新程序 `toolbox\`，独立 Git 仓库（本地 + GitHub 远程；**推送前先问用户**） |
 | 2 | 右键功能集成 | 调现成 `PermanentDeleteSetup.exe` 的 CLI，零改动、不重写删除逻辑 |
-| 3 | 图标 | 优先 `assets\icons\<id>.png`（16×16）；**没有 PNG 时程序内实时画占位图标**（彩色圆角块 + 首字），保证界面永远完整 |
+| 3 | 图标 | 61 个 16×16 PNG（`tools\Make-Icons.ps1` 生成，按页签配色 + 按名字选图形）编译时内嵌为 `icons.<id>.png`；显式 `icon` 字段 > `assets\icons\<id>.png` > 内嵌 > 实时画的占位图标 |
 | 4 | 主题 | 默认**浅色**，可切**深色**，可**跟随系统**（`WM_SETTINGCHANGE` / `UserPreferenceChanged` 自动切） |
 | 5 | 外观 | **A 型 · 紧凑小按钮**：四列纯文字按钮 + 左侧 16×16 图标 |
 | 6 | 按钮功能 | P0 只有「右键增强」是真功能；其余是 `placeholder`，点击走状态栏 + 日志提示 |
@@ -219,8 +219,8 @@ CLI：`list [--tab <id>]` / `run <id> [--admin]` / `status` / `checkupdate` / `h
 
 ## 11 验收标准（当前全部满足）
 
-- `build.ps1` 一次通过，产出单文件 `bin\Mxx1Toolbox.exe`（83,456 字节），无警告
-- `tools\Test-Encoding.ps1` 全绿（34 个文件）
+- `build.ps1` 一次通过，产出单文件 `bin\Mxx1Toolbox.exe`（108,544 字节，含 61 个内嵌图标），无警告
+- `tools\Test-Encoding.ps1` 全绿（102 个文件）
 - `tests\Test-Cli.ps1` **26/26**：中文不乱码、按钮数 61、页签分布 32/8/8/12/1、占位按钮写日志、
   真按钮能读到隔壁引擎的 `installed=`、错误用法退出码 2
 - `tests\Test-Gui.ps1` **37/37**：标题栏无最小化/最大化方框、窗口可缩放、四列八行、

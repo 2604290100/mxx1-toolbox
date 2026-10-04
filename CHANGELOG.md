@@ -34,10 +34,12 @@
 ### 工程
 
 - `build.ps1`：用系统自带 `csc.exe` 编译，自动给 `src\*.cs` / `tests\*.ps1` 补 UTF-8 BOM、
-  去掉 `tools\*.json` 的 BOM，编译后自检五个 `tools.*.json` 资源是否真的内嵌。
+  去掉 `tools\*.json` 的 BOM，编译后自检五个 `tools.*.json` 与 61 个 `icons.*.png` 资源是否真的内嵌。
 - `tools\Test-Encoding.ps1`：编码红线体检（`.cs`/`.ps1` 必须带 BOM、`.vbs` 纯 ASCII、
   `.md`/`.json` 不带 BOM、代码里不许硬编码本机绝对路径），`-Fix` 可自动修 BOM。
 - `tools\Make-Screenshots.ps1`：用 `PrintWindow` 拍浅色 / 深色两张文档截图。
+- `tools\Make-Icons.ps1`：按"页签定底色 + 按钮名里的关键词定图形"批量画 61 个 16×16 PNG 图标
+  （纯 GDI+ 图元，不依赖字体），危险按钮统一红底感叹号；`build.ps1` 把它们以 `icons.<id>.png` 内嵌进 exe。
 - 测试 **63 项**：命令行回归 26 + 界面回归 37（外加编码体检）。界面回归用 Win32 探针
   （枚举子窗口矩形判重叠、读 `GWL_STYLE`、`BM_CLICK` 真点、`WM_GETTEXT` 读文字），
   按钮清单从 `list` 读，不写死。
@@ -53,5 +55,6 @@
 
 - 除「右键增强」外的按钮都还没接真功能（P1）；图形化「新建按钮」、拖拽新增、按钮排序、多步 `macro` 也在 P1。
 - 工具箱自身的更新检查、插件目录、按钮包导入导出在 P2。
-- 按钮图标目前是程序内实时绘制的占位图标（彩色圆角块 + 首字）；
-  把 16×16 PNG 放进 `assets\icons\<id>.png` 就会自动替换成真图标。
+- 按钮图标：61 个由 `tools\Make-Icons.ps1` 生成的 16×16 PNG 已内嵌进 exe；
+  想换成自己的图，把 PNG 放 `assets\icons\<id>.png`（或清单里写 `icon`）即可，代码优先用它们，
+  都没有时才退回实时绘制的占位图标。

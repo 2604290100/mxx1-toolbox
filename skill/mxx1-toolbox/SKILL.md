@@ -18,12 +18,12 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
 ## 当前状态（2026-10-04）
 
 - ✅ **P0 已实现，测试 63 项全绿**：命令行回归 26 + 界面回归 37（外加编码体检）。
-  产物 `bin\Mxx1Toolbox.exe`（83,456 字节单文件），五个 `tools.*.json` 已内嵌。
+  产物 `bin\Mxx1Toolbox.exe`（108,544 字节单文件），五个 `tools.*.json` + 61 个 `icons.*.png` 已内嵌。
 - ✅ 「右键增强」8 个按钮是**真功能**，实测能读到隔壁引擎的 `installed=` / `fileVisible=`；
   其余 52 个按钮是 `placeholder`（点击 = 状态栏提示 + 日志 + 灰 0.6 秒，不弹窗、不改系统）。
 - ⬜ **Git 仓库还没建**（本地 + GitHub 远程 `mxx1-toolbox` 都还没做）；**推送前必须问用户**。
-- ⬜ 按钮图标目前是程序内实时绘制的占位图标（彩色圆角块 + 首字）；
-  把 16×16 PNG 放进 `assets\icons\<id>.png` 就会自动换成真图标（代码已支持，缺的只是图片文件）。
+- ✅ 按钮图标：61 个 16×16 PNG 由 `tools\Make-Icons.ps1` 生成并内嵌（`icons.<id>.png`）。
+  优先级：清单里的 `icon` > `assets\icons\<id>.png` > 内嵌 > 程序内实时画的占位图标。
 - ⬜ P1：其它页签接真功能、图形化「新建按钮」、拖拽新增、编辑/排序、多步 `macro`。
 
 ## 结构
@@ -47,6 +47,8 @@ D:\萌新工具开发\toolbox\
   tools\*.json                     61 个按钮的内置定义（编译时内嵌，资源名 tools.<文件名>）
   tools\Test-Encoding.ps1          编码红线体检（-Fix 修 BOM）
   tools\Make-Screenshots.ps1       拍 docs\gui-shot.png / dark-shot.png（PrintWindow）
+  tools\Make-Icons.ps1             批量画 61 个 16x16 PNG 图标（页签配色 + 名字关键词选图形）
+  assets\icons\*.png               61 个图标（编译时内嵌成 icons.<id>.png）
   tests\Test-All.ps1               一条命令跑完全部
   tests\Test-Cli.ps1               命令行回归 26 项
   tests\Test-Gui.ps1               界面回归 37 项（要交互式桌面，无桌面返回 3 = 跳过）
@@ -63,6 +65,7 @@ powershell -File tests\Test-All.ps1           # 全套（无桌面加 -SkipGui�
 powershell -File tests\Test-Cli.ps1           # 命令行回归
 powershell -File tests\Test-Gui.ps1           # 界面回归（要交互式桌面）
 powershell -File tools\Make-Screenshots.ps1   # 重拍文档截图
+powershell -File tools\Make-Icons.ps1         # 重生成 61 个 PNG 图标（改完要重新编译）
 
 & bin\Mxx1Toolbox.exe list [--tab rightmenu]  # 列按钮（tab 分隔：id / 页签 / 名称 / 类型）
 & bin\Mxx1Toolbox.exe run permdel.status      # 跑一个按钮（和界面同一条路径）
@@ -146,8 +149,7 @@ powershell -File tools\Make-Screenshots.ps1   # 重拍文档截图
 ## 待办 / 别自己替他决定
 
 1. **Git 仓库还没建**：本地 `git init` + 首笔提交可以做；**GitHub 远程仓库名（建议 `mxx1-toolbox`）和推送都要先问用户**。
-2. 按钮 PNG 图标还没画（代码已支持）——要批量生成 16×16 PNG 的话，
-   用 `System.Drawing` 画好存 `assets\icons\<id>.png` 即可，`IconFactory` 会自动优先用 PNG。
+2. 图标已经生成好了；要改样式就动 `tools\Make-Icons.ps1` 里的关键词映射 / 配色，然后重跑它 + `build.ps1`。
 3. P1 的范围（先接哪个页签的真功能）要问用户，别自己挑。
 4. skill 三处同步：`D:\萌新工具开发\.dsh\skills\mxx1-toolbox\SKILL.md`（已建）、
    仓库内 `toolbox\skill\mxx1-toolbox\SKILL.md`（已建）、

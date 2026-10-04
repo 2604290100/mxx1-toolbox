@@ -87,6 +87,10 @@ $icon = Join-Path $root 'assets\app.ico'
 if (Test-Path $icon) { $cscArgs += ('/win32icon:' + $icon) }
 foreach ($j in $jsonFiles) { $cscArgs += ('/resource:' + $j.FullName + ',tools.' + $j.Name) }
 
+# Button icons (tools\Make-Icons.ps1 output) are embedded too, so the exe stays a single file.
+$iconFiles = @(Get-ChildItem (Join-Path $root 'assets\icons\*.png') -ErrorAction SilentlyContinue)
+foreach ($i in $iconFiles) { $cscArgs += ('/resource:' + $i.FullName + ',icons.' + $i.Name) }
+
 Write-Host ('compiler : ' + $csc)
 & $csc @cscArgs $sources
 if ($LASTEXITCODE -ne 0) { throw ('compile failed (exit ' + $LASTEXITCODE + ')') }
@@ -104,6 +108,11 @@ foreach ($j in $jsonFiles) {
     $need = 'tools.' + $j.Name
     if (-not ($names -contains $need)) { throw ('embedded resource missing: ' + $need) }
 }
+$embeddedIcons = @($names | Where-Object { $_ -like 'icons.*.png' })
+if ($iconFiles.Count -gt 0 -and $embeddedIcons.Count -ne $iconFiles.Count) {
+    throw ('embedded icons: ' + $embeddedIcons.Count + ' of ' + $iconFiles.Count + ' -- run tools\Make-Icons.ps1 again')
+}
+if ($embeddedIcons.Count -gt 0) { Write-Host ('icons    : ' + $embeddedIcons.Count + ' embedded') }
 
 # ---- companion skill (kept in the repo under skill\, synced to the workspace .dsh copy) ----
 $skillName = 'mxx1-toolbox'

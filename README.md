@@ -8,9 +8,11 @@
 
 ![深色主题](docs/dark-shot.png)
 
-- 单文件 `Mxx1Toolbox.exe`（约 82 KB），不需要 .NET SDK，不写注册表、不加开机启动
+- 单文件 `Mxx1Toolbox.exe`（约 106 KB，含 61 个内嵌图标），不需要 .NET SDK，不写注册表、不加开机启动
 - 五个页签：**常用设置 / 右键增强 / 清理优化 / 系统工具 / 我的工具**，一共 61 个按钮
 - 按钮全部由 `tools\*.json` 定义 —— **加按钮不用重新编译**
+- 图标：61 个 16×16 PNG（按页签配色 + 按名字选图形，`tools\Make-Icons.ps1` 一键重生成），
+  编译时内嵌进 exe；`assets\icons\<id>.png` 或清单里的 `icon` 字段可以覆盖
 - 浅色 / 深色 / 跟随系统三种主题，标题栏也跟着变
 - 「右键增强」页签是真功能：调用隔壁的 [永久删除（不进回收站）](../permanent-delete-menu) 安装器，零改动集成
 - 危险按钮深红文字 + 二次确认；占位按钮点了会有反馈（状态栏 + 日志），不会"点了没反应"
@@ -94,6 +96,7 @@ powershell -File tests\Test-All.ps1          # 全部（无桌面时加 -SkipGui
 powershell -File tests\Test-Cli.ps1          # 命令行回归 26 项
 powershell -File tests\Test-Gui.ps1          # 界面回归 37 项（要交互式桌面，无桌面返回 3 = 跳过）
 powershell -File tools\Make-Screenshots.ps1  # 重新拍 docs 里的截图
+powershell -File tools\Make-Icons.ps1        # 重新生成 61 个 16x16 PNG 图标
 ```
 
 界面回归不看截图：用 Win32 枚举子窗口矩形判"按钮/标签有没有压在一起"、读 `GWL_STYLE` 判标题栏、

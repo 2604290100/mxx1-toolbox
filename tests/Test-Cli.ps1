@@ -1226,7 +1226,9 @@ try {
     # 所以这里不断言 lockers=0，只断言我们这条新线索确实点名了那个进程。
     Check 'M14e 文件夹里有正在运行的程序：单独点出「它自己在运行」（句柄类接口看不见它）' `
         (([int](Get-Key $rmRunQ.Out 'run') -ge 1) -and ($rmRunQ.Out -match ('run\tpid=' + $rmRunProc.Id + '\b'))) `
-        ('run=' + (Get-Key $rmRunQ.Out 'run') + ' lockers=' + (Get-Key $rmRunQ.Out 'lockers') + ' 期望 pid=' + $rmRunProc.Id)
+        ('run=' + (Get-Key $rmRunQ.Out 'run') + ' lockers=' + (Get-Key $rmRunQ.Out 'lockers') + ' 期望 pid=' + $rmRunProc.Id + `
+         ' 进程还活着=' + $(if ($rmRunProc -and -not $rmRunProc.HasExited) { 'yes' } else { 'no' }) + `
+         ' scanned=' + (Get-Key $rmRunQ.Out 'scanned') + ' truncated=' + (Get-Key $rmRunQ.Out 'truncated') + ' note=' + (Get-Key $rmRunQ.Out 'note'))
 } finally {
     if ($rmRunProc -and -not $rmRunProc.HasExited) { Stop-Process -Id $rmRunProc.Id -Force -ErrorAction SilentlyContinue }
     Start-Sleep -Milliseconds 400

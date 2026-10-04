@@ -59,7 +59,7 @@ Write-Host ''
 
 # GUI 子系统程序：必须自己起进程、边跑边读，输出按 UTF-8 解
 function Invoke-Exe {
-    param([string]$ArgLine, [int]$TimeoutSec = 120, [string]$FilePath = $Exe)
+    param([string]$ArgLine, [int]$TimeoutSec = 120, [string]$FilePath = $Exe, [hashtable]$Env = $null)
     $si = New-Object System.Diagnostics.ProcessStartInfo
     $si.FileName = $FilePath
     $si.Arguments = $ArgLine
@@ -69,6 +69,7 @@ function Invoke-Exe {
     $si.CreateNoWindow = $true
     $si.StandardOutputEncoding = New-Object System.Text.UTF8Encoding($false)
     $si.StandardErrorEncoding = New-Object System.Text.UTF8Encoding($false)
+    if ($Env) { foreach ($k in $Env.Keys) { $si.EnvironmentVariables[$k] = [string]$Env[$k] } }
     $p = New-Object System.Diagnostics.Process
     $p.StartInfo = $si
     [void]$p.Start()
@@ -579,6 +580,26 @@ $un = @($appTools | Where-Object { $_.id -eq 'apps-uninstall' })[0]
 Check 'J07 单个卸载只用 Remove-AppxPackage（不带 -AllUsers，只影响当前用户）' `
     (($un.inline -match 'Remove-AppxPackage') -and ($un.inline -notmatch '-AllUsers')) ''
 Check 'J08 单个卸载带二次确认（confirm: true）' ($un.confirm -eq $true) ('confirm=' + $un.confirm)
+
+# 那个窗口以前列表里全是英文包名（Microsoft.WindowsCalculator 这种），用户问过
+# 「卸载单个应用里面的窗口是不能显示中文是？」。现在从「开始菜单」（shell:AppsFolder /
+# Get-StartApps）取中文名，系统组件标【系统组件】并排在最后。
+# MXX1_PICKER_LIST_ONLY=1 让脚本只打印列表、不弹窗，所以这条能在命令行回归里真跑一遍。
+$pick = Invoke-Exe 'run apps-uninstall' 120 $Exe @{ MXX1_PICKER_LIST_ONLY = '1' }
+$pl = @(($pick.Out -split "`r?`n") | Where-Object { $_ -match '　·　' -and $_ -notmatch '^(command|id|name|result|message|exit)=' })
+$pickFirst = ''
+if ($pl.Count -gt 0) { $pickFirst = $pl[0] }
+Check 'J09 「卸载单个应用」的列表显示中文名（不再是一屏英文包名）' `
+    (($pl.Count -ge 5) -and ($pickFirst -match '（') -and ($pickFirst -match '[^\x00-\x7F]')) `
+    ('列表行=' + $pl.Count + '  第一行=' + $pickFirst)
+$pickLast = ''
+if ($pl.Count -gt 0) { $pickLast = $pl[$pl.Count - 1] }
+Check 'J10 系统组件排在最后，并且标了【系统组件】' `
+    ((@($pl | Where-Object { $_ -like '【系统组件】*' }).Count -ge 1) -and ($pickLast -like '【系统组件】*')) `
+    ('最后一行=' + $pickLast)
+Check 'J11 列表模式只列不卸（没有真的执行卸载）' `
+    (($pick.Code -eq 0) -and (@(($pick.Out -split "`r?`n") | Where-Object { $_ -match '^(已卸载|卸载失败)：' }).Count -eq 0)) `
+    ('exit=' + $pick.Code)
 
 # ---------------------------------------------------------------- K 组：自助功能
 Write-Host ''

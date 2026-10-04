@@ -63,7 +63,7 @@ powershell -ExecutionPolicy Bypass -File build.ps1     # 编译，产物 bin\Mxx
 | 常用设置 | 33 | **全是真功能**（桌面图标 / 任务栏合并 ×2 / 任务栏搜索 / 开始菜单对齐 ×2 / 右键菜单风格 ×2 / 资源管理器样式 ×2 / 驱动自动安装 ×2 / 内核隔离 ×2 / 按流量计费 ×2 / 激活状态 / 休眠 / 电源模式 ×3 / 重启资源管理器 / 刷新 DNS / hosts 修改 / 实时防护·Defender·SmartScreen·防火墙·UAC·更新 六个「打开官方界面」入口 / BitLocker / **查看设置改动 / 还原设置改动**）；其中 12 个注册表开关**改之前会记原值、随时能还原** |
 | 系统工具 | 26 | **真功能**（12 个 Windows 组件 + 13 个修复诊断 + 系统体检） |
 | 隐私设置 | 29 | **真功能**（11 组成对开关 + 4 个权限入口 + 状态 / 一键优化 / 一键还原） |
-| 应用管理 | 5 | **真功能**（查看已安装应用 / 启动项 / 默认应用 / 应用和功能 / 单个卸载） |
+| 应用管理 | 5 | **真功能**（查看已安装应用 / 启动项 / 默认应用 / 应用和功能 / 单个卸载 —— 卸载窗口里显示中文应用名） |
 | 清理优化 | 8 | **真功能**（一键清理垃圾 / 清理临时文件 / 清空回收站 / 浏览器缓存 / 磁盘清理 / 存储感知 / 启动项 / 大文件查找） |
 | 右键增强 | 1 | **真功能**「永久删除工具」，打开隔壁 `PermanentDeleteSetup.exe` 的窗口 |
 | 我的工具 | 3+ | **真功能** `[+ 新建按钮]` + 导出 / 导入，加上你自己加的按钮 |
@@ -119,7 +119,7 @@ bin\Mxx1Toolbox.exe help
 ```powershell
 powershell -File tools\Test-Encoding.ps1     # 编码红线体检（BOM / 纯 ASCII / 硬编码本机路径）
 powershell -File tests\Test-All.ps1          # 全部（无桌面时加 -SkipGui）
-powershell -File tests\Test-Cli.ps1          # 命令行回归 96 项
+powershell -File tests\Test-Cli.ps1          # 命令行回归 99 项
 powershell -File tests\Test-Gui.ps1          # 界面回归 92 项（要交互式桌面，无桌面返回 3 = 跳过）
 powershell -File tools\Make-Screenshots.ps1  # 重新拍 docs 里的截图（浅色 / 深色 / 系统工具页签）
 powershell -File tools\Make-Icons.ps1        # 重新生成 16x16 PNG 图标（先 build 再跑，改完还要再 build）

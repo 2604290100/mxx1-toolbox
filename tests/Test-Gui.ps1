@@ -148,6 +148,33 @@ public class TBGui
         return new int[] { p.X, p.Y };
     }
 
+    [DllImport("user32.dll")] private static extern IntPtr WindowFromPoint(POINT pt);
+    [DllImport("user32.dll")] private static extern IntPtr GetAncestor(IntPtr h, uint flags);
+    [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
+
+    /// <summary>鼠标底下是哪个窗口（"悬停没反应"时用来自证：多半是别的窗口盖住了，或者用户正在
+    /// 动鼠标）。返回 "pid|窗口类|标题"。2026-10-04 真踩过：用户自己开的那个工具箱实例和测试实例
+    /// 的窗口叠在一起，B10/B11 假红，排查花了很久。</summary>
+    public static string WindowAt(int x, int y)
+    {
+        POINT p; p.X = x; p.Y = y;
+        IntPtr h = WindowFromPoint(p);
+        if (h == IntPtr.Zero) { return "(鼠标下没有窗口)"; }
+        IntPtr root = GetAncestor(h, 2);          // GA_ROOT
+        if (root != IntPtr.Zero) { h = root; }
+        uint pid; GetWindowThreadProcessId(h, out pid);
+        return pid + "|" + Class(h) + "|" + Text(h);
+    }
+
+    /// <summary>当前前台窗口（同样只是诊断信息）。</summary>
+    public static string Foreground()
+    {
+        IntPtr h = GetForegroundWindow();
+        if (h == IntPtr.Zero) { return "(没有前台窗口)"; }
+        uint pid; GetWindowThreadProcessId(h, out pid);
+        return pid + "|" + Class(h) + "|" + Text(h);
+    }
+
     /// <summary>The text of the app's own visible tooltip window (B10/B11). WinForms names it
     /// "WindowsForms10.tooltips_class32.app.0.34f5582_r6_ad1", so the class has to be matched with
     /// IndexOf: an exact "tooltips_class32" match finds nothing, and the test then wrongly reports
@@ -503,6 +530,38 @@ trap {
 }
 
 # ================================================================ 准备
+# 测试实例自己的窗口**别和用户自己开着的那个实例重叠**：B10/B11 的悬停检查是真的动系统鼠标
+# （SetCursorPos + 读 ToolTip 窗口文字），两个工具箱窗口叠在一起时鼠标会被上面那个接走，
+# 于是"悬停没反应"假红（2026-10-04 踩过：用户自己开着 bin\Mxx1Toolbox.exe，窗口压在测试实例上）。
+# 所以先看看屏幕上已经有哪些工具箱窗口，挑一个没被占的角落放自己。
+$script:TestWinX = -1
+$script:TestWinY = -1
+try {
+    $taken = @()
+    foreach ($p in @(Get-Process -Name Mxx1Toolbox -ErrorAction SilentlyContinue)) {
+        if ($p.MainWindowHandle -ne 0) { $taken += ,([TBGui]::Rect($p.MainWindowHandle)) }
+    }
+    $wa = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
+    $spots = @(
+        @{ X = $wa.Left + 16;  Y = $wa.Top + 16 },
+        @{ X = $wa.Right - 660; Y = $wa.Top + 16 },
+        @{ X = $wa.Left + 16;  Y = $wa.Bottom - 700 },
+        @{ X = $wa.Right - 660; Y = $wa.Bottom - 700 },
+        @{ X = [int](($wa.Width - 628) / 2); Y = $wa.Top + 16 }
+    )
+    foreach ($s in $spots) {
+        $free = $true
+        foreach ($t in $taken) {
+            $overlapX = ([Math]::Min($s.X + 636, $t[2]) - [Math]::Max($s.X, $t[0]))
+            $overlapY = ([Math]::Min($s.Y + 690, $t[3]) - [Math]::Max($s.Y, $t[1]))
+            if ($overlapX -gt 0 -and $overlapY -gt 0) { $free = $false }
+        }
+        if ($free) { $script:TestWinX = $s.X; $script:TestWinY = $s.Y; break }
+    }
+    if ($taken.Count -gt 0) {
+        Write-Host ('（屏幕上有 ' + $taken.Count + ' 个已经开着的工具箱窗口，测试实例放到 ' + $script:TestWinX + ',' + $script:TestWinY + ' 避开它）')
+    }
+} catch { }
 $settingsBefore = $null
 $settingsExisted = Test-Path -LiteralPath $SettingsIni
 if ($settingsExisted) { $settingsBefore = [System.IO.File]::ReadAllText($SettingsIni, [System.Text.Encoding]::UTF8) }
@@ -527,7 +586,7 @@ if (Test-Path -LiteralPath $settingsBackup) {
 try {
     [void][System.IO.Directory]::CreateDirectory((Split-Path -Parent $SettingsIni))
     [System.IO.File]::WriteAllText($SettingsIni,
-        "Theme=light`r`nClickMode=single`r`nConfirmDangerous=1`r`nHideConsole=1`r`nShowLogPanel=0`r`nLogKeepDays=30`r`nPermanentDeleteExe=`r`nLastTab=common`r`nWindowAutoSize=1`r`n",
+        "Theme=light`r`nClickMode=single`r`nConfirmDangerous=1`r`nHideConsole=1`r`nShowLogPanel=0`r`nLogKeepDays=30`r`nPermanentDeleteExe=`r`nLastTab=common`r`nWindowAutoSize=1`r`nWindowX=" + $script:TestWinX + "`r`nWindowY=" + $script:TestWinY + "`r`n",
         (New-Object System.Text.UTF8Encoding($false)))
 } catch { }
 
@@ -759,22 +818,31 @@ $hoverTip = ''
 $hoverSeen = @()
 $hoverBtn = $refProbe[0]
 $cursorHome = [TBGui]::CursorAt()
+$hoverX = $hoverBtn.Left + [int]($hoverBtn.Width / 2)
+$hoverY = $hoverBtn.Top + [int]($hoverBtn.Height / 2)
 try {
-    [void][TBGui]::Focus($main)
-    Start-Sleep -Milliseconds 200
-    # 从按钮旁边挪进去：同一点连按两次不会产生 mousemove，ToolTip 的计时器就不会启动
-    [void][TBGui]::MoveCursor(($hoverBtn.Left + [int]($hoverBtn.Width / 2)), ($hoverBtn.Top - 20))
-    Start-Sleep -Milliseconds 150
-    [void][TBGui]::MoveCursor(($hoverBtn.Left + [int]($hoverBtn.Width / 2)), ($hoverBtn.Top + [int]($hoverBtn.Height / 2)))
-    # 只认"这个按钮自己的"那条说明：主窗口只有一个 ToolTip 实例，鼠标从旁边挪进来时
-    # 会先弹出旁边控件（页签）的说明，见一条就收会让 B10 假红（2026-10-04 踩过）。
-    for ($i = 0; $i -lt 16; $i++) {
-        Start-Sleep -Milliseconds 250
-        $seen = [TBGui]::TooltipText([uint32]$proc.Id)
-        if ($seen.Length -eq 0) { continue }
-        if ($hoverSeen -notcontains $seen) { $hoverSeen += $seen }
-        if ($seen -match [regex]::Escape($hoverBtn.Text)) { $hoverTip = $seen; break }
+    # 悬停这一步是**真的动系统鼠标**，所以会被环境打断：别的窗口盖住按钮、用户正好在动鼠标、
+    # 前台被抢走…… 给它 3 次机会，失败时把"鼠标底下是谁 / 前台是谁"打出来自证
+    # （2026-10-04 踩过：用户自己开的那个实例和测试实例的窗口叠在一起，B10/B11 假红，查了很久）。
+    for ($attempt = 0; $attempt -lt 3 -and $hoverTip.Length -eq 0; $attempt++) {
+        [void][TBGui]::Focus($main)
+        Start-Sleep -Milliseconds 200
+        # 从按钮旁边挪进去：同一点连按两次不会产生 mousemove，ToolTip 的计时器就不会启动
+        [void][TBGui]::MoveCursor($hoverX, ($hoverBtn.Top - 20))
+        Start-Sleep -Milliseconds 150
+        [void][TBGui]::MoveCursor($hoverX, $hoverY)
+        # 只认"这个按钮自己的"那条说明：主窗口只有一个 ToolTip 实例，鼠标从旁边挪进来时
+        # 会先弹出旁边控件（页签）的说明，见一条就收会让 B10 假红（2026-10-04 踩过）。
+        for ($i = 0; $i -lt 8; $i++) {
+            Start-Sleep -Milliseconds 250
+            $seen = [TBGui]::TooltipText([uint32]$proc.Id)
+            if ($seen.Length -eq 0) { continue }
+            if ($hoverSeen -notcontains $seen) { $hoverSeen += $seen }
+            if ($seen -match [regex]::Escape($hoverBtn.Text)) { $hoverTip = $seen; break }
+        }
     }
+    $hoverUnder = [TBGui]::WindowAt($hoverX, $hoverY)
+    $hoverFront = [TBGui]::Foreground()
 } finally {
     [void][TBGui]::MoveCursor($cursorHome[0], $cursorHome[1])
 }
@@ -782,7 +850,7 @@ $hoverFlat = ($hoverTip -replace "`r?`n", ' / ')
 $hoverSeenFlat = (($hoverSeen | ForEach-Object { $_ -replace "`r?`n", ' / ' }) -join ' ;; ')
 Check 'B10 鼠标停在按钮上会弹出说明，第一行就是这个按钮的名字' `
     (($hoverTip.Length -gt 0) -and ($hoverTip -match [regex]::Escape($hoverBtn.Text))) `
-    ('按钮=' + $hoverBtn.Text + ' 说明=' + $hoverFlat + ' 途中见过的=' + $hoverSeenFlat)
+    ('按钮=' + $hoverBtn.Text + ' 说明=' + $hoverFlat + ' 途中见过的=' + $hoverSeenFlat + '  鼠标(' + $hoverX + ',' + $hoverY + ')底下=' + $hoverUnder + '  前台=' + $hoverFront)
 Check 'B11 悬停说明里不再摊开内联脚本正文' `
     (($hoverTip.Length -gt 0) -and ($hoverTip -notmatch 'powershell -Command|EncodedCommand')) $hoverFlat
 
@@ -1266,7 +1334,7 @@ try {
     try { [void][TBGui]::CloseWindow($main) } catch { }
     Start-Sleep -Milliseconds 900
     [void][System.IO.Directory]::CreateDirectory((Split-Path -Parent $SettingsIni))
-    [System.IO.File]::WriteAllText($SettingsIni, "Theme=dark`r`nClickMode=single`r`nConfirmDangerous=1`r`nShowLogPanel=0`r`nLogKeepDays=30`r`nPermanentDeleteExe=`r`nLastTab=common`r`nWindowAutoSize=1`r`n", (New-Object System.Text.UTF8Encoding($false)))
+    [System.IO.File]::WriteAllText($SettingsIni, "Theme=dark`r`nClickMode=single`r`nConfirmDangerous=1`r`nShowLogPanel=0`r`nLogKeepDays=30`r`nPermanentDeleteExe=`r`nLastTab=common`r`nWindowAutoSize=1`r`nWindowX=" + $script:TestWinX + "`r`nWindowY=" + $script:TestWinY + "`r`n", (New-Object System.Text.UTF8Encoding($false)))
 } catch { }
 $darkStatus = Invoke-Exe 'status'
 Check 'G01 设置成深色后 themeResolved=dark' ($darkStatus -match '(?m)^themeResolved=dark') (($darkStatus -split "`r?`n" | Where-Object { $_ -match '^themeResolved=' }) -join '')
@@ -1298,7 +1366,7 @@ Write-Host 'H 组 · 窗口尺寸默认固定（宽度/高度都不跟着内容�
 
 try {
     [void][System.IO.Directory]::CreateDirectory((Split-Path -Parent $SettingsIni))
-    [System.IO.File]::WriteAllText($SettingsIni, "Theme=light`r`nClickMode=single`r`nConfirmDangerous=1`r`nHideConsole=1`r`nShowLogPanel=0`r`nLastTab=common`r`n", (New-Object System.Text.UTF8Encoding($false)))
+    [System.IO.File]::WriteAllText($SettingsIni, "Theme=light`r`nClickMode=single`r`nConfirmDangerous=1`r`nHideConsole=1`r`nShowLogPanel=0`r`nLastTab=common`r`nWindowX=" + $script:TestWinX + "`r`nWindowY=" + $script:TestWinY + "`r`n", (New-Object System.Text.UTF8Encoding($false)))
 } catch { }
 
 $procFixed = $null

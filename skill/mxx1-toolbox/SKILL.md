@@ -17,7 +17,7 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
 
 ## 当前状态（2026-10-04，v1.4.0）
 
-- ✅ **测试 188 项全绿**：命令行回归 96 + 界面回归 92（外加编码体检 158 个文件、内联脚本与清单体检
+- ✅ **测试 191 项全绿**：命令行回归 99 + 界面回归 92（外加编码体检 158 个文件、内联脚本与清单体检
   34 个脚本 / 7 个清单）。产物 `bin\Mxx1Toolbox.exe`（约 260 KB 单文件），
   七个 `tools.*.json` + 105 个 `icons.*.png` 已内嵌。
 - ✅ **八个页签、105 个内置按钮，全部是真功能，灰色占位一个不剩**：`常用`（置顶 + 最近使用，
@@ -95,7 +95,7 @@ D:\萌新工具开发\toolbox\
   assets\icons\*.png               105 个图标（编译时内嵌成 icons.<id>.png）
   tests\Test-All.ps1               一条命令跑完全部
   tools\Test-InlineSyntax.ps1      内联脚本语法 + 清单 JSON 体检（46 个脚本 / 7 个清单）
-tests\Test-Cli.ps1               命令行回归 96 项（L 组 12 项盯 sysreg：成对 / 只读 / 无写入口 / 自检 / 合规底线）
+tests\Test-Cli.ps1               命令行回归 99 项（L 组 12 项盯 sysreg、J09–J11 盯卸载窗口的列表）
   tests\Test-Gui.ps1               界面回归 92 项（要交互式桌面，无桌面返回 3 = 跳过；H 组盯固定尺寸、E04b 盯窗口位置、A09 盯 bin-tools 说明）
   docs\DESIGN.md                   设计正本（含"踩过的坑"清单 + §13 打包方案）
   docs\gui-shot.png / dark-shot.png / system-shot.png  界面截图
@@ -230,6 +230,15 @@ powershell -File tools\Make-Icons.ps1         # 重生成 PNG 图标（先 build
 
 查看已安装应用 / 查看启动项（都是只读脚本）/ 默认应用 / 应用和功能（`ms-settings:`）/
 卸载单个应用（图形化挑一个 + 二次确认 + `Remove-AppxPackage`，只影响当前用户）。
+
+**那个卸载窗口里显示的是中文应用名**（用户 2026-10-04 问过「里面的窗口是不能显示中文是？」）：
+`Get-AppxPackage` 的 `Name` 是包标识（`Microsoft.WindowsCalculator`），人能看懂的名字在「开始菜单」那一层 ——
+脚本先读 `Shell.Application` 的 `shell:AppsFolder`、再读 `Get-StartApps`，用 AppID 里 `!` 前面的包族名
+建映射，列表写成 `计算器　（Microsoft.WindowsCalculator）　·　11.2508.4.0`；`SignatureKind=System`
+的 Windows 组件排在**最后**并标 `【系统组件】`（原来按包名首字母排，一屏 `Microsoft.AAD.BrokerPlugin`）。
+两个坑记着：① **筛选框会导致 `SelectedIndex` 与包数组下标错位** → 必须同步维护过滤后的 `$shown`
+（否则"搜关键字再卸载"会卸错应用）；② 设 `MXX1_PICKER_LIST_ONLY=1` 时脚本只打印列表不弹窗，
+命令行回归靠它真跑这条（`J09`–`J11`）。
 **故意不做**批量卸载、卸载 Edge、卸载 Xbox/天气/邮件/地图 —— `J06`–`J08` 盯着这条底线。
 
 ## 「系统工具」怎么点（26 个真功能，含 12 个 Windows 组件 + 13 个修复诊断 + 系统体检）
@@ -329,6 +338,10 @@ powershell -File tools\Make-Icons.ps1         # 重生成 PNG 图标（先 build
       `[System.Text.Json.JsonDocument]::Parse(...)` 或直接 `Mxx1Toolbox.exe list --tab <页签>` 数一遍。
   16. **H 组注入长名字按钮时，要把原来的占位按钮一起留着**：`$commonNames` 是带着占位按钮读出来的，
       换掉它会让 H05 数按钮数少一个而假红。
+  17. **悬停检查（B10/B11）是真动系统鼠标**：`SetCursorPos` + 读 `ToolTip` 窗口文字。用户自己开着另一个
+      工具箱实例时，两个窗口叠在一起、鼠标被上面那个接走 → 假红"没找到说明"（2026-10-04 真踩过）。
+      所以测试实例写 `settings.ini` 前会先枚举屏幕上的工具箱窗口，挑一个不相交的角落放自己；悬停重试 3 次；
+      失败信息里带 `[TBGui]::WindowAt(x,y)` 与 `Foreground()`，一眼能看出是不是环境问题。
 - **别在 PowerShell 里按像素调函数**：一个 `Get-Pixel` 每像素调一次，几万次调用要几分钟，
   看起来像卡死（踩过一次）。要么 `LockBits` 取一次 `byte[]` 再纯数组循环（`Get-InkRows` 的写法），
   要么用 csc 编个临时小工具（`local\InkDiag.cs` 那种）。

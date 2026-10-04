@@ -405,16 +405,29 @@ namespace Mxx1Toolbox
                 Console.Error.WriteLine("用法: rightmenu unlock [--query-only] <文件或文件夹路径>");
                 return 2;
             }
-            string error;
-            List<FileLocker> found = FileLock.WhoLocks(path, out error);
+            LockReport report = FileLock.Scan(new string[] { path });
+            List<FileLocker> found = report.AllLockers();
             bool exists = false;
             try { exists = File.Exists(path) || Directory.Exists(path); }
             catch { }
             Console.WriteLine("path=" + path);
             Console.WriteLine("exists=" + (exists ? "yes" : "no"));
+            Console.WriteLine("scanned=" + report.Scanned.ToString(CultureInfo.InvariantCulture));
+            Console.WriteLine("truncated=" + (report.Truncated ? "yes" : "no"));
+            Console.WriteLine("hits=" + report.Hits.Count.ToString(CultureInfo.InvariantCulture));
             Console.WriteLine("lockers=" + found.Count.ToString(CultureInfo.InvariantCulture));
+            Console.WriteLine("badfiles=" + report.BadFiles.ToString(CultureInfo.InvariantCulture));
+            // 哪个文件被占着（文件夹扫描时这是最有用的那一行）
+            foreach (LockHit h in report.Hits)
+            {
+                if (h.File.Length > 0) { Console.WriteLine("file=" + h.File + "\tlockers=" + h.Lockers.Count.ToString(CultureInfo.InvariantCulture)); }
+            }
             foreach (FileLocker f in found) { Console.WriteLine(FileLock.DescribeLine(f)); }
-            if (error.Length > 0) { Console.WriteLine("error=" + error); }
+            Console.WriteLine("verdict=" + report.Verdict);
+            Console.WriteLine("verdictlocked=" + (report.VerdictLocked ? "yes" : "no"));
+            Console.WriteLine("verdictdenied=" + (report.VerdictDenied ? "yes" : "no"));
+            if (report.Note.Length > 0) { Console.WriteLine("note=" + report.Note); }
+            if (report.Error.Length > 0) { Console.WriteLine("error=" + report.Error); }
             return 0;
         }
 

@@ -30,7 +30,9 @@
 - **灰色按钮 = 功能还没接入**：灰底灰字 + 图标置灰，而且**禁止点击**（点不动）；状态栏会写明"灰色 N 个没接功能"。
   内置的一个灰按钮都不剩了，这条规则留给用户自己写的 `placeholder: true`
 - 「右键增强」两个功能 + 隔壁工具：**「解除文件占用」**（右键一个文件 / 文件夹，看到是谁占着它，
-  勾一下就能把那个程序结束掉 —— 用 Windows 自带的 Restart Manager，**不装 handle.exe、不要管理员**）
+  勾一下就能把那个程序结束掉 —— 用 Windows 自带的 Restart Manager，**不装 handle.exe、不要管理员**；
+  右键**文件夹**时会往下扫 4 层、最多 400 个文件，并告诉你**是哪个文件**被占着；没查到占用时它自己
+  会试着独占打开一次，明确区分「真没人在用」/「有人占着但报不出名字」/「其实是权限问题」）
   和 **「常用功能」级联子菜单**（右键里多一个子菜单，放工具箱「常用」页的东西）。
   两项都只写 `HKCU\Software\Classes`，删掉键就干净；再加上**「永久删除工具」**：打开隔壁的
   [永久删除（不进回收站）](../permanent-delete-menu) 安装器窗口，零改动集成
@@ -123,8 +125,8 @@ bin\Mxx1Toolbox.exe help
 ```powershell
 powershell -File tools\Test-Encoding.ps1     # 编码红线体检（BOM / 纯 ASCII / 硬编码本机路径）
 powershell -File tests\Test-All.ps1          # 全部（无桌面时加 -SkipGui）
-powershell -File tests\Test-Cli.ps1          # 命令行回归 122 项
-powershell -File tests\Test-Gui.ps1          # 界面回归 97 项（要交互式桌面，无桌面返回 3 = 跳过）
+powershell -File tests\Test-Cli.ps1          # 命令行回归 129 项
+powershell -File tests\Test-Gui.ps1          # 界面回归 98 项（要交互式桌面，无桌面返回 3 = 跳过）
 powershell -File tools\Make-Screenshots.ps1  # 重新拍 docs 里的截图（浅色 / 深色 / 系统工具页签）
 powershell -File tools\Make-Icons.ps1        # 重新生成 16x16 PNG 图标（先 build 再跑，改完还要再 build）
 ```

@@ -806,6 +806,15 @@ namespace Mxx1Toolbox
                 StartupAction = "";   // 只执行一次
                 BeginInvoke((MethodInvoker)delegate { RunStartupAction(action); });
             }
+            // 已经装过右键菜单的话，顺手把**工具箱自己写的**那几个键修补到当前版本：旧版把
+            // 「文件夹里的空白处」和「桌面空白处」的命令写成了 %1（资源管理器在那两个位置不替换 %1），
+            // 图标也指向了一个自己没有图标资源的 exe（菜单里是空白）—— 2026-10-04 用户报的两个问题。
+            // 没装过就什么都不做：不许因为"打开一下工具箱"就往注册表里写东西。
+            // 界面回归测试用 MXX1_NO_RIGHTMENU_SYNC=1 关掉（测试不该碰用户的真实菜单）。
+            if (!RightMenu.SyncDisabled)
+            {
+                BeginInvoke((MethodInvoker)delegate { RightMenu.SyncIfInstalled(); });
+            }
         }
 
         /// <summary>`ui &lt;动作&gt;` 进来的：窗口已经显示出来了，再做那件事

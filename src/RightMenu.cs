@@ -15,6 +15,7 @@ namespace Mxx1Toolbox
         public string Id = "";
         public string Name = "";
         public string Command = "";
+        public string IconId = "";          // 用哪个按钮的内嵌图标生成 .ico（空 = 这一项不写图标）
         public bool SeparatorBefore = false;
     }
 
@@ -24,10 +25,14 @@ namespace Mxx1Toolbox
         public string Id = "";
         public string Label = "";
         public string Key = "";
+        /// <summary>命令里代表"右键的那个路径"的占位符。**"文件夹里的空白处"和"桌面空白处"必须用
+        /// %V** —— 那两个位置资源管理器不会替换 %1，会把字面量 "%1" 原样传进来（用户 2026-10-04
+        /// 报「没扫描到占用文件」的一部分原因就是这个）。</summary>
+        public string Placeholder = "%1";
 
-        public RightMenuLocation(string id, string label, string key)
+        public RightMenuLocation(string id, string label, string key, string placeholder)
         {
-            Id = id; Label = label; Key = key;
+            Id = id; Label = label; Key = key; Placeholder = placeholder;
         }
     }
 
@@ -64,15 +69,22 @@ namespace Mxx1Toolbox
         public const string ItemCommon = "common";
         public const string BackupName = "rightmenu-installed.tsv";
 
-        /// <summary>命令里给"选中项"的占位：Explorer 会把它换成右键的那个路径。</summary>
+        /// <summary>命令里给"右键选中的那个路径"的占位：Explorer 会把它换成真实路径。</summary>
         public const string SelectedPlaceholder = "%1";
+
+        /// <summary>背景位置（文件夹里的空白处 / 桌面空白处）要用 %V：那里 Explorer 不替换 %1。</summary>
+        public const string BackgroundPlaceholder = "%V";
+
+        /// <summary>两项菜单项各自的图标源（都是工具箱自己的按钮图标，装的时候转成 .ico）。</summary>
+        public const string UnlockIconId = "rightmenu.unlock.on";
+        public const string CommonIconId = "rightmenu.common.on";
 
         private static readonly RightMenuLocation[] Table = new RightMenuLocation[]
         {
-            new RightMenuLocation("files",    "任意文件",           "*\\shell"),
-            new RightMenuLocation("folder",   "文件夹",             "Directory\\shell"),
-            new RightMenuLocation("folderbg", "文件夹里的空白处",   "Directory\\Background\\shell"),
-            new RightMenuLocation("desktop",  "桌面空白处",         "DesktopBackground\\Shell"),
+            new RightMenuLocation("files",    "任意文件",           "*\\shell",                   SelectedPlaceholder),
+            new RightMenuLocation("folder",   "文件夹",             "Directory\\shell",           SelectedPlaceholder),
+            new RightMenuLocation("folderbg", "文件夹里的空白处",   "Directory\\Background\\shell", BackgroundPlaceholder),
+            new RightMenuLocation("desktop",  "桌面空白处",         "DesktopBackground\\Shell",   BackgroundPlaceholder),
         };
 
         private static readonly string[] CriticalProcesses = new string[]
@@ -169,6 +181,10 @@ namespace Mxx1Toolbox
             {
                 sb.Append("  ").Append(done.ToString(CultureInfo.InvariantCulture))
                   .Append(" 处都写进去并读回核对过了。").AppendLine();
+                sb.Append("  菜单图标：从工具箱自带的按钮图标生成 .ico 写在 ").Append(MenuIcons.Dir)
+                  .AppendLine("，");
+                sb.AppendLine("  右键里那两项（以及「常用功能」子菜单的每一项）都会显示图标 —— 注册表的 Icon");
+                sb.AppendLine("  只能指向 exe/dll 或 .ico，指 .png 是没用的，所以这里要先转一道。");
                 string names = unlock && common
                     ? ("「" + UnlockTitle + "」和「" + CommonTitle + "」")
                     : (unlock ? ("「" + UnlockTitle + "」") : ("「" + CommonTitle + "」"));
@@ -242,6 +258,13 @@ namespace Mxx1Toolbox
                 sb.Append("  记录文件没写回去：").Append(saveError).AppendLine();
                 sb.Append("  （" + BackupName + " 里的记录可能不准了，下次装会重新记）");
             }
+            // 两项都撤掉了：生成出来的 .ico 也没用了，删掉（留着一个空目录也只是碍眼）。
+            if (!IsInstalled(ItemUnlock) && !IsInstalled(ItemCommon))
+            {
+                MenuIcons.RemoveAll();
+                sb.AppendLine();
+                sb.Append("  顺带清掉了菜单图标的临时文件（").Append(MenuIcons.Dir).Append("）");
+            }
             ok = (kept == 0);
             Logger.Write("右键增强", (ok ? "完成 · " : "部分失败 · ") + "撤右键菜单（"
                 + ((unlock ? "解除占用" : "") + (unlock && common ? " + " : "") + (common ? "常用功能" : "")) + "）");
@@ -306,15 +329,49 @@ namespace Mxx1Toolbox
             return sb.ToString();
         }
 
+        /// <summary>关掉"启动时顺手修补右键菜单"（界面回归测试用：测试不该碰用户真实的菜单）。</summary>
+        public static bool SyncDisabled
+        {
+            get
+            {
+                string v = AppPaths.Expand(Environment.GetEnvironmentVariable("MXX1_NO_RIGHTMENU_SYNC"));
+                return v != null && v.Trim() == "1";
+            }
+        }
+
         /// <summary>安静地重建一次（界面上点过按钮 / 改过置顶之后调用）。没装就什么都不做，
-        /// 出错也不弹东西 —— 这条路上不该因为注册表问题打断用户。</summary>
+        /// 出错也不弹东西 —— 这条路上不该因为注册表问题打断用户。
+        ///
+        /// 2026-10-04 起这里顺带**修补自己装过的键**：命令里的占位符（旧版「文件夹里的空白处」
+        /// 和「桌面空白处」写的是 %1，资源管理器在那种位置不替换 %1）和图标（旧版指向没有图标资源的
+        /// exe，菜单里是空白）。只重写 Mxx1* 这几个自己写的键，别人的键一个都不碰。</summary>
         public static void SyncIfInstalled()
         {
             try
             {
-                if (!IsInstalled(ItemCommon)) { return; }
-                string error;
-                WriteSharedTree(out error);
+                bool unlock = IsInstalled(ItemUnlock);
+                bool common = IsInstalled(ItemCommon);
+                if (!unlock && !common) { return; }
+                if (SyncDisabled) { return; }
+
+                if (unlock)
+                {
+                    foreach (RightMenuLocation loc in Table)
+                    {
+                        bool wrote;
+                        InstallUnlockVerb(loc, out wrote);   // 内部有 ForeignReason 把关：别人的键不动
+                    }
+                }
+                if (common)
+                {
+                    foreach (RightMenuLocation loc in Table)
+                    {
+                        bool wrote;
+                        InstallCommonVerb(loc, out wrote);
+                    }
+                    string error;
+                    WriteSharedTree(out error);
+                }
             }
             catch { }
         }
@@ -333,15 +390,20 @@ namespace Mxx1Toolbox
             string error;
             if (!WriteValue(full, "", "", out error)) { return error; }
             if (!WriteValue(full, "MUIVerb", UnlockTitle, out error)) { return error; }
-            if (!WriteValue(full, "Icon", QuoteExe(), out error)) { return error; }
+            WriteIconValue(full, UnlockIconId);
             if (!WriteValue(full, "MultiSelectModel", "Player", out error)) { return error; }
-            if (!WriteValue(full + "\\command", "",
-                    QuoteExe() + " rightmenu unlock \"" + SelectedPlaceholder + "\"", out error)) { return error; }
+            string command = QuoteExe() + " rightmenu unlock \"" + loc.Placeholder + "\"";
+            if (!WriteValue(full + "\\command", "", command, out error)) { return error; }
 
             string back;
             if (!VerifyValue(full, "MUIVerb", UnlockTitle, out back))
             {
                 return "写完读回来不是" + UnlockTitle + "（读到：" + back + "）";
+            }
+            string backCmd;
+            if (!VerifyValue(full + "\\command", "", command, out backCmd))
+            {
+                return "命令写完读回来不对（读到：" + backCmd + "）";
             }
             Remember(ItemUnlock, full, existed);
             wrote = true;
@@ -360,7 +422,7 @@ namespace Mxx1Toolbox
             string error;
             if (!WriteValue(full, "", "", out error)) { return error; }
             if (!WriteValue(full, "MUIVerb", CommonTitle, out error)) { return error; }
-            if (!WriteValue(full, "Icon", QuoteExe(), out error)) { return error; }
+            WriteIconValue(full, CommonIconId);
             if (!WriteValue(full, "MultiSelectModel", "Player", out error)) { return error; }
             // 子项只写一份（HKCU\Software\Classes\Mxx1Toolbox.Common\shell\NN），四个位置都指过去：
             // 重建菜单只要写一个地方。
@@ -390,10 +452,12 @@ namespace Mxx1Toolbox
             int recent;
             List<RightMenuEntry> items = BuildEntries(out pinned, out recent);
             int n = 0;
+            int icons = 0;
             foreach (RightMenuEntry e in items)
             {
                 string key = full + "\\shell\\" + n.ToString("00", CultureInfo.InvariantCulture);
                 if (!WriteValue(key, "MUIVerb", e.Name, out error)) { return ""; }
+                if (WriteIconValue(key, e.IconId)) { icons++; }
                 if (e.SeparatorBefore) { WriteDword(key, "CommandFlags", 0x20); }
                 if (!WriteValue(key + "\\command", "", e.Command, out error)) { return ""; }
                 n++;
@@ -406,7 +470,8 @@ namespace Mxx1Toolbox
             StringBuilder sb = new StringBuilder();
             sb.Append("  √ ").Append(CommonTitle).Append(" 子菜单写了 ").Append(n.ToString(CultureInfo.InvariantCulture))
               .Append(" 项（置顶 ").Append(pinned.ToString(CultureInfo.InvariantCulture))
-              .Append(" + 最近用过 ").Append(recent.ToString(CultureInfo.InvariantCulture)).Append(" + 固定 3 项）");
+              .Append(" + 最近用过 ").Append(recent.ToString(CultureInfo.InvariantCulture))
+              .Append(" + 固定 3 项，带图标的 ").Append(icons.ToString(CultureInfo.InvariantCulture)).Append(" 项）");
             return sb.ToString();
         }
 
@@ -455,17 +520,20 @@ namespace Mxx1Toolbox
             List<RightMenuEntry> fixedItems = new List<RightMenuEntry>();
             RightMenuEntry open = new RightMenuEntry();
             open.Id = "app.open";
+            open.IconId = CommonIconId;
             open.Name = "打开工具箱";
             open.SeparatorBefore = true;
             open.Command = QuoteExe();
             fixedItems.Add(open);
             RightMenuEntry log = new RightMenuEntry();
             log.Id = "app.log";
+            log.IconId = "export-logs";
             log.Name = "运行日志";
             log.Command = QuoteExe() + " ui log";
             fixedItems.Add(log);
             RightMenuEntry settings = new RightMenuEntry();
             settings.Id = "app.settings";
+            settings.IconId = "control-panel";
             settings.Name = "设置";
             settings.Command = QuoteExe() + " ui settings";
             fixedItems.Add(settings);
@@ -478,6 +546,7 @@ namespace Mxx1Toolbox
             RightMenuEntry e = new RightMenuEntry();
             e.Id = t.Id;
             e.Name = t.Name;
+            e.IconId = t.Id;
             e.Command = QuoteExe() + " run " + t.Id + (t.Danger ? " --confirm" : "");
             return e;
         }
@@ -614,6 +683,10 @@ namespace Mxx1Toolbox
             sb.AppendLine();
             sb.AppendLine("  1. " + UnlockTitle + " —— 右键一个文件 / 文件夹，看到是谁占着它，勾一下就能把");
             sb.AppendLine("     那个程序结束掉（用的是 Windows 自带的 Restart Manager，不装 handle.exe）。");
+            sb.AppendLine("     右键**文件夹**时会往下扫 " + FileLock.MaxScanDepth.ToString(CultureInfo.InvariantCulture)
+                + " 层、最多 " + FileLock.MaxScanFiles.ToString(CultureInfo.InvariantCulture)
+                + " 个文件（占用的多半是子文件夹里");
+            sb.AppendLine("     那个 Office / PDF / 播放器），并且会告出到底是哪一个文件被占着。");
             sb.AppendLine("  2. " + CommonTitle + " —— 右键里多一个子菜单，里面是你工具箱「常用」页的东西：");
             sb.AppendLine("     置顶的按钮 + 最近用过的按钮（最多 " + UserTools.RecentLimit.ToString(CultureInfo.InvariantCulture)
                 + " 个）+ 打开工具箱 / 运行日志 / 设置。");
@@ -639,8 +712,9 @@ namespace Mxx1Toolbox
             sb.AppendLine("     「待审核」列表，得去它那里放行一次才会出现在右键里；也可能被它标成");
             sb.AppendLine("     「仅 Shift 显示」或直接隐藏。「右键菜单状态」会念给你听它现在是什么态度。");
             sb.AppendLine("  4. 资源管理器缓存：改完注册表一般立刻生效，实在不出现就注销一次（不用重启电脑）；");
-            sb.AppendLine("  5. 菜单里两项的图标是 exe 自己的图标 —— exe 搬家后图标会空、点了会报错，");
-            sb.AppendLine("     点一次「装上…」就修好了（它会按现在的路径重写）。");
+            sb.AppendLine("  5. 菜单里的图标是从工具箱自带的按钮图标现生成的 .ico（放在");
+            sb.AppendLine("     " + MenuIcons.Dir + "）—— 注册表的 Icon 只能指");
+            sb.AppendLine("     exe/dll 或 .ico，指 .png 没用；图标没了就点一次「装上…」（或「重建常用功能」）重生成。");
             sb.AppendLine();
             sb.AppendLine("底线（代码里写死的）");
             sb.AppendLine();
@@ -979,6 +1053,35 @@ namespace Mxx1Toolbox
                 using (RegistryKey k = Registry.CurrentUser.CreateSubKey(fullKey))
                 {
                     if (k != null) { k.SetValue(name, value, RegistryValueKind.DWord); }
+                }
+            }
+            catch { }
+        }
+
+        /// <summary>给菜单项写图标。注册表的 Icon **只能指向带图标资源的 exe/dll 或 .ico 文件**，
+        /// 所以这里先用 MenuIcons 把内嵌的按钮 PNG 转成 .ico，指不到就不写这个值（别留一个空白图标位）。
+        /// 写入成功返回 true。</summary>
+        private static bool WriteIconValue(string fullKey, string iconId)
+        {
+            string ico = MenuIcons.IcoFor(iconId);
+            if (ico.Length == 0)
+            {
+                DeleteValue(fullKey, "Icon");
+                return false;
+            }
+            string error;
+            if (!WriteValue(fullKey, "Icon", ico, out error)) { return false; }
+            string back;
+            return VerifyValue(fullKey, "Icon", ico, out back);
+        }
+
+        private static void DeleteValue(string fullKey, string name)
+        {
+            try
+            {
+                using (RegistryKey k = Registry.CurrentUser.OpenSubKey(fullKey, true))
+                {
+                    if (k != null) { k.DeleteValue(name, false); }
                 }
             }
             catch { }

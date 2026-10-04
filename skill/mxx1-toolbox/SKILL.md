@@ -8,19 +8,24 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
 **主界面 = 多行多列的小按钮墙**，点一下按钮就启动一个已经做好的程序 / 脚本 / 功能。
 加按钮只是往 `tools\*.json` 丢配置，**不需要重新编译主程序**。
 
-- 程序名 **萌新工具箱**，标题栏 `萌新工具箱 v1.5.0`；署名 `mxx1` / `mxx1.cn`；GPL-3.0-or-later
+- 程序名 **萌新工具箱**，标题栏 `萌新工具箱 v1.5.1`；署名 `mxx1` / `mxx1.cn`；GPL-3.0-or-later
 - 工程目录 **`D:\萌新工具开发\toolbox\`**，与隔壁 `permanent-delete-menu` **互不修改**（只调它的 exe）
 - 外观参考：`C:\Users\Administrator\Pictures\Snipaste_2026-10-04_10-29-34.png`（那种紧凑按钮墙）
 
 > **接手 / 新会话先做两件事**：读 `docs\DESIGN.md`（外观与行为的**唯一正本**）和本文件。
 > 设计一改先改 `DESIGN.md`，再同步本 skill —— 两份分叉就会出现"两套行为"。
 
-## 当前状态（2026-10-04，v1.5.0）
+## 当前状态（2026-10-04，v1.5.1）
 
-- ✅ **测试 219 项全绿**：命令行回归 **122**（新增 M 组 23 项盯「右键增强」）+ 界面回归 **97**
-  （新增 N 组 5 项盯「解除文件占用」那个小窗口）（外加编码体检 169 个文件、内联脚本与清单体检
-  34 个脚本 / 7 个清单）。产物 `bin\Mxx1Toolbox.exe`（约 300 KB 单文件），
+- ✅ **测试 227 项全绿**：命令行回归 **129**（M 组 **29 项**盯「右键增强」）+ 界面回归 **98**
+  （N 组 **6 项**盯「解除文件占用」那个小窗口）（外加编码体检 170 个文件、内联脚本与清单体检
+  34 个脚本 / 7 个清单）。产物 `bin\Mxx1Toolbox.exe`（327,168 字节单文件），
   七个 `tools.*.json` + 112 个 `icons.*.png` 已内嵌。
+- ⚠️ **v1.5.1 修的是用户当天报的两个问题**（装完 v1.5.0 之后）：
+  ① **「解除文件占用」右键文件夹扫不到占用** —— 原来只枚举文件夹**第一层**的文件，第一层全是
+  子文件夹时直接放弃，而"占用它的是子文件夹里的 Word / PDF"正是最常用的场景；
+  ② **右键菜单项没有图标** —— 注册表 `Icon` 指的 exe 从来没有 `/win32icon`（`assets\app.ico`
+  不存在），而 `Icon` 又不认 `.png`。两条的根因 / 修法 / 实测写在 `docs\DESIGN.md` §14.11。
 - ✅ **八个页签、112 个内置按钮，全部是真功能，灰色占位一个不剩**：`常用`（置顶 + 最近使用**最多 30 个**，
   算出来的）/ `常用设置` 33 / `系统工具` 26 / `隐私设置` 29（11 组成对开关 + 4 个权限入口 +
   状态/优化/还原）/ `应用管理` 5 / `清理优化` 8 / `右键增强` 8 / `我的工具` 3（新建 / 导出 / 导入，真）。
@@ -50,11 +55,13 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
   **凡是"打开某个官方界面"的按钮，一律先探测再打开，探测不到就说明原因**
   （探测用 `Test-Path` / `Get-Command` / `Get-AppxPackage` / WMI，别用 `Get-NetAdapter` 当判据）。
   安全类按钮（实时防护 / Defender / SmartScreen / 防火墙 / UAC / 更新）**只打开官方界面，绝不代关系统防线**。
-- ✅ **「右键增强」8 个按钮（v1.5.0）**：前 7 个是工具箱自己在 `HKCU\Software\Classes` 下装的两样东西
+- ✅ **「右键增强」8 个按钮（v1.5.0 / v1.5.1）**：前 7 个是工具箱自己在 `HKCU\Software\Classes` 下装的两样东西
   （「解除文件占用」verb + 「常用功能」级联子菜单）—— 装 / 撤 / 状态 / 重建 / 说明；第 8 个还是
   「永久删除工具」（不带参数启动隔壁 `PermanentDeleteSetup.exe`，开它自己的窗口）。详见下面那一节。
+  v1.5.1 把两件事补上了：**右键文件夹会往下扫 4 层**（并指名是哪个文件被占着）、
+  **菜单项的图标**（装的时候把内嵌 PNG 转成 `.ico`，两个父项 + 子菜单每一项都有）。
 - ✅ **本地 Git 仓库已建**（提交都在本地）；⬜ **GitHub 远程还没建**，**推送前必须问用户**。
-- ✅ 按钮图标：103 个 16×16 PNG 由 `tools\Make-Icons.ps1` 生成并内嵌（`icons.<id>.png`；
+- ✅ 按钮图标：112 个 16×16 PNG 由 `tools\Make-Icons.ps1` 生成并内嵌（`icons.<id>.png`；
   用户自建按钮的图标**不**生成，免得把别人机器上的东西提交进仓库），
   全部经 `IconFactory.Normalize()` 归一化成 16×15 画布（见"界面硬规则"里那条）。
   优先级：清单里的 `icon` > `assets\icons\<id>.png` > 内嵌 > 程序内实时画的占位图标。
@@ -80,9 +87,14 @@ D:\萌新工具开发\toolbox\
   src\RegEngine.cs                 "记原值 → 写入 → 读回核对 → 一键还原"的唯一实现（Privacy 与 SysReg 共用）
   src\SysReg.cs                    6 组系统设置开关（12 个按钮）+ 查看/还原改动 + selftest（TSV 记录）
   src\RightMenu.cs                 「右键增强」后端：在 HKCU\Software\Classes 下装 / 卸 verb 与级联子菜单、
-                                   写前记原值（rightmenu-installed.tsv）、读 Context Menu Manager Plus 的态度
+                                   写前记原值（rightmenu-installed.tsv）、按位置给占位符（%1 / %V）、
+                                   启动时顺手修补自己装过的键、读 Context Menu Manager Plus 的态度
+  src\MenuIcons.cs                 菜单图标：把内嵌的按钮 PNG 现场转成多尺寸 .ico（注册表的 Icon
+                                   只认 exe/dll 图标资源或 .ico，**指 .png 是无效的**）
   src\FileLock.cs                  「谁占着这个文件」：Restart Manager（rstrtmgr.dll）P/Invoke +
-                                   整批失败逐个重试 + 系统关键进程禁止结束
+                                   文件夹往下扫 4 层 / 整批失败二分劈开重查 / 命中后定位到具体文件 +
+                                   SelfCheck（自己独占打开一次，给"真没人在用 / 有人占着但报不出名字 /
+                                   其实是权限"三种确定结论）+ 系统关键进程禁止结束
   src\UnlockForm.cs                「解除文件占用」的结果窗口（`rightmenu unlock` 起来的独立进程，不开主界面）
   src\ConfirmForm.cs               自家的确认窗口「请确认」（不再用 MessageBox 甩命令，见 §"运行反馈"）
   src\UserTools.cs                 用户层 tools.json 的读写（最小 JSON writer，写入前备份 .bak）
@@ -102,10 +114,11 @@ D:\萌新工具开发\toolbox\
   assets\icons\*.png               112 个图标（编译时内嵌成 icons.<id>.png）
   tests\Test-All.ps1               一条命令跑完全部
   tools\Test-InlineSyntax.ps1      内联脚本语法 + 清单 JSON 体检（34 个脚本 / 7 个清单）
-  tests\Test-Cli.ps1               命令行回归 122 项（L 组 12 项盯 sysreg、J09–J11 盯卸载窗口的列表、
-                                   M 组 23 项盯右键增强：查占用认出 PID / 隔离根里装卸 / 不碰真实右键菜单）
-  tests\Test-Gui.ps1               界面回归 97 项（要交互式桌面，无桌面返回 3 = 跳过；H 组盯固定尺寸、
-                                   E04b 盯窗口位置、A09 盯 bin-tools 说明、N 组盯解除占用小窗口）
+  tests\Test-Cli.ps1               命令行回归 129 项（L 组 12 项盯 sysreg、J09–J11 盯卸载窗口的列表、
+                                   M 组 29 项盯右键增强：查占用认出 PID / 文件夹往下扫 / 自查结论 /
+                                   图标指向真实 .ico / 自动修补 / 隔离根里装卸 / 不碰真实右键菜单）
+  tests\Test-Gui.ps1               界面回归 98 项（要交互式桌面，无桌面返回 3 = 跳过；H 组盯固定尺寸、
+                                   E04b 盯窗口位置、A09 盯 bin-tools 说明、N 组 6 项盯解除占用小窗口）
   docs\DESIGN.md                   设计正本（含"踩过的坑"清单 + §13 打包方案）
   docs\gui-shot.png / dark-shot.png / system-shot.png  界面截图
 ```
@@ -131,6 +144,9 @@ powershell -File tools\Make-Icons.ps1         # 重生成 PNG 图标（先 build
 & bin\Mxx1Toolbox.exe sysreg  status          # 只读列 6 组系统设置开关的现状；items / selftest 同上
 & bin\Mxx1Toolbox.exe rightmenu status        # 只读列右键菜单里装了什么 / 子菜单几项（**写入口只在界面里点**）
 & bin\Mxx1Toolbox.exe rightmenu unlock --query-only <路径>   # 只查谁占着这个文件，不弹窗也不结束进程
+                                                          # 输出：path/exists/scanned/truncated/hits/lockers/
+                                                          # badfiles/file/pid…/verdict/verdictlocked/error
+                                                          # （tests 靠这些键断言，v1.5.1 加了后半截）
 & bin\Mxx1Toolbox.exe ui log | ui settings    # 打开界面并直接看日志 / 设置（右键子菜单里那两个固定入口）
 & bin\Mxx1Toolbox.exe tip <id>                # 打印按钮的悬停说明（界面交给 ToolTip 的就是这一串）
 & bin\Mxx1Toolbox.exe pin / unpin <id>        # 置顶 / 取消置顶（pinned.txt）
@@ -284,13 +300,20 @@ powershell -File tools\Make-Icons.ps1         # 重生成 PNG 图标（先 build
 
 - **「解除文件占用」**（`src\FileLock.cs`）：用 **Windows 自带的 Restart Manager**（`rstrtmgr.dll`
   的 `RmStartSession` → `RmRegisterResources` → `RmGetList`）查"谁占着这个文件"，**不装 handle.exe、
-  不要管理员**（实测非管理员也能查出别人的进程）。三个反直觉的坑必须记住：
-  ① **绝不能把目录路径传进去** —— 回 `ERROR_ACCESS_DENIED(5)` 而且**污染整批**（目录 + 锁着的文件
-   一起传，连那个文件也不报了），所以文件夹要自己枚举成文件列表（取第一层，上限 200）；
-  ② **一个坏路径能毁掉整批**（非法字符、`kernel32.dll` 这种已知 DLL → 可能回 0 结果 +
-   `ERROR_INVALID_HANDLE(6)`），所以整批失败要**逐个文件重试**（上限 80）；
-  ③ `strAppName` 是**友好显示名**（`Windows PowerShell` / `Windows 资源管理器`）不是路径，
-  `svchost` 里几个服务会返回**同一个 PID 好几行** → 按 PID 去重。
+  不要管理员**（实测非管理员也能查出别人的进程）。**三层做法**（v1.5.1 定型）：
+  - **扫**：文件就查它；**文件夹按层（BFS）往下扫 4 层、最多 400 个文件**，跳过软链接 / 联接点，
+    整次扫描最多 4 秒 —— **只扫第一层是个已被用户报过 bug 的坑**（第一层全是子文件夹时什么都查不到）；
+  - **查**：整批先问一次（实测 60 个文件一批只要 **10ms**，和查 1 个一样）判"有没有"；
+    整批失败就**二分劈开重查**（RM 全有或全无：一个它不认的路径会让整批回 0 结果，
+    含非法字符的路径、`kernel32.dll` 这种已知 DLL 都会，实测还撞到 `ERROR_INVALID_HANDLE(6)`）；
+    有命中再**逐个文件**问一遍（实测 **≈11ms/个**，上限 60 个）落定"是哪个文件"；
+  - **自查**（`SelfCheck`，v1.5.1 新增）：不管查没查到，都自己试着**独占打开**一次那个路径 ——
+    能打开 = 「我自己能独占打开它 —— 现在真的没有程序占着它」；被共享冲突拒绝（`0x80070020`）
+    = 「确实有程序占着它，但报不出是哪个程序」（对方权限更高 / 别的用户）；权限被拒（`0x80070005`）
+    = 「不是被占用，是权限或只读属性拦住了」；**文件夹**也这么试（`CreateFile` + `dwShareMode=0` +
+    `FILE_FLAG_BACKUP_SEMANTICS`，被占用回 `err=32`）—— 这一条原来根本查不到。
+  - 还有两个反直觉的坑：**绝不能把目录路径登记给 RM**（回 `ERROR_ACCESS_DENIED(5)` 而且污染整批）；
+    `strAppName` 是**友好显示名**不是路径，`svchost` 里几个服务会返回**同一个 PID 好几行** → 按 PID 去重。
 - **底线（代码里写死 + M/N 组盯着）**：只结束用户勾选的进程；`explorer.exe` 默认不勾（结束它 = 桌面
   重启一次）；系统关键进程（System / csrss / winlogon / lsass / services…）**列出来但禁止勾选**；
   **不做句柄级强杀**（那种内核动作有蓝屏风险）；查不到就如实说查不到并列出可能原因，**不谎报「已解除」**。
@@ -301,13 +324,27 @@ powershell -File tools\Make-Icons.ps1         # 重生成 PNG 图标（先 build
   同名键不是工具箱写的就跳过并在报告里说明（不覆盖、不删别人的东西）。
   **命令行只有只读入口**（`rightmenu status|items|help`、`rightmenu unlock --query-only <路径>`），
   写注册表只在界面里点（和 `sysreg` 同一条规矩）。
+- **菜单图标（v1.5.1，`src\MenuIcons.cs`）**：注册表的 `Icon` **只认"带图标资源的 exe/dll"或 `.ico`
+  文件，指 `.png` 是无效的**；而工具箱那个 exe 自己也没有 `/win32icon`（`assets\app.ico` 不存在，
+  `build.ps1` 那行等于没生效）—— 所以 v1.5.0 写 `Icon=<exe>` 的结果是**菜单里一片空白**（用户报的）。
+  现在装菜单时把内嵌的按钮 PNG 拼成 32 位 DIB 的 `.ico`（16/20/24/32 四个尺寸，文件名带源图指纹），
+  写到 `%LOCALAPPDATA%\mxx1-toolbox\rightmenu-icons\`，**两个父项 + 子菜单每一项**都写 `Icon`
+  并读回核对（指不到文件就不写这个值，不留空白图标位）；撤掉两项时把生成的 .ico 一起清掉。
+- **占位符按位置写（v1.5.1 修的）**：文件 / 文件夹是 `%1`，但**「文件夹里的空白处」和「桌面空白处」
+  必须用 `%V`** —— 那两个位置资源管理器**不替换 `%1`**，会把字面量 `%1` 当路径传进来
+  （`RightMenuLocation.Placeholder`；`SelfCheck` 见到"路径不存在"时会提示这一点）。
+- **旧版装出来的键会自动修补**：`RightMenu.SyncIfInstalled` 除了重建子菜单，还把自己写的 verb
+  修补到当前版本（占位符 + 图标），**主窗口启动时也调一次** —— 用户不用自己想到"要再点一次装上"。
+  环境变量 `MXX1_NO_RIGHTMENU_SYNC=1` 可以关掉（界面回归测试用它：测试不该改用户真实的注册表）。
 - **子菜单内容会自动跟着变**：点一次按钮（`PushRecent` 之后）、置顶 / 取消置顶、清空最近使用之后
   都会重建（只在"装了「常用功能」"时才动注册表；没装就空转）；另有「重建常用功能」手动兜底。
   清单里 `danger: true` 的按钮进菜单时命令带 `--confirm`，点了先弹自家确认框（`run <id> --confirm`）。
   挑不出东西的按钮（灰色占位 / 界面动作 / 隐藏 / 「右键增强」自己这一页）不进菜单。
 - **测试隔离**：环境变量 `MXX1_RIGHTMENU_ROOT` 把根挪到 `HKCU\Software\mxx1-toolbox\rightmenu-test`。
   **回归一律用它，绝不把测试项真装到用户的右键菜单上**（M22 断言用户真实的
-  `HKCU\Software\Classes\*\shell` 一个键都没变；M23 断言测试根和原值记录都收拾干净了）。
+  `HKCU\Software\Classes\*\shell` **测试前后一个键都没变** —— 注意判据是"没变"，不是"里面不许有
+  我们的键"：用户自己点过「装上…」是正常状态，v1.5.0 那条断言把他自己的安装当成了失败，M22b 现在
+  专门认这件事；M23 断言测试根和原值记录都收拾干净了）。
 - **「最近使用」上限 30**（`UserTools.RecentLimit`，v1.5.0 从 12 改上来）：工具箱「常用」页签那条
   「最近使用 · N 个（最多 30 个）」跟着变，右键「常用功能」子菜单里的「最近用过」也按这个数。
 - **右键菜单管理器（Context Menu Manager Plus）**：用户提醒过「我电脑装了 Context Menu Manager Plus，
@@ -318,9 +355,11 @@ powershell -File tools\Make-Icons.ps1         # 重生成 PNG 图标（先 build
   `isPendingApproval` / `desiredEnabled` / `onlyWithShift`。所以「右键菜单状态」会主动念出
   「装了什么版本的菜单管理器 / 它的锁定开关是开是关 / 我们这两项被它标成待审核没有」
   （`RightMenu.CcmpNote()`，路径用系统文件夹拼，**代码里不写本机绝对路径**）。
-- **还需要人眼确认一次的两件事**（自动化回归验不了，别假装测过）：① 右键菜单里真的出现了这两项
+- **还需要人眼确认的事情**（自动化回归验不了，别假装测过）：① 右键菜单里真的出现了这两项
   （Win11 要先点「显示更多选项」；被菜单管理器藏了要去放行）；② 多选几个文件时命令被调用几次
-  （现在写的是 `MultiSelectModel=Player`）。见 `docs\DESIGN.md` §14.10。
+  （现在写的是 `MultiSelectModel=Player`）；③ **图标看着行不行**（v1.5.1 才做出来，是 16px 按钮图标
+  放大到 DPI 需要的尺寸，125% / 150% 下糊不糊得用户自己看 —— 觉得糊就得让 `Make-Icons.ps1`
+  另画一套大尺寸的菜单图标）。见 `docs\DESIGN.md` §14.10。
 
 ### 第 8 个按钮：隔壁「永久删除工具」（零改动集成）
 
@@ -415,6 +454,16 @@ powershell -File tools\Make-Icons.ps1         # 重生成 PNG 图标（先 build
       加按钮时顺手搜一遍 `105` / `右键增强 1` / 页签分布那串数字。
   19. **悬停说明（`hint`）别超过 110 字**：`ToolTip` 不换行，太长会顶出屏幕（H05 盯着）。
       长说明写进「右键增强说明」那种窗口里，`hint` 只留一句话。
+  20. **`& bin\Mxx1Toolbox.exe …` 在命令行里读输出会读串**：它是 `/target:winexe`，PowerShell
+      **不等待** GUI 子系统程序 —— `$LASTEXITCODE` 是空的、`$o = & $exe …` 是 `$null`、
+      几次调用的输出还会挤在一起冒出来（2026-10-04 排查"RM 查不查得到占用"时被骗过一次：
+      把上一次调用的输出当成了这一次的结论）。**一律 `Start-Process -Wait
+      -RedirectStandardOutput`**（`Invoke-Exe` 就是这么做）。
+  21. **GDI+ 的 `Image.FromStream` 要那个流活到图片用完**：`using (ms) { img = Image.FromStream(ms) }`
+      之后再画会抛"参数无效"（惰性解码）。`.ico` 也别指望 PNG-in-ICO，自己拼 32 位 DIB
+      （`BITMAPINFOHEADER` + 自下而上的 BGRA + 全 0 的 AND 掩码）。
+  22. **编码体检会拦"绝对路径"**：测试里造"旧版菜单"的假命令时写了 `C:\old\Mxx1Toolbox.exe`，
+      `Test-Encoding.ps1` 立刻报 `FAIL abs path`。用 `'"' + $Exe + '" …'` 拼，别写字面量。
 - **别在 PowerShell 里按像素调函数**：一个 `Get-Pixel` 每像素调一次，几万次调用要几分钟，
   看起来像卡死（踩过一次）。要么 `LockBits` 取一次 `byte[]` 再纯数组循环（`Get-InkRows` 的写法），
   要么用 csc 编个临时小工具（`local\InkDiag.cs` 那种）。
@@ -428,7 +477,7 @@ powershell -File tools\Make-Icons.ps1         # 重生成 PNG 图标（先 build
 
 1. **Git：本地仓库已经建好**；**GitHub 远程仓库还没建**，推送必须先问用户
    （用户原话："推送的时候不要每次都推送，太卡了要问过我才行"）。
-   v1.5.0（右键增强）是本地的第 6 笔提交，和前面几笔一样**没推送**。
+   v1.5.0（右键增强）+ v1.5.1（修用户报的两个 bug）是本地的第 6、7 笔提交，和前面几笔一样**没推送**。
 2. **外部工具目录 `bin-tools\`**：用户 2026-10-04 选了这个方案并定了名字，**已经实现**（见 `docs\DESIGN.md` §13）。
    还没做的只有两层：② 把 `bin-tools\` 里的 exe 内嵌进 exe、首次点击释放到固定目录当兜底；
    ③ 扫 `bin-tools\<工具>\tool.json` 自动长出按钮。**这两层等用户说要再做，别自己开工。**

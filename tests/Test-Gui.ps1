@@ -24,6 +24,13 @@ $root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $Exe = Join-Path $root 'bin\Mxx1Toolbox.exe'
 $SettingsIni = Join-Path $env:LOCALAPPDATA 'mxx1-toolbox\settings.ini'
 
+# 主窗口启动时会顺手"修补"已经装过的右键菜单（Mxx1* 自己那几个键）。用户真装着菜单的时候，
+# 那就是在改他的注册表 —— 界面回归测试反复起主窗口，不该干这个。所以这里关掉：
+# 那条修补路径由 Test-Cli 的 M20c 在**隔离的测试根**里专门测。
+$script:SyncHad = Test-Path Env:MXX1_NO_RIGHTMENU_SYNC
+$script:SyncOld = $env:MXX1_NO_RIGHTMENU_SYNC
+$env:MXX1_NO_RIGHTMENU_SYNC = '1'
+
 # 量文字宽度要用同一套渲染器，才能判断"文字装不装得下"
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
@@ -1475,8 +1482,8 @@ try {
             ($missBtn.Count -eq 0) ('缺=' + ($missBtn -join ' ') + ' 实际=' + ($ubtns -join ' '))
 
         $utexts = @($ukids | Where-Object { $_.Class -like '*STATIC*' } | ForEach-Object { $_.Text })
-        $found = @($utexts | Where-Object { $_ -match '查到 \d+ 个程序正在占用它' })
-        Check 'N03 窗口里念出了「查到 N 个程序正在占用它」（真查到了那个锁）' ($found.Count -eq 1) ($utexts -join ' | ')
+        $found = @($utexts | Where-Object { $_ -match '查到 \d+ 个程序占着它' })
+        Check 'N03 窗口里念出了「查到 N 个程序占着它」（真查到了那个锁）' ($found.Count -eq 1) ($utexts -join ' | ')
 
         # 排版硬规矩：按钮之间、按钮与文字之间都不许重叠（重叠的标签会吃掉鼠标点击）
         $rects = @()
@@ -1503,9 +1510,53 @@ try {
         Check 'N05 关掉小窗口之后那个进程自己退出了（不留后台进程）' ($unlockProc.HasExited) ''
     } else {
         Check 'N02 四个按钮都在（结束选中的进程 / 重新检查 / 复制路径 / 关闭）' $false 'skipped'
-        Check 'N03 窗口里念出了「查到 N 个程序正在占用它」（真查到了那个锁）' $false 'skipped'
+        Check 'N03 窗口里念出了「查到 N 个程序占着它」（真查到了那个锁）' $false 'skipped'
         Check 'N04 按钮和文字互不重叠（这个窗口也守那条硬规矩）' $false 'skipped'
         Check 'N05 关掉小窗口之后那个进程自己退出了（不留后台进程）' $false 'skipped'
+    }
+
+    # ---- N06：用户 2026-10-04 报的**原始场景** —— 右键一个文件夹，而占着文件的程序（Office /
+    #      PDF 阅读器）打开的是子文件夹里的那个文档。窗口必须查到，并且说出来"文件夹里扫了几个文件"。
+    $deepRoot = Join-Path $env:TEMP 'mxx1-unlock-deep-gui'
+    if (Test-Path -LiteralPath $deepRoot) { Remove-Item -LiteralPath $deepRoot -Recurse -Force }
+    $deepSub = Join-Path $deepRoot '年报资料'
+    New-Item -ItemType Directory -Path $deepSub -Force | Out-Null
+    $deepDoc = Join-Path $deepSub 'Q3报告.txt'
+    Set-Content -LiteralPath $deepDoc -Value 'x' -Encoding UTF8
+    $deepChild = Start-Process powershell.exe -WindowStyle Hidden -PassThru -ArgumentList @(
+        '-NoProfile', '-Command', ("`$fs=[System.IO.File]::Open('" + $deepDoc + "','Open','ReadWrite','None'); Start-Sleep 90"))
+    Start-Sleep -Seconds 2
+    $deepProc = $null
+    try {
+        $deepProc = Start-Process -FilePath $Exe -PassThru -ArgumentList @('rightmenu', 'unlock', $deepRoot)
+        [void]$script:Procs.Add($deepProc)
+        $deepWin = @()
+        for ($i = 0; $i -lt 40; $i++) {
+            Start-Sleep -Milliseconds 250
+            $deepWin = @((Get-TopWindows -ProcessId $deepProc.Id) | Where-Object { $_.Visible -and $_.Text -eq '解除文件占用' })
+            if ($deepWin.Count -gt 0) { break }
+        }
+        if ($deepWin.Count -gt 0) {
+            # 窗口先显示、再查（Shown 里跑查询），所以文字要轮询几轮再断言
+            $dtexts = @()
+            for ($i = 0; $i -lt 30; $i++) {
+                $dtexts = @(Get-ChildControls -RootHandle $deepWin[0].H | Where-Object { $_.Class -like '*STATIC*' } | ForEach-Object { $_.Text })
+                if (@($dtexts | Where-Object { $_ -match '个程序占着它' }).Count -gt 0) { break }
+                Start-Sleep -Milliseconds 250
+            }
+            $dfound = @($dtexts | Where-Object { $_ -match '查到 1 个程序占着它' })
+            $dscan = @($dtexts | Where-Object { $_ -match '文件夹里扫了 \d+ 个文件' })
+            Check 'N06 右键文件夹：占用在子文件夹里也查得到，并说明扫了几个文件' `
+                (($dfound.Count -eq 1) -and ($dscan.Count -eq 1)) ($dtexts -join ' | ')
+            [void][TBGui]::CloseWindow($deepWin[0].H)
+            Start-Sleep -Milliseconds 700
+        } else {
+            Check 'N06 右键文件夹：占用在子文件夹里也查得到，并说明扫了几个文件' $false 'skipped（窗口没起来）'
+        }
+    } finally {
+        if ($deepChild -and -not $deepChild.HasExited) { Stop-Process -Id $deepChild.Id -Force -ErrorAction SilentlyContinue }
+        if ($deepProc -and -not $deepProc.HasExited) { try { $deepProc.Kill() } catch { } }
+        if (Test-Path -LiteralPath $deepRoot) { Remove-Item -LiteralPath $deepRoot -Recurse -Force -ErrorAction SilentlyContinue }
     }
 } finally {
     if ($unlockChild -and -not $unlockChild.HasExited) { Stop-Process -Id $unlockChild.Id -Force -ErrorAction SilentlyContinue }
@@ -1515,6 +1566,10 @@ try {
 
 # ---------------------------------------------------------------- 现场复原
 Restore-UserLayer
+
+# 把 MXX1_NO_RIGHTMENU_SYNC 恢复成测试之前的样子（别给同一个 shell 里后面的命令留下副作用）
+if ($script:SyncHad) { $env:MXX1_NO_RIGHTMENU_SYNC = $script:SyncOld }
+else { Remove-Item Env:MXX1_NO_RIGHTMENU_SYNC -ErrorAction SilentlyContinue }
 
 Write-Host ''
 Write-Host '----------------------------------------------------------'

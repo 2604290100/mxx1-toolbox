@@ -113,7 +113,7 @@ Write-Host 'A 组 · status 与 list'
 $status = Invoke-Exe 'status'
 Check 'A01 status 退出码 0' ($status.Code -eq 0) ('exit=' + $status.Code)
 Check 'A02 中文输出没有乱码（UTF-8）' ($status.Out -match 'name=萌新工具箱') ('name=' + (Get-Key $status.Out 'name'))
-Check 'A03 版本号 1.5.0' ((Get-Key $status.Out 'version') -eq '1.5.0') (Get-Key $status.Out 'version')
+Check 'A03 版本号 1.5.1' ((Get-Key $status.Out 'version') -eq '1.5.1') (Get-Key $status.Out 'version')
 Check 'A04 按钮总数 112（测试期间用户层的按钮会暂停：常用 33 + 系统工具 26 + 隐私 29 + 应用 5 + 清理 8 + 右键 8 + 我的 3）' ((Get-Key $status.Out 'buttons') -eq '112') (Get-Key $status.Out 'buttons')
 Check 'A05 内置清单里没有灰色占位按钮了（两个「资源管理器」也接上了真功能；灰规则改由 B 组注入验证）' ((Get-Key $status.Out 'placeholders') -eq '0') (Get-Key $status.Out 'placeholders')
 Check 'A06 危险按钮 3 个' ((Get-Key $status.Out 'dangerous') -eq '3') (Get-Key $status.Out 'dangerous')
@@ -777,7 +777,7 @@ try {
         ('lockers=' + (Get-Key $rmQ.Out 'lockers') + ' 期望 pid=' + $rmChild.Id)
     Check 'M12 查占用是只读的：没有结束任何进程（那个子进程还活着）' (-not $rmChild.HasExited) ''
     $rmFolder = Invoke-Exe ('rightmenu unlock --query-only "' + $rmDir + '"')
-    Check 'M13 文件夹被占用也能查（传目录会被系统拒绝，所以按里面第一层的文件查）' `
+    Check 'M13 文件夹被占用也能查（按里面的文件查，目录本身不登记给系统）' `
         (($rmFolder.Code -eq 0) -and ([int](Get-Key $rmFolder.Out 'lockers') -ge 1)) ('lockers=' + (Get-Key $rmFolder.Out 'lockers'))
 }
 finally {
@@ -786,6 +786,43 @@ finally {
 Start-Sleep -Milliseconds 500
 $rmAfter = Invoke-Exe ('rightmenu unlock --query-only "' + $rmFile + '"')
 Check 'M14 占用没了就查不到（不谎报还占着）' ((Get-Key $rmAfter.Out 'lockers') -eq '0') ('lockers=' + (Get-Key $rmAfter.Out 'lockers'))
+
+# 没查到人时必须给"确定结论"，而不是一句"查不到"（用户 2026-10-04 就是被这句话弄懵的）：
+# SelfCheck 自己去独占打开一次文件 —— 能打开 = 真的没人在用。
+Check 'M14b 没查到人时给确定结论：自查能独占打开它，所以"现在真的没人在用"' `
+    (((Get-Key $rmAfter.Out 'verdictlocked') -eq 'no') -and ((Get-Key $rmAfter.Out 'verdict') -match '独占打开')) `
+    ('verdict=' + (Get-Key $rmAfter.Out 'verdict'))
+
+# 路径压根没传过来（旧版被装到「文件夹里的空白处」/「桌面空白处」时会这样：那两个位置
+# 资源管理器不替换 %1，会把字面量传进来）→ 要如实说"路径不存在"，并点明背景位置要用 %V。
+$rmPct = Invoke-Exe 'rightmenu unlock --query-only %1'
+Check 'M14c 路径没传过来（字面量 %1）时如实说路径不存在，并提示背景位置要用 %V' `
+    (((Get-Key $rmPct.Out 'exists') -eq 'no') -and ((Get-Key $rmPct.Out 'verdict') -match '%V')) `
+    ('exists=' + (Get-Key $rmPct.Out 'exists') + ' verdict=' + (Get-Key $rmPct.Out 'verdict'))
+
+# ---- 文件夹要往下扫：这是用户报的"右键一个文件夹，没扫描到占用文件"那条。
+#      原来只登记文件夹里第一层的文件，第一层只有子文件夹时直接放弃 —— 而占用它的多半是
+#      子文件夹里的 Office / PDF 文件。现在按层往下扫（深度 ≤4、≤400 个文件），并且要指名
+#      到底是哪个文件被占着。
+$rmDeep = Join-Path $env:TEMP 'mxx1-rightmenu-deep'
+if (Test-Path -LiteralPath $rmDeep) { Remove-Item -LiteralPath $rmDeep -Recurse -Force }
+$rmDeepSub = Join-Path $rmDeep '年报资料'
+New-Item -ItemType Directory -Path $rmDeepSub -Force | Out-Null
+$rmDeepDoc = Join-Path $rmDeepSub 'Q3报告.txt'
+Set-Content -LiteralPath $rmDeepDoc -Value 'x' -Encoding UTF8
+$rmDeepChild = Start-Process powershell.exe -WindowStyle Hidden -PassThru -ArgumentList @(
+    '-NoProfile', '-Command', ("`$fs=[System.IO.File]::Open('" + $rmDeepDoc + "','Open','ReadWrite','None'); Start-Sleep 90"))
+Start-Sleep -Seconds 2
+try {
+    $rmDeepQ = Invoke-Exe ('rightmenu unlock --query-only "' + $rmDeep + '"')
+    Check 'M14d 右键文件夹：往下扫到子文件夹里的占用（并指名是哪个文件被占着）' `
+        (([int](Get-Key $rmDeepQ.Out 'hits') -ge 1) -and ((Get-Key $rmDeepQ.Out 'file') -match 'Q3报告') -and `
+         ([int](Get-Key $rmDeepQ.Out 'scanned') -ge 1) -and ($rmDeepQ.Out -match ('pid=' + $rmDeepChild.Id + '\b'))) `
+        ('hits=' + (Get-Key $rmDeepQ.Out 'hits') + ' scanned=' + (Get-Key $rmDeepQ.Out 'scanned') + ' file=' + (Get-Key $rmDeepQ.Out 'file'))
+} finally {
+    if (-not $rmDeepChild.HasExited) { Stop-Process -Id $rmDeepChild.Id -Force -ErrorAction SilentlyContinue }
+    if (Test-Path -LiteralPath $rmDeep) { Remove-Item -LiteralPath $rmDeep -Recurse -Force -ErrorAction SilentlyContinue }
+}
 
 # ---- 装 / 卸：整段都在**隔离的根**里做（MXX1_RIGHTMENU_ROOT），绝不碰用户真实的右键菜单
 $rmTestRoot = 'HKCU:\Software\mxx1-toolbox\rightmenu-test'
@@ -806,10 +843,18 @@ try {
     $rmVerb = Join-Path $rmTestRoot '*\shell\Mxx1Unlock'
     $rmProp = Get-ItemProperty -LiteralPath $rmVerb -ErrorAction SilentlyContinue
     $rmCmd = (Get-ItemProperty -LiteralPath (Join-Path $rmVerb 'command') -ErrorAction SilentlyContinue).'(default)'
-    Check 'M16 verb 就是微软文档那套写法：MUIVerb + 默认值留空 + MultiSelectModel=Player + 命令带 %1' `
+    # 占位符必须分位置：文件 / 文件夹是 %1，**「文件夹里的空白处」和「桌面空白处」要 %V**
+    # —— 那两个位置资源管理器不替换 %1，会把字面量 "%1" 当路径传给程序（2026-10-04 修的 bug）。
+    $rmPlaces = @()
+    foreach ($rmP in @(@('*\shell', '%1'), @('Directory\shell', '%1'), `
+                       @('Directory\Background\shell', '%V'), @('DesktopBackground\Shell', '%V'))) {
+        $rmPc = "$((Get-ItemProperty -LiteralPath (Join-Path $rmTestRoot ($rmP[0] + '\Mxx1Unlock\command')) -ErrorAction SilentlyContinue).'(default)')"
+        if ($rmPc -match ('rightmenu unlock "' + [regex]::Escape($rmP[1]) + '"$')) { $rmPlaces += $rmP[1] }
+    }
+    Check 'M16 verb 写法：MUIVerb + 默认值留空 + MultiSelectModel=Player + 占位符按位置（背景用 %V）' `
         (($rmProp.MUIVerb -eq '解除文件占用') -and ($rmProp.MultiSelectModel -eq 'Player') -and `
-         ("$($rmProp.'(default)')" -eq '') -and ("$rmCmd" -match 'rightmenu unlock "%1"')) `
-        ('MUIVerb=' + $rmProp.MUIVerb + ' cmd=' + $rmCmd)
+         ("$($rmProp.'(default)')" -eq '') -and ($rmPlaces.Count -eq 4)) `
+        ('MUIVerb=' + $rmProp.MUIVerb + ' cmd=' + $rmCmd + ' 占位符对的=' + ($rmPlaces -join ','))
 
     $rmIns2 = Invoke-Exe 'run rightmenu.common.on' 60 $Exe $rmEnv
     Check 'M17 装上「常用功能」：级联子菜单的子项写出来了' `
@@ -831,6 +876,58 @@ try {
         (($rmFixed.Count -eq 3) -and (($rmFixed -join ' ') -match 'ui log') -and (($rmFixed -join ' ') -match 'ui settings')) `
         ($rmFixed -join ' | ')
 
+    # ---- 图标：注册表的 Icon 只能指"带图标资源的 exe/dll"或者 .ico 文件，**指 .png 是无效的**。
+    #      用户 2026-10-04 报「加进去的右键功能没有图标」：旧版 Icon 写的是 exe，而那个 exe 从来
+    #      没有 /win32icon（assets\app.ico 不存在）→ 菜单里就是空白。现在装的时候把内嵌的按钮 PNG
+    #      转成真正的 .ico 再指过去。
+    $rmIconKeys = @()
+    foreach ($rmR in @('*\shell', 'Directory\shell', 'Directory\Background\shell', 'DesktopBackground\Shell')) {
+        foreach ($rmVerbName in @('Mxx1Unlock', 'Mxx1Common')) {
+            $rmIconKeys += (Join-Path $rmTestRoot ($rmR + '\' + $rmVerbName))
+        }
+    }
+    $rmIconOk = 0
+    $rmIconBad = @()
+    foreach ($rmK in $rmIconKeys) {
+        $rmIcon = "$((Get-ItemProperty -LiteralPath $rmK -ErrorAction SilentlyContinue).Icon)"
+        if (($rmIcon.Length -gt 0) -and (Test-Path -LiteralPath $rmIcon)) {
+            $rmHead = [byte[]](Get-Content -LiteralPath $rmIcon -Encoding Byte -TotalCount 4 -ErrorAction SilentlyContinue)
+            if (($rmHead.Length -eq 4) -and ($rmHead[0] -eq 0) -and ($rmHead[1] -eq 0) -and ($rmHead[2] -eq 1) -and ($rmHead[3] -eq 0)) {
+                $rmIconOk++
+            } else { $rmIconBad += $rmIcon }
+        } else { $rmIconBad += ($rmK + ' -> ' + $rmIcon) }
+    }
+    Check 'M20a 两项的图标：Icon 指向真实存在的 .ico（不是没有图标资源的 exe，也不是 .png）' `
+        (($rmIconOk -eq 8) -and ($rmIconBad.Count -eq 0)) ('ok=' + $rmIconOk + '/8 坏=' + ($rmIconBad -join ' '))
+
+    $rmSubIcons = @($rmShared | Where-Object { "$((Get-ItemProperty -LiteralPath $_.PSPath -ErrorAction SilentlyContinue).Icon)".Length -gt 0 })
+    Check 'M20b 「常用功能」子菜单每一项也有图标（子项自己带 Icon）' `
+        (($rmShared.Count -ge 3) -and ($rmSubIcons.Count -eq $rmShared.Count)) ('带图标=' + $rmSubIcons.Count + '/' + $rmShared.Count)
+
+    # ---- 自动修补：旧版装出来的键（背景位置写 %1、Icon 指着一个没有图标资源的 exe）应该在
+    #      "用一次工具箱"时就被修好，而不是等着用户去点「装上…」。这里把键写坏，然后走 pin 这条路
+    #      （pin 之后会调 RightMenu.SyncIfInstalled），看它有没有修回来。
+    $rmFixKey = Join-Path $rmTestRoot 'Directory\Background\shell\Mxx1Unlock'
+    Set-ItemProperty -LiteralPath (Join-Path $rmFixKey 'command') -Name '(default)' `
+        -Value ('"' + $Exe + '" rightmenu unlock "%1"')
+    Remove-ItemProperty -LiteralPath $rmFixKey -Name 'Icon' -ErrorAction SilentlyContinue
+    $rmPinFile = Join-Path $env:LOCALAPPDATA 'mxx1-toolbox\pinned.txt'
+    $rmPinHad = Test-Path -LiteralPath $rmPinFile
+    $rmPinOld = ''
+    if ($rmPinHad) { $rmPinOld = [System.IO.File]::ReadAllText($rmPinFile, [System.Text.Encoding]::UTF8) }
+    try {
+        $rmPin = Invoke-Exe 'pin devmgmt' 60 $Exe $rmEnv
+        $rmFixCmd = "$((Get-ItemProperty -LiteralPath (Join-Path $rmFixKey 'command') -ErrorAction SilentlyContinue).'(default)')"
+        $rmFixIcon = "$((Get-ItemProperty -LiteralPath $rmFixKey -ErrorAction SilentlyContinue).Icon)"
+        Check 'M20c 自动修补：用一次工具箱就把旧版写坏的占位符 / 丢掉的图标修回来' `
+            (($rmPin.Code -eq 0) -and ($rmFixCmd -match 'rightmenu unlock "%V"$') -and `
+             ($rmFixIcon.Length -gt 0) -and (Test-Path -LiteralPath $rmFixIcon)) `
+            ('exit=' + $rmPin.Code + ' cmd=' + $rmFixCmd + ' icon=' + $rmFixIcon)
+    } finally {
+        if ($rmPinHad) { [System.IO.File]::WriteAllText($rmPinFile, $rmPinOld, (New-Object System.Text.UTF8Encoding($false))) }
+        elseif (Test-Path -LiteralPath $rmPinFile) { Remove-Item -LiteralPath $rmPinFile -Force -ErrorAction SilentlyContinue }
+    }
+
     $rmOff = Invoke-Exe 'run rightmenu.common.off' 60 $Exe $rmEnv
     $rmOff2 = Invoke-Exe 'run rightmenu.unlock.off' 60 $Exe $rmEnv
     Check 'M21 撤掉两项：自己写的键全删了（verb + 共用子项键）' `
@@ -839,9 +936,16 @@ try {
         ('off=' + $rmOff.Code + '/' + $rmOff2.Code)
     $rmRealAfter = @(Get-ChildItem -LiteralPath $rmRealShell -ErrorAction SilentlyContinue | Select-Object -ExpandProperty PSChildName)
     $rmRealMine = @($rmRealAfter | Where-Object { $_ -match 'Mxx1' })
-    Check 'M22 全程没碰用户真实的右键菜单（HKCU\Software\Classes\*\shell 一个键都没变）' `
-        ((($rmRealBefore -join ',') -eq ($rmRealAfter -join ',')) -and ($rmRealMine.Count -eq 0)) `
-        ('before=' + ($rmRealBefore -join ',') + ' after=' + ($rmRealAfter -join ','))
+    # 判据是"这次测试一个字都没改用户的真实菜单"，**不是**"用户的菜单里不许有我们的键"：
+    # 用户自己点过「装上…」把菜单真装上了，那是正常状态（2026-10-04 就是这样——原断言把
+    # 他自己的安装当成了失败）。只要求 before == after。
+    $rmUserInstalled = @($rmRealBefore | Where-Object { $_ -match 'Mxx1' })
+    Check 'M22 全程没碰用户真实的右键菜单（测试前后一个键都没变）' `
+        ((($rmRealBefore -join ',') -eq ($rmRealAfter -join ','))) `
+        ('before=' + ($rmRealBefore -join ',') + ' after=' + ($rmRealAfter -join ',') + `
+         '（用户自己装的：' + $(if ($rmRealMine.Count -gt 0) { $rmRealMine -join ',' } else { '无' }) + '）')
+    Check 'M22b 用户自己装过的话，测试认得出来那本来就在（不当成"测试装上去的"）' `
+        ($rmUserInstalled.Count -eq $rmRealMine.Count) ('测试前就有=' + ($rmUserInstalled -join ','))
 }
 finally {
     Remove-Item -LiteralPath 'HKCU:\Software\mxx1-toolbox' -Recurse -Force -ErrorAction SilentlyContinue

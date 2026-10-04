@@ -17,12 +17,28 @@ namespace Mxx1Toolbox
     /// 界面上只做一件事：把"谁占着它"列清楚，让你勾要结束的程序。所以
     /// ① 系统关键进程列出来但**勾不动**（灰的 + 写明原因），explorer.exe 默认不勾；
     /// ② 结束前过一遍自家的确认窗口（右键菜单是误点高发区）；
-    /// ③ 查不到就如实说查不到，并列出可能的原因，绝不谎报「已解除」。</summary>
+    /// ③ **查不到就分三种情况说清楚**（这是 2026-10-04 用户报「右键文件夹没扫描到占用」之后改的）：
+    ///    真的没人在用 / 确实被占着但名字报不出来 / 拦住你的是权限不是占用 —— 绝不混成一句
+    ///    「没查到」让用户以为工具坏了。</summary>
     internal sealed class UnlockForm : Form
     {
+        /// <summary>列表里的一行：哪个程序，占着哪个文件。</summary>
+        private sealed class Row
+        {
+            public FileLocker Locker;
+            public string File = "";
+
+            public Row(FileLocker locker, string file)
+            {
+                Locker = locker;
+                File = file;
+            }
+        }
+
         private readonly string[] _paths;
         private readonly Theme _theme;
-        private readonly List<FileLocker> _lockers = new List<FileLocker>();
+        private readonly List<Row> _rows = new List<Row>();
+        private LockReport _report;
 
         private ListView _list;
         private Label _head;
@@ -30,7 +46,6 @@ namespace Mxx1Toolbox
         private Label _empty;
         private Label _hint;
         private Button _killBtn;
-        private string _queryError = "";
 
         public UnlockForm(string[] paths)
         {
@@ -86,9 +101,10 @@ namespace Mxx1Toolbox
             _list.BackColor = _theme.InputBack;
             _list.ForeColor = _theme.InputText;
             _list.Margin = new Padding(2, 0, 2, 8);
-            _list.Columns.Add("程序", 190, HorizontalAlignment.Left);
-            _list.Columns.Add("PID", 70, HorizontalAlignment.Left);
-            _list.Columns.Add("说明", 300, HorizontalAlignment.Left);
+            _list.Columns.Add("程序", 140, HorizontalAlignment.Left);
+            _list.Columns.Add("PID", 55, HorizontalAlignment.Left);
+            _list.Columns.Add("占着的文件", 185, HorizontalAlignment.Left);
+            _list.Columns.Add("说明", 190, HorizontalAlignment.Left);
             _list.ItemCheck += OnItemCheck;
             root.Controls.Add(_list, 0, 2);
 
@@ -105,7 +121,8 @@ namespace Mxx1Toolbox
             _hint.MaximumSize = new Size(570, 0);
             _hint.ForeColor = _theme.BarText;
             _hint.Margin = new Padding(2, 0, 2, 10);
-            _hint.Text = "勾上要结束的程序，再点「结束选中的进程」。系统关键程序是灰的，勾不动。";
+            _hint.Text = "勾上要结束的程序，再点「结束选中的进程」。系统关键程序是灰的，勾不动；"
+                + "「占着的文件」那一列说明它占着文件夹里的哪一个文件。";
             root.Controls.Add(_hint, 0, 3);
 
             FlowLayoutPanel bar = new FlowLayoutPanel();
@@ -180,63 +197,167 @@ namespace Mxx1Toolbox
         private void OnItemCheck(object sender, ItemCheckEventArgs e)
         {
             // 系统关键进程勾不动：把这次改动拨回去（ListView 允许在事件里改回去）。
-            if (e.Index >= 0 && e.Index < _lockers.Count && _lockers[e.Index].Protected)
+            if (e.Index >= 0 && e.Index < _rows.Count && _rows[e.Index].Locker.Protected)
             {
                 e.NewValue = e.CurrentValue;
             }
         }
 
+        private bool HasRow(int pid, string file)
+        {
+            foreach (Row r in _rows)
+            {
+                if (r.Locker.Pid == pid && string.Equals(r.File, file, StringComparison.OrdinalIgnoreCase)) { return true; }
+            }
+            return false;
+        }
+
         private void RefreshLockers()
         {
-            _lockers.Clear();
-            _queryError = "";
-            List<string> errors = new List<string>();
-            List<int> seen = new List<int>();
-            foreach (string p in _paths)
+            _rows.Clear();
+            _report = FileLock.Scan(_paths);
+            foreach (LockHit h in _report.Hits)
             {
-                string error;
-                List<FileLocker> found = FileLock.WhoLocks(p, out error);
-                if (error.Length > 0 && !errors.Contains(error)) { errors.Add(error); }
-                foreach (FileLocker f in found)
+                foreach (FileLocker f in h.Lockers)
                 {
-                    if (seen.Contains(f.Pid)) { continue; }
-                    seen.Add(f.Pid);
-                    _lockers.Add(f);
+                    if (HasRow(f.Pid, h.File)) { continue; }
+                    _rows.Add(new Row(f, h.File));
                 }
             }
-            if (errors.Count > 0) { _queryError = string.Join("；", errors.ToArray()); }
 
             _list.BeginUpdate();
             _list.Items.Clear();
-            foreach (FileLocker f in _lockers)
+            foreach (Row r in _rows)
             {
-                ListViewItem it = new ListViewItem(f.Exe);
-                it.SubItems.Add(f.Pid.ToString(CultureInfo.InvariantCulture));
-                it.SubItems.Add(Explain(f));
-                it.Checked = f.Checked && !f.Protected;
-                if (f.Protected) { it.ForeColor = _theme.ButtonDisabledText; }
+                ListViewItem it = new ListViewItem(r.Locker.Exe);
+                it.SubItems.Add(r.Locker.Pid.ToString(CultureInfo.InvariantCulture));
+                it.SubItems.Add(FileText(r.File));
+                it.SubItems.Add(Explain(r.Locker));
+                it.Checked = r.Locker.Checked && !r.Locker.Protected;
+                if (r.Locker.Protected) { it.ForeColor = _theme.ButtonDisabledText; }
                 _list.Items.Add(it);
             }
             _list.EndUpdate();
 
-            bool any = _lockers.Count > 0;
+            bool any = _rows.Count > 0;
             _list.Visible = any;
             _empty.Visible = !any;
             if (any)
             {
-                _status.Text = "查到 " + _lockers.Count.ToString(CultureInfo.InvariantCulture)
-                    + " 个程序正在占用它：";
-                if (_queryError.Length > 0) { _status.Text += Environment.NewLine + "（注意：" + _queryError + "）"; }
+                _status.Text = FoundHeadline();
+                _empty.Text = "";
             }
             else
             {
-                _status.Text = "没查到占用它的程序。";
-                _empty.Text = (_queryError.Length > 0)
-                    ? ("这次查询本身没成功：" + _queryError + Environment.NewLine + Environment.NewLine + NotFoundText())
-                    : NotFoundText();
+                _status.Text = EmptyHeadline();
+                _empty.Text = EmptyBody();
             }
             _killBtn.Enabled = true;
             UpdateSize();
+        }
+
+        private static string FileText(string file)
+        {
+            if (file.Length == 0) { return "（没定位到具体文件）"; }
+            try
+            {
+                string name = System.IO.Path.GetFileName(file);
+                return (name.Length > 0) ? name : file;
+            }
+            catch { return file; }
+        }
+
+        private string FoundHeadline()
+        {
+            StringBuilder sb = new StringBuilder();
+            int progs = _report.LockerCount;
+            sb.Append("查到 ").Append(progs.ToString(CultureInfo.InvariantCulture)).Append(" 个程序占着它");
+            if (_report.FolderScanned)
+            {
+                sb.Append("（文件夹里扫了 ").Append(_report.Scanned.ToString(CultureInfo.InvariantCulture)).Append(" 个文件");
+                int files = 0;
+                foreach (LockHit h in _report.Hits) { if (h.File.Length > 0) { files++; } }
+                if (files > 1) { sb.Append("，命中在 ").Append(files.ToString(CultureInfo.InvariantCulture)).Append(" 个文件上"); }
+                sb.Append("）");
+            }
+            sb.Append("：");
+            AppendNotes(sb);
+            return sb.ToString();
+        }
+
+        private string EmptyHeadline()
+        {
+            if (_report == null) { return "还没查。"; }
+            if (_report.Error.Length > 0) { return "这次查询本身没成功（不是「没人占用」）："; }
+            if (!_report.VerdictExists) { return "路径没传过来："; }
+            if (_report.VerdictDenied) { return "拦住它的不是占用，是权限："; }
+            if (_report.VerdictLocked) { return "确实有程序占着它，但报不出是哪个程序："; }
+            return "没查到占用它的程序：";
+        }
+
+        private string EmptyBody()
+        {
+            StringBuilder sb = new StringBuilder();
+            if (_report == null) { return "点「重新检查」查一次。"; }
+
+            if (_report.Error.Length > 0) { sb.Append("  ").Append(_report.Error).AppendLine().AppendLine(); }
+            if (_report.Verdict.Length > 0) { sb.Append("  ").Append(_report.Verdict).AppendLine(); }
+            if (_report.FolderScanned)
+            {
+                sb.Append("  文件夹里扫了 ").Append(_report.Scanned.ToString(CultureInfo.InvariantCulture))
+                  .Append(" 个文件（往下 ").Append(FileLock.MaxScanDepth.ToString(CultureInfo.InvariantCulture))
+                  .Append(" 层）");
+                if (_report.Truncated) { sb.Append("，没扫完（文件夹太大 / 里面有软链接）"); }
+                sb.AppendLine("。");
+            }
+            if (_report.BadFiles > 0)
+            {
+                sb.Append("  另有 ").Append(_report.BadFiles.ToString(CultureInfo.InvariantCulture))
+                  .Append(" 个路径系统不肯查（已经跳过了）。").AppendLine();
+            }
+            if (_report.Note.Length > 0) { sb.Append("  ").Append(_report.Note).AppendLine(); }
+            if (_paths.Length > 1)
+            {
+                sb.Append("  多个路径时，上面那句自查结论只针对第一个路径。").AppendLine();
+            }
+            sb.AppendLine();
+
+            if (_report.VerdictLocked)
+            {
+                sb.AppendLine("  为什么会报不出名字：Windows 这个接口只报当前用户看得见的进程。可以试");
+                sb.AppendLine("  · 关掉最近动过它的程序（Office / PDF 阅读器 / 播放器 / 压缩软件）再点「重新检查」；");
+                sb.AppendLine("  · 用管理员身份打开工具箱（右键 exe → 以管理员身份运行），再从资源管理器右键一次；");
+                sb.AppendLine("  · 实在找不到：注销一次（占用它的进程会跟着退出）。");
+            }
+            else if (_report.VerdictDenied)
+            {
+                sb.AppendLine("  这不是「哪个程序开着它」的问题：去文件的「属性」里看看只读、或者安全里的权限。");
+            }
+            else if (!_report.VerdictExists)
+            {
+                sb.AppendLine("  资源管理器没把真实路径传过来 —— 常见于「文件夹里的空白处」和「桌面空白处」");
+                sb.AppendLine("  这两个位置（要用 %V）。点一次工具箱「右键增强」页的「装上…」会重写成正确写法。");
+            }
+            else
+            {
+                sb.AppendLine("  这条结论不是猜的：我刚刚自己试着独占打开它，成功了 —— 也就是说现在真的");
+                sb.AppendLine("  没有程序占着它。如果它还是删不掉 / 改不了 / 改名不了，那多半是：");
+                sb.AppendLine("  · 权限（ACL）或只读属性；");
+                sb.AppendLine("  · 占用它的是内核态的东西（杀毒软件实时扫描、驱动），它不属于任何进程；");
+                sb.AppendLine("  · 你删的是文件夹，而拦住你的是它**里面**更深的文件（上面写了扫了几层）。");
+            }
+            return sb.ToString().TrimEnd();
+        }
+
+        private void AppendNotes(StringBuilder sb)
+        {
+            List<string> parts = new List<string>();
+            if (_report.Note.Length > 0) { parts.Add(_report.Note); }
+            if (_report.Truncated) { parts.Add("文件夹太大，没扫完（只扫了 " + _report.Scanned.ToString(CultureInfo.InvariantCulture) + " 个文件）"); }
+            if (_report.BadFiles > 0) { parts.Add(_report.BadFiles.ToString(CultureInfo.InvariantCulture) + " 个路径系统不肯查，跳过了"); }
+            if (_report.Error.Length > 0) { parts.Add(_report.Error); }
+            if (parts.Count == 0) { return; }
+            sb.Append(Environment.NewLine).Append("（注意：").Append(string.Join("；", parts.ToArray())).Append("）");
         }
 
         private static string Explain(FileLocker f)
@@ -255,21 +376,9 @@ namespace Mxx1Toolbox
             return string.Join(" · ", parts.ToArray());
         }
 
-        private static string NotFoundText()
-        {
-            StringBuilder sb = new StringBuilder();
-            sb.AppendLine("可能的原因（按常见程度排）：");
-            sb.AppendLine("  · 占用它的程序在别的用户或更高权限下运行 —— 用管理员身份再试一次（工具箱主界面里");
-            sb.AppendLine("    按住 Shift 点按钮就是提权运行），没提权时系统不给看别人的进程；");
-            sb.AppendLine("  · 文件其实没被占用：拦住你的是只读属性或者权限（ACL），不是「哪个程序开着它」；");
-            sb.AppendLine("  · 占用来自内核态（杀毒软件的实时扫描、驱动），它不属于任何一个进程，所以查不到；");
-            sb.AppendLine("  · 文件夹被占用：要么它被某个程序当成「当前目录」，要么里面某个文件正被打开。");
-            return sb.ToString().TrimEnd();
-        }
-
         private void UpdateSize()
         {
-            int rows = _lockers.Count;
+            int rows = _rows.Count;
             if (rows > 8) { rows = 8; }
             int h = 210 + rows * 20;
             if (h > 470) { h = 470; }
@@ -294,7 +403,7 @@ namespace Mxx1Toolbox
             List<FileLocker> chosen = new List<FileLocker>();
             foreach (int i in _list.CheckedIndices)
             {
-                if (i >= 0 && i < _lockers.Count) { chosen.Add(_lockers[i]); }
+                if (i >= 0 && i < _rows.Count) { chosen.Add(_rows[i].Locker); }
             }
             if (chosen.Count == 0)
             {
@@ -303,8 +412,11 @@ namespace Mxx1Toolbox
             }
 
             StringBuilder names = new StringBuilder();
+            List<int> seen = new List<int>();
             foreach (FileLocker f in chosen)
             {
+                if (seen.Contains(f.Pid)) { continue; }
+                seen.Add(f.Pid);
                 if (names.Length > 0) { names.Append("、"); }
                 names.Append(f.Exe).Append("（PID ").Append(f.Pid.ToString(CultureInfo.InvariantCulture)).Append("）");
             }

@@ -34,6 +34,22 @@ function Check {
 
 if (-not (Test-Path -LiteralPath $Exe)) { throw ('找不到 exe（先跑 build.ps1）: ' + $Exe) }
 
+# 用户自己加的按钮（%LOCALAPPDATA%\mxx1-toolbox\tools.json）会让按钮数变得不确定，
+# 所以先把它请到一边，跑完在最后一段复原（用户可能正开着界面在用，别删）。
+$UserToolsJson = Join-Path $env:LOCALAPPDATA 'mxx1-toolbox\tools.json'
+$UserToolsPaused = $UserToolsJson + '.paused-by-test'
+# 自愈：上一次跑测试如果被中断（Ctrl+C / 卡住 / 被沙箱杀掉），用户自己的按钮清单会留在
+# ".paused-by-test" 上回不来 —— 用户会以为"我建的按钮没了"。开工前先把它放回去。
+if ((Test-Path -LiteralPath $UserToolsPaused) -and (-not (Test-Path -LiteralPath $UserToolsJson))) {
+    Move-Item -LiteralPath $UserToolsPaused -Destination $UserToolsJson -Force
+    Write-Host '（上一次测试留下的暂停文件已自动放回 tools.json）'
+}
+$script:UserToolsHad = Test-Path -LiteralPath $UserToolsJson
+if ($script:UserToolsHad) {
+    if (Test-Path -LiteralPath $UserToolsPaused) { Remove-Item -LiteralPath $UserToolsPaused -Force }
+    Move-Item -LiteralPath $UserToolsJson -Destination $UserToolsPaused -Force
+}
+
 Write-Host ''
 Write-Host '=========================================================='
 Write-Host ' 萌新工具箱 · 命令行回归测试'
@@ -81,12 +97,12 @@ Write-Host 'A 组 · status 与 list'
 $status = Invoke-Exe 'status'
 Check 'A01 status 退出码 0' ($status.Code -eq 0) ('exit=' + $status.Code)
 Check 'A02 中文输出没有乱码（UTF-8）' ($status.Out -match 'name=萌新工具箱') ('name=' + (Get-Key $status.Out 'name'))
-Check 'A03 版本号 1.1.0' ((Get-Key $status.Out 'version') -eq '1.1.0') (Get-Key $status.Out 'version')
-Check 'A04 按钮总数 54（右键增强只留 1 个）' ((Get-Key $status.Out 'buttons') -eq '54') (Get-Key $status.Out 'buttons')
-Check 'A05 灰色占位按钮 41 个' ((Get-Key $status.Out 'placeholders') -eq '41') (Get-Key $status.Out 'placeholders')
-Check 'A06 危险按钮 7 个' ((Get-Key $status.Out 'dangerous') -eq '7') (Get-Key $status.Out 'dangerous')
+Check 'A03 版本号 1.2.0' ((Get-Key $status.Out 'version') -eq '1.2.0') (Get-Key $status.Out 'version')
+Check 'A04 按钮总数 53（右键增强 1 个、Windows 激活已删）' ((Get-Key $status.Out 'buttons') -eq '53') (Get-Key $status.Out 'buttons')
+Check 'A05 灰色占位按钮 18 个（界面上点不动）' ((Get-Key $status.Out 'placeholders') -eq '18') (Get-Key $status.Out 'placeholders')
+Check 'A06 危险按钮 6 个' ((Get-Key $status.Out 'dangerous') -eq '6') (Get-Key $status.Out 'dangerous')
 
-$tabExpect = @{ 'common' = 32; 'rightmenu' = 1; 'cleanup' = 8; 'system' = 12; 'mine' = 1 }
+$tabExpect = @{ 'common' = 31; 'rightmenu' = 1; 'cleanup' = 8; 'system' = 12; 'mine' = 1 }
 $tabOk = $true
 $tabDetail = @()
 foreach ($k in $tabExpect.Keys) {
@@ -94,22 +110,22 @@ foreach ($k in $tabExpect.Keys) {
     $tabDetail += ($k + '=' + $v)
     if ($v -ne [string]$tabExpect[$k]) { $tabOk = $false }
 }
-Check 'A07 五个页签的按钮数正确（32/1/8/12/1）' $tabOk ($tabDetail -join ' ')
+Check 'A07 五个页签的按钮数正确（31/1/8/12/1）' $tabOk ($tabDetail -join ' ')
 
 $list = Invoke-Exe 'list'
 Check 'A08 list 退出码 0' ($list.Code -eq 0) ('exit=' + $list.Code)
-Check 'A09 list 报的按钮数一致' ((Get-Key $list.Out 'buttons') -eq '54') (Get-Key $list.Out 'buttons')
+Check 'A09 list 报的按钮数一致' ((Get-Key $list.Out 'buttons') -eq '53') (Get-Key $list.Out 'buttons')
 $lines = @($list.Out -split "`r?`n" | Where-Object { $_ -match "`t" })
-Check 'A10 list 打出 54 行按钮' ($lines.Count -eq 54) ('lines=' + $lines.Count)
+Check 'A10 list 打出 53 行按钮' ($lines.Count -eq 53) ('lines=' + $lines.Count)
 
 $rmList = Invoke-Exe 'list --tab rightmenu'
 Check 'A11 右键增强只有 1 个按钮' ((Get-Key $rmList.Out 'shown') -eq '1') (Get-Key $rmList.Out 'shown')
 Check 'A12 右键增强里的按钮是"真功能"（不带 placeholder 标记）' (-not ($rmList.Out -match 'placeholder')) ''
 Check 'A13 右键增强那个按钮叫「永久删除工具」' ($rmList.Out -match '永久删除工具') (($rmList.Out -split "`r?`n" | Where-Object { $_ -match "`t" }) -join '')
 
-# ---------------------------------------------------------------- B 组：占位按钮路径
+# ---------------------------------------------------------------- B 组：灰色占位按钮
 Write-Host ''
-Write-Host 'B 组 · 占位按钮（点一下必须有反应、写日志、退出码 0）'
+Write-Host 'B 组 · 灰色占位按钮（界面上禁止点击；命令行只解释、绝不执行）'
 
 $logPath = Get-Key $status.Out 'log'
 $logBefore = 0
@@ -117,18 +133,22 @@ if (Test-Path -LiteralPath $logPath) {
     $logBefore = @(Get-Content -LiteralPath $logPath -Encoding UTF8 -ErrorAction SilentlyContinue).Count
 }
 
-$ph = Invoke-Exe 'run flush-dns'
-Check 'B01 占位按钮 run 退出码 0' ($ph.Code -eq 0) ('exit=' + $ph.Code)
+$ph = Invoke-Exe 'run taskbar-never-combine'
+Check 'B01 灰色按钮 run 退出码 0' ($ph.Code -eq 0) ('exit=' + $ph.Code)
 $phHint = Get-Key $ph.Out 'placeholder'
 Check 'B02 输出里标明是占位按钮' ($phHint.Length -gt 0) ('placeholder=' + $phHint)
 Check 'B03 没有真的执行（命令带"暂不执行"）' ($ph.Out -match '暂不执行') ''
+$phDry = Invoke-Exe 'run taskbar-never-combine --dry'
+Check 'B03b --dry 明说它没有目标（kind=none）' `
+    (((Get-Key $phDry.Out 'kind') -eq 'none') -and ((Get-Key $phDry.Out 'exists') -eq 'no')) `
+    ('kind=' + (Get-Key $phDry.Out 'kind') + ' exists=' + (Get-Key $phDry.Out 'exists'))
 
 Start-Sleep -Milliseconds 400
 $logAfter = @(Get-Content -LiteralPath $logPath -Encoding UTF8 -ErrorAction SilentlyContinue)
 Check 'B04 运行写进了日志（最新一条）' ($logAfter.Count -gt $logBefore) ('before=' + $logBefore + ' after=' + $logAfter.Count)
 $newest = ''
 if ($logAfter.Count -gt 0) { $newest = $logAfter[$logAfter.Count - 1] }
-Check 'B05 日志里能看到「刷新 DNS 缓存」和"功能待接入"' (($newest -match '刷新 DNS 缓存') -and ($newest -match '功能待接入')) ($newest.Trim())
+Check 'B05 日志里能看到「任务栏从不合并」和"功能待接入"' (($newest -match '任务栏从不合并') -and ($newest -match '功能待接入')) ($newest.Trim())
 
 # ---------------------------------------------------------------- C 组：真按钮（调隔壁 exe）
 Write-Host ''
@@ -185,6 +205,66 @@ Check 'D04 12 个系统工具都有目标、且缺了就说明原因' ($bad.Coun
 $dryMissing = Invoke-Exe 'run no.such.button --dry'
 Check 'D05 不存在的按钮 --dry 也是退出码 2' ($dryMissing.Code -eq 2) ('exit=' + $dryMissing.Code)
 
+# ---------------------------------------------------------------- F 组：工具目录（bin-tools）
+Write-Host ''
+Write-Host 'F 组 · 外部工具目录 bin-tools（外部工具丢进去就能用）'
+
+$toolDir = Get-Key $status.Out 'toolDir'
+Check 'F01 status 报出工具目录，名字是 bin-tools' `
+    (($toolDir.Length -gt 0) -and ($toolDir -match 'bin-tools$') -and ((Get-Key $status.Out 'toolDirName') -eq 'bin-tools')) `
+    $toolDir
+
+# 工具目录优先：把隔壁那份临时拷进 bin-tools，按钮就应该指向工具目录里的那一份
+# （只 --dry 解析，绝不执行；跑完删掉副本）
+if ($permdel -ne '(未找到)' -and $permdel.Length -gt 0 -and $toolDir.Length -gt 0) {
+    $probeCopy = Join-Path $toolDir 'PermanentDeleteSetup.exe'
+    $createdDir = -not (Test-Path -LiteralPath $toolDir)
+    try {
+        [void][System.IO.Directory]::CreateDirectory($toolDir)
+        Copy-Item -LiteralPath $permdel -Destination $probeCopy -Force
+        $d2 = Invoke-Exe 'run permdel.gui --dry'
+        $t2 = Get-Key $d2.Out 'target'
+        Check 'F02 工具目录里的 exe 优先于隔壁仓库那份' ($t2 -match 'bin-tools') $t2
+    } finally {
+        Remove-Item -LiteralPath $probeCopy -Force -ErrorAction SilentlyContinue
+        if ($createdDir) { Remove-Item -LiteralPath $toolDir -Force -ErrorAction SilentlyContinue }
+    }
+    $d3 = Invoke-Exe 'run permdel.gui --dry'
+    Check 'F03 删掉副本后又回到隔壁仓库那份（查找顺序没写死）' `
+        ((Get-Key $d3.Out 'target') -notmatch 'bin-tools') (Get-Key $d3.Out 'target')
+} else {
+    Check 'F02 工具目录里的 exe 优先于隔壁仓库那份' $false '没找到隔壁 exe 或工具目录，跳过'
+    Check 'F03 删掉副本后又回到隔壁仓库那份（查找顺序没写死）' $false 'skipped'
+}
+
+# 相对路径按"工具箱目录 / bin-tools"解析（写一个临时用户层 tools.json，跑完按原样复原）
+$userTools = Get-Key $status.Out 'userTools'
+if ($userTools.Length -gt 0 -and $toolDir.Length -gt 0) {
+    $userBackup = $null
+    $hadUser = Test-Path -LiteralPath $userTools
+    if ($hadUser) { $userBackup = [System.IO.File]::ReadAllText($userTools, [System.Text.Encoding]::UTF8) }
+    $createdDir2 = -not (Test-Path -LiteralPath $toolDir)
+    try {
+        [void][System.IO.Directory]::CreateDirectory((Split-Path -Parent $userTools))
+        [void][System.IO.Directory]::CreateDirectory($toolDir)
+        [System.IO.File]::WriteAllText($userTools,
+            '{ "tools": [ { "id": "test.rel", "tab": "mine", "name": "rel-probe", "kind": "exe", "path": "__probe__.txt" } ] }',
+            (New-Object System.Text.UTF8Encoding($false)))
+        [System.IO.File]::WriteAllText((Join-Path $toolDir '__probe__.txt'), 'probe', (New-Object System.Text.UTF8Encoding($false)))
+        $rel = Invoke-Exe 'run test.rel --dry'
+        $t3 = Get-Key $rel.Out 'target'
+        Check 'F04 相对路径按工具目录解析（不再是进程当前目录）' `
+            (($rel.Code -eq 0) -and ($t3 -match 'bin-tools') -and ((Get-Key $rel.Out 'exists') -eq 'yes')) $t3
+    } finally {
+        Remove-Item -LiteralPath (Join-Path $toolDir '__probe__.txt') -Force -ErrorAction SilentlyContinue
+        if ($createdDir2) { Remove-Item -LiteralPath $toolDir -Force -ErrorAction SilentlyContinue }
+        if ($hadUser) { [System.IO.File]::WriteAllText($userTools, $userBackup, (New-Object System.Text.UTF8Encoding($false))) }
+        else { Remove-Item -LiteralPath $userTools -Force -ErrorAction SilentlyContinue }
+    }
+} else {
+    Check 'F04 相对路径按工具目录解析（不再是进程当前目录）' $false 'status 没给出 userTools / toolDir'
+}
+
 # ---------------------------------------------------------------- E 组：用法与错误
 Write-Host ''
 Write-Host 'E 组 · 错误用法'
@@ -203,5 +283,10 @@ Write-Host ''
 Write-Host '----------------------------------------------------------'
 Write-Host (" 命令行回归: 通过 {0} 项, 失败 {1} 项" -f $script:Pass, $script:Fail)
 Write-Host '----------------------------------------------------------'
+if ($script:UserToolsHad -and (Test-Path -LiteralPath $UserToolsPaused)) {
+    if (Test-Path -LiteralPath $UserToolsJson) { Remove-Item -LiteralPath $UserToolsJson -Force }
+    Move-Item -LiteralPath $UserToolsPaused -Destination $UserToolsJson -Force
+    Write-Host '（用户自己的 tools.json 已复原）'
+}
 if ($script:Fail -gt 0) { exit 1 }
 exit 0

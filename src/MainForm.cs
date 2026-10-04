@@ -53,6 +53,7 @@ namespace Mxx1Toolbox
         private Button _btnSearch;
         private Button _btnLog;
         private Button _btnSettings;
+        private Button _btnAbout;
         private Button _btnUpdate;
 
         private ContextMenuStrip _menu;
@@ -61,6 +62,8 @@ namespace Mxx1Toolbox
         private ToolStripMenuItem _miReveal;
         private ToolStripMenuItem _miCopy;
         private ToolStripMenuItem _miDefine;
+        private ToolStripMenuItem _miEdit;
+        private ToolStripMenuItem _miDelete;
         private ToolButton _menuTarget;
 
         public MainForm()
@@ -170,6 +173,10 @@ namespace Mxx1Toolbox
             _content.Dock = DockStyle.Fill;
             _content.Margin = new Padding(0);
             _content.AutoScroll = true;
+            // Dropping an exe / script / folder anywhere on the wall creates a button for it.
+            _content.AllowDrop = true;
+            _content.DragEnter += OnDragEnter;
+            _content.DragDrop += OnDragDrop;
             _root.Controls.Add(_content, 0, 2);
 
             _logPanel = new Panel();
@@ -211,19 +218,24 @@ namespace Mxx1Toolbox
             right.AutoSize = true;
             right.Margin = new Padding(0);
             right.RowCount = 1;
-            right.ColumnCount = 4;
-            for (int i = 0; i < 4; i++) { right.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize)); }
+            right.ColumnCount = 5;
+            for (int i = 0; i < 5; i++) { right.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize)); }
             _btnSearch = MakeBarButton("搜索", "搜索按钮（Ctrl+F）");
             _btnSearch.Click += delegate { ShowSearch(!_searchRow.Visible); };
             _btnLog = MakeBarButton("日志", "展开或收起运行日志（Ctrl+L）");
             _btnLog.Click += delegate { ToggleLogPanel(); };
-            _btnSettings = MakeBarButton("设置", "主题、启动方式、永久删除安装器路径");
+            _btnSettings = MakeBarButton("设置", "主题、启动方式、工具目录、永久删除安装器路径");
             _btnSettings.Click += delegate { OpenSettings(); };
+            // 关于窗口（署名/许可证/工具目录入口）本来是「右键增强」页签里的一个按钮，
+            // 那个页签收敛成一个按钮以后它就没了入口，所以放到这一排。
+            _btnAbout = MakeBarButton("关于", "版本、作者、许可证、工具目录");
+            _btnAbout.Click += delegate { OpenAbout(); };
             _btnUpdate = MakeBarButton("检查更新", "工具自身的更新检查（P2 接入）");
             _btnUpdate.Click += delegate { ShowUpdateNotice(); };
             right.Controls.Add(_btnSearch);
             right.Controls.Add(_btnLog);
             right.Controls.Add(_btnSettings);
+            right.Controls.Add(_btnAbout);
             right.Controls.Add(_btnUpdate);
 
             _statusBar.Controls.Add(_statusLabel, 0, 0);
@@ -231,6 +243,9 @@ namespace Mxx1Toolbox
             _root.Controls.Add(_statusBar, 0, 4);
 
             Controls.Add(_root);
+            AllowDrop = true;
+            DragEnter += OnDragEnter;
+            DragDrop += OnDragDrop;
             BuildContextMenu();
         }
 
@@ -268,17 +283,24 @@ namespace Mxx1Toolbox
             _miCopy.Click += delegate { CopyCommand(); };
             _miDefine = new ToolStripMenuItem("查看按钮定义");
             _miDefine.Click += delegate { ShowDefinition(); };
+            _miEdit = new ToolStripMenuItem("编辑按钮…");
+            _miEdit.Click += delegate { EditUserButton(); };
+            _miDelete = new ToolStripMenuItem("删除按钮");
+            _miDelete.Click += delegate { DeleteUserButton(); };
 
             _menu.Items.Add(_miRun);
             _menu.Items.Add(_miRunAdmin);
+            _menu.Items.Add(new ToolStripSeparator());
+            _menu.Items.Add(_miEdit);
+            _menu.Items.Add(_miDelete);
             _menu.Items.Add(new ToolStripSeparator());
             _menu.Items.Add(_miReveal);
             _menu.Items.Add(_miCopy);
             _menu.Items.Add(_miDefine);
             _menu.Items.Add(new ToolStripSeparator());
-            ToolStripMenuItem later = new ToolStripMenuItem("编辑 / 固定到常用 / 隐藏（P1 接入）");
-            later.Enabled = false;
-            _menu.Items.Add(later);
+            ToolStripMenuItem add = new ToolStripMenuItem("新建按钮…（也可以把 exe / 脚本拖进窗口）");
+            add.Click += delegate { NewUserButton(null, null); };
+            _menu.Items.Add(add);
             _menu.Opening += OnMenuOpening;
         }
 
@@ -321,6 +343,9 @@ namespace Mxx1Toolbox
             _grid.Dock = DockStyle.Top;
             _grid.AutoSize = true;
             _grid.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            _grid.AllowDrop = true;
+            _grid.DragEnter += OnDragEnter;
+            _grid.DragDrop += OnDragDrop;
             _grid.ColumnCount = Columns + 1;
             _grid.RowCount = 0;
             _grid.Margin = new Padding(0);
@@ -457,7 +482,7 @@ namespace Mxx1Toolbox
             _statusLabel.BackColor = _theme.BarBack;
             _statusLabel.ForeColor = _theme.BarText;
 
-            foreach (Button b in new Button[] { _btnSearch, _btnLog, _btnSettings, _btnUpdate })
+            foreach (Button b in new Button[] { _btnSearch, _btnLog, _btnSettings, _btnAbout, _btnUpdate })
             {
                 StyleFlat(b);
             }
@@ -551,6 +576,191 @@ namespace Mxx1Toolbox
             _miReveal.Enabled = RevealPath(t).Length > 0;
             _miCopy.Enabled = true;
             _miDefine.Enabled = true;
+            // Editing and deleting only makes sense for the buttons this program wrote itself
+            // (the user layer); the built in ones live inside the exe.
+            _miEdit.Enabled = t.UserLayer;
+            _miDelete.Enabled = t.UserLayer;
+        }
+
+        // ---------------------------------------------------------------- user layer (我的工具)
+
+        /// <summary>Graphical 新建按钮 / 编辑按钮. Saves into the user layer and rebuilds the wall.</summary>
+        private void NewUserButton(ToolItem prefill, string droppedPath)
+        {
+            using (NewToolForm f = new NewToolForm(null, prefill, _theme))
+            {
+                if (f.ShowDialog(this) != DialogResult.OK || f.Result == null) { return; }
+                List<ToolItem> mine = UserTools.Collect(_tools);
+                f.Result.Id = UserTools.NextId(f.Result.Name, mine, _tools);
+                f.Result.Order = UserTools.NextOrder(mine, f.Result.Tab);
+                mine.Add(f.Result);
+                string error = UserTools.Save(mine);
+                if (error.Length > 0)
+                {
+                    MessageBox.Show(this, "保存失败：" + error, "新建按钮", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+                Logger.Write(f.Result.Name, "新建按钮 " + f.Result.Id + (droppedPath == null ? "" : "（拖进来的 " + droppedPath + "）"));
+                ReloadAfterUserEdit(f.Result.Tab);
+                SetStatus("已添加按钮「" + f.Result.Name + "」");
+            }
+        }
+
+        private void EditUserButton()
+        {
+            if (_menuTarget == null) { return; }
+            ToolItem target = _menuTarget.Tool;
+            if (!target.UserLayer) { return; }
+            using (NewToolForm f = new NewToolForm(target, null, _theme))
+            {
+                if (f.ShowDialog(this) != DialogResult.OK || f.Result == null) { return; }
+                List<ToolItem> mine = UserTools.Collect(_tools);
+                bool replaced = false;
+                for (int i = 0; i < mine.Count; i++)
+                {
+                    if (!string.Equals(mine[i].Id, target.Id, StringComparison.OrdinalIgnoreCase)) { continue; }
+                    f.Result.Id = target.Id;          // id / position stay put, only the rest changes
+                    f.Result.Segment = target.Segment;
+                    f.Result.Order = target.Order;
+                    mine[i] = f.Result;
+                    replaced = true;
+                    break;
+                }
+                if (!replaced) { mine.Add(f.Result); }
+                string error = UserTools.Save(mine);
+                if (error.Length > 0)
+                {
+                    MessageBox.Show(this, "保存失败：" + error, "编辑按钮", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+                Logger.Write(f.Result.Name, "编辑按钮 " + f.Result.Id);
+                ReloadAfterUserEdit(f.Result.Tab);
+                SetStatus("已保存按钮「" + f.Result.Name + "」");
+            }
+        }
+
+        private void DeleteUserButton()
+        {
+            if (_menuTarget == null) { return; }
+            ToolItem target = _menuTarget.Tool;
+            if (!target.UserLayer) { return; }
+            DialogResult answer = MessageBox.Show(this,
+                "删除按钮「" + target.Name + "」？" + Environment.NewLine + Environment.NewLine
+                + "只删掉 " + AppPaths.UserToolsJson + " 里的这一条，内置按钮不受影响。",
+                "删除按钮", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
+            if (answer != DialogResult.Yes)
+            {
+                SetStatus("已取消删除");
+                return;
+            }
+            List<ToolItem> mine = UserTools.Collect(_tools);
+            for (int i = mine.Count - 1; i >= 0; i--)
+            {
+                if (string.Equals(mine[i].Id, target.Id, StringComparison.OrdinalIgnoreCase)) { mine.RemoveAt(i); }
+            }
+            string error = UserTools.Save(mine);
+            if (error.Length > 0)
+            {
+                MessageBox.Show(this, "删除失败：" + error, "删除按钮", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            Logger.Write(target.Name, "删除按钮 " + target.Id);
+            ReloadAfterUserEdit(_currentTab);
+            SetStatus("已删除按钮「" + target.Name + "」");
+        }
+
+        /// <summary>Reloads the manifests (the user layer changed), re-measures the columns and
+        /// rebuilds the wall. A longer button name widens the window -- never narrows it.</summary>
+        private void ReloadAfterUserEdit(string tab)
+        {
+            ReloadTools();
+            int cell = ComputeCellWidth();
+            if (cell > _cellWidth)
+            {
+                _cellWidth = cell;
+                int want = Columns * _cellWidth + 24;
+                if (want < 500) { want = 500; }
+                if (ClientSize.Width < want) { ClientSize = new Size(want, ClientSize.Height); }
+            }
+            if (!string.IsNullOrEmpty(tab)) { _currentTab = tab; UpdateTabColors(); }
+            BuildGrid();
+            UpdateStatusBar();
+        }
+
+        /// <summary>Builds a draft button from a dropped file or folder.</summary>
+        private static ToolItem PrefillFromFile(string path)
+        {
+            if (string.IsNullOrEmpty(path)) { return null; }
+            ToolItem t = new ToolItem();
+            t.UserLayer = true;
+            t.Source = "tools.json（用户）";
+            t.Tab = Tabs.Mine;
+            try
+            {
+                if (Directory.Exists(path))
+                {
+                    t.Kind = "open";
+                    t.Target = path;
+                    t.Name = new DirectoryInfo(path).Name;
+                }
+                else
+                {
+                    string ext = Path.GetExtension(path).ToLowerInvariant();
+                    t.Name = Path.GetFileNameWithoutExtension(path);
+                    if (ext == ".bat" || ext == ".cmd") { t.Kind = "script"; t.Path = path; t.Shell = "cmd"; }
+                    else if (ext == ".ps1" || ext == ".vbs") { t.Kind = "script"; t.Path = path; t.Shell = "powershell"; }
+                    else { t.Kind = "exe"; t.Path = path; }
+                }
+            }
+            catch { return null; }
+            if (t.Name.Length > 24) { t.Name = t.Name.Substring(0, 24); }
+            return t;
+        }
+
+        private void OnDragEnter(object sender, DragEventArgs e)
+        {
+            bool files = (e.Data != null) && e.Data.GetDataPresent(DataFormats.FileDrop);
+            e.Effect = files ? DragDropEffects.Copy : DragDropEffects.None;
+        }
+
+        /// <summary>One dropped file opens the 新建按钮 window prefilled (so it can be renamed);
+        /// several at once are created straight away with their file names.</summary>
+        private void OnDragDrop(object sender, DragEventArgs e)
+        {
+            string[] files = null;
+            try { files = e.Data.GetData(DataFormats.FileDrop) as string[]; }
+            catch { }
+            if (files == null || files.Length == 0) { return; }
+
+            if (files.Length == 1)
+            {
+                ToolItem draft = PrefillFromFile(files[0]);
+                if (draft == null) { SetStatus("拖进来的东西不支持"); return; }
+                NewUserButton(draft, files[0]);
+                return;
+            }
+
+            List<ToolItem> mine = UserTools.Collect(_tools);
+            List<string> added = new List<string>();
+            foreach (string file in files)
+            {
+                ToolItem t = PrefillFromFile(file);
+                if (t == null) { continue; }
+                t.Id = UserTools.NextId(t.Name, mine, _tools);
+                t.Order = UserTools.NextOrder(mine, t.Tab);
+                mine.Add(t);
+                added.Add(t.Name);
+            }
+            if (added.Count == 0) { SetStatus("拖进来的东西不支持"); return; }
+            string error = UserTools.Save(mine);
+            if (error.Length > 0)
+            {
+                MessageBox.Show(this, "保存失败：" + error, "拖进来的文件", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            Logger.Write("拖进来", "一次加了 " + added.Count + " 个按钮：" + string.Join("、", added.ToArray()));
+            ReloadAfterUserEdit(Tabs.Mine);
+            SetStatus("已添加 " + added.Count + " 个按钮：" + string.Join("、", added.ToArray()));
         }
 
         private void RunTool(ToolButton b, bool forceAdmin)
@@ -577,19 +787,14 @@ namespace Mxx1Toolbox
 
             if (t.Placeholder)
             {
+                // Grey buttons are disabled, so a mouse click never reaches this branch; it stays
+                // as the safety net for the CLI path / a stale grid: it must still say the truth.
                 string hint = t.Hint.Length > 0 ? t.Hint : "P1";
                 SetStatus(t.Name + " · 功能待接入（" + hint + "）");
-                Logger.Write(t.Name, "功能待接入（" + hint + "）· 这是灰色按钮，说明还没接功能");
-                // Flash instead of SetBusy: nothing is running, so no spinner. The button is grey
-                // by default anyway (ToolButton.ApplyTheme), this only shows "the click landed".
-                b.Flash(600);
+                Logger.Write(t.Name, "功能待接入（" + hint + "）· 这是灰色按钮，不能点");
                 return;
             }
 
-            // Interface actions (about / log / settings / new button / ...) are answered by this
-            // form directly, so they are checked before the placeholder branch: 「+ 新建按钮」is
-            // grey (its graphical editor is still missing) but clicking it must still explain how
-            // to add a button by hand.
             if (t.Kind == "builtin" && t.Module == Launcher.ModuleApp)
             {
                 HandleUiAction(t);
@@ -661,8 +866,7 @@ namespace Mxx1Toolbox
             {
                 case "about":
                     {
-                        AboutForm f = new AboutForm(_theme);
-                        f.ShowDialog(this);
+                        OpenAbout();
                         Logger.Write(t.Name, "打开关于窗口");
                         break;
                     }
@@ -676,14 +880,7 @@ namespace Mxx1Toolbox
                     ShowUpdateNotice();
                     break;
                 case "newtool":
-                    SetStatus("新建按钮 · P1 接入");
-                    Logger.Write(t.Name, "新建按钮还没接入（P1）");
-                    MessageBox.Show(this,
-                        "现在加按钮有两个办法：" + Environment.NewLine + Environment.NewLine
-                        + "1）把 exe / 脚本 / 网址快捷方式拖进窗口（P1 接入）" + Environment.NewLine
-                        + "2）直接编辑 " + AppPaths.UserToolsJson + Environment.NewLine + Environment.NewLine
-                        + "P1 会补上图形化的「新建按钮」窗口。",
-                        t.Name, MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    NewUserButton(null, null);
                     break;
                 default:
                     SetStatus("未实现的界面动作：" + t.Action);
@@ -703,9 +900,17 @@ namespace Mxx1Toolbox
                 "检查更新", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
-        private void OpenSettings()
+        /// <summary>About window: version, author, licence and the way into the tool folder.</summary>
+        private void OpenAbout()
         {
-            using (SettingsForm f = new SettingsForm(_settings, _theme))
+            using (AboutForm f = new AboutForm(_theme))
+            {
+                f.ShowDialog(this);
+            }
+        }
+
+        private void OpenSettings()
+        {            using (SettingsForm f = new SettingsForm(_settings, _theme))
             {
                 DialogResult r = f.ShowDialog(this);
                 if (r == DialogResult.OK)
@@ -745,7 +950,7 @@ namespace Mxx1Toolbox
         {
             if (t.Kind == "exe" || t.Kind == "script")
             {
-                string p = AppPaths.Expand(t.Path);
+                string p = AppPaths.Resolve(t.Path);
                 return File.Exists(p) ? p : "";
             }
             if (t.Kind == "builtin" && t.Module == Launcher.ModulePermdel)
@@ -754,7 +959,7 @@ namespace Mxx1Toolbox
             }
             if (t.Kind == "open")
             {
-                string p = AppPaths.Expand(t.Target);
+                string p = AppPaths.Resolve(t.Target);
                 return (File.Exists(p) || Directory.Exists(p)) ? p : "";
             }
             return "";
@@ -789,9 +994,9 @@ namespace Mxx1Toolbox
             sb.AppendLine("来源        : " + t.Source);
             sb.AppendLine("页签 / 段   : " + Tabs.Display(t.Tab) + " / 第 " + t.Segment + " 段");
             sb.AppendLine("类型        : " + t.Kind + (t.Kind == "builtin" ? "（" + t.Module + "/" + t.Action + "）" : ""));
-            if (t.Kind == "exe" || t.Kind == "script") { sb.AppendLine("路径        : " + AppPaths.Expand(t.Path)); }
+            if (t.Kind == "exe" || t.Kind == "script") { sb.AppendLine("路径        : " + AppPaths.Resolve(t.Path)); }
             if (t.Kind == "exe") { sb.AppendLine("参数        : " + t.Args); }
-            if (t.Kind == "open") { sb.AppendLine("目标        : " + AppPaths.Expand(t.Target)); }
+            if (t.Kind == "open") { sb.AppendLine("目标        : " + AppPaths.Resolve(t.Target)); }
             sb.AppendLine("启动命令    : " + Launcher.DescribeCommand(t, _settings, false));
             sb.AppendLine("需要管理员  : " + (t.RunAsAdmin ? "是" : "否"));
             sb.AppendLine("危险按钮    : " + (t.Danger ? "是" : "否"));
@@ -823,16 +1028,24 @@ namespace Mxx1Toolbox
         {
             int total = 0;
             int here = 0;
+            int greyHere = 0;
             foreach (ToolItem t in _tools)
             {
                 if (t.Hidden) { continue; }
                 total++;
-                if (string.Equals(t.Tab, _currentTab, StringComparison.OrdinalIgnoreCase)) { here++; }
+                if (string.Equals(t.Tab, _currentTab, StringComparison.OrdinalIgnoreCase))
+                {
+                    here++;
+                    if (t.Placeholder) { greyHere++; }
+                }
             }
             // Kept short on purpose: the label is a fixed width and a long line (the old format
             // plus a full "完成：xxx 退出码 0" message) overflowed it, so the tail was cut off.
             // The complete line is available as a tooltip and in the run log.
             string text = total + " 个按钮 · 本页 " + here;
+            // A disabled control shows no tooltip, so the explanation for the grey buttons lives
+            // here, and only while such a button is actually on this page.
+            if (greyHere > 0) { text += " · 灰色 " + greyHere + " 个没接功能"; }
             if (_warnings.Count > 0) { text += " · 定义有 " + _warnings.Count + " 处问题"; }
             if (_running > 0) { text += " · 运行中 " + _running; }
             text += " · " + _statusText;
@@ -888,6 +1101,7 @@ namespace Mxx1Toolbox
 
         protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
         {
+            if (keyData == (Keys.Control | Keys.N)) { NewUserButton(null, null); return true; }
             if (keyData == (Keys.Control | Keys.F)) { ShowSearch(true); return true; }
             if (keyData == (Keys.Control | Keys.L)) { ToggleLogPanel(); return true; }
             if (keyData == (Keys.Control | Keys.Oemcomma)) { OpenSettings(); return true; }

@@ -191,6 +191,16 @@ namespace Mxx1Toolbox
         private static int DryRun(ToolItem t, Settings settings)
         {
             Console.WriteLine("dry=yes");
+            if (t.Placeholder)
+            {
+                // A grey button is disabled in the interface, so "where does it point" has exactly
+                // one answer: nowhere. Say that instead of inventing a target.
+                Console.WriteLine("kind=none");
+                Console.WriteLine("target=");
+                Console.WriteLine("exists=no");
+                Console.WriteLine("placeholder=" + (t.Hint.Length > 0 ? t.Hint : "P1"));
+                return 0;
+            }
             string kind = "unknown";
             string target = "";
             bool exists = true;
@@ -220,7 +230,7 @@ namespace Mxx1Toolbox
                 string exe = Launcher.FindPermanentDeleteExe(settings);
                 target = exe.Length > 0 ? exe : "(未找到 PermanentDeleteSetup.exe)";
                 exists = exe.Length > 0;
-                hint = "请在「设置」里指定 PermanentDeleteSetup.exe 的路径";
+                hint = "把 PermanentDeleteSetup.exe 放进工具目录 " + AppPaths.PayloadDir + "，或在「设置」里指定路径";
             }
             else if (t.Kind == "builtin" && t.Module == Launcher.ModuleApp)
             {
@@ -233,15 +243,17 @@ namespace Mxx1Toolbox
                 if (t.Kind == "script" && t.Inline.Length > 0) { target = "（内联脚本）"; }
                 else
                 {
-                    target = AppPaths.Expand(t.Path);
+                    // Resolve, not Expand: a relative path means "in the toolbox folder / bin-tools",
+                    // which is what makes "drop the exe in bin-tools and name it in the manifest" work.
+                    target = AppPaths.Resolve(t.Path);
                     exists = File.Exists(target);
-                    hint = "这个文件不在这台电脑上";
+                    hint = "这个文件不在这台电脑上；相对路径按工具箱目录和 " + AppPaths.PayloadDirName + " 解析";
                 }
             }
             else if (t.Kind == "open")
             {
                 kind = "open";
-                target = AppPaths.Expand(t.Target);
+                target = AppPaths.Resolve(t.Target);
                 // A URL or a ms-settings:/shell: target cannot be "missing", only a local path can.
                 if (target.IndexOf(':') < 0) { exists = File.Exists(target) || Directory.Exists(target); }
                 hint = "找不到这个路径";
@@ -293,6 +305,9 @@ namespace Mxx1Toolbox
             Console.WriteLine("userTools=" + AppPaths.UserToolsJson);
             Console.WriteLine("permdelExe=" + (permdel.Length > 0 ? permdel : "(未找到)"));
             Console.WriteLine("permdelLog=" + AppPaths.PermdelEngineLog);
+            Console.WriteLine("toolDir=" + AppPaths.PayloadDir);
+            Console.WriteLine("toolDirName=" + AppPaths.PayloadDirName);
+            Console.WriteLine("userToolDir=" + AppPaths.UserPayloadDir);
             foreach (string id in Tabs.Ids)
             {
                 int n = 0;

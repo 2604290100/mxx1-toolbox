@@ -39,12 +39,15 @@ namespace Mxx1Toolbox
         public bool Hidden = false;
         public string Hint = "";
         public string Source = "";        // manifest the button came from (troubleshooting)
+        public bool UserLayer = false;    // came from %LOCALAPPDATA%\mxx1-toolbox\tools.json
 
         public string IconPath
         {
             get
             {
-                if (!string.IsNullOrEmpty(Icon)) { return AppPaths.Expand(Icon); }
+                // Resolve (not Expand): a relative icon path is looked for next to the exe and in
+                // bin-tools\, so a manifest can ship "bin-tools\Xxx.png" style paths.
+                if (!string.IsNullOrEmpty(Icon)) { return AppPaths.Resolve(Icon); }
                 return System.IO.Path.Combine(AppPaths.IconsDir, Id + ".png");
             }
         }

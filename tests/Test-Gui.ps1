@@ -137,7 +137,17 @@ public class TBGui
     public static bool Visible(IntPtr h) { return IsWindowVisible(h); }
     public static bool Enabled(IntPtr h) { return IsWindowEnabled(h); }
     public static bool Alive(IntPtr h) { return IsWindow(h); }
-    public static bool Click(IntPtr h) { return PostMessageW(h, 0x00F5, IntPtr.Zero, IntPtr.Zero); }        // BM_CLICK
+    public static bool Click(IntPtr h) { return PostMessageW(h, 0x00F5, IntPtr.Zero, IntPtr.Zero); }
+
+    // WM_SETTEXT (0x000C) across processes: used to type into the 新建按钮 window's fields.
+    // ExactSpelling matters here: without it the runtime looks the entry point up as
+    // "SendMessageTextWW" first (CharSet.Unicode appends a W to the *entry point*, not just the
+    // method name) and a missing export throws EntryPointNotFoundException at the first call --
+    // which is exactly how the 新建按钮 regression hung: the fields stayed empty, the modal
+    // dialog never closed, and the disabled main window blocked every later check.
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, EntryPoint = "SendMessageW", ExactSpelling = true)]
+    private static extern IntPtr SendMessageTextW(IntPtr hWnd, uint msg, IntPtr wParam, string lParam);
+    public static IntPtr SetText(IntPtr h, string text) { return SendMessageTextW(h, 0x000C, IntPtr.Zero, text); }
     public static bool CloseWindow(IntPtr h) { return PostMessageW(h, 0x0010, IntPtr.Zero, IntPtr.Zero); }  // WM_CLOSE
     public static IntPtr Parent(IntPtr h) { return GetParent(h); }
 
@@ -346,6 +356,7 @@ function Invoke-Exe {
     $p.StartInfo = $si
     [void]$p.Start()
     $tOut = $p.StandardOutput.ReadToEndAsync()
+    $tErr = $p.StandardError.ReadToEndAsync()      # stderr 也要排空，否则写满管道子进程会卡住
     if (-not $p.WaitForExit($TimeoutSec * 1000)) { try { $p.Kill() } catch { } ; return '' }
     try { return $tOut.Result } catch { return '' }
 }
@@ -388,10 +399,36 @@ function Wait-Buttons {
     return $false
 }
 
+# 关掉主窗口以外所有可见的顶层窗口（模态对话框 / 消息框），最多试 4 轮。
+# 返回 $true = 主窗口没有被模态窗口压着（可以继续点界面）。模态窗口不关掉的话，
+# 主窗口一直是禁用状态，后面每一组"点主窗口"的检查都会连带失败（2026-10-04 卡过一次）。
+function Close-StrayDialogs {
+    param([int]$ProcessId, [IntPtr]$Main)
+    for ($round = 0; $round -lt 4; $round++) {
+        $strays = @((Get-TopWindows -ProcessId $ProcessId) | Where-Object { $_.H -ne $Main -and $_.Visible })
+        if ($strays.Count -eq 0) { break }
+        foreach ($w in $strays) { try { [void][TBGui]::CloseWindow($w.H) } catch { } }
+        Start-Sleep -Milliseconds 400
+    }
+    if (@((Get-TopWindows -ProcessId $ProcessId) | Where-Object { $_.H -ne $Main -and $_.Visible }).Count -gt 0) { return $false }
+    return [TBGui]::Enabled($Main)
+}
+
 # ================================================================ 准备
 $settingsBefore = $null
 $settingsExisted = Test-Path -LiteralPath $SettingsIni
 if ($settingsExisted) { $settingsBefore = [System.IO.File]::ReadAllText($SettingsIni, [System.Text.Encoding]::UTF8) }
+
+# 设置也要能在"上一次跑测试被中断"之后自救：原样留一份备份在磁盘上，
+# 下次开工时如果发现备份，就以备份为准（收尾时按它写回去，并删掉备份）。
+$settingsBackup = $SettingsIni + '.before-test'
+if (Test-Path -LiteralPath $settingsBackup) {
+    $settingsBefore = [System.IO.File]::ReadAllText($settingsBackup, [System.Text.Encoding]::UTF8)
+    $settingsExisted = $true
+    Write-Host '（发现上一次测试留下的设置备份，收尾时按它复原）'
+} elseif ($settingsExisted) {
+    try { [System.IO.File]::WriteAllText($settingsBackup, $settingsBefore, (New-Object System.Text.UTF8Encoding($false))) } catch { }
+}
 
 # 先把设置写成一个已知状态再开界面：用户自己可能把日志面板开着（ShowLogPanel=1），
 # 那样 B08「默认不显示日志面板」会莫名其妙地红 —— 测试不能依赖用户的个人设置。
@@ -402,6 +439,21 @@ try {
         "Theme=light`r`nClickMode=single`r`nConfirmDangerous=1`r`nHideConsole=1`r`nShowLogPanel=0`r`nLogKeepDays=30`r`nPermanentDeleteExe=`r`n",
         (New-Object System.Text.UTF8Encoding($false)))
 } catch { }
+
+# 用户自己加的按钮会让"这一页有几个按钮"变得不确定：先请到一边，跑完在"现场复原"里放回去。
+$UserToolsJson = Join-Path $env:LOCALAPPDATA 'mxx1-toolbox\tools.json'
+$UserToolsPaused = $UserToolsJson + '.paused-by-gui-test'
+# 自愈：上一次跑测试如果被中断（Ctrl+C / 卡在模态窗口上 / 被沙箱杀掉），用户自己的按钮清单
+# 和小工具设置都会留在"暂停"状态回不来 —— 用户会以为"我建的按钮没了"（2026-10-04 真卡过一次）。
+if ((Test-Path -LiteralPath $UserToolsPaused) -and (-not (Test-Path -LiteralPath $UserToolsJson))) {
+    Move-Item -LiteralPath $UserToolsPaused -Destination $UserToolsJson -Force
+    Write-Host '（上一次测试留下的暂停文件已自动放回 tools.json）'
+}
+$UserToolsHad = Test-Path -LiteralPath $UserToolsJson
+if ($UserToolsHad) {
+    if (Test-Path -LiteralPath $UserToolsPaused) { Remove-Item -LiteralPath $UserToolsPaused -Force }
+    Move-Item -LiteralPath $UserToolsJson -Destination $UserToolsPaused -Force
+}
 
 $commonNames = Get-ToolNames 'common'
 $rightNames = Get-ToolNames 'rightmenu'
@@ -445,12 +497,17 @@ $buttons = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like
 $toolButtons = @($buttons | Where-Object { $commonNames -contains $_.Text })
 $cols = @($toolButtons | ForEach-Object { $_.Left } | Sort-Object -Unique)
 $rows = @($toolButtons | ForEach-Object { $_.Top } | Sort-Object -Unique)
-Check 'B02 排成 4 列' ($cols.Count -eq 4) ('列数=' + $cols.Count)
-Check 'B03 排成多行（常用设置 32 个按钮 = 8 行）' ($rows.Count -eq 8) ('行数=' + $rows.Count)
+$expectRows = [Math]::Ceiling($toolButtons.Count / 4.0)
+Check ('B02 排成 4 列') ($cols.Count -eq 4) ('列数=' + $cols.Count)
+Check ('B03 排成多行（{0} 个按钮 = {1} 行）' -f $toolButtons.Count, $expectRows) ($rows.Count -eq $expectRows) ('行数=' + $rows.Count)
 
-$rowCounts = @($toolButtons | Group-Object Top | ForEach-Object { $_.Count })
+# 除最后一行外每行必须满 4 个；最后一行 1..4 个（按钮总数不一定是 4 的倍数）
+$rowCounts = @($toolButtons | Group-Object Top | Sort-Object Name | ForEach-Object { $_.Count })
 $fullRows = @($rowCounts | Where-Object { $_ -eq 4 })
-Check 'B04 每行都是 4 个按钮' ($fullRows.Count -eq $rows.Count) ($rowCounts -join ',')
+$lastCount = 0
+if ($rowCounts.Count -gt 0) { $lastCount = $rowCounts[$rowCounts.Count - 1] }
+Check 'B04 除最后一行外每行都是 4 个按钮（最后一行 1..4 个）' `
+    (($fullRows.Count -eq ($rows.Count - 1)) -and ($lastCount -ge 1) -and ($lastCount -le 4)) ($rowCounts -join ',')
 
 $sizes = @($toolButtons | ForEach-Object { '{0}x{1}' -f $_.Width, $_.Height } | Sort-Object -Unique)
 Check 'B05 所有按钮尺寸完全一致' ($sizes.Count -eq 1) ($sizes -join ' ')
@@ -490,13 +547,14 @@ $visibleEdits = @($all | Where-Object { $_.Class -like '*EDIT*' -and $_.Height -
 Check 'B08 默认不显示日志面板（没有大文本框）' ($visibleEdits.Count -eq 0) ('可见文本框=' + $visibleEdits.Count)
 
 # 用户报过"按钮的图标没有上下居中"，还有"没做功能的按钮应该是灰的"，这两件事都只能从渲染结果判定。
-# 常用设置页签上的按钮**全是灰色占位按钮**，所以这里量两件事：
+# 常用设置页签上灰按钮和真按钮混在一起，这里量的是这一页第一个按钮（左上角那个，是灰的）：
 #   * 文字墨迹行数（完整的按钮应该有 >= 10 行，被裁就少）—— 同时给 D 组当底栏的参考值
-#   * 最暗墨迹有多暗（灰按钮的最暗像素也是灰的，真按钮是近黑）—— 见下面的 B09
-# 图标居中那条要彩色图标才量得准，挪到 C 组的「右键增强」页签（那个按钮是真功能，图标是彩色的）。
+#   * 最暗墨迹有多暗（灰按钮明显比真按钮淡）—— 见下面的 B09 和 C01d
+# 图标居中那条要彩色图标才量得准，放在 C 组的「右键增强」页签（那个按钮是真功能，图标是彩色的）。
 $shot = Get-WindowShot -Handle $main
 $gridProbe = @($toolButtons | Sort-Object Top, Left | Select-Object -First 1)
 $refInkH = 0
+$greyDark = 0
 if ($shot -eq $null -or $gridProbe.Count -eq 0) {
     Check 'B09 占位按钮默认是灰的（最暗墨迹 >= 110）' $false '窗口截图失败'
     Check 'B09b 按钮文字完整（墨迹行数 >= 10）' $false '窗口截图失败'
@@ -510,8 +568,11 @@ if ($shot -eq $null -or $gridProbe.Count -eq 0) {
     Check 'B09b 按钮文字完整（墨迹行数 >= 10）' ($refInkH -ge 10) ('墨迹行=' + $ink.LabelTop + '..' + $ink.LabelBottom + ' 行数=' + $refInkH)
 
     $dark = Get-DarkestInk -Shot $shot -X $probeRect.X -Y $probeRect.Y -W $probeRect.W -H $probeRect.H
-    Check 'B09 占位按钮默认是灰的（最暗墨迹 >= 110，图标和文字都灰）' ($dark -ge 110) `
-        ('最暗=' + $dark + ' 按钮=' + $gridProbe[0].Text)
+    $greyDark = $dark
+    # 灰按钮现在是 Enabled=false 的：WinForms 画禁用控件的文字时会在下面描 1px 更深的"影子"
+    # （DrawStringDisabled），所以最暗像素实测是 77，而不是我们设的纯灰 #8A8A8A（138）。
+    # 阈值取 60；真正有说服力的对比在 C01d —— 灰按钮必须比真按钮明显淡一截。
+    Check 'B09 占位按钮是灰的（最暗墨迹 >= 60）' ($dark -ge 60) ('最暗=' + $dark + ' 按钮=' + $gridProbe[0].Text)
 }
 
 # ---------------------------------------------------------------- C 组：翻页签
@@ -542,8 +603,20 @@ if ($rightProbe.Count -eq 0 -or $rightShot -eq $null) {
     $rightDark = Get-DarkestInk -Shot $rightShot -X $rr.X -Y $rr.Y -W $rr.W -H $rr.H
     Check 'C01b 真功能按钮不是灰的（最暗墨迹 <= 80）' ($rightDark -ge 0 -and $rightDark -le 80) `
         ('最暗=' + $rightDark + ' 按钮=' + $rightProbe[0].Text)
+    # 这条才是"灰色规则"真正想表达的东西：灰按钮必须明显比真按钮淡
+    Check 'C01d 灰按钮比真按钮明显淡（至少差 30）' (($greyDark - $rightDark) -ge 30) `
+        ('灰=' + $greyDark + ' 真=' + $rightDark + ' 差=' + ($greyDark - $rightDark))
 
+    # 抓像素偶尔会抓到切页签前的那一帧（图标行会整块偏上），所以量到明显不合理的范围就重抓一次。
     $rightInk = Get-InkRows -Shot $rightShot -Icon -X $rr.X -Y $rr.Y -W $rr.W -H $rr.H
+    for ($try = 0; $try -lt 3 -and ($rightInk.IconTop -lt 2 -or $rightInk.IconTop -gt $rr.H - 18); $try++) {
+        Start-Sleep -Milliseconds 500
+        $again = Get-WindowShot -Handle $main
+        if ($again -eq $null) { break }
+        $rr2 = @{ X = $rightProbe[0].Left - $again.Left; Y = $rightProbe[0].Top - $again.Top
+                  W = $rightProbe[0].Width; H = $rightProbe[0].Height }
+        $rightInk = Get-InkRows -Shot $again -Icon -X $rr2.X -Y $rr2.Y -W $rr2.W -H $rr2.H
+    }
     if ($rightInk.IconTop -lt 0) {
         Check 'C01c 真功能按钮的图标上下居中（误差 <= 1px）' $false '没在按钮里找到彩色图标'
     } else {
@@ -563,12 +636,104 @@ Check ('C05 回「常用设置」→ {0} 个按钮' -f $commonNames.Count) (Swit
 $gridAfter = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*BUTTON*' -and $commonNames -contains $_.Text })
 Check 'C06 换回常用设置后按钮数没变' ($gridAfter.Count -eq $commonNames.Count) ('按钮=' + $gridAfter.Count)
 
+# 「我的工具」：+ 新建按钮 现在是真的（彩色、可点），点开应该是图形化的新建窗口
+Check ('C07 切到「我的工具」→ {0} 个按钮' -f $mineNames.Count) (Switch-Tab -Handle $main -TabName '我的工具' -ExpectNames $mineNames) ''
+$newBtn = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '+ 新建按钮' })
+Check 'C08 「+ 新建按钮」是真按钮（可点，不是灰的）' ($newBtn.Count -eq 1 -and $newBtn[0].Enabled) ''
+if ($newBtn.Count -gt 0) {
+    [void][TBGui]::Click($newBtn[0].H)
+    $newWin = @()
+    for ($i = 0; $i -lt 25; $i++) {
+        Start-Sleep -Milliseconds 200
+        $newWin = @((Get-TopWindows -ProcessId $proc.Id) | Where-Object { $_.H -ne $main -and $_.Visible -and $_.Text -match '新建按钮' })
+        if ($newWin.Count -gt 0) { break }
+    }
+    Check 'C09 点开了图形化「新建按钮」窗口' ($newWin.Count -gt 0) (@((Get-TopWindows -ProcessId $proc.Id) | Where-Object { $_.H -ne $main -and $_.Visible } | ForEach-Object { $_.Text }) -join ' / ')
+    if ($newWin.Count -gt 0) {
+        $fields = @(Get-ChildControls -RootHandle $newWin[0].H | Where-Object { $_.Class -like '*EDIT*' -or $_.Class -like '*COMBOBOX*' })
+        $hasName = @($fields | Where-Object { $_.Visible }).Count
+        Check 'C10 新建窗口里有名称 / 类型 / 路径等输入框' ($hasName -ge 4) ('输入控件=' + $hasName)
+        [void][TBGui]::CloseWindow($newWin[0].H)      # 先取消一次，验证取消不写文件
+        Start-Sleep -Milliseconds 600
+        Check 'C11 取消后新建窗口关掉了（没有写进 tools.json）' (@((Get-TopWindows -ProcessId $proc.Id) | Where-Object { $_.H -ne $main -and $_.Visible -and $_.Text -match '新建按钮' }).Count -eq 0) ''
+
+        # 真的建一个按钮，再读回来 —— 这条专门盯"图形化写出来的 tools.json 能不能被读回"：
+        # 曾经写出来是 `{ , "id": ...`（多一个逗号），本程序自己的解析器直接拒收，
+        # 用户建的按钮就在界面上消失了（2026-10-04 由用户实测发现）。
+        [void][TBGui]::Click($newBtn[0].H)
+        $newWin2 = @()
+        for ($i = 0; $i -lt 25; $i++) {
+            Start-Sleep -Milliseconds 200
+            $newWin2 = @((Get-TopWindows -ProcessId $proc.Id) | Where-Object { $_.H -ne $main -and $_.Visible -and $_.Text -match '新建按钮' })
+            if ($newWin2.Count -gt 0) { break }
+        }
+        if ($newWin2.Count -gt 0) {
+            $edits = @(Get-ChildControls -RootHandle $newWin2[0].H | Where-Object { $_.Class -like '*EDIT*' -and $_.Visible } | Sort-Object Top)
+            $typed = ''
+            if ($edits.Count -ge 2) {
+                [void][TBGui]::SetText($edits[0].H, '图形化测试按钮')          # 第一行 = 名称
+                [void][TBGui]::SetText($edits[1].H, '%SystemRoot%\system32\notepad.exe')  # 第二行 = 程序路径
+                Start-Sleep -Milliseconds 200
+                # 回读一次：写不进去就当场判死，别去点"创建按钮"（点不动会留下模态窗口，
+                # 主窗口一直是禁用的，后面每一组检查都会连带失败 —— 2026-10-04 卡过一次）。
+                $typed = [TBGui]::Text($edits[0].H)
+            }
+            if ($edits.Count -ge 2 -and $typed -eq '图形化测试按钮') {
+                $okBtn = @(Get-ChildControls -RootHandle $newWin2[0].H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -match '创建按钮' })
+                if ($okBtn.Count -gt 0) { [void][TBGui]::Click($okBtn[0].H) }
+                Start-Sleep -Milliseconds 1200
+                $listed = Invoke-Exe 'list --tab mine'
+                Check 'C13 图形化建出来的按钮能被读回来（tools.json 格式自洽）' ($listed -match '图形化测试按钮') `
+                    (($listed -split "`r?`n" | Where-Object { $_ -match "`t" }) -join ' / ')
+                $inGrid = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '图形化测试按钮' })
+                Check 'C14 新按钮立刻出现在「我的工具」上' ($inGrid.Count -eq 1) ('找到=' + $inGrid.Count)
+                # 收尾：把测试建的那一条删掉（恢复原来的用户层文件，没有就删文件）
+                if ($UserToolsHad) {
+                    Copy-Item -LiteralPath $UserToolsPaused -Destination $UserToolsJson -Force
+                } else {
+                    Remove-Item -LiteralPath $UserToolsJson -Force -ErrorAction SilentlyContinue
+                }
+                $after = Invoke-Exe 'list --tab mine'
+                Check 'C15 收尾后测试按钮已经不在了' (-not ($after -match '图形化测试按钮')) ''
+            } else {
+                if ($edits.Count -ge 2) {
+                    Check 'C13 图形化建出来的按钮能被读回来（tools.json 格式自洽）' $false ('输入框没写进去（读回来是"' + $typed + '"）')
+                } else {
+                    Check 'C13 图形化建出来的按钮能被读回来（tools.json 格式自洽）' $false '没找到名称 / 路径输入框'
+                }
+                Check 'C14 新按钮立刻出现在「我的工具」上' $false 'skipped'
+                Check 'C15 收尾后测试按钮已经不在了' $false 'skipped'
+            }
+            # 不管上面走哪条分支，这里都必须把模态窗口关掉（CancelButton = 取消，不写文件）
+            [void](Close-StrayDialogs -ProcessId $proc.Id -Main $main)
+        } else {
+            Check 'C13 图形化建出来的按钮能被读回来（tools.json 格式自洽）' $false '第二次没打开新建窗口'
+            Check 'C14 新按钮立刻出现在「我的工具」上' $false 'skipped'
+            Check 'C15 收尾后测试按钮已经不在了' $false 'skipped'
+        }
+    } else {
+        Check 'C10 新建窗口里有名称 / 类型 / 路径等输入框' $false 'skipped'
+        Check 'C11 取消后新建窗口关掉了（没有写进 tools.json）' $false 'skipped'
+        Check 'C13 图形化建出来的按钮能被读回来（tools.json 格式自洽）' $false 'skipped'
+        Check 'C14 新按钮立刻出现在「我的工具」上' $false 'skipped'
+        Check 'C15 收尾后测试按钮已经不在了' $false 'skipped'
+    }
+}
+Check ('C12 回「常用设置」→ {0} 个按钮' -f $commonNames.Count) (Switch-Tab -Handle $main -TabName '常用设置' -ExpectNames $commonNames) ''
+
+# 走到这里如果还压着模态窗口，后面所有"点主窗口"的检查都会连带失败 —— 先清场，出问题当场暴露。
+if (-not (Close-StrayDialogs -ProcessId $proc.Id -Main $main)) {
+    Check 'C16 C 组收尾时没有残留的模态窗口' $false '主窗口还被模态窗口压着'
+} else {
+    Check 'C16 C 组收尾时没有残留的模态窗口' $true ''
+}
+
 # ---------------------------------------------------------------- D 组：底部条与日志
 Write-Host ''
 Write-Host 'D 组 · 底部条 · 搜索 · 日志'
 
-$barButtons = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*BUTTON*' -and @('搜索', '日志', '收起日志', '设置', '检查更新') -contains $_.Text })
-Check 'D01 底部条上有搜索/日志/设置/检查更新' ($barButtons.Count -eq 4) (($barButtons | ForEach-Object { $_.Text }) -join ' ')
+$barButtons = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*BUTTON*' -and @('搜索', '日志', '收起日志', '设置', '关于', '检查更新') -contains $_.Text })
+Check 'D01 底部条上有搜索/日志/设置/关于/检查更新' ($barButtons.Count -eq 5) (($barButtons | ForEach-Object { $_.Text }) -join ' ')
 
 # 子控件必须完全落在父容器里 —— 被用户报过两次的"文字被裁"就是这条：
 # 底栏按钮 30px 挤在 24px 的条里、以及按钮 20px 装不下 16px 的文字。
@@ -638,66 +803,109 @@ $searchEdits = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -
 Check 'D05 点「搜索」出现搜索框' ($searchEdits.Count -ge 1) ('可见文本框=' + $searchEdits.Count)
 if ($searchEdits.Count -gt 0) { [void][TBGui]::Click($searchButton[0].H) }
 
-# ---------------------------------------------------------------- E 组：点一个占位按钮
-Write-Host ''
-Write-Host 'E 组 · 真点一个占位按钮（必须有反应：写日志，不弹窗）'
-
-$logPath = ''
-foreach ($line in ((Invoke-Exe 'status') -split "`r?`n")) {
-    if ($line -match '^log=([^\r\n]+)') { $logPath = $Matches[1] }
-}
-$before = 0
-if ($logPath -and (Test-Path -LiteralPath $logPath)) {
-    $before = @(Get-Content -LiteralPath $logPath -Encoding UTF8).Count
-}
-
-$targetName = '刷新 DNS 缓存'
-$target = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq $targetName })
-if ($target.Count -gt 0) { [void][TBGui]::Click($target[0].H) }
-
-$found = $false
-$newest = ''
-for ($i = 0; $i -lt 30; $i++) {
-    Start-Sleep -Milliseconds 200
-    $lines = @(Get-Content -LiteralPath $logPath -Encoding UTF8 -ErrorAction SilentlyContinue)
-    if ($lines.Count -gt $before) {
-        $newest = $lines[$lines.Count - 1]
-        if ($newest -match '功能待接入') { $found = $true; break }
+# 关于窗口：右键增强收敛成一个按钮以后，它本来没了入口，所以底栏加了「关于」。
+# 顺便验证「打开工具目录」这个入口在（工具目录 = bin-tools，外部工具丢进去就能用）。
+$aboutButton = @($barButtons | Where-Object { $_.Text -eq '关于' })
+if ($aboutButton.Count -gt 0) {
+    [void][TBGui]::Click($aboutButton[0].H)
+    $aboutWin = @()
+    for ($i = 0; $i -lt 25; $i++) {
+        Start-Sleep -Milliseconds 200
+        $aboutWin = @((Get-TopWindows -ProcessId $proc.Id) | Where-Object { $_.H -ne $main -and $_.Visible -and $_.Text -match '关于' })
+        if ($aboutWin.Count -gt 0) { break }
     }
+    Check 'D06 点底栏「关于」打开关于窗口' ($aboutWin.Count -gt 0) (@((Get-TopWindows -ProcessId $proc.Id) | Where-Object { $_.H -ne $main -and $_.Visible } | ForEach-Object { $_.Text }) -join ' / ')
+    if ($aboutWin.Count -gt 0) {
+        $aboutButtons = @(Get-ChildControls -RootHandle $aboutWin[0].H | Where-Object { $_.Class -like '*BUTTON*' } | ForEach-Object { $_.Text })
+        Check 'D07 关于窗口里有「打开工具目录」入口' (($aboutButtons -contains '打开工具目录') -and ($aboutButtons -contains '打开设置目录')) ($aboutButtons -join ' ')
+        [void][TBGui]::CloseWindow($aboutWin[0].H)
+        Start-Sleep -Milliseconds 600
+    } else {
+        Check 'D07 关于窗口里有「打开工具目录」入口' $false 'skipped'
+    }
+} else {
+    Check 'D06 点底栏「关于」打开关于窗口' $false '底栏没有关于按钮'
+    Check 'D07 关于窗口里有「打开工具目录」入口' $false 'skipped'
 }
-Check ('E01 点「{0}」写了一条运行日志' -f $targetName) ($found) $newest.Trim()
-Check 'E02 占位按钮点了不弹窗（还是主窗口在最前）' (@((Get-TopWindows -ProcessId $proc.Id) | Where-Object { $_.Visible -and $_.Class -like '*DIALOG*' }).Count -eq 0) ''
-# 占位按钮点击后本来就会灰 600ms（表示"点到了"），所以这里要等它自己恢复
-Start-Sleep -Milliseconds 1200
-$disabled = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*BUTTON*' -and -not $_.Enabled })
-Check 'E03 占位按钮那 600ms 灰显结束后自己恢复' ($disabled.Count -eq 0) (($disabled | ForEach-Object { $_.Text }) -join ' ')
-$back = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq $targetName })
-Check 'E04 被点的那个按钮文字恢复原样（没有卡在"…"）' ($back.Count -eq 1 -and $back[0].Text -eq $targetName) (($back | ForEach-Object { $_.Text }) -join ' ')
 
-# 运行中不许改文字：旧版会追加 "…"，图标+文字整组重新居中 → 每点一次图标就跳一下
-$probeName = 'hosts 修改'
+# ---------------------------------------------------------------- E 组：真按钮能跑 / 灰色按钮点不动
+Write-Host ''
+Write-Host 'E 组 · 真按钮真的在跑，灰色按钮禁止点击'
+
+# 常见设置页签上哪些按钮是灰的（= placeholder）：直接从 CLI 读，别写死名单
+$greyNames = @()
+$liveNames = @()
+foreach ($line in ((Invoke-Exe 'list --tab common') -split "`r?`n")) {
+    if ($line -notmatch "`t") { continue }
+    $cells = $line -split "`t"
+    if ($cells -contains 'placeholder') { $greyNames += $cells[2] } else { $liveNames += $cells[2] }
+}
+Check 'E01 CLI 报出这一页的灰按钮和真按钮' (($greyNames.Count + $liveNames.Count) -eq $commonNames.Count) `
+    ('灰=' + $greyNames.Count + ' 真=' + $liveNames.Count)
+
+$gridNow = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*BUTTON*' -and $commonNames -contains $_.Text })
+$greyBad = @()
+$liveBad = @()
+foreach ($b in $gridNow) {
+    if ($greyNames -contains $b.Text) { if ($b.Enabled) { $greyBad += $b.Text } }
+    elseif ($liveNames -contains $b.Text) { if (-not $b.Enabled) { $liveBad += $b.Text } }
+}
+Check ('E02 灰色按钮全部禁止点击（{0} 个 Enabled=false）' -f $greyNames.Count) ($greyBad.Count -eq 0) (($greyBad -join ' ') + ' 灰=' + $greyNames.Count)
+Check ('E03 真功能按钮都可以点（{0} 个 Enabled=true）' -f $liveNames.Count) ($liveBad.Count -eq 0) ($liveBad -join ' ')
+
+# 真按钮真跑一次：挑一个只读的（激活状态 = 查授权信息），跑完会弹结果窗口
+$probeReal = '激活状态'
+$realBtn = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq $probeReal })
+if ($realBtn.Count -gt 0) {
+    $before = @((Get-TopWindows -ProcessId $proc.Id) | Where-Object { $_.H -ne $main })
+    [void][TBGui]::Click($realBtn[0].H)
+    $outWin = @()
+    for ($i = 0; $i -lt 60; $i++) {
+        Start-Sleep -Milliseconds 300
+        $outWin = @((Get-TopWindows -ProcessId $proc.Id) | Where-Object { $_.H -ne $main -and $_.Visible -and $_.Text -match '激活状态' })
+        if ($outWin.Count -gt 0) { break }
+    }
+    Check ('E04 点真按钮「{0}」弹出结果窗口' -f $probeReal) ($outWin.Count -gt 0) `
+        ('现有窗口=' + (@((Get-TopWindows -ProcessId $proc.Id) | Where-Object { $_.H -ne $main -and $_.Visible } | ForEach-Object { $_.Text }) -join ' / '))
+    if ($outWin.Count -gt 0) { [void][TBGui]::CloseWindow($outWin[0].H) ; Start-Sleep -Milliseconds 500 }
+    Start-Sleep -Milliseconds 800
+    $after = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq $probeReal })
+    Check 'E05 真按钮跑完自己恢复成可点（没有卡在禁用）' ($after.Count -eq 1 -and $after[0].Enabled) ''
+} else {
+    Check ('E04 点真按钮「{0}」弹出结果窗口' -f $probeReal) $false '没找到这个按钮'
+    Check 'E05 真按钮跑完自己恢复成可点（没有卡在禁用）' $false 'skipped'
+}
+
+# 运行中不许改文字：旧版会追加 "…"，图标+文字整组重新居中 → 每点一次图标就跳一下。
+# 探针用「激活状态」（只读、要跑一两秒，正好能观察到运行中那一瞬间）。
+$probeName = '激活状态'
 $probeBtn = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq $probeName })
 if ($probeBtn.Count -gt 0) {
     [void][TBGui]::Click($probeBtn[0].H)
     Start-Sleep -Milliseconds 180
-    $during = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -like 'hosts*' })
+    $during = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -like '激活*' })
     $duringText = ''
     if ($during.Count -gt 0) { $duringText = $during[0].Text }
-    Check 'E05 运行中按钮文字一字不变（不许追加"…"造成跳动）' ($duringText -eq $probeName) ('运行中="' + $duringText + '"')
+    Check 'E06 运行中按钮文字一字不变（不许追加"…"造成跳动）' ($duringText -eq $probeName) ('运行中="' + $duringText + '"')
     $stillThere = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq $probeName })
-    Check 'E06 运行中按钮仍然可用（文字没变说明没被重排）' ($stillThere.Count -eq 1) ''
-    Start-Sleep -Milliseconds 900
+    Check 'E07 运行中按钮还在（文字没变说明没被重排）' ($stillThere.Count -eq 1) ''
+    Start-Sleep -Milliseconds 2500
     $statusNow = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*STATIC*' -and $_.Text -match '个按钮' })
     if ($statusNow.Count -gt 0) {
         $needNow = Measure-Width $statusNow[0].Text
-        Check 'E07 出现长状态文字后仍然装得下' ($needNow -le $statusNow[0].Width) ('文字=' + $needNow + 'px 标签=' + $statusNow[0].Width + 'px 内容="' + $statusNow[0].Text + '"')
+        Check 'E08 出现长状态文字后仍然装得下' ($needNow -le $statusNow[0].Width) ('文字=' + $needNow + 'px 标签=' + $statusNow[0].Width + 'px 内容="' + $statusNow[0].Text + '"')
     } else {
-        Check 'E07 出现长状态文字后仍然装得下' $false '没找到状态栏标签'
+        Check 'E08 出现长状态文字后仍然装得下' $false '没找到状态栏标签'
     }
+    # 顺手把这次真跑出来的结果窗口关掉，免得影响后面的检查
+    foreach ($w in @((Get-TopWindows -ProcessId $proc.Id) | Where-Object { $_.H -ne $main -and $_.Visible -and $_.Text -match '激活' })) {
+        [void][TBGui]::CloseWindow($w.H)
+    }
+    Start-Sleep -Milliseconds 500
 } else {
-    Check 'E05 运行中按钮文字一字不变（不许追加"…"造成跳动）' $false '没找到 hosts 修改 按钮'
-    Check 'E06 运行中按钮仍然可用（文字没变说明没被重排）' $false 'skipped'
-    Check 'E07 出现长状态文字后仍然装得下' $false 'skipped'
+    Check 'E06 运行中按钮文字一字不变（不许追加"…"造成跳动）' $false '没找到激活状态按钮'
+    Check 'E07 运行中按钮还在（文字没变说明没被重排）' $false 'skipped'
+    Check 'E08 出现长状态文字后仍然装得下' $false 'skipped'
 }
 
 # ---------------------------------------------------------------- F 组：危险按钮的确认框
@@ -716,7 +924,12 @@ function Get-Dialogs {
     })
 }
 
-$danger = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '禁用 SmartScreen' })
+# 危险按钮现在只有「清理优化」里那两个是真的（清空回收站 / 一键清理垃圾），
+# 常用设置里那几个危险按钮还是灰的（点不动）。这里切到清理优化，点「清空回收站」再取消 ——
+# 只验证"弹出确认框 + 能取消"，绝不真的清空。
+Check ('F00 切到「清理优化」→ {0} 个按钮' -f $cleanNames.Count) (Switch-Tab -Handle $main -TabName '清理优化' -ExpectNames $cleanNames) ''
+
+$danger = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '清空回收站' })
 if ($danger.Count -gt 0) { [void][TBGui]::Click($danger[0].H) }
 $dialog = @()
 for ($i = 0; $i -lt 25; $i++) {
@@ -767,7 +980,15 @@ try {
     [void][System.IO.Directory]::CreateDirectory((Split-Path -Parent $SettingsIni))
     if ($settingsExisted) { [System.IO.File]::WriteAllText($SettingsIni, $settingsBefore, (New-Object System.Text.UTF8Encoding($false))) }
     else { Remove-Item -LiteralPath $SettingsIni -Force -ErrorAction SilentlyContinue }
+    # 复原成功才删备份；没跑完就被中断的话备份还在，下次开工能救回来
+    Remove-Item -LiteralPath $settingsBackup -Force -ErrorAction SilentlyContinue
 } catch { }
+
+if ($UserToolsHad -and (Test-Path -LiteralPath $UserToolsPaused)) {
+    if (Test-Path -LiteralPath $UserToolsJson) { Remove-Item -LiteralPath $UserToolsJson -Force }
+    Move-Item -LiteralPath $UserToolsPaused -Destination $UserToolsJson -Force
+    Write-Host '（用户自己的 tools.json 已复原）'
+}
 
 foreach ($p in @($proc, $procDark)) {
     try { if ($p -and -not $p.HasExited) { $p.Kill() } } catch { }

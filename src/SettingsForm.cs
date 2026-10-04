@@ -84,22 +84,27 @@ namespace Mxx1Toolbox
             TableLayoutPanel pathRow = new TableLayoutPanel();
             pathRow.Dock = DockStyle.Fill;
             pathRow.AutoSize = true;
-            pathRow.ColumnCount = 2;
+            pathRow.ColumnCount = 3;
             pathRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+            pathRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             pathRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             _permdelBox = new TextBox();
             _permdelBox.Dock = DockStyle.Fill;
             _permdelBox.Text = _settings.PermanentDeleteExe;
             Button browse = MakeButton("浏览…");
             browse.Click += delegate { Browse(); };
+            Button tools = MakeButton("打开工具目录");
+            tools.Click += delegate { OpenToolFolder(); };
             pathRow.Controls.Add(_permdelBox);
             pathRow.Controls.Add(browse);
+            pathRow.Controls.Add(tools);
             AddRow("永久删除安装器", pathRow);
 
             Label hint = new Label();
             hint.AutoSize = true;
             hint.MaximumSize = new Size(380, 0);
-            hint.Text = "留空 = 自动查找（环境变量 MXX1_PERMDEL_EXE、工具箱同目录、隔壁工程 bin 目录）。";
+            hint.Text = "留空 = 自动查找（工具目录 bin-tools、环境变量 MXX1_PERMDEL_EXE、隔壁工程 bin 目录）。"
+                + "其他外部工具（exe）也都放进 bin-tools 就行。";
             AddRow("", hint);
 
             TableLayoutPanel buttons = new TableLayoutPanel();
@@ -166,6 +171,19 @@ namespace Mxx1Toolbox
                 dlg.CheckFileExists = true;
                 if (dlg.ShowDialog(this) == DialogResult.OK) { _permdelBox.Text = dlg.FileName; }
             }
+        }
+
+        /// <summary>Opens bin-tools next to the exe (creates it first) -- that is where every
+        /// external tool goes, so "add a tool" is just dropping the file in.</summary>
+        private void OpenToolFolder()
+        {
+            try
+            {
+                string dir = AppPaths.EnsurePayloadDir();
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
+                    "explorer.exe", "\"" + dir + "\"") { UseShellExecute = true });
+            }
+            catch { }
         }
 
         private void Collect()

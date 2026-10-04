@@ -153,6 +153,20 @@ if ($Package) {
     Copy-Item (Join-Path $root 'tools\*') (Join-Path $stage 'tools') -Force
     Copy-Item (Join-Path $root 'tests\*') (Join-Path $stage 'tests') -Force
     Copy-Item (Join-Path $root 'docs\*') (Join-Path $stage 'docs') -Force -ErrorAction SilentlyContinue
+
+    # External tools go into bin-tools\ (NOT tools\ -- that one holds the button manifests).
+    # The sibling project's installer is copied in when it has been built; without it the
+    # toolbox still runs and simply says which folder to drop the exe into.
+    $toolsStage = Join-Path $stage 'bin-tools'
+    [void][System.IO.Directory]::CreateDirectory($toolsStage)
+    $sibling = Join-Path (Split-Path -Parent $root) 'permanent-delete-menu\bin\PermanentDeleteSetup.exe'
+    if (Test-Path $sibling) {
+        Copy-Item $sibling $toolsStage -Force
+        Write-Host ('tools    : bin-tools\PermanentDeleteSetup.exe  (' + (Get-Item (Join-Path $toolsStage 'PermanentDeleteSetup.exe')).Length + ' bytes)')
+    } else {
+        Write-Host 'tools    : bin-tools\ 是空的（没找到隔壁的 PermanentDeleteSetup.exe，先 build 隔壁）'
+    }
+
     $zip = Join-Path $binDir 'Mxx1Toolbox-package.zip'
     if (Test-Path $zip) { Remove-Item $zip -Force }
     Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip

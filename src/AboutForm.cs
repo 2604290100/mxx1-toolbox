@@ -32,6 +32,7 @@ namespace Mxx1Toolbox
         }
 
         private readonly TableLayoutPanel _root;
+        private readonly ToolTip _tips = new ToolTip();
 
         public AboutForm(Theme theme)
         {
@@ -69,6 +70,7 @@ namespace Mxx1Toolbox
                 + "灰色的按钮表示功能还没接入（点一下只会写日志，鼠标停上去会说明）。"
                 + "「右键增强」里的按钮打开隔壁的「永久删除（不进回收站）」安装器，工具箱本身不改动它。"
                 + "「系统工具」调的是 Windows 自带的组件，只读查看、不改系统。"
+                + "外部工具（exe）请放进本程序旁边的 bin-tools 文件夹，找不到工具时会有提示。"
                 + "按钮全部由 tools\\*.json 定义，加按钮不需要重新编译。";
             _root.Controls.Add(note);
             _root.SetColumnSpan(note, 2);
@@ -76,16 +78,21 @@ namespace Mxx1Toolbox
             TableLayoutPanel buttons = new TableLayoutPanel();
             buttons.Dock = DockStyle.Fill;
             buttons.AutoSize = true;
-            buttons.ColumnCount = 3;
+            buttons.ColumnCount = 4;
             buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
             buttons.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             buttons.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            buttons.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
 
+            Button tools = MakeButton("打开工具目录");
+            tools.Click += delegate { OpenFolder(AppPaths.EnsurePayloadDir()); };
+            _tips.SetToolTip(tools, "外部工具都放在这个文件夹里：" + AppPaths.PayloadDir);
             Button folder = MakeButton("打开设置目录");
             folder.Click += delegate { OpenSettingsFolder(); };
             Button close = MakeButton("关闭");
             close.Click += delegate { Close(); };
             buttons.Controls.Add(new Label());
+            buttons.Controls.Add(tools);
             buttons.Controls.Add(folder);
             buttons.Controls.Add(close);
             _root.Controls.Add(buttons);
@@ -127,11 +134,18 @@ namespace Mxx1Toolbox
 
         private void OpenSettingsFolder()
         {
+            OpenFolder(AppPaths.BaseDir);
+        }
+
+        /// <summary>Opens a folder in Explorer, creating it first (the tool folder may not exist yet).</summary>
+        private static void OpenFolder(string path)
+        {
             try
             {
-                AppPaths.EnsureBase();
+                if (string.IsNullOrEmpty(path)) { return; }
+                if (!System.IO.Directory.Exists(path)) { System.IO.Directory.CreateDirectory(path); }
                 System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
-                    "explorer.exe", "\"" + AppPaths.BaseDir + "\"") { UseShellExecute = true });
+                    "explorer.exe", "\"" + path + "\"") { UseShellExecute = true });
             }
             catch { }
         }

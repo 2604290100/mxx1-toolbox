@@ -39,6 +39,10 @@ namespace Mxx1Toolbox
             AccessibleDescription = tool.Id;
             if (tool.Placeholder)
             {
+                // A grey button is DISABLED (user's rule: "默认灰色按钮应该是禁止点击的"): it cannot
+                // be clicked, focused or right-clicked. That also means no tooltip, so the status
+                // bar carries the legend "灰色 = 还没接功能" while such a button is on the page.
+                Enabled = false;
                 AccessibleDescription = tool.Id + " (placeholder)";
             }
         }
@@ -81,32 +85,20 @@ namespace Mxx1Toolbox
         }
 
         /// <summary>Busy = the button is running something. The icon is swapped for a spinner of
-        /// exactly the same canvas size and the text is never touched.</summary>
+        /// exactly the same canvas size and the text is never touched. A grey placeholder button
+        /// stays disabled forever (it has no feature to run).</summary>
         public void SetBusy(bool busy, int autoClearMs)
         {
+            if (Tool.Placeholder) { return; }   // nothing behind it: never enable, never spin
             _busy = busy;
             Enabled = !busy;
             // Text is deliberately NOT touched. Appending "…" widened the image+text group, and
             // because the group is centred the icon jumped sideways on every click; on the widest
             // labels the text even overflowed the button. The busy state is shown by this icon
             // (same 16x15 size, see IconFactory.Normalize) plus the disabled colours.
-            if (busy) { Image = IconFactory.Busy(); }
-            else if (Tool.Placeholder) { Image = IconFactory.GetMuted(Tool); }
-            else { Image = IconFactory.Get(Tool); }
+            Image = busy ? IconFactory.Busy() : IconFactory.Get(Tool);
             ForeColor = CurrentTextColor();
             ArmFlash(busy ? autoClearMs : 0);
-        }
-
-        /// <summary>Click feedback for a button that has no feature behind it: briefly disabled
-        /// (and therefore grey), but the icon is NOT swapped for the spinner -- nothing is running,
-        /// so showing a spinner would be a lie.</summary>
-        public void Flash(int ms)
-        {
-            if (_busy) { return; }
-            _busy = true;
-            Enabled = false;
-            ForeColor = CurrentTextColor();
-            ArmFlash(ms);
         }
 
         private void ArmFlash(int autoClearMs)
@@ -119,18 +111,9 @@ namespace Mxx1Toolbox
             {
                 Timer t = (Timer)s;
                 t.Stop();
-                if (Tool.Placeholder) { SetIdle(); } else { SetBusy(false, 0); }
+                SetBusy(false, 0);
             };
             _flash.Start();
-        }
-
-        /// <summary>Back to the normal (not busy, clickable) look.</summary>
-        private void SetIdle()
-        {
-            _busy = false;
-            Enabled = true;
-            ForeColor = CurrentTextColor();
-            if (_flash != null) { _flash.Stop(); _flash.Dispose(); _flash = null; }
         }
 
         protected override void Dispose(bool disposing)

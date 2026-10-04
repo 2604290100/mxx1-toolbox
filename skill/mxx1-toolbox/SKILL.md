@@ -8,24 +8,25 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
 **主界面 = 多行多列的小按钮墙**，点一下按钮就启动一个已经做好的程序 / 脚本 / 功能。
 加按钮只是往 `tools\*.json` 丢配置，**不需要重新编译主程序**。
 
-- 程序名 **萌新工具箱**，标题栏 `萌新工具箱 v1.1.0`；署名 `mxx1` / `mxx1.cn`；GPL-3.0-or-later
+- 程序名 **萌新工具箱**，标题栏 `萌新工具箱 v1.2.0`；署名 `mxx1` / `mxx1.cn`；GPL-3.0-or-later
 - 工程目录 **`D:\萌新工具开发\toolbox\`**，与隔壁 `permanent-delete-menu` **互不修改**（只调它的 exe）
 - 外观参考：`C:\Users\Administrator\Pictures\Snipaste_2026-10-04_10-29-34.png`（那种紧凑按钮墙）
 
 > **接手 / 新会话先做两件事**：读 `docs\DESIGN.md`（外观与行为的**唯一正本**）和本文件。
 > 设计一改先改 `DESIGN.md`，再同步本 skill —— 两份分叉就会出现"两套行为"。
 
-## 当前状态（2026-10-04，v1.1.0）
+## 当前状态（2026-10-04，v1.2.0）
 
-- ✅ **测试 79 项全绿**：命令行回归 30 + 界面回归 49（外加编码体检）。
-  产物 `bin\Mxx1Toolbox.exe`（约 117 KB 单文件），五个 `tools.*.json` + 54 个 `icons.*.png` 已内嵌。
-- ✅ **54 个按钮**：`常用设置` 32（占位）/ `右键增强` **1**（真功能）/ `清理优化` 8（占位）/
-  `系统工具` **12**（真功能）/ `我的工具` 1（占位）。
-- ✅ **灰色 = 功能还没接入**（用户定的规则）：41 个占位按钮默认灰底 + 灰字 + **置灰图标**
-  （`IconFactory.GetMuted()`），悬停提示写"功能还没接入（P1）· 点击只写日志"；
-  点击 = 状态栏 + 日志 + 灰 0.6 秒（`ToolButton.Flash`，**不换转圈图标、不弹窗**）。
-- ✅ **「系统工具」12 个是真功能**（只读看 Windows 自带组件，不改系统、不要管理员）；
-  `run <id> --dry` 能把 12 个目标全解析一遍，缺组件会给出整句说明（家庭版没有 gpedit）。
+- ✅ **测试 95 项全绿**：命令行回归 35 + 界面回归 60（外加编码体检 98 个文件）。
+  产物 `bin\Mxx1Toolbox.exe`（约 136 KB 单文件），五个 `tools.*.json` + 53 个 `icons.*.png` 已内嵌。
+- ✅ **53 个按钮 = 35 个真功能 + 18 个灰色占位**：`常用设置` 31（13 真 / 18 灰）/
+  `右键增强` **1**（真）/ `清理优化` **8**（全真）/ `系统工具` **12**（全真）/
+  `我的工具` 1（图形化新建，真）。
+- ✅ **灰色 = 功能还没接入 = 禁止点击**（用户 2026-10-04 改的规则）：18 个占位按钮 `Enabled=false`、
+  灰底灰字 + **置灰图标**（`IconFactory.GetMuted()`）—— 点不动、不能聚焦、不弹提示；
+  禁用控件不显示 tooltip，所以状态栏在有灰按钮的页面上带一句「灰色 N 个没接功能」。
+- ✅ **「系统工具」12 个 + 「清理优化」8 个 + 「常用设置」13 个都是真功能**；
+  `run <id> --dry` 能把它们的目标解析一遍（缺组件给整句说明，家庭版没有 gpedit）。
 - ✅ **「右键增强」只剩 1 个按钮「永久删除工具」**：不带参数启动隔壁 `PermanentDeleteSetup.exe`
   = 开它自己的窗口（安装/卸载/状态/测试/条款/日志/更新都在那里）。原来 8 条定义留在
   `tools\rightmenu.json` 的 `_disabled` 数组里当注释（加载器只读 `tools`）。
@@ -33,9 +34,10 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
 - ✅ 按钮图标：54 个 16×16 PNG 由 `tools\Make-Icons.ps1` 生成并内嵌（`icons.<id>.png`），
   全部经 `IconFactory.Normalize()` 归一化成 16×15 画布（见"界面硬规则"里那条）。
   优先级：清单里的 `icon` > `assets\icons\<id>.png` > 内嵌 > 程序内实时画的占位图标。
-- ⬜ **等用户拍板**：外部工具放哪 —— 用户倾向"**建一个子文件夹，以后还要加别的 exe 工具**"，
-  方案（`payload\` 工具目录 + 查找顺序 + 可选内嵌兜底）在 `docs\DESIGN.md` §13，**没实现，别自己开工**。
-- ⬜ P1：常用设置 / 清理优化接真功能、图形化「新建按钮」、拖拽新增、编辑/排序、多步 `macro`。
+- ✅ **外部工具目录 `bin-tools\` 已实现**（用户定的名字）：查找顺序里加一档、`build.ps1 -Package` 自动拷入、
+  设置 / 关于窗口有「打开工具目录」、`kind: exe` 的相对路径按「工具箱目录 → `bin-tools\`」解析。
+  ⬜ 还没做：把工具内嵌进 exe 当兜底、`bin-tools\<工具>\tool.json` 自动扫按钮（`docs\DESIGN.md` §13 的 ② ③）。
+- ⬜ P1：把 18 个灰色占位里安全的那些接上（其余按 hint 里写的理由继续灰着）、按钮排序 / 隐藏 / 固定到常用、多步 `macro`。
 
 ## 结构
 
@@ -48,7 +50,9 @@ D:\萌新工具开发\toolbox\
   src\ToolButton.cs                紧凑按钮（Flat + 主题配色 + 16×15 图标画布 + 灰色占位 + Flash/SetBusy）
   src\IconFactory.cs               图标：有 PNG 用 PNG，没有就实时画；一律 Normalize 成 16×15；GetMuted 出灰版
   src\ToolItem.cs / ToolRegistry.cs 按钮模型 + 读内嵌 tools\*.json + 用户层 tools.json（只认 tools 数组）
-  src\Launcher.cs                  按 kind 启动；SystemTargets 表（12 个系统工具）；找隔壁 exe；UTF-8 输出
+  src\Launcher.cs                  按 kind 启动；SystemTargets 表（12 个系统工具）；找隔壁 exe / bin-tools；UTF-8 输出
+  src\UserTools.cs                 用户层 tools.json 的读写（最小 JSON writer，写入前备份 .bak）
+  src\NewToolForm.cs               图形化「新建按钮 / 编辑按钮」窗口（4 种类型）
   src\LinksForm.cs                 「常用链接」窗口（项目主页/仓库/几个 ms-settings 入口）
   src\Json.cs                      自带的小 JSON 解析器（不依赖 Newtonsoft / System.Web）
   src\Theme.cs / Native.cs         浅深主题配色（含灰色占位三色）+ DWM 深色标题栏 / 滚动条
@@ -56,14 +60,14 @@ D:\萌新工具开发\toolbox\
   src\AboutForm.cs                 署名、站点、仓库、许可证常量的唯一来源
   src\LogForm.cs / OutputForm.cs   程序内日志窗口（最新在最上）/ 命令输出窗口
   src\SettingsForm.cs              设置窗口
-  tools\*.json                     54 个按钮的内置定义（编译时内嵌，资源名 tools.<文件名>）
+  tools\*.json                     53 个按钮的内置定义（编译时内嵌，资源名 tools.<文件名>）
   tools\Test-Encoding.ps1          编码红线体检（-Fix 修 BOM）
   tools\Make-Screenshots.ps1       拍 docs\gui-shot.png / dark-shot.png / system-shot.png（PrintWindow）
   tools\Make-Icons.ps1             批量画图标（先从 exe 的 list 读清单，所以**先 build 再跑它**）
-  assets\icons\*.png               54 个图标（编译时内嵌成 icons.<id>.png）
+  assets\icons\*.png               53 个图标（编译时内嵌成 icons.<id>.png）
   tests\Test-All.ps1               一条命令跑完全部
-  tests\Test-Cli.ps1               命令行回归 30 项
-  tests\Test-Gui.ps1               界面回归 49 项（要交互式桌面，无桌面返回 3 = 跳过）
+  tests\Test-Cli.ps1               命令行回归 35 项
+  tests\Test-Gui.ps1               界面回归 60 项（要交互式桌面，无桌面返回 3 = 跳过）
   docs\DESIGN.md                   设计正本（含"踩过的坑"清单 + §13 打包方案）
   docs\gui-shot.png / dark-shot.png / system-shot.png  界面截图
 ```
@@ -72,6 +76,7 @@ D:\萌新工具开发\toolbox\
 
 ```powershell
 powershell -File build.ps1                    # 编译 → bin\Mxx1Toolbox.exe
+powershell -File build.ps1 -Package            # 额外打 zip，并把隔壁 exe 拷进 bin-tools\
 powershell -File tools\Test-Encoding.ps1      # 编码体检（改完文件必跑；-Fix 修 BOM）
 powershell -File tests\Test-All.ps1           # 全套（无桌面加 -SkipGui）
 powershell -File tests\Test-Cli.ps1           # 命令行回归
@@ -80,11 +85,36 @@ powershell -File tools\Make-Screenshots.ps1   # 重拍文档截图（浅色 / �
 powershell -File tools\Make-Icons.ps1         # 重生成 PNG 图标（先 build 再跑，改完还要再 build）
 
 & bin\Mxx1Toolbox.exe list [--tab system]     # 列按钮（tab 分隔：id / 页签 / 名称 / 类型）
-& bin\Mxx1Toolbox.exe run devmgmt --dry       # 只解析按钮指向哪里，不真的启动
+& bin\Mxx1Toolbox.exe run devmgmt --dry       # 只解析按钮指向哪里，不真的启动（灰按钮回 kind=none）
 & bin\Mxx1Toolbox.exe run permdel.gui         # 跑一个按钮（和界面同一条路径）
 & bin\Mxx1Toolbox.exe status                  # key=value 状态（含 systemTargets / systemMissing）
 ```
 
+## 「我的工具」：图形化加按钮（已实现）
+
+| 入口 | 做什么 |
+| --- | --- |
+| `[+ 新建按钮]` 或 `Ctrl+N` | 打开 `NewToolForm`：名称 / 类型 / 路径或目标 / 参数 / 说明 / 页签 / 需要管理员 / 危险按钮 |
+| 拖**一个** exe / 脚本 / 文件夹进窗口 | 打开同一个窗口并预填（可以改名再存） |
+| 一次拖**多个**文件 | 直接按文件名建好 |
+| 右键按钮 → 编辑按钮… / 删除按钮 | **只对用户层**（`ToolItem.UserLayer`）开放；删除前二次确认 |
+
+- 四种类型 = `exe` / `open` / `script`+文件 / `script`+一行命令；存进
+  `%LOCALAPPDATA%\mxx1-toolbox\tools.json`（`src\UserTools.cs` 负责读写，**写入前备份 `.bak`**）。
+- 存完 `ReloadAfterUserEdit()`：重载清单 → 重算列宽（**只加宽不缩窄**）→ 重建网格。
+- 用户层的 id 由名字生成（`mine.xxx`，重名自动加序号）；`ToolItem.UserLayer` 由 `ToolRegistry` 标记。
+
+## 外部工具目录 `bin-tools\`
+
+- 位置：**工具箱 exe 旁边**的 `bin-tools\`（`AppPaths.PayloadDir`）；`%LOCALAPPDATA%\mxx1-toolbox\bin-tools\`
+  是备用（exe 在只读目录时用，将来内嵌兜底也释放到那）。
+- 查找顺序：设置里指定的路径 → `bin-tools\<文件名>` → exe 同目录同名文件 → 用户目录 `bin-tools\` →
+  向上三层找隔壁仓库 `permanent-delete-menu\bin\`（开发用）→ `%LOCALAPPDATA%\PermanentDelete\`。
+- **相对路径按「工具箱目录 → `bin-tools\`」解析**（`AppPaths.Resolve`），所以清单里只写文件名就行；
+  `icon` 字段和 `open` 的 target 走同一条路。
+- 入口：设置窗口 + 关于窗口的「打开工具目录」（没有就自动建）；找不到工具时的提示里直接写出这个路径。
+- 打包：`build.ps1 -Package` 会把隔壁的 `PermanentDeleteSetup.exe` 拷进发布目录的 `bin-tools\`
+  （找不到就留空并打印一行说明，不报错）。
 ## 界面硬规则（违反就是"看着像 bug"那类问题）
 
 | 规则 | 违反后的症状 |
@@ -94,7 +124,7 @@ powershell -File tools\Make-Icons.ps1         # 重生成 PNG 图标（先 build
 | `TableLayoutPanel` 的每一行都要显式 `RowStyles`（要填满就 `Percent 100`） | 行按内容 AutoSize → 底栏按钮 30px 挤在 24px 条里，下边缘被裁 5px |
 | 底栏按钮 `AutoSize=false`，**高度 = 文字行高 + 8**（`MeasureText("国").Height + 8` = 24px），底栏高 = 按钮高 + 4。那个 `+8` 是 Flat 按钮的 1px 边框 + 约 3px 内边距 ×2，**不是**随手留的余量 | 写死 20px → 文字下半截被裁（用户："右下角按钮没正常显示、被挡住"）；按 `行高 + 6` = 22px **还是差一行**（用户："底部按钮还是差一点的才显示全文字，主要是高度问题"）——22px 只给文字 14px，实测底栏「检查更新」只剩 9 行墨迹 |
 | 图标一律经 `IconFactory.Normalize()` 变成 **16×15 画布**（首行整行透明就砍掉首行，否则取 0..14 行），PNG / 实时绘制 / 转圈 / 灰版都走同一条路 | WinForms 把图片画在文字行框中心**往下 1px** → 16px 画布比按钮中心低 1.5px（实测图标墨迹 9..23、中心 16.0，按钮中心 14.5），用户看到"图标没有上下居中"。**用 `Padding` 调没用**：它把图标和文字一起挪（每 1px 底边距抬 1px） |
-| **`placeholder: true` 的按钮默认就是灰的**：灰底 + 浅边框 + 灰字（`Theme.Placeholder*`）+ **置灰图标**（`IconFactory.GetMuted`：Rec.601 亮度再往白里混 45%）；点击只 `Flash(600)`（短暂禁用，**不换图标**） | 用户："没有做功能的按钮默认灰色"。真按钮文字最暗 26、灰按钮最暗 138（界面回归按这个判定：≤ 80 / ≥ 110） |
+| **`placeholder: true` 的按钮是灰的、而且禁止点击**：`Enabled=false` + 灰底灰字（`Theme.Placeholder*`）+ **置灰图标**（`IconFactory.GetMuted`：Rec.601 亮度再往白里混 45%）。禁用控件没有 tooltip，所以状态栏带「灰色 N 个没接功能」 | 用户先说"没做功能的按钮默认灰色"，又说"应该是禁止点击的"。实测：真按钮文字最暗 **26**、灰按钮 **77**（禁用控件画字会描 1px 深影）→ 判据"真 ≤ 80、灰 ≥ 60、差 ≥ 30" |
 | **按钮运行中不许改文字**：禁用 + 换成同一个画布的转圈图标（`IconFactory.Busy()`）即可 | 追加 "…" 会让"图标+文字"整组重新居中，每点一次图标横跳；长名字还会溢出被截 |
 | **"灰"不等于"点了没反应"**：界面动作（关于 / 日志 / 设置 / 新建按钮 / 常用链接）要在占位判断**之前**处理 | 「+ 新建按钮」是灰的，但点它必须还能弹出"怎么手动加按钮"的说明 |
 | 状态栏文字**只放短摘要**（`N 个按钮 · 本页 M · 名字 · 完成`），完整内容进日志 + 悬停提示 | 标签宽度固定，长句（旧格式实测 414px vs 392px）尾巴被截 |
@@ -177,7 +207,8 @@ powershell -File tools\Make-Icons.ps1         # 重生成 PNG 图标（先 build
 - `tests\Test-Cli.ps1` 里 `run <id> --dry` 会把 12 个系统工具全解析一遍（不许真的开 12 个窗口），
   并且直接问隔壁 `PermanentDeleteSetup.exe status` 拿 `installed=` —— "找得到 + 真能跑"都证明一次。
 - 容易写错的断言（本仓库都踩过）：
-  1. 占位按钮点完会灰 600ms，**要等它恢复**再断言"按钮可用"；
+  1. **灰按钮是禁用的**（`Enabled=false`）：要断言"点不动"就读 `IsWindowEnabled`，
+     **别用 `PostMessage(BM_CLICK)` 证明** —— 直接投递的消息不一定被禁用状态挡住（踩过，见 DESIGN §12 坑 18）；
   2. WinForms `Label` 是有窗口句柄的（`STATIC` 类），所以"标签压按钮"能被枚举出来；
   3. 读 `status` 的 `key=value` 时**别让行尾 `\r` 混进值里**（`([^\r\n]*)` + `Trim()`），
      否则 `Test-Path` 会报"路径含非法字符"；
@@ -189,7 +220,8 @@ powershell -File tools\Make-Icons.ps1         # 重生成 PNG 图标（先 build
      背景 = 内区出现最多的颜色 → 按行数墨迹判定。
      判据：图标是**亮而饱和**（`max-min > 60 && max > 140`）**或明显比底色暗**（`mx < bgMax - 45`）
      的色块（第二条是为了**灰图标**，只认第一条时灰图标会被当成背景，文字行数会算进图标 → 15 行）；
-     文字是暗墨迹。灰度判定用"最暗墨迹"：真按钮 26、灰按钮 138（阈值 ≤ 80 / ≥ 110）。
+     文字是暗墨迹。灰度判定用"最暗墨迹"：**真按钮 26、灰按钮 77**（禁用控件画字会描 1px 深影，
+     所以不再是纯灰的 138）→ 判据"真 ≤ 80、灰 ≥ 60、差 ≥ 30"。
   8. **判"有没有弹窗"要按窗口类 `#32770`**：WinForms 的 `ToolTip` 也是顶层窗口
      （`tooltips_class32`、标题空），按"除主窗口外的可见窗口"判会把 tooltip 当成弹窗；
   9. **`function f { return @(单个对象) }` 会被解包成单值**，而单个 `PSCustomObject` **没有 `.Count`**，
@@ -209,11 +241,9 @@ powershell -File tools\Make-Icons.ps1         # 重生成 PNG 图标（先 build
 
 1. **Git：本地仓库已经建好**；**GitHub 远程仓库还没建**，推送必须先问用户
    （用户原话："先只留本地仓库"）。
-2. **外部工具放哪**：用户 2026-10-04 的意思是"建一个子文件夹，毕竟后续还得加其他 exe 工具"。
-   方案在 `docs\DESIGN.md` §13：① 工具箱目录下 `payload\` 工具目录（推荐先做）
-   ② 把 payload 内嵌进 exe、首次点击释放到固定目录当兜底 ③ `payload\<工具>\tool.json` 自动扫出按钮（P2）。
-   连带要做的：`kind: exe` 的相对 `path` 改成**相对工具箱 exe 目录**解析（现在按进程当前目录，不可靠）。
-   **等用户拍板，别自己实现。**
+2. **外部工具目录 `bin-tools\`**：用户 2026-10-04 选了这个方案并定了名字，**已经实现**（见 `docs\DESIGN.md` §13）。
+   还没做的只有两层：② 把 `bin-tools\` 里的 exe 内嵌进 exe、首次点击释放到固定目录当兜底；
+   ③ 扫 `bin-tools\<工具>\tool.json` 自动长出按钮。**这两层等用户说要再做，别自己开工。**
 3. P1 的范围（先接哪个页签的真功能）要问用户，别自己挑。
 4. 图标要改样式就动 `tools\Make-Icons.ps1` 的关键词映射 / 配色，然后按
    `build.ps1 → Make-Icons.ps1 → 删孤儿 → build.ps1` 的顺序跑。

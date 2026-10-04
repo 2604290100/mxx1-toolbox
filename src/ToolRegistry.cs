@@ -44,7 +44,8 @@ namespace Mxx1Toolbox
             {
                 if (File.Exists(AppPaths.UserToolsJson))
                 {
-                    AddJson(map, File.ReadAllText(AppPaths.UserToolsJson, Encoding.UTF8), "tools.json（用户）", warnings);
+                    AddJson(map, File.ReadAllText(AppPaths.UserToolsJson, Encoding.UTF8),
+                        "tools.json（用户）", warnings, true);
                 }
             }
             catch (Exception ex)
@@ -72,7 +73,11 @@ namespace Mxx1Toolbox
         }
 
         /// <summary>Accepts a bare array, an object with a "tools" array, or a single object.</summary>
-        private static void AddJson(Dictionary<string, ToolItem> map, string text, string source, List<string> warnings)
+        private static void AddJson(Dictionary<string, ToolItem> map, string text, string source,
+            List<string> warnings) { AddJson(map, text, source, warnings, false); }
+
+        private static void AddJson(Dictionary<string, ToolItem> map, string text, string source,
+            List<string> warnings, bool userLayer)
         {
             object root = Json.Parse(text);
             Dictionary<string, object> obj = Json.AsObject(root);
@@ -96,6 +101,7 @@ namespace Mxx1Toolbox
                 try
                 {
                     ToolItem item = ToolItem.FromJson(eo, source);
+                    item.UserLayer = userLayer;
                     map[item.Id] = item;
                 }
                 catch (Exception ex)

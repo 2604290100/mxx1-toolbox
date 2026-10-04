@@ -141,13 +141,19 @@ namespace Mxx1Toolbox
             List<string> candidates = new List<string>();
             if (settings != null && !string.IsNullOrEmpty(settings.PermanentDeleteExe))
             {
-                candidates.Add(AppPaths.Expand(settings.PermanentDeleteExe));
+                candidates.Add(AppPaths.Resolve(settings.PermanentDeleteExe));
             }
             string env = Environment.GetEnvironmentVariable("MXX1_PERMDEL_EXE");
             if (!string.IsNullOrEmpty(env)) { candidates.Add(env); }
 
+            // ① the tool folder next to the exe: drop PermanentDeleteSetup.exe in and it is found.
+            //    This is the folder the user is meant to use for every external tool (bin-tools\).
+            candidates.Add(Path.Combine(AppPaths.PayloadDir, "PermanentDeleteSetup.exe"));
+            // ② the same file lying loose next to the exe (the "one flat folder" case)
             candidates.Add(Path.Combine(AppPaths.ExeDir, "PermanentDeleteSetup.exe"));
-            // Walk up three levels looking for a sibling checkout: bin\ -> toolbox\ -> workspace\.
+            // ③ per user tool folder (where an embedded payload would be extracted to, later)
+            candidates.Add(Path.Combine(AppPaths.UserPayloadDir, "PermanentDeleteSetup.exe"));
+            // ④ Walk up three levels looking for a sibling checkout: bin\ -> toolbox\ -> workspace\.
             try
             {
                 DirectoryInfo dir = new DirectoryInfo(AppPaths.ExeDir);
@@ -171,6 +177,14 @@ namespace Mxx1Toolbox
             return "";
         }
 
+        /// <summary>Shown when an external tool is missing: it names the folder to drop it into.</summary>
+        public static string MissingToolMessage(string fileName)
+        {
+            return "没找到 " + fileName + "。把它放进工具目录：" + Environment.NewLine
+                + AppPaths.PayloadDir + Environment.NewLine
+                + "或者在本程序的「设置」里指定它的完整路径。";
+        }
+
         /// <summary>Command line shown by "复制启动命令" and in the log.</summary>
         public static string DescribeCommand(ToolItem t, Settings settings, bool asAdmin)
         {
@@ -178,12 +192,12 @@ namespace Mxx1Toolbox
             switch (t.Kind)
             {
                 case "exe":
-                    return Quote(AppPaths.Expand(t.Path)) + (t.Args.Length > 0 ? " " + t.Args : "");
+                    return Quote(AppPaths.Resolve(t.Path)) + (t.Args.Length > 0 ? " " + t.Args : "");
                 case "script":
                     if (t.Inline.Length > 0) { return t.Shell + " -Command \"" + t.Inline + "\""; }
-                    return t.Shell + " -File " + Quote(AppPaths.Expand(t.Path)) + (t.Args.Length > 0 ? " " + t.Args : "");
+                    return t.Shell + " -File " + Quote(AppPaths.Resolve(t.Path)) + (t.Args.Length > 0 ? " " + t.Args : "");
                 case "open":
-                    return "start \"\" " + AppPaths.Expand(t.Target);
+                    return "start \"\" " + AppPaths.Resolve(t.Target);
                 case "builtin":
                     if (t.Module == ModulePermdel)
                     {
@@ -227,16 +241,16 @@ namespace Mxx1Toolbox
                     return RunBuiltin(t, settings, asAdmin);
                 case "exe":
                     {
-                        string file = AppPaths.Expand(t.Path);
+                        string file = AppPaths.Resolve(t.Path);
                         if (!File.Exists(file))
                         {
                             r.Ok = false; r.Message = "找不到程序：" + file; return r;
                         }
-                        return Exec(file, t.Args, AppPaths.Expand(t.WorkDir), asAdmin, t.Wait, t.TimeoutSec);
+                        return Exec(file, t.Args, AppPaths.Resolve(t.WorkDir), asAdmin, t.Wait, t.TimeoutSec);
                     }
                 case "script":
                     {
-                        string file = AppPaths.Expand(t.Path);
+                        string file = AppPaths.Resolve(t.Path);
                         if (t.Inline.Length == 0 && !File.Exists(file))
                         {
                             r.Ok = false; r.Message = "找不到脚本：" + file; return r;
@@ -246,11 +260,11 @@ namespace Mxx1Toolbox
                             ? "/c " + (t.Inline.Length > 0 ? t.Inline : Quote(file) + " " + t.Args)
                             : "-NoProfile -ExecutionPolicy Bypass " +
                               (t.Inline.Length > 0 ? "-EncodedCommand " + ToBase64(t.Inline) : "-File " + Quote(file) + " " + t.Args);
-                        return Exec(shell, args, AppPaths.Expand(t.WorkDir), asAdmin, true, t.TimeoutSec);
+                        return Exec(shell, args, AppPaths.Resolve(t.WorkDir), asAdmin, true, t.TimeoutSec);
                     }
                 case "open":
                     {
-                        string target = AppPaths.Expand(t.Target);
+                        string target = AppPaths.Resolve(t.Target);
                         if (target.Length == 0) { r.Ok = false; r.Message = "按钮没有配置 target"; return r; }
                         try
                         {
@@ -292,7 +306,7 @@ namespace Mxx1Toolbox
             if (exe.Length == 0)
             {
                 r.Ok = false;
-                r.Message = "没找到 PermanentDeleteSetup.exe —— 请在「设置」里指定它的路径";
+                r.Message = MissingToolMessage("PermanentDeleteSetup.exe");
                 return r;
             }
 
@@ -415,6 +429,20 @@ namespace Mxx1Toolbox
                     psi.Verb = "runas";
                     Process.Start(psi);
                     r.Message = "已请求以管理员身份运行（请在 UAC 窗口确认）";
+                    return r;
+                }
+
+                // Anything that is not a real executable (.vbs / .lnk / .bat / a document) cannot be
+                // started with CreateProcess, so those go through the shell like a double click.
+                // No output is captured for them -- the shell owns the process from then on.
+                string ext = "";
+                try { ext = Path.GetExtension(file).ToLowerInvariant(); }
+                catch { }
+                if (ext != ".exe" && ext != ".com")
+                {
+                    psi.UseShellExecute = true;
+                    Process.Start(psi);
+                    r.Message = "已启动：" + Path.GetFileName(file);
                     return r;
                 }
 

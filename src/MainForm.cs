@@ -37,6 +37,10 @@ namespace Mxx1Toolbox
         private string _filter = "";
         private string _statusText = "就绪";
         private int _running;
+        // 等"提升权限后另起的那个进程"把结果写进交接文件（它没有控制台，见 Launcher.RunPrivacy）
+        private System.Windows.Forms.Timer _elevatedWatch;
+        private DateTime _elevatedSince;
+        private int _elevatedTries;
 
         private TableLayoutPanel _root;
         private TableLayoutPanel _tabBar;
@@ -863,6 +867,23 @@ namespace Mxx1Toolbox
             RefreshLogBox();
             UpdateStatusBar();
 
+            if (r.Deferred)
+            {
+                // 真正干活的是"提升权限后另起的那个进程"：它没有控制台，结果写在交接文件里。
+                // 不盯着它的话，用户就只看到一句"已请求以管理员身份运行"、没有下文（这类
+                // "点了没反应"的体验正是用户一直在报的那一类）。
+                _elevatedSince = DateTime.Now.AddSeconds(-1);
+                _elevatedTries = 0;
+                if (_elevatedWatch == null)
+                {
+                    _elevatedWatch = new System.Windows.Forms.Timer();
+                    _elevatedWatch.Interval = 1000;
+                    _elevatedWatch.Tick += delegate { PickUpElevatedResult(); };
+                }
+                _elevatedWatch.Start();
+                SetStatus(t.Name + " · 等管理员窗口确认……（结果会自动弹出来）");
+            }
+
             if (r.Output != null && r.Output.Trim().Length > 0)
             {
                 OutputForm f = new OutputForm(t.Name, t.Name + "　——　" + r.Message, r.Output, _theme);
@@ -871,6 +892,39 @@ namespace Mxx1Toolbox
             else if (!r.Ok)
             {
                 MessageBox.Show(this, r.Message, t.Name, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+        }
+
+        /// <summary>读取"提升权限的那个自己"留下的报告，用平时那个结果窗口显示出来。
+        /// 没有这一步，用户点了需要管理员的按钮就只看到一句"已请求以管理员身份运行"，
+        /// 真正的结果消失在那个没有控制台的进程里（用户报过的"点了没反应"就是这一类）。</summary>
+        private void PickUpElevatedResult()
+        {
+            _elevatedTries++;
+            try
+            {
+                string file = AppPaths.ElevatedResultFile;
+                if (File.Exists(file) && File.GetLastWriteTime(file) >= _elevatedSince)
+                {
+                    string text = File.ReadAllText(file);
+                    try { File.Delete(file); } catch { }
+                    if (_elevatedWatch != null) { _elevatedWatch.Stop(); }
+                    if (text.Trim().Length > 0)
+                    {
+                        Logger.Write("管理员动作", "结果已从提升权限的进程取回");
+                        RefreshLogBox();
+                        OutputForm form = new OutputForm("管理员动作的结果", "已用管理员身份执行完", text, _theme);
+                        form.Show(this);
+                        SetStatus("管理员动作已完成（结果见窗口和日志）");
+                    }
+                    return;
+                }
+            }
+            catch { }
+            if (_elevatedTries >= 25)   // 25 秒还没等到就别再轮询（用户可能把 UAC 取消了）
+            {
+                if (_elevatedWatch != null) { _elevatedWatch.Stop(); }
+                SetStatus("没有等到管理员动作的结果（UAC 窗口被取消了吗？）");
             }
         }
 

@@ -20,6 +20,15 @@ namespace Mxx1Toolbox
         public static string SettingsIni { get { return Path.Combine(BaseDir, "settings.ini"); } }
         public static string UserToolsJson { get { return Path.Combine(BaseDir, "tools.json"); } }
 
+        /// <summary>改动前的原值：隐私开关的「一键还原」按这份记录写回去（改动前才记，重复点不会
+        /// 把已经改过的值当成原值）。</summary>
+        public static string PrivacyBackupFile { get { return Path.Combine(BaseDir, "privacy-original.tsv"); } }
+
+        /// <summary>结果交接文件。按钮需要管理员权限时工具箱会把自己以管理员身份再起一遍，而那个
+        /// 子进程是 winexe（没有控制台），Console 输出等于扔掉 —— 所以它把结果写在这里，
+        /// 父进程过几秒读出来，照常弹结果窗口（否则用户只看到一句"已请求管理员权限"就没了下文）。</summary>
+        public static string ElevatedResultFile { get { return Path.Combine(BaseDir, "last-elevated-result.txt"); } }
+
         /// <summary>Every external tool lives in one sub folder next to the exe, so adding a tool is
         /// just dropping the file in: &lt;工具箱目录&gt;\bin-tools\Xxx.exe. The name is deliberately not
         /// "tools" -- the repository's tools\ folder holds the button manifests, and the packaged

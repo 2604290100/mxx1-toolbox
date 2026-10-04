@@ -98,11 +98,11 @@ $status = Invoke-Exe 'status'
 Check 'A01 status 退出码 0' ($status.Code -eq 0) ('exit=' + $status.Code)
 Check 'A02 中文输出没有乱码（UTF-8）' ($status.Out -match 'name=萌新工具箱') ('name=' + (Get-Key $status.Out 'name'))
 Check 'A03 版本号 1.2.0' ((Get-Key $status.Out 'version') -eq '1.2.0') (Get-Key $status.Out 'version')
-Check 'A04 按钮总数 66（测试期间用户层的按钮会暂停：常用 31 + 系统工具 25 + 清理 8 + 右键 1 + 我的 1）' ((Get-Key $status.Out 'buttons') -eq '66') (Get-Key $status.Out 'buttons')
+Check 'A04 按钮总数 100（测试期间用户层的按钮会暂停：常用 31 + 系统工具 25 + 隐私 29 + 应用 5 + 清理 8 + 右键 1 + 我的 1）' ((Get-Key $status.Out 'buttons') -eq '100') (Get-Key $status.Out 'buttons')
 Check 'A05 内置清单里没有灰色占位按钮了（两个「资源管理器」也接上了真功能；灰规则改由 B 组注入验证）' ((Get-Key $status.Out 'placeholders') -eq '0') (Get-Key $status.Out 'placeholders')
 Check 'A06 危险按钮 3 个' ((Get-Key $status.Out 'dangerous') -eq '3') (Get-Key $status.Out 'dangerous')
 
-$tabExpect = @{ 'common' = 31; 'rightmenu' = 1; 'cleanup' = 8; 'system' = 25; 'mine' = 1 }
+$tabExpect = @{ 'common' = 31; 'rightmenu' = 1; 'cleanup' = 8; 'system' = 25; 'privacy' = 29; 'apps' = 5; 'mine' = 1 }
 $tabOk = $true
 $tabDetail = @()
 foreach ($k in $tabExpect.Keys) {
@@ -110,13 +110,13 @@ foreach ($k in $tabExpect.Keys) {
     $tabDetail += ($k + '=' + $v)
     if ($v -ne [string]$tabExpect[$k]) { $tabOk = $false }
 }
-Check 'A07 五个页签的按钮数正确（31/1/8/25/1）' $tabOk ($tabDetail -join ' ')
+Check 'A07 七个页签的按钮数正确（31/1/8/25/29/5/1）' $tabOk ($tabDetail -join ' ')
 
 $list = Invoke-Exe 'list'
 Check 'A08 list 退出码 0' ($list.Code -eq 0) ('exit=' + $list.Code)
-Check 'A09 list 报的按钮数一致' ((Get-Key $list.Out 'buttons') -eq '66') (Get-Key $list.Out 'buttons')
+Check 'A09 list 报的按钮数一致' ((Get-Key $list.Out 'buttons') -eq '100') (Get-Key $list.Out 'buttons')
 $lines = @($list.Out -split "`r?`n" | Where-Object { $_ -match "`t" })
-Check 'A10 list 打出 66 行按钮' ($lines.Count -eq 66) ('lines=' + $lines.Count)
+Check 'A10 list 打出 100 行按钮' ($lines.Count -eq 100) ('lines=' + $lines.Count)
 
 $rmList = Invoke-Exe 'list --tab rightmenu'
 Check 'A11 右键增强只有 1 个按钮' ((Get-Key $rmList.Out 'shown') -eq '1') (Get-Key $rmList.Out 'shown')
@@ -209,8 +209,8 @@ if ($permdel -eq '(未找到)' -or $permdel.Length -eq 0) {
 Write-Host ''
 Write-Host 'D 组 · 「系统工具」25 个按钮（Windows 自带组件 + 修复/诊断，--dry 只解析不启动）'
 
-Check 'D01 status 报 14 个系统工具动作、0 个缺失' `
-    (((Get-Key $status.Out 'systemTargets') -eq '14') -and ((Get-Key $status.Out 'systemMissing') -eq '0')) `
+Check 'D01 status 报 20 个系统工具动作（12 组件 + 2 诊断 + 4 权限页 + 2 应用页）、0 个缺失' `
+    (((Get-Key $status.Out 'systemTargets') -eq '20') -and ((Get-Key $status.Out 'systemMissing') -eq '0')) `
     ('targets=' + (Get-Key $status.Out 'systemTargets') + ' missing=' + (Get-Key $status.Out 'systemMissing'))
 
 $sysList = Invoke-Exe 'list --tab system'
@@ -403,7 +403,7 @@ Write-Host 'H 组 · 悬停说明（用户 2026-10-04 报过「鼠标悬停的�
 # tip 命令打印的就是界面塞给 ToolTip 的那个字符串，所以这里能直接断言，不用去动真鼠标。
 $tipsAll = Invoke-Exe 'tip'
 Check 'H01 tip 退出码 0' ($tipsAll.Code -eq 0) ('exit=' + $tipsAll.Code)
-Check 'H02 tip 覆盖了每个按钮（66 个）' ((Get-Key $tipsAll.Out 'tips') -eq '66') (Get-Key $tipsAll.Out 'tips')
+Check 'H02 tip 覆盖了每个按钮（100 个）' ((Get-Key $tipsAll.Out 'tips') -eq '100') (Get-Key $tipsAll.Out 'tips')
 
 $blocks = @{}
 $curId = ''
@@ -443,6 +443,122 @@ Check 'H06 危险按钮的说明写明了"会改动系统、先弹确认框"' ($
 Check 'H07 要管理员权限的按钮写明了"会弹 UAC 窗口"' ($tipOne.Out -match 'UAC') ''
 $tipMissing = Invoke-Exe 'tip no.such.button'
 Check 'H08 tip 一个不存在的 id → 退出码 2' ($tipMissing.Code -eq 2) ('exit=' + $tipMissing.Code)
+
+# ---------------------------------------------------------------- I 组：隐私设置页签
+Write-Host ''
+Write-Host 'I 组 · 隐私设置（成对开关 + 一键还原；写注册表之前的原值会被记下来）'
+
+$pvItems = Invoke-Exe 'privacy items'
+Check 'I01 privacy items 退出码 0' ($pvItems.Code -eq 0) ('exit=' + $pvItems.Code)
+$pvLines = @($pvItems.Out -split "`r?`n" | Where-Object { $_ -match "`t" })
+Check 'I02 11 组隐私开关都在表里' ($pvLines.Count -eq 11) ('数=' + $pvLines.Count)
+
+# 每一组都必须有成对的「关闭 X / 开启 X」按钮 —— 用户拍板的就是"成对开关 + 能一键还原"
+$pvList = Invoke-Exe 'list --tab privacy'
+$pvIds = @()
+foreach ($line in ($pvList.Out -split "`r?`n")) { if ($line -match "`t") { $pvIds += ($line -split "`t")[0] } }
+Check 'I03 隐私页签 29 个按钮' ($pvIds.Count -eq 29) ('数=' + $pvIds.Count)
+# 配对不按 id 猜（error-report 那组的 id 其实是 privacy-errorreport-off），而是看按钮自己的
+# 说明里有没有「关闭「X」」和「开启「X」」—— 这也正是用户看到的那两个按钮。
+$missingPair = @()
+foreach ($line in $pvLines) {
+    $itemName = ($line -split "`t")[1]
+    $offN = 0
+    $onN = 0
+    foreach ($id in $pvIds) {
+        if (-not $blocks.ContainsKey($id)) { continue }
+        $tip = ($blocks[$id] -join "`n")
+        if ($tip.IndexOf('关闭「' + $itemName + '」') -ge 0) { $offN++ }
+        if ($tip.IndexOf('开启「' + $itemName + '」') -ge 0) { $onN++ }
+    }
+    if ($offN -ne 1) { $missingPair += ($itemName + ':关闭按钮 ' + $offN + ' 个') }
+    if ($onN -ne 1) { $missingPair += ($itemName + ':开启按钮 ' + $onN + ' 个') }
+}
+Check 'I04 每一组都有配对的「关闭 / 开启」两个按钮' ($missingPair.Count -eq 0) ($missingPair -join ' ')
+
+# 合规底线：隐私页签上不许出现"关掉安全防线"的按钮（Defender / 防火墙 / UAC / SmartScreen / 实时防护）。
+# 这条是从"Windows 激活已删除"那条线延续下来的：宁可少一个按钮，也不代关防线。
+$forbidden = @('Defender', '防火墙', 'UAC', 'SmartScreen', '实时防护', '篡改')
+$bad = @()
+foreach ($id in $pvIds) {
+    if (-not $blocks.ContainsKey($id)) { continue }
+    # 去掉"需要管理员权限：会弹 UAC 窗口"那行标记：它说的是"会弹 UAC 确认框"，
+    # 不是"关闭 UAC"。剩下的文字里出现安全防线关键词才算违规。
+    $tip = (($blocks[$id] | Where-Object { $_ -notmatch '需要管理员权限' }) -join "`n")
+    foreach ($w in $forbidden) { if ($tip -match $w) { $bad += ($id + '→' + $w) } }
+}
+Check 'I05 隐私页签上没有任何"关掉安全防线"的按钮（合规底线）' ($bad.Count -eq 0) ($bad -join ' ')
+
+# 只读的状态报告：必须把每个开关都念一遍，而且一个字节都不改
+$pvStatus = Invoke-Exe 'privacy status'
+Check 'I06 privacy status 退出码 0（只读）' ($pvStatus.Code -eq 0) ('exit=' + $pvStatus.Code)
+$notListed = @()
+foreach ($line in $pvLines) {
+    $name = ($line -split "`t")[1]
+    if ($pvStatus.Out.IndexOf($name) -lt 0) { $notListed += $name }
+}
+Check 'I07 状态报告把每一组开关都念到了' ($notListed.Count -eq 0) ($notListed -join ' ')
+
+# 写入 / 读回 / 还原 这条链路：用工具箱自己的测试键自检，不碰任何真实设置
+$pvSelf = Invoke-Exe 'privacy selftest'
+Check 'I08 自检通过（记原值 → 写入 → 读回核对 → 还原，含"原来没有这个值"的分支）' `
+    (($pvSelf.Code -eq 0) -and ($pvSelf.Out -match 'selftest=pass')) `
+    (($pvSelf.Out -split "`r?`n" | Where-Object { $_ -match 'selftest=' }) -join '')
+Check 'I09 自检没留下垃圾（测试键已删、没有生成原值备份文件）' `
+    ((-not (Test-Path -LiteralPath 'HKCU:\SOFTWARE\mxx1-toolbox\privacy-selftest')) -and (-not (Test-Path -LiteralPath (Join-Path $env:LOCALAPPDATA 'mxx1-toolbox\privacy-original.tsv')))) ''
+
+# 命令行故意不提供"真的去改隐私设置"的入口：那只能从界面点（要么弹确认框、要么是可还原的成对开关）
+$pvWrite = Invoke-Exe 'privacy set off telemetry'
+Check 'I10 命令行没有"直接改隐私设置"的入口（退出码 2）' ($pvWrite.Code -eq 2) ('exit=' + $pvWrite.Code)
+
+# 一键优化必须带确认（它会一次改掉一整页的开关）
+$optLine = @($pvList.Out -split "`r?`n" | Where-Object { $_ -match "privacy-optimize`t" })
+$optDry = Invoke-Exe 'run privacy-optimize --dry'
+Check 'I11 「隐私一键优化」--dry 解析成注册表动作，说明里点明了可还原' `
+    (((Get-Key $optDry.Out 'kind') -eq 'registry') -and ((Get-Key $optDry.Out 'target') -match '可一键还原')) `
+    ('kind=' + (Get-Key $optDry.Out 'kind') + ' target=' + (Get-Key $optDry.Out 'target'))
+
+# ---------------------------------------------------------------- J 组：应用管理页签
+Write-Host ''
+Write-Host 'J 组 · 应用管理（只读 + 单个卸载；不做批量、不碰 Edge）'
+
+$appList = Invoke-Exe 'list --tab apps'
+$appIds = @()
+foreach ($line in ($appList.Out -split "`r?`n")) { if ($line -match "`t") { $appIds += ($line -split "`t")[0] } }
+Check 'J01 应用管理页签 5 个按钮' ($appIds.Count -eq 5) ($appIds -join ' ')
+
+# 只读的两个：真的跑一遍（查看启动项 / 查看已安装应用都不改任何东西）
+$startup = Invoke-Exe 'run apps-startup'
+Check 'J02 「查看启动项」跑得通且只读' (($startup.Code -eq 0) -and ($startup.Out -match 'result=ok')) ('exit=' + $startup.Code)
+$listApps = Invoke-Exe 'run apps-list' 300
+Check 'J03 「查看已安装应用」跑得通（Appx 列表）' `
+    (($listApps.Code -eq 0) -and (($listApps.Out -match '已安装的商店应用') -or ($listApps.Out -match '读不到商店应用'))) `
+    (($listApps.Out -split "`r?`n" | Where-Object { $_ -match '已安装的商店应用|读不到商店应用' }) -join '')
+
+# 两个"打开官方页面"的按钮必须解析成 ms-settings 目标
+foreach ($pair in @(@('apps-default', 'defaultapps'), @('apps-features', 'appsfeatures'))) {
+    $d = Invoke-Exe ('run ' + $pair[0] + ' --dry')
+    Check ('J04 「' + $pair[0] + '」--dry 解析成设置页 URI') `
+        (((Get-Key $d.Out 'kind') -eq 'url') -and ((Get-Key $d.Out 'target') -match $pair[1])) `
+        ('kind=' + (Get-Key $d.Out 'kind') + ' target=' + (Get-Key $d.Out 'target'))
+}
+
+# 单个卸载：--dry 只解析，绝不执行（执行会弹一个模态窗口，测试里不能点）
+$unDry = Invoke-Exe 'run apps-uninstall --dry'
+Check 'J05 「卸载单个应用」--dry 只解析（kind=script）' ((Get-Key $unDry.Out 'kind') -eq 'script') ('kind=' + (Get-Key $unDry.Out 'kind'))
+
+# 合规/安全底线（直接读清单，不靠运行时）：
+#  ① 不许有"批量卸载 / 一键卸载 / 卸载 Edge"这种不可逆或破坏系统的按钮；
+#  ② 单个卸载只允许 Remove-AppxPackage（当前用户），不许出现 -AllUsers；
+#  ③ 卸载前必须二次确认（confirm: true）。
+$appsJson = Get-Content -LiteralPath (Join-Path $root 'tools\apps.json') -Raw -Encoding UTF8
+$appTools = (ConvertFrom-Json $appsJson).tools
+$badNames = @($appTools | Where-Object { $_.name -match '批量|全部|Edge|一键卸载' })
+Check 'J06 没有"批量卸载 / 卸载 Edge"这类按钮' ($badNames.Count -eq 0) (($badNames | ForEach-Object { $_.name }) -join ' ')
+$un = @($appTools | Where-Object { $_.id -eq 'apps-uninstall' })[0]
+Check 'J07 单个卸载只用 Remove-AppxPackage（不带 -AllUsers，只影响当前用户）' `
+    (($un.inline -match 'Remove-AppxPackage') -and ($un.inline -notmatch '-AllUsers')) ''
+Check 'J08 单个卸载带二次确认（confirm: true）' ($un.confirm -eq $true) ('confirm=' + $un.confirm)
 
 # ---------------------------------------------------------------- 汇总
 Write-Host ''

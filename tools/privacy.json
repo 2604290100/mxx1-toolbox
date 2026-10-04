@@ -1,0 +1,46 @@
+{
+  "_comment": "隐私设置页签。29 个按钮 = 11 组「关闭 X / 开启 X」成对开关 + 4 个权限直达入口（相机/麦克风/位置/后台应用）+ 查看状态 / 一键优化 / 一键还原。后端是 src\\Privacy.cs 的开关表（每个开关可能对应好几个注册表值，「系统广告」一组就是 8 个）：写之前先把原值记到 %LOCALAPPDATA%\\mxx1-toolbox\\privacy-original.tsv，写完读回核对，「隐私一键还原」按那份记录逐条写回去。合规底线：只碰隐私 / 广告 / 遥测开关，Defender、防火墙、UAC、SmartScreen 这些安全防线一概不碰、也不代关。",
+  "tools": [
+    { "id": "privacy-telemetry-off",  "tab": "privacy", "segment": 1, "order": 10,  "name": "关闭微软遥测",  "kind": "builtin", "module": "privacy", "action": "off", "options": "telemetry",    "runAsAdmin": true, "hint": "关闭诊断数据上报（写 AllowTelemetry=0）。Windows 专业版/家庭版的下限是「基本」，所以这个策略在专业版上只能压到最低、压不到 0" },
+    { "id": "privacy-telemetry-on",   "tab": "privacy", "segment": 1, "order": 11,  "name": "开启微软遥测",  "kind": "builtin", "module": "privacy", "action": "on",  "options": "telemetry",    "runAsAdmin": true, "hint": "把诊断数据上报改回默认值（AllowTelemetry=1）" },
+
+    { "id": "privacy-errorreport-off","tab": "privacy", "segment": 1, "order": 20,  "name": "关闭错误报告",  "kind": "builtin", "module": "privacy", "action": "off", "options": "error-report", "runAsAdmin": true, "hint": "程序崩溃时不再往微软上报，也不会再弹「Windows 遇到问题」那个窗口" },
+    { "id": "privacy-errorreport-on", "tab": "privacy", "segment": 1, "order": 21,  "name": "开启错误报告",  "kind": "builtin", "module": "privacy", "action": "on",  "options": "error-report", "runAsAdmin": true, "hint": "恢复默认：崩溃时上报并弹出问题窗口" },
+
+    { "id": "privacy-cortana-off",    "tab": "privacy", "segment": 1, "order": 30,  "name": "关闭小娜",      "kind": "builtin", "module": "privacy", "action": "off", "options": "cortana",      "runAsAdmin": true, "hint": "关掉 Cortana（AllowCortana=0）。Win11 已经没有小娜了，写进去也不生效" },
+    { "id": "privacy-cortana-on",     "tab": "privacy", "segment": 1, "order": 31,  "name": "开启小娜",      "kind": "builtin", "module": "privacy", "action": "on",  "options": "cortana",      "runAsAdmin": true, "hint": "恢复 Cortana 默认状态" },
+
+    { "id": "privacy-bing-off",       "tab": "privacy", "segment": 1, "order": 40,  "name": "关闭搜索推荐",  "kind": "builtin", "module": "privacy", "action": "off", "options": "bing-search",  "hint": "开始菜单里搜索时不再联网去必应找网页建议（BingSearchEnabled=0）" },
+    { "id": "privacy-bing-on",        "tab": "privacy", "segment": 1, "order": 41,  "name": "开启搜索推荐",  "kind": "builtin", "module": "privacy", "action": "on",  "options": "bing-search",  "hint": "恢复开始菜单里的必应网页搜索建议" },
+
+    { "id": "privacy-speech-off",     "tab": "privacy", "segment": 1, "order": 50,  "name": "关闭语音收集",  "kind": "builtin", "module": "privacy", "action": "off", "options": "speech",       "hint": "撤回「允许微软收集我的语音」这项在线语音识别授权" },
+    { "id": "privacy-speech-on",      "tab": "privacy", "segment": 1, "order": 51,  "name": "开启语音收集",  "kind": "builtin", "module": "privacy", "action": "on",  "options": "speech",       "hint": "重新允许在线语音识别（要用语音输入 / 小娜的人需要它）" },
+
+    { "id": "privacy-typing-off",     "tab": "privacy", "segment": 1, "order": 60,  "name": "关闭打字收集",  "kind": "builtin", "module": "privacy", "action": "off", "options": "typing",       "hint": "关掉打字和手写个性化数据的上传（一次改 4 个值）" },
+    { "id": "privacy-typing-on",      "tab": "privacy", "segment": 1, "order": 61,  "name": "开启打字收集",  "kind": "builtin", "module": "privacy", "action": "on",  "options": "typing",       "hint": "恢复打字 / 手写个性化数据收集" },
+
+    { "id": "privacy-activity-off",   "tab": "privacy", "segment": 1, "order": 70,  "name": "关闭活动历史",  "kind": "builtin", "module": "privacy", "action": "off", "options": "activity",     "runAsAdmin": true, "hint": "关掉活动历史记录 / 时间线（本机不再收集，也不会同步到微软账号）" },
+    { "id": "privacy-activity-on",    "tab": "privacy", "segment": 1, "order": 71,  "name": "开启活动历史",  "kind": "builtin", "module": "privacy", "action": "on",  "options": "activity",     "runAsAdmin": true, "hint": "恢复活动历史记录 / 时间线" },
+
+    { "id": "privacy-ads-off",        "tab": "privacy", "segment": 1, "order": 80,  "name": "关闭系统广告",  "kind": "builtin", "module": "privacy", "action": "off", "options": "sys-ads",      "hint": "开始菜单推荐、设置里的建议、锁屏 Spotlight 广告、静默装推广应用，一次关掉 8 个值" },
+    { "id": "privacy-ads-on",         "tab": "privacy", "segment": 1, "order": 81,  "name": "开启系统广告",  "kind": "builtin", "module": "privacy", "action": "on",  "options": "sys-ads",      "hint": "恢复 Windows 的推荐 / 建议 / 锁屏广告" },
+
+    { "id": "privacy-adid-off",       "tab": "privacy", "segment": 1, "order": 90,  "name": "关闭个性化广告","kind": "builtin", "module": "privacy", "action": "off", "options": "ad-id",        "hint": "关掉广告 ID：应用拿不到这个 ID，就做不了跨应用的定向广告" },
+    { "id": "privacy-adid-on",        "tab": "privacy", "segment": 1, "order": 91,  "name": "开启个性化广告","kind": "builtin", "module": "privacy", "action": "on",  "options": "ad-id",        "hint": "重新打开广告 ID" },
+
+    { "id": "privacy-delivery-off",   "tab": "privacy", "segment": 1, "order": 100, "name": "关闭传递优化",  "kind": "builtin", "module": "privacy", "action": "off", "options": "delivery",     "runAsAdmin": true, "hint": "更新和商店应用不再和其它电脑互相上传下载（只走微软服务器；这条也会省一点上传带宽）" },
+    { "id": "privacy-delivery-on",    "tab": "privacy", "segment": 1, "order": 101, "name": "开启传递优化",  "kind": "builtin", "module": "privacy", "action": "on",  "options": "delivery",     "runAsAdmin": true, "hint": "恢复传递优化的局域网互传（下载更新可能更快）" },
+
+    { "id": "privacy-feedback-off",   "tab": "privacy", "segment": 1, "order": 110, "name": "关闭反馈请求",  "kind": "builtin", "module": "privacy", "action": "off", "options": "feedback",     "hint": "不再被隔三差五问「你觉得 Windows 怎么样」" },
+    { "id": "privacy-feedback-on",    "tab": "privacy", "segment": 1, "order": 111, "name": "开启反馈请求",  "kind": "builtin", "module": "privacy", "action": "on",  "options": "feedback",     "hint": "恢复 Windows 的反馈请求弹窗" },
+
+    { "id": "privacy-camera",         "tab": "privacy", "segment": 2, "order": 10, "name": "相机权限",      "kind": "builtin", "module": "system", "action": "privacy-camera",       "hint": "打开系统的相机权限页 —— 逐个应用允许或禁止用摄像头（工具箱不代改权限，那一页才是权威）" },
+    { "id": "privacy-microphone",     "tab": "privacy", "segment": 2, "order": 20, "name": "麦克风权限",    "kind": "builtin", "module": "system", "action": "privacy-microphone",   "hint": "打开系统的麦克风权限页 —— 逐个应用允许或禁止录音" },
+    { "id": "privacy-location",       "tab": "privacy", "segment": 2, "order": 30, "name": "位置权限",      "kind": "builtin", "module": "system", "action": "privacy-location",     "hint": "打开系统的位置权限页 —— 定位总开关和逐个应用的授权都在这里" },
+    { "id": "privacy-background",     "tab": "privacy", "segment": 2, "order": 40, "name": "后台应用",      "kind": "builtin", "module": "system", "action": "privacy-background",   "hint": "打开「后台应用」页 —— 哪些应用可以在后台运行，一页里全列出来" },
+
+    { "id": "privacy-status",         "tab": "privacy", "segment": 3, "order": 10, "name": "查看隐私状态",  "kind": "builtin", "module": "privacy", "action": "status",   "hint": "只读：把上面每个开关现在的状态列出来（哪些已经关了、哪些还是系统默认）" },
+    { "id": "privacy-optimize",       "tab": "privacy", "segment": 3, "order": 20, "name": "隐私一键优化",  "kind": "builtin", "module": "privacy", "action": "optimize", "runAsAdmin": true, "confirm": true, "hint": "把这一页的开关全部关掉（安全防线一概不碰）。改动前的原值会先记下来，所以随时能还原" },
+    { "id": "privacy-restore",        "tab": "privacy", "segment": 3, "order": 30, "name": "隐私一键还原",  "kind": "builtin", "module": "privacy", "action": "restore",  "runAsAdmin": true, "hint": "按改动前记录的原值逐条写回去（原来没有的值就删掉）；还原成功后原值记录会清空" }
+  ]
+}

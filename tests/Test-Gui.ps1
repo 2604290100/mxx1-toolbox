@@ -515,6 +515,8 @@ $rightNames = Get-ToolNames 'rightmenu'
 $cleanNames = Get-ToolNames 'cleanup'
 $sysNames = Get-ToolNames 'system'
 $mineNames = Get-ToolNames 'mine'
+$privacyNames = Get-ToolNames 'privacy'
+$appsNames = Get-ToolNames 'apps'
 
 $proc = Start-Gui
 Check 'A01 界面能起来（主窗口出现）' (($proc -ne $null) -and (-not $proc.HasExited) -and ($proc.MainWindowHandle -ne [IntPtr]::Zero)) ''
@@ -534,6 +536,19 @@ Check 'A02 标题栏写着「萌新工具箱 v<版本号>」' ($title -match '�
 $style = [TBGui]::Styles($main)
 Check 'A03 标题栏没有最小化方框' (($style -band 0x00020000) -eq 0) ('style=0x{0:X}' -f $style)
 Check 'A04 标题栏没有最大化方框' (($style -band 0x00010000) -eq 0) ('style=0x{0:X}' -f $style)
+
+# 页签条：加了隐私设置 / 应用管理之后是 7 个。页签按钮都在窗口顶部（底栏那排功能按钮在底部，
+# 不会混进来）。
+# 注意：Get-ChildControls 给的是**屏幕坐标**（GetWindowRect），所以"顶部那一条"要拿主窗口的上边
+# 当参照 —— 直接写 Top -lt 32 永远匹配不到任何东西（第一版就是这么假红的）。
+# GetWindowRect 给的是整窗（含标题栏和边框）的屏幕坐标，客户区是从标题栏下面开始的，
+# 所以"顶部那一条"要留出标题栏的高度（+70 足够，页签按钮本身只有 24~28 高）。
+$mainRect = [TBGui]::Rect($main)
+$tabBar = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*BUTTON*' -and $_.Top -ge $mainRect[1] -and $_.Top -lt ($mainRect[1] + 70) -and $_.Height -le 30 })
+$tabLabels = @($tabBar | ForEach-Object { $_.Text })
+$wantTabs = @('常用设置', '右键增强', '清理优化', '系统工具', '隐私设置', '应用管理', '我的工具')
+$lackTabs = @($wantTabs | Where-Object { $tabLabels -notcontains $_ })
+Check ('A05b 页签条上有 7 个页签（{0}）' -f ($tabLabels -join '/')) (($tabBar.Count -eq 7) -and ($lackTabs.Count -eq 0)) ('找到 ' + $tabBar.Count + ' 个按钮: ' + ($tabLabels -join '/') + '  缺=' + ($lackTabs -join ' '))
 Check 'A05 窗口可缩放（有 WS_THICKFRAME）' (($style -band 0x00040000) -ne 0) ('style=0x{0:X}' -f $style)
 
 $rect = [TBGui]::Rect($main)
@@ -736,6 +751,10 @@ if ($rightProbe.Count -eq 0 -or $rightShot -eq $null) {
 Check ('C02 点「清理优化」→ {0} 个按钮' -f $cleanNames.Count) (Switch-Tab -Handle $main -TabName '清理优化' -ExpectNames $cleanNames) ''
 Check ('C03 点「系统工具」→ {0} 个按钮' -f $sysNames.Count) (Switch-Tab -Handle $main -TabName '系统工具' -ExpectNames $sysNames) ''
 Check ('C04 点「我的工具」→ {0} 个按钮' -f $mineNames.Count) (Switch-Tab -Handle $main -TabName '我的工具' -ExpectNames $mineNames) ''
+Check ('C04b 点「隐私设置」→ {0} 个按钮（成对开关都在这一页）' -f $privacyNames.Count) (Switch-Tab -Handle $main -TabName '隐私设置' -ExpectNames $privacyNames) ''
+$pvBad = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*BUTTON*' -and ($privacyNames -contains $_.Text) -and (-not $_.Enabled) })
+Check 'C04c 隐私页签上的按钮都是能点的（没有灰色按钮）' ($pvBad.Count -eq 0) (($pvBad | ForEach-Object { $_.Text }) -join ' ')
+Check ('C04d 点「应用管理」→ {0} 个按钮' -f $appsNames.Count) (Switch-Tab -Handle $main -TabName '应用管理' -ExpectNames $appsNames) ''
 Check ('C05 回「常用设置」→ {0} 个按钮' -f $commonNames.Count) (Switch-Tab -Handle $main -TabName '常用设置' -ExpectNames $commonNames) ''
 
 $gridAfter = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*BUTTON*' -and $commonNames -contains $_.Text })

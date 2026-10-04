@@ -19,6 +19,7 @@ namespace Mxx1Toolbox
         public string Output = "";
         public bool UiAction;              // handled by MainForm itself
         public string UiActionName = "";
+        public bool Deferred;              // 真正干活的是"提升权限后另起的那个进程"，结果稍后由交接文件送回来
     }
 
     /// <summary>One entry of the「系统工具」page: which Windows component it starts and what to say
@@ -53,6 +54,7 @@ namespace Mxx1Toolbox
         public const string ModulePermdel = "permdel";
         public const string ModuleApp = "app";
         public const string ModuleSystem = "system";
+        public const string ModulePrivacy = "privacy";
 
         /// <summary>The「系统工具」page. Every entry is a read-only viewer or a Windows settings
         /// page: nothing here changes the system, so none of them needs elevation.</summary>
@@ -85,7 +87,19 @@ namespace Mxx1Toolbox
             FileTarget("eventvwr", "事件查看器", "%SystemRoot%\\System32\\eventvwr.msc",
                 "这台电脑上找不到事件查看器（eventvwr.msc）—— 系统日志、蓝屏记录都在它里面"),
             FileTarget("perfmon", "性能监视器", "%SystemRoot%\\System32\\perfmon.exe",
-                "这台电脑上找不到性能监视器（perfmon.exe）")
+                "这台电脑上找不到性能监视器（perfmon.exe）"),
+
+            // 隐私设置页签上那 4 个"权限"按钮：权限逐个应用的开关只能在官方页面里点，
+            // 但页面本身可以直达（工具箱不代改权限，也不假装能改）。
+            UrlTarget("privacy-camera", "相机权限", "ms-settings:privacy-webcam"),
+            UrlTarget("privacy-microphone", "麦克风权限", "ms-settings:privacy-microphone"),
+            UrlTarget("privacy-location", "位置权限", "ms-settings:privacy-location"),
+            UrlTarget("privacy-background", "后台应用", "ms-settings:privacy-backgroundapps"),
+
+            // 应用管理页签上那两个"打开官方页面"的按钮。默认程序 / 应用和功能都在这些页面里改，
+            // 工具箱不代改（改默认程序要按文件类型逐个设，代改只会把关联搞乱）。
+            UrlTarget("defaultapps", "默认应用", "ms-settings:defaultapps"),
+            UrlTarget("appfeatures", "应用和功能", "ms-settings:appsfeatures")
         };
 
         // NOTE: these helpers must not be called File / Shell / Url / Links -- a method named File
@@ -229,6 +243,16 @@ namespace Mxx1Toolbox
                         if (st.Url.Length > 0) { return st.Url; }
                         return "本程序内的窗口（" + st.Name + "）";
                     }
+                    if (t.Module == ModulePrivacy)
+                    {
+                        // 悬停说明里附的就是这一行，所以写成一句人话，别把 options 里的 id 甩出去
+                        if (string.Equals(t.Action, "optimize", StringComparison.OrdinalIgnoreCase)) { return "把这一页的开关全部关掉（可一键还原）"; }
+                        if (string.Equals(t.Action, "restore", StringComparison.OrdinalIgnoreCase)) { return "按改动前的原值写回去（可重复还原）"; }
+                        if (string.Equals(t.Action, "status", StringComparison.OrdinalIgnoreCase)) { return "只读：列出每个开关现在的状态"; }
+                        PrivacyItem pi = Privacy.Find(t.Options);
+                        if (pi == null) { return "隐私设置里没有这个开关：" + t.Options; }
+                        return (string.Equals(t.Action, "on", StringComparison.OrdinalIgnoreCase) ? "开启「" : "关闭「") + pi.Name + "」（写注册表，可一键还原）";
+                    }
                     return "内置动作: " + t.Module + "/" + t.Action;
             }
             return t.Kind + " (未实现)";
@@ -352,6 +376,8 @@ namespace Mxx1Toolbox
 
             if (t.Module == ModuleSystem) { return RunSystem(t); }
 
+            if (t.Module == ModulePrivacy) { return RunPrivacy(t, asAdmin); }
+
             if (t.Module != ModulePermdel)
             {
                 r.Ok = false;
@@ -468,6 +494,50 @@ namespace Mxx1Toolbox
                 r.Ok = false;
                 r.Message = "打开" + target.Name + "失败：" + ex.Message;
             }
+            return r;
+        }
+
+        /// <summary>「隐私设置」page. The registry write happens inside this process (it must, so the
+        /// value can be read back and verified), which means an HKLM switch cannot elevate itself --
+        /// so the toolbox re-launches ITSELF with `run &lt;id&gt; --admin`. That child is a winexe with no
+        /// console, so its report goes to the log file and to a hand-off file the parent picks up a
+        /// few seconds later (MainForm.PickUpElevatedResult) instead of leaving the user with
+        /// "已请求管理员权限" and no outcome.</summary>
+        private static LaunchResult RunPrivacy(ToolItem t, bool asAdmin)
+        {
+            LaunchResult r = new LaunchResult();
+            if (Privacy.NeedsAdmin(t.Options) && asAdmin && !IsAdmin())
+            {
+                try
+                {
+                    try { File.Delete(AppPaths.ElevatedResultFile); } catch { }
+                    ProcessStartInfo psi = new ProcessStartInfo(AppPaths.ExePath, "run " + t.Id + " --admin");
+                    psi.UseShellExecute = true;
+                    psi.Verb = "runas";
+                    Process.Start(psi);
+                    r.Deferred = true;
+                    r.Message = "已请求以管理员身份运行（请在 UAC 窗口确认）—— 结果几秒后自动弹出来";
+                }
+                catch (Exception ex)
+                {
+                    r.Ok = false;
+                    r.Message = "请求管理员权限失败：" + ex.Message;
+                }
+                return r;
+            }
+
+            bool ok;
+            string report;
+            if (string.Equals(t.Action, "optimize", StringComparison.OrdinalIgnoreCase)) { report = Privacy.Optimize(out ok); }
+            else if (string.Equals(t.Action, "restore", StringComparison.OrdinalIgnoreCase)) { report = Privacy.Restore(out ok); }
+            else if (string.Equals(t.Action, "status", StringComparison.OrdinalIgnoreCase)) { report = Privacy.Status(); ok = true; }
+            else { report = Privacy.Set(t.Options, string.Equals(t.Action, "on", StringComparison.OrdinalIgnoreCase), out ok); }
+
+            r.Ok = ok;
+            r.Output = report;
+            r.Message = ok ? "隐私设置已处理" : "有值没成功（细节见报告）";
+            // 提升权限的那个子进程没有控制台，日志是它唯一的出口；写在这里两边都覆盖
+            Logger.Write(t.Name, report);
             return r;
         }
 

@@ -113,16 +113,18 @@ namespace Mxx1Toolbox
         }
     }
 
-    /// <summary>The five tabs, in display order.</summary>
+    /// <summary>The seven tabs, in display order.</summary>
     internal static class Tabs
     {
         public const string Common = "common";
         public const string RightMenu = "rightmenu";
         public const string Cleanup = "cleanup";
         public const string System = "system";
+        public const string Privacy = "privacy";
+        public const string Apps = "apps";
         public const string Mine = "mine";
 
-        public static readonly string[] Ids = new string[] { Common, RightMenu, Cleanup, System, Mine };
+        public static readonly string[] Ids = new string[] { Common, RightMenu, Cleanup, System, Privacy, Apps, Mine };
 
         public static string Display(string id)
         {
@@ -132,6 +134,8 @@ namespace Mxx1Toolbox
                 case RightMenu: return "右键增强";
                 case Cleanup: return "清理优化";
                 case System: return "系统工具";
+                case Privacy: return "隐私设置";
+                case Apps: return "应用管理";
                 case Mine: return "我的工具";
             }
             return id;

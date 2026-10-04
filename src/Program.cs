@@ -71,6 +71,7 @@ namespace Mxx1Toolbox
                     case "draft": return Draft(args);
                     case "status": return Status();
                     case "tip": return Tip(args);
+                    case "privacy": return PrivacyCommand(args);
                     case "checkupdate": return CheckUpdate();
                     case "help":
                     case "h":
@@ -102,6 +103,8 @@ namespace Mxx1Toolbox
             Console.WriteLine("  Mxx1Toolbox.exe draft <路径>         把文件/文件夹按「拖进窗口」的规则变成按钮草稿");
             Console.WriteLine("  Mxx1Toolbox.exe status               打印 key=value 状态（脚本用）");
             Console.WriteLine("  Mxx1Toolbox.exe tip [id]             打印按钮的悬停说明（界面上鼠标停住时看到的那段）");
+            Console.WriteLine("  Mxx1Toolbox.exe privacy status       只读列出隐私开关的当前状态（不改任何东西）");
+            Console.WriteLine("  Mxx1Toolbox.exe privacy selftest     用工具箱自己的测试键自检「原值 → 写入 → 还原」链路");
             Console.WriteLine("  Mxx1Toolbox.exe checkupdate          只读版本号，不下载不替换");
             Console.WriteLine("  Mxx1Toolbox.exe help                 这份帮助");
             Console.WriteLine();
@@ -136,6 +139,40 @@ namespace Mxx1Toolbox
         private static string TipText(ToolItem t, Settings settings)
         {
             return MainForm.TipFor(t, settings);
+        }
+
+        /// <summary>`privacy status` 只读地列出每个隐私开关现在是什么状态；`privacy selftest` 用工具箱
+        /// 自己的一个测试键把「记下原值 → 写入 → 读回核对 → 还原」整条链路走一遍。
+        /// 命令行**故意不提供**"真的去改隐私设置"的入口：那只能从界面点，而且要么弹确认框、
+        /// 要么是明确标着"可一键还原"的成对开关。自检只碰
+        /// HKCU\Software\mxx1-toolbox\privacy-selftest，不碰任何真实设置。</summary>
+        private static int PrivacyCommand(string[] args)
+        {
+            string what = (args.Length > 1) ? args[1].ToLowerInvariant() : "status";
+            if (what == "status")
+            {
+                Console.Write(Privacy.Status());
+                return 0;
+            }
+            if (what == "items")
+            {
+                foreach (PrivacyItem i in Privacy.All)
+                {
+                    Console.WriteLine(i.Id + "\t" + i.Name + "\t" + i.Values.Length + " 个值\t"
+                        + (i.Admin ? "要管理员" : "不用管理员"));
+                }
+                return 0;
+            }
+            if (what == "selftest")
+            {
+                bool ok;
+                string report = Privacy.SelfTest(out ok);
+                Console.Write(report);
+                Console.WriteLine("selftest=" + (ok ? "pass" : "fail"));
+                return ok ? 0 : 1;
+            }
+            Console.Error.WriteLine("用法: privacy status | items | selftest");
+            return 2;
         }
 
         private static List<ToolItem> Load()
@@ -225,6 +262,17 @@ namespace Mxx1Toolbox
             }
 
             LaunchResult r = Launcher.Run(target, settings, admin);
+            // 需要管理员的动作是"提升权限后另起一个自己"去做的，而那个子进程是 winexe、没有控制台：
+            // 它把报告写在这个交接文件里，没提升权限的父进程几秒后读出来弹给用户看。
+            if (admin && r.Output != null && r.Output.Trim().Length > 0)
+            {
+                try
+                {
+                    AppPaths.EnsureBase();
+                    File.WriteAllText(AppPaths.ElevatedResultFile, r.Output, new UTF8Encoding(false));
+                }
+                catch { }
+            }
             if (r.Output != null && r.Output.Length > 0) { Console.WriteLine(r.Output); }
             Console.WriteLine("result=" + (r.Ok ? "ok" : "failed"));
             Console.WriteLine("message=" + r.Message);
@@ -284,7 +332,22 @@ namespace Mxx1Toolbox
             bool exists = true;
             string hint = "";
 
-            if (t.Kind == "builtin" && t.Module == Launcher.ModuleSystem)
+            if (t.Kind == "builtin" && t.Module == Launcher.ModulePrivacy)
+            {
+                // 隐私开关指向的是注册表里的值，不是文件：kind=registry，target=要改的值（人话）。
+                kind = "registry";
+                target = Launcher.DescribeCommand(t, settings, false);
+                PrivacyItem pi = Privacy.Find(t.Options);
+                if (pi == null && (t.Action == "off" || t.Action == "on"))
+                {
+                    kind = "unknown";
+                    target = "";
+                    exists = false;
+                    hint = "隐私设置里没有这个开关: " + t.Options;
+                }
+                else { hint = pi != null ? pi.What : ""; }
+            }
+            else if (t.Kind == "builtin" && t.Module == Launcher.ModuleSystem)
             {
                 SystemTarget st = Launcher.FindSystemTarget(t.Action);
                 if (st == null)

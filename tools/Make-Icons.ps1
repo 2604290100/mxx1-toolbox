@@ -50,17 +50,30 @@ function Get-Shape {
         @('backup',         'doc'),
         @('perfmon',        'chart'),
         @('eventvwr',       'list'),
-        @('privacy',        'eye'),
-        @('telemetry',      'eye'),
-        @('advertis',       'eye'),
-        @('activity',       'list'),
-        @('speech',         'speaker'),
-        @('cortana',        'search'),
-        @('delivery',       'refresh'),
-        @('typing',         'doc'),
-        @('camera',         'eye'),
-        @('microphone',     'speaker'),
-        @('background',     'window'),
+        @('privacy-status',    'info'),
+        @('privacy-optimize',  'check'),
+        @('privacy-restore',   'refresh'),
+        @('privacy-telemetry', 'eye'),
+        @('privacy-errorreport','doc'),
+        @('privacy-cortana',   'search'),
+        @('privacy-bing',      'search'),
+        @('privacy-speech',    'speaker'),
+        @('privacy-typing',    'doc'),
+        @('privacy-activity',  'list'),
+        @('privacy-adid',      'eye'),
+        @('privacy-ads',       'eye'),
+        @('privacy-delivery',  'refresh'),
+        @('privacy-feedback',  'doc'),
+        @('privacy-camera',    'eye'),
+        @('privacy-microphone','speaker'),
+        @('apps-list',         'list'),
+        @('apps-uninstall',    'minus'),
+        @('apps-startup',      'clock'),
+        @('features',          'window'),
+        @('apps-default',      'window'),
+        @('privacy-location',  'globe'),
+        @('privacy-background','window'),
+        @('privacy',           'eye'),
         @('appx',           'list'),
         @('uninstall-app',  'minus'),
         @('default-app',    'window'),
@@ -295,6 +308,8 @@ $tabColor = @{
     'rightmenu' = '#1B9E74'
     'cleanup'   = '#D18A2A'
     'system'    = '#8E6FB0'
+    'privacy'   = '#5348B0'
+    'apps'      = '#5F8C2A'
     'mine'      = '#2A8C8C'
 }
 $dangerColor = '#C0504D'
@@ -324,7 +339,7 @@ foreach ($line in $listOut) {
     foreach ($k in $tabColor.Keys) { if ($parts[1] -eq $k) { $tab = $k } }
     # list 的第二列是中文页签名，这里做个反查
     if ($tab -eq '') {
-        $cn = @{ '常用设置' = 'common'; '右键增强' = 'rightmenu'; '清理优化' = 'cleanup'; '系统工具' = 'system'; '我的工具' = 'mine' }
+        $cn = @{ '常用设置' = 'common'; '右键增强' = 'rightmenu'; '清理优化' = 'cleanup'; '系统工具' = 'system'; '隐私设置' = 'privacy'; '应用管理' = 'apps'; '我的工具' = 'mine' }
         if ($cn.ContainsKey($parts[1])) { $tab = $cn[$parts[1]] }
     }
     $items += [pscustomobject]@{ Id = $parts[0]; Tab = $tab; Name = $parts[2]; Danger = $danger }

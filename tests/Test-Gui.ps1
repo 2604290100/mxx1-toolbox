@@ -73,6 +73,7 @@ public class TBGui
     [DllImport("user32.dll")] private static extern bool IsWindowEnabled(IntPtr hWnd);
     [DllImport("user32.dll")] private static extern bool IsWindow(IntPtr hWnd);
     [DllImport("user32.dll")] private static extern bool PostMessageW(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+    [DllImport("user32.dll")] private static extern IntPtr GetParent(IntPtr hWnd);
     [DllImport("user32.dll")] private static extern int GetWindowLongW(IntPtr hWnd, int index);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern IntPtr SendMessageTimeoutW(IntPtr hWnd, uint msg, IntPtr wParam, StringBuilder lParam, uint flags, uint timeout, out IntPtr result);
 
@@ -129,6 +130,7 @@ public class TBGui
     public static bool Alive(IntPtr h) { return IsWindow(h); }
     public static bool Click(IntPtr h) { return PostMessageW(h, 0x00F5, IntPtr.Zero, IntPtr.Zero); }        // BM_CLICK
     public static bool CloseWindow(IntPtr h) { return PostMessageW(h, 0x0010, IntPtr.Zero, IntPtr.Zero); }  // WM_CLOSE
+    public static IntPtr Parent(IntPtr h) { return GetParent(h); }
 }
 '@
 
@@ -339,6 +341,23 @@ Write-Host 'D 组 · 底部条 · 搜索 · 日志'
 
 $barButtons = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*BUTTON*' -and @('搜索', '日志', '收起日志', '设置', '检查更新') -contains $_.Text })
 Check 'D01 底部条上有搜索/日志/设置/检查更新' ($barButtons.Count -eq 4) (($barButtons | ForEach-Object { $_.Text }) -join ' ')
+
+# 子控件必须完全落在父容器里 —— 被用户报过两次的"文字被裁"就是这条：
+# 底栏按钮 30px 挤在 24px 的条里、以及按钮 20px 装不下 16px 的文字。
+if ($barButtons.Count -gt 0) {
+    $barHandle = [TBGui]::Parent($barButtons[0].H)
+    $barRect = [TBGui]::Rect($barHandle)
+    $outside = @()
+    foreach ($b in $barButtons) {
+        if ($b.Left -lt $barRect[0] -or $b.Top -lt $barRect[1] -or
+            $b.Right -gt $barRect[2] -or $b.Bottom -gt $barRect[3]) {
+            $outside += $b.Text
+        }
+    }
+    Check 'D01b 底栏按钮完全在底栏范围内（没有被裁）' ($outside.Count -eq 0) (($outside -join ' ') + (' 底栏=' + ($barRect[3] - $barRect[1]) + 'px'))
+    $tooShort = @($barButtons | Where-Object { $_.Height -lt 20 })
+    Check 'D01c 底栏按钮高度 >= 20px（装得下一行 8.25pt 文字）' ($tooShort.Count -eq 0) ((($barButtons | ForEach-Object { $_.Text + '=' + $_.Height }) -join ' '))
+}
 
 $logButton = @($barButtons | Where-Object { $_.Text -eq '日志' })
 if ($logButton.Count -gt 0) { [void][TBGui]::Click($logButton[0].H) }

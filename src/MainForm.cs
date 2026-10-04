@@ -15,7 +15,11 @@ namespace Mxx1Toolbox
     internal sealed class MainForm : Form
     {
         private const int TabBarHeight = 30;
-        private const int StatusBarHeight = 24;
+        // The status bar height is computed from the font (see the constructor): with a fixed
+        // 24px bar and 20px buttons the 8.25pt labels lost their bottom halves, because one
+        // line of text already needs 16px plus the button border.
+        private int _statusBarHeight = 26;
+        private int _barButtonHeight = 22;
         // Column width is measured from the longest button name at the real font size
         // (see ComputeCellWidth) so nothing is ever truncated and other DPI settings work.
         private int _cellWidth = 114;
@@ -77,6 +81,11 @@ namespace Mxx1Toolbox
 
             ReloadTools();
             _cellWidth = ComputeCellWidth();
+            using (Font barFont = new Font("Microsoft YaHei", 8.25f, FontStyle.Regular, GraphicsUnit.Point))
+            {
+                _barButtonHeight = Math.Max(20, TextRenderer.MeasureText("国", barFont).Height + 6);
+            }
+            _statusBarHeight = _barButtonHeight + 4;   // 2px margin above and below
             ClientSize = new Size(Math.Max(500, Columns * _cellWidth + 24), 700);
             BuildUi();
             BuildGrid();
@@ -103,7 +112,7 @@ namespace Mxx1Toolbox
             _root.RowStyles.Add(new RowStyle(SizeType.Absolute, 0f));             // search row
             _root.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));            // button grid
             _root.RowStyles.Add(new RowStyle(SizeType.Absolute, 0f));             // log panel
-            _root.RowStyles.Add(new RowStyle(SizeType.Absolute, StatusBarHeight));// status bar
+            _root.RowStyles.Add(new RowStyle(SizeType.Absolute, _statusBarHeight));// status bar
 
             // tabs: one flat button per page, equal width
             _tabBar = new TableLayoutPanel();
@@ -228,7 +237,7 @@ namespace Mxx1Toolbox
             // from the label so the AutoSize column gives it exactly that much room.
             b.AutoSize = false;
             b.Font = new Font("Microsoft YaHei", 8.25f, FontStyle.Regular, GraphicsUnit.Point);
-            b.Height = 20;
+            b.Height = _barButtonHeight;
             b.Width = TextRenderer.MeasureText(text, b.Font).Width + 16;
             b.Margin = new Padding(4, 2, 0, 2);
             b.FlatStyle = FlatStyle.Flat;

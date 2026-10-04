@@ -110,7 +110,9 @@
   `docs\DISCLAIMER.md` §2 补"支持的 Windows 版本"（**改正文 = 改指纹，下次打开会再确认一次**）。
 - 测试：命令行 **187** 项 + 界面 **140** 项 = **327** 项（本机跑：186 通过 + 1 跳过，全绿）。
 - **首次给这个工程建远程仓库**并推送（之前只有本地 Git）：
-  <https://github.com/2604290100/mxx1-toolbox>（公开仓库，分支 `main`）。
+  <https://github.com/2604290100/mxx1-toolbox>（公开仓库，分支 `main`）；
+  随后按用户的选择打了 tag **`v1.5.3`** 并发了 Release，附 `Mxx1Toolbox.exe` 与
+  `Mxx1Toolbox-package.zip`（发布说明里写了 SHA256）—— 工具箱自己的「检查更新」现在能正常比出版本。
 - 加了 `.github\workflows\ci.yml`：push 到 `main` / PR 时跑**编码体检 + 内联脚本与清单体检 + 编译 +
   命令行回归**（界面回归要交互式桌面，托管 runner 上会被跳过 —— 脚本自己返回 3）。
 - 把"环境不满足"的项从**假红**改成**跳过**：原来那几处写的是 `Check ... $false 'skipped'`，

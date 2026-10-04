@@ -90,9 +90,14 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
   「永久删除工具」（不带参数启动隔壁 `PermanentDeleteSetup.exe`，开它自己的窗口）。详见下面那一节。
   v1.5.1 把两件事补上了：**右键文件夹会往下扫 4 层**（并指名是哪个文件被占着）、
   **菜单项的图标**（装的时候把内嵌 PNG 转成 `.ico`，两个父项 + 子菜单每一项都有）。
-- ✅ **GitHub 仓库已建**：<https://github.com/2604290100/mxx1-toolbox>（账号 `2604290100`，
-  2026-10-05 由用户拍板"建一个"之后建的）。**推送前依然要先问用户**
-  （原话："推送的时候不要每次都推送，太卡了要问过我才行"）。
+- ✅ **GitHub 仓库已建并发布**：<https://github.com/2604290100/mxx1-toolbox>（账号 `2604290100`，
+  2026-10-05 由用户拍板"建一个"之后建的；用户还选了"顺手打 tag 发 Release"）。
+  已打 tag **`v1.5.3`**（指向最终提交）并发 Release，附 `Mxx1Toolbox.exe` 与 `Mxx1Toolbox-package.zip`
+  （发布说明里带 SHA256）；CI 是绿的（编码体检 + 内联体检 + 编译 + 命令行回归）。
+  **推送前依然要先问用户**（原话："推送的时候不要每次都推送，太卡了要问过我才行"）。
+  ⚠️ **发 Release 之后要重传资产**：资产是 `build.ps1 -Package` 的产物，源码改了就得
+  `gh release upload v1.5.3 bin\Mxx1Toolbox.exe bin\Mxx1Toolbox-package.zip --clobber`，
+  并把发布说明里的 SHA256 换掉（`gh release edit v1.5.3 --notes-file …`）。
 - ✅ 按钮图标：112 个 16×16 PNG 由 `tools\Make-Icons.ps1` 生成并内嵌（`icons.<id>.png`；
   用户自建按钮的图标**不**生成，免得把别人机器上的东西提交进仓库），
   全部经 `IconFactory.Normalize()` 归一化成 16×15 画布（见"界面硬规则"里那条）。

@@ -246,6 +246,10 @@ namespace Mxx1Toolbox
                     string full;
                     try { full = Path.GetFullPath(p.Trim()); }
                     catch { full = p.Trim(); }
+                    // 8.3 短名先换成规范长名再比对：脚本 / 环境变量给的路径常常是短名
+                    // （CI 的临时目录就是 RUNNER~1 那种写法），而镜像路径 / 句柄路径报回来的是长名，
+                    // 纯字符串比较会漏掉"它自己在运行"（2026-10-05 在 CI 上抓到）。
+                    full = LongPath(full);
                     AddResource(targets, full);
 
                     bool isDir = false;
@@ -1154,7 +1158,9 @@ namespace Mxx1Toolbox
         }
 
         /// <summary>某个进程的镜像全路径（QueryFullProcessImageName + 最低查询权限：
-        /// 不用 PROCESS_VM_READ，别的用户 / 更高权限的进程拿不到就返回空，不抛）。</summary>
+        /// 不用 PROCESS_VM_READ，别的用户 / 更高权限的进程拿不到就返回空，不抛）。
+        /// 拿到之后统一成规范长名（见 LongPath）：它报回来的是长名，而用户给的路径可能是 8.3 短名，
+        /// 两边不统一就会漏掉"它自己在运行"。</summary>
         private static string ImagePathOf(int pid)
         {
             IntPtr h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
@@ -1164,10 +1170,45 @@ namespace Mxx1Toolbox
                 StringBuilder sb = new StringBuilder(1024);
                 uint len = (uint)sb.Capacity;
                 if (!QueryFullProcessImageName(h, 0, sb, ref len)) { return ""; }
-                return sb.ToString();
+                return LongPath(StripDevicePrefix(sb.ToString()));
             }
             catch { return ""; }
             finally { CloseHandle(h); }
+        }
+
+        /// <summary>去掉 `\\?\` / `\\?\UNC\` 设备前缀（句柄那边报回来的路径带这个前缀，
+        /// 我们的目标是普通 DOS 路径，不去掉就永远比不上）。</summary>
+        private static string StripDevicePrefix(string path)
+        {
+            if (string.IsNullOrEmpty(path)) { return path; }
+            if (path.StartsWith(@"\\?\UNC\", StringComparison.OrdinalIgnoreCase))
+            {
+                return @"\\" + path.Substring(8);
+            }
+            if (path.StartsWith(@"\\?\", StringComparison.Ordinal))
+            {
+                return path.Substring(4);
+            }
+            return path;
+        }
+
+        /// <summary>把 8.3 短名（`…\RUNNER~1\…` 这种写法）换成规范长名；路径不存在时原样返回。
+        /// 同一台机器上同一个文件夹可能有两种写法，比较前必须归一，否则"谁在运行 / 谁占着它"会漏报。</summary>
+        private static string LongPath(string path)
+        {
+            if (string.IsNullOrEmpty(path)) { return path; }
+            try
+            {
+                StringBuilder sb = new StringBuilder(1024);
+                uint n = GetLongPathName(path, sb, (uint)sb.Capacity);
+                if (n > 0 && n < (uint)sb.Capacity)
+                {
+                    string got = sb.ToString();
+                    if (got.Length > 0) { return got; }
+                }
+            }
+            catch { }
+            return path;
         }
 
         /// <summary>可见、有标题的顶层窗口。</summary>
@@ -1340,6 +1381,10 @@ namespace Mxx1Toolbox
 
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
         private static extern bool QueryFullProcessImageName(IntPtr hProcess, uint dwFlags, StringBuilder lpExeName, ref uint lpdwSize);
+
+        /// <summary>8.3 短名 → 规范长名（见 LongPath）。</summary>
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern uint GetLongPathName(string lpszShortPath, StringBuilder lpszLongPath, uint cchBuffer);
 
         private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
 

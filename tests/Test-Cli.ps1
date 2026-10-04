@@ -99,8 +99,8 @@ Check 'A01 status 退出码 0' ($status.Code -eq 0) ('exit=' + $status.Code)
 Check 'A02 中文输出没有乱码（UTF-8）' ($status.Out -match 'name=萌新工具箱') ('name=' + (Get-Key $status.Out 'name'))
 Check 'A03 版本号 1.2.0' ((Get-Key $status.Out 'version') -eq '1.2.0') (Get-Key $status.Out 'version')
 Check 'A04 按钮总数 53（右键增强 1 个、Windows 激活已删）' ((Get-Key $status.Out 'buttons') -eq '53') (Get-Key $status.Out 'buttons')
-Check 'A05 灰色占位按钮 15 个（界面上点不动）' ((Get-Key $status.Out 'placeholders') -eq '15') (Get-Key $status.Out 'placeholders')
-Check 'A06 危险按钮 6 个' ((Get-Key $status.Out 'dangerous') -eq '6') (Get-Key $status.Out 'dangerous')
+Check 'A05 灰色占位按钮 2 个（界面上点不动；只剩两个「资源管理器」没定用途）' ((Get-Key $status.Out 'placeholders') -eq '2') (Get-Key $status.Out 'placeholders')
+Check 'A06 危险按钮 3 个' ((Get-Key $status.Out 'dangerous') -eq '3') (Get-Key $status.Out 'dangerous')
 
 $tabExpect = @{ 'common' = 31; 'rightmenu' = 1; 'cleanup' = 8; 'system' = 12; 'mine' = 1 }
 $tabOk = $true

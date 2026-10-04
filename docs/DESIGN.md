@@ -1,9 +1,9 @@
 # 萌新工具箱（mxx1 Toolbox）· 设计 · v1.3（已实现）
 
-> 状态：**已实现并全绿**（2026-10-04，版本 1.2.0）：53 个按钮里 38 个是真功能，其余 15 个灰色占位（禁用）。
+> 状态：**已实现并全绿**（2026-10-04，版本 1.2.0）：53 个按钮里 51 个是真功能，其余 2 个灰色占位（禁用）。
 > 本文件是外观与行为的**唯一正本**，改设计先改这里，再同步 skill。
-> 界面截图：`docs/gui-shot.png`（浅色，全是灰色占位按钮）、`docs/dark-shot.png`（深色）、
-> `docs/system-shot.png`（系统工具页签，彩色 = 真功能，用来对照灰色）；
+> 界面截图：`docs/gui-shot.png`（浅色「常用设置」页：彩色 = 真功能，灰色 = 还没接）、
+> `docs/dark-shot.png`（深色）、`docs/system-shot.png`（系统工具页签）；
 > 外观参考图：`C:\Users\Administrator\Pictures\Snipaste_2026-10-04_10-29-34.png`（Windows系统工具箱 v1.1）。
 
 ## 1 定位
@@ -49,7 +49,7 @@
 │  ────────────────────────────────────────────────────────────────────  │
 │  [i] 关闭实时防护与篡改 [i] Windows 激活 [i] Defender 开关设置 [i] Windows 更新开关│
 │  ...                                                                   │
-│  53 个按钮 · 本页 31 · 灰色 15 个没接功能 · 就绪  [搜索][日志][设置][关于][检查更新] │
+│  53 个按钮 · 本页 31 · 灰色 2 个没接功能 · 就绪  [搜索][日志][设置][关于][检查更新] │
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -86,21 +86,19 @@
 深色不需要自绘控件：`FlatStyle=Flat` + `FlatAppearance` 逐主题赋值即可；
 标题栏用 `DwmSetWindowAttribute(hwnd, 20→19, dark)`，滚动条用 `SetWindowTheme(hwnd, "DarkMode_Explorer")`。
 
-## 4 页签与按钮清单（共 53 个：38 真功能 + 15 灰色占位）
+## 4 页签与按钮清单（共 53 个：51 真功能 + 2 灰色占位）
 
 `[i]` = 16×16 图标；**粗体** = 危险按钮（深红文字 + 二次确认）；灰色 = `placeholder`（禁用，点不动）。
 
-### 4.1 常用设置（31 个，两段：16 个真功能 + 15 个灰色占位）
+### 4.1 常用设置（31 个，两段：29 个真功能 + 2 个灰色占位）
 
-**真功能 16 个**（点得动；`confirm` = 点之前先弹二次确认）：
+**真功能 29 个**（点得动；`confirm` = 点之前先弹二次确认）：
 
 | 按钮 | 怎么实现的 |
 | --- | --- |
 | 桌面图标设置 | `rundll32 shell32.dll,Control_RunDLL desk.cpl,,0` |
 | 关闭 / 开启驱动自动安装 | `DriverSearching\SearchOrderConfig` = 0 / 1（管理员 + 确认） |
-| Defender 开关设置 | 打开 `ms-settings:windowsdefender`（开关在系统安全中心里，工具箱不代按） |
 | 激活状态 | **只读**：查 `SoftwareLicensingProduct` 把授权状态列出来 |
-| 开启/关闭 BitLocker 加密 | 打开控制面板的 BitLocker 管理页 |
 | 禁用/启用休眠 | 读 `HibernateEnabled` 再 `powercfg /h on\|off`（管理员 + 确认） |
 | 电源卓越 / 高性能 / 平衡模式 | `powercfg` 切方案（卓越模式先 `-duplicatescheme`，管理员 + 确认） |
 | 重启资源管理器 | `taskkill /f /im explorer.exe` + `start explorer.exe`（确认） |
@@ -108,15 +106,25 @@
 | hosts 修改 | 管理员身份打开 `drivers\etc\hosts`（记事本） |
 | 任务栏从不合并 / 始终合并 | `HKCU\...\Explorer\Advanced\TaskbarGlomLevel` = 2 / 0（重启资源管理器后生效；**Win11 先判版本**，微软已取消这个开关，按钮会直接说明而不是假装成功） |
 | 任务栏搜索设置 | 打开 `ms-settings:taskbar`（搜索框显示方式就在这一页，Win10 / Win11 都能开） |
+| 开始菜单居左 / 居中 | `HKCU\...\Explorer\Advanced\TaskbarAl` = 0 / 1（**Win11 才认**；按用户定的做法照写，并在结果里说明"这台是 Win10，换到 Win11 就生效"） |
+| Win10 / Win11 右键菜单 | `HKCU\Software\Classes\CLSID\{86ca1aa0-…-50c905bae2a2}\InprocServer32` 建 / 删（经典 vs 新版；同样只在 Win11 有肉眼变化） |
+| 关闭 / 开启内核隔离 | `HKLM\...\DeviceGuard\Scenarios\HypervisorEnforcedCodeIntegrity\Enabled` = 0 / 1（管理员 + 确认 + **重启电脑后生效**，"关闭"是危险按钮） |
+| 关闭 / 开启按流量计费 | 先试着写 `DefaultMediaCost`；**这个键被系统保护**（只有 Windows 自己的服务有写权限，管理员也不行）→ 改走官方设置页并说明原因 |
+| 实时防护设置 / Defender 开关设置 / SmartScreen 设置 | **只打开官方界面，不代关系统防线**：先探测 Windows 安全中心 App（`Get-AppxPackage` → `shell:appsFolder\<PFN>!SecHealthUI`），没有就退到 `ms-settings:windowsdefender`，都没有就给一句说明 |
+| 防火墙设置 | 先念一遍三个配置文件的开关（`Get-NetFirewallProfile`，没有就说明），再打开 `wf.msc`；管理组件被精简掉的系统会说明"既看不了也打不开" |
+| UAC 通知设置 | 打开 `UserAccountControlSettings.exe`（程序不代改 UAC —— 关掉会影响应用商店和部分应用） |
+| Windows 更新设置 | 打开 `ms-settings:windowsupdate`（程序不代停更新服务） |
+| BitLocker 加密开关 | 有 `BitLockerWizard.exe` 就打开控制面板的 BitLocker 页；只剩 `manage-bde.exe` 就说明"图形界面被移除了，命令行还在" |
 
-**灰色占位 15 个**（`module: todo`，界面上禁用、点不动）：
-开始菜单居左 / 居中、Win10 / Win11 资源管理器、Win10 / Win11 右键菜单、
-关闭 / 开启按流量计费、关闭 / 开启内核隔离、关闭实时防护与篡改、Windows 更新开关、
-关闭 UAC 通知、开启/关闭防火墙、禁用 SmartScreen。
+**灰色占位 2 个**（`module: todo`，界面上禁用、点不动）：**Win10 资源管理器 / Win11 资源管理器**。
 
-> 这些**故意不做**，每个的 `hint` 里写了原因：要么必须改注册表 + 重启资源管理器（改错会让资源管理器起不来），
-> 要么要重启电脑（内核隔离），要么是关掉系统防线（UAC / SmartScreen / 实时防护 / 防火墙）风险太大，
-> 要么系统版本差异太大（任务栏合并 Win11 已经取消了那个开关，得靠第三方工具）。
+> 这两个按钮**含义还没定**（用户 2026-10-04："先留着不管他"）—— 它可能指资源管理器外观、也可能就是
+> 右键菜单风格（那就和上面那两个「右键菜单」重复了）。**想清楚之前不实现**，`hint` 里写明了原因。
+
+> ⚠️ 这一页里"打开官方界面"的按钮有个共同规矩：**先探测、再打开、都没有就说清楚**。
+> 原因是用户的这台机器是**精简版 Windows**：Windows 安全中心 App、Defender、BitLocker 图形界面、
+> `wf.msc`、连 `netsh advfirewall` 都被拿掉了，`SettingsPageVisibility` 策略还把设置里的
+> `windowsdefender` 页藏了。**盲写一个 URI 会让用户点了什么都不发生**（属于本项目最忌讳的"静默失灵"）。
 
 > ⚠️ 「Windows 激活」按钮**已按要求删除**（2026-10-04）：它打开的是系统激活设置页，
 > 容易被当成"帮你激活"，属于会带来合规风险的东西。只读的「激活状态」保留 —— 它只是把系统
@@ -274,13 +282,13 @@ CLI：`list [--tab <id>]` / `run <id> [--admin] [--dry]` / `status` / `checkupda
 
 **已完成（P0 → 1.2.0）**：窗口骨架、五个页签、四列网格 + 段分隔线、底栏五入口
 （搜索 / 日志 / 设置 / 关于 / 检查更新）、浅/深/跟随系统主题、`tools\*.json` 驱动 + **53 个按钮**
-（38 真功能 + 15 灰色禁用）、灰色占位规则（含置灰图标）、「右键增强」单个按钮（调隔壁安装器窗口）、
+（51 真功能 + 2 灰色禁用）、灰色占位规则（含置灰图标）、「右键增强」单个按钮（调隔壁安装器窗口）、
 「系统工具」12 个（Windows 自带组件 + 常用链接窗口）、「清理优化」8 个、「常用设置」13 个、
 **「我的工具」图形化新建 / 编辑 / 删除 + 拖拽加按钮**、外部工具目录 `bin-tools\`、
 按钮悬停提示、按钮右键菜单、日志面板 + 日志窗口、
 `build.ps1` / 编码体检 / 命令行回归 44 项 / 界面回归 65 项 / 截图工具。
 
-**P1（剩下的）**：把 15 个灰色占位里安全的那些接上（一个一个来，都要走二次确认 + 日志留痕）、
+**P1（剩下的）**：把剩下的灰色占位里安全的那些接上（一个一个来，都要走二次确认 + 日志留痕）、
 按钮排序 / 隐藏 / 固定到常用、多步 `macro`。
 
 **P2**：工具箱自身的更新检查、插件目录扫描、按钮包导入导出、`dsh` 类型按钮、
@@ -304,7 +312,7 @@ CLI：`list [--tab <id>]` / `run <id> [--admin] [--dry]` / `status` / `checkupda
 
 - `build.ps1` 一次通过，产出单文件 `bin\Mxx1Toolbox.exe`（约 136 KB = 139,264 字节，含 53 个内嵌图标），无警告
 - `tools\Test-Encoding.ps1` 全绿（98 个文件）
-- `tests\Test-Cli.ps1` **44/44**：中文不乱码、按钮数 53、页签分布 31/1/8/12/1、灰色占位 15、
+- `tests\Test-Cli.ps1` **44/44**：中文不乱码、按钮数 53、页签分布 31/1/8/12/1、灰色占位 2、
   占位按钮写日志、`permdel.gui --dry` 解析出隔壁 exe、直接问隔壁 exe 的 `status` 拿到 `installed=`、
   **12 个系统工具全部 `--dry` 解析通过**（少了目标或没解释就红）、错误用法退出码 2
 - `tests\Test-Gui.ps1` **60/60**：标题栏没有最小化/最大化方框、窗口可缩放、四列多行、
@@ -444,6 +452,35 @@ CLI：`list [--tab <id>]` / `run <id> [--admin] [--dry]` / `status` / `checkupda
     另外 `Launcher` 在 `kind: exe` 启动前也补了一次解析 —— 老版本建出来的按钮照样能跑。
     测试：拖拽手势是 OLE 拖放、没法在测试里合成，所以把**决策**做成命令行 `draft <路径>`
     （只打印会变成什么按钮，不写文件），回归 G01–G06 盯它。
+28. **"打开官方界面"这类按钮，盲开就是静默失灵**（做安全类那一批时发现的，影响 5 个按钮 + 2 个旧按钮）：
+    用户的机器是**精简版 Windows** —— 我按常规写法准备的入口，一半在这台机器上根本不存在：
+
+    | 入口 | 这台机器上的结果 |
+    | --- | --- |
+    | `ms-settings:windowsdefender` | 能打开"设置"，但 `SettingsPageVisibility` 策略把 `windowsdefender` **这一页藏了** |
+    | `shell:appsFolder\…SecHealthUI` | Windows 安全中心 App **没装**（`Get-AppxPackage` 查不到），explorer 回退成了打开「文档」 |
+    | `wf.msc`（高级防火墙） | **不在**（`mmc.exe` 打开的是空控制台，看着像成功） |
+    | `netsh advfirewall` | **不存在**（`advfirewall` 上下文整个没了） |
+    | `control.exe /name Microsoft.WindowsFirewall` / `firewall.cpl` | 退出码 0、**一个窗口都没有** |
+    | `control.exe /name Microsoft.BitLockerDriveEncryption` | 同上（现有的 BitLocker 按钮一直是死的） |
+    | `Get-NetFirewallProfile` / `Get-NetAdapter` | NetSecurity / NetAdapter 模块**都不在** |
+    | `manage-bde -status` | Provider load failure（WMI 提供程序也没了） |
+    | `UserAccountControlSettings.exe` / `desk.cpl` / `services.msc` / `gpedit.msc` | **能开**（这才是正常的那些） |
+
+    修法：这类按钮**一律先探测再打开**（`Test-Path` / `Get-Command` / `Get-AppxPackage`），
+    探测不到就给一句"这台系统里 XX 已被移除，没有能打开的界面"，而不是"点了没反应"。
+    探测可用性时**别用 `Get-NetAdapter` / `Get-NetFirewallProfile` 当判据**（它们本身可能没装），
+    用 WMI（`Get-CimInstance Win32_NetworkAdapter`）+ 文件存在性更稳。
+    教训：**"官方界面"不是常量**，除了系统版本（Win10/Win11）还要考虑"组件被精简掉了"。
+29. **回读校验分不清"我写的"和"本来就是"**（写「关闭按流量计费」时踩到）：
+    脚本先试着写 `DefaultMediaCost`，失败后**读回**看是不是 1 —— 而它默认就是 1，
+    于是失败被当成成功，弹出"已设为不计费"的假消息。修法：**以"写入是否抛异常"为准**
+    （`try { … } catch { $ok = $false }`），读回只用来在消息里显示当前值。
+    教训：**用状态值判断"操作成功"时，先问一句"这个值有没有可能本来就是这样"**；
+    比较可靠的是"操作前后有没有变化"，或者干脆看操作本身有没有报错。
+    同一个键还有个坑：`DefaultMediaCost` 的 ACL 只给 `SYSTEM` / `Wcmsvc` / `TrustedInstaller` 写权限，
+    **管理员也只有读**（提权也写不进，逐连接的 `Cost` 值写了也不改变计费类型）——
+    所以"按流量计费"在第三方程序里基本只能打开设置页让用户自己点。
 ## 13 外部工具放哪：`bin-tools\` 工具目录（① 层**已实现**）
 
 **背景**：工具箱现在会调一个外部程序（隔壁的 `PermanentDeleteSetup.exe`），以后还会加别的

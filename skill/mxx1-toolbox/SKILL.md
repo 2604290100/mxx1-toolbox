@@ -18,15 +18,22 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
 ## 当前状态（2026-10-04，v1.2.0）
 
 - ✅ **测试 109 项全绿**：命令行回归 44 + 界面回归 65（外加编码体检 99 个文件）。
-  产物 `bin\Mxx1Toolbox.exe`（约 136 KB 单文件），五个 `tools.*.json` + 53 个 `icons.*.png` 已内嵌。
-- ✅ **53 个按钮 = 38 个真功能 + 15 个灰色占位**：`常用设置` 31（16 真 / 15 灰）/
+  产物 `bin\Mxx1Toolbox.exe`（约 150 KB 单文件），五个 `tools.*.json` + 53 个 `icons.*.png` 已内嵌。
+- ✅ **53 个按钮 = 51 个真功能 + 2 个灰色占位**：`常用设置` 31（29 真 / 2 灰）/
   `右键增强` **1**（真）/ `清理优化` **8**（全真）/ `系统工具` **12**（全真）/
   `我的工具` 1（图形化新建，真）。
-- ✅ **灰色 = 功能还没接入 = 禁止点击**（用户 2026-10-04 改的规则）：15 个占位按钮 `Enabled=false`、
+- ✅ **灰色 = 功能还没接入 = 禁止点击**（用户 2026-10-04 改的规则）：2 个占位按钮 `Enabled=false`、
   灰底灰字 + **置灰图标**（`IconFactory.GetMuted()`）—— 点不动、不能聚焦、不弹提示；
   禁用控件不显示 tooltip，所以状态栏在有灰按钮的页面上带一句「灰色 N 个没接功能」。
-- ✅ **「系统工具」12 个 + 「清理优化」8 个 + 「常用设置」13 个都是真功能**；
+- ✅ **「系统工具」12 个 + 「清理优化」8 个 + 「常用设置」29 个都是真功能**；
   `run <id> --dry` 能把它们的目标解析一遍（缺组件给整句说明，家庭版没有 gpedit）。
+- ⚠️ **这台机器是精简版 Windows（2026-10-04 实测）**：Windows 安全中心 App 没装、Defender 组件被移除、
+  `SettingsPageVisibility` 策略藏了设置里的 `windowsdefender` 页、BitLocker 的 `BitLockerWizard.exe`
+  不在、`wf.msc` 不在、`netsh advfirewall` 不存在、`firewall.cpl` 与 `control.exe /name …` 打开是空的、
+  NetSecurity / NetAdapter 模块都没有。所以：
+  **凡是"打开某个官方界面"的按钮，一律先探测再打开，探测不到就说明原因**
+  （探测用 `Test-Path` / `Get-Command` / `Get-AppxPackage` / WMI，别用 `Get-NetAdapter` 当判据）。
+  安全类按钮（实时防护 / Defender / SmartScreen / 防火墙 / UAC / 更新）**只打开官方界面，绝不代关系统防线**。
 - ✅ **「右键增强」只剩 1 个按钮「永久删除工具」**：不带参数启动隔壁 `PermanentDeleteSetup.exe`
   = 开它自己的窗口（安装/卸载/状态/测试/条款/日志/更新都在那里）。原来 8 条定义留在
   `tools\rightmenu.json` 的 `_disabled` 数组里当注释（加载器只读 `tools`）。
@@ -37,7 +44,7 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
 - ✅ **外部工具目录 `bin-tools\` 已实现**（用户定的名字）：查找顺序里加一档、`build.ps1 -Package` 自动拷入、
   设置 / 关于窗口有「打开工具目录」、`kind: exe` 的相对路径按「工具箱目录 → `bin-tools\`」解析。
   ⬜ 还没做：把工具内嵌进 exe 当兜底、`bin-tools\<工具>\tool.json` 自动扫按钮（`docs\DESIGN.md` §13 的 ② ③）。
-- ⬜ P1：把 15 个灰色占位里安全的那些接上（其余按 hint 里写的理由继续灰着）、按钮排序 / 隐藏 / 固定到常用、多步 `macro`。
+- ⬜ P1：剩下的都做完了，只有「Win10 / Win11 资源管理器」两个继续灰着（含义待用户定）、按钮排序 / 隐藏 / 固定到常用、多步 `macro`。
 
 ## 结构
 

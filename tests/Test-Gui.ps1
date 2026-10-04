@@ -559,20 +559,28 @@ foreach ($line in ((Invoke-Exe 'list --tab common') -split "`r?`n")) {
 
 $shot = Get-WindowShot -Handle $main
 $gridProbe = @($toolButtons | Where-Object { $greyNames -contains $_.Text } | Sort-Object Top, Left | Select-Object -First 1)
+# 参考行数（D01e 拿它比底栏按钮有没有被裁）要用**彩色图标**的真按钮来量：灰按钮的灰图标
+# 有时候判不出来（判据见 Get-InkRows），那一行图标会被算进文字，参考值就多了 1 行，
+# 底栏按钮明明没被裁也会假红（2026-10-04 换成「Win10 资源管理器」当灰样本时踩到）。
+$refProbe = @($toolButtons | Where-Object { $liveNames -contains $_.Text } | Sort-Object Top, Left | Select-Object -First 1)
 $refInkH = 0
 $greyDark = 0
-if ($shot -eq $null -or $gridProbe.Count -eq 0) {
-    Check 'B09 占位按钮是灰的（最暗墨迹 >= 60）' $false ('窗口截图失败或这一页没有灰按钮（灰=' + $greyNames.Count + '）')
+if ($shot -eq $null -or $gridProbe.Count -eq 0 -or $refProbe.Count -eq 0) {
+    Check 'B09 占位按钮是灰的（最暗墨迹 >= 60）' $false ('窗口截图失败，或这一页灰/真按钮缺一边（灰=' + $greyNames.Count + ' 真=' + $liveNames.Count + '）')
     Check 'B09b 按钮文字完整（墨迹行数 >= 10）' $false '窗口截图失败'
 } else {
+    $refRect = @{
+        X = $refProbe[0].Left - $shot.Left; Y = $refProbe[0].Top - $shot.Top
+        W = $refProbe[0].Width; H = $refProbe[0].Height
+    }
+    $ink = Get-InkRows -Shot $shot -Icon -X $refRect.X -Y $refRect.Y -W $refRect.W -H $refRect.H
+    $refInkH = $ink.LabelBottom - $ink.LabelTop + 1
+    Check 'B09b 按钮文字完整（墨迹行数 >= 10）' ($refInkH -ge 10) ('参考按钮=' + $refProbe[0].Text + ' 墨迹行=' + $ink.LabelTop + '..' + $ink.LabelBottom + ' 行数=' + $refInkH)
+
     $probeRect = @{
         X = $gridProbe[0].Left - $shot.Left; Y = $gridProbe[0].Top - $shot.Top
         W = $gridProbe[0].Width; H = $gridProbe[0].Height
     }
-    $ink = Get-InkRows -Shot $shot -Icon -X $probeRect.X -Y $probeRect.Y -W $probeRect.W -H $probeRect.H
-    $refInkH = $ink.LabelBottom - $ink.LabelTop + 1
-    Check 'B09b 按钮文字完整（墨迹行数 >= 10）' ($refInkH -ge 10) ('墨迹行=' + $ink.LabelTop + '..' + $ink.LabelBottom + ' 行数=' + $refInkH)
-
     $dark = Get-DarkestInk -Shot $shot -X $probeRect.X -Y $probeRect.Y -W $probeRect.W -H $probeRect.H
     $greyDark = $dark
     # 灰按钮现在是 Enabled=false 的：WinForms 画禁用控件的文字时会在下面描 1px 更深的"影子"

@@ -16,6 +16,9 @@ namespace Mxx1Toolbox
     {
         private static readonly Dictionary<string, Image> Cache = new Dictionary<string, Image>(StringComparer.OrdinalIgnoreCase);
         private static readonly object Gate = new object();
+        private const int IconWidth = 16;
+        private const int SourceHeight = 16;   // every source is normalised to 16x16 first
+        private const int IconHeight = 15;     // ... and then trimmed, see Normalize
 
         private static readonly Color[] Palette = new Color[]
         {
@@ -38,7 +41,7 @@ namespace Mxx1Toolbox
                 if (Cache.TryGetValue(tool.Id, out cached)) { return cached; }
                 Image img = LoadEmbedded(tool);
                 if (img == null) { img = LoadPng(tool.IconPath); }
-                if (img == null) { img = DrawFallback(tool); }
+                if (img == null) { img = Normalize(DrawFallback(tool)); }
                 Cache[tool.Id] = img;
                 return img;
             }
@@ -56,7 +59,7 @@ namespace Mxx1Toolbox
                 using (Stream s = asm.GetManifestResourceStream("icons." + tool.Id + ".png"))
                 {
                     if (s == null) { return null; }
-                    return Resize16(Image.FromStream(s));
+                    return Normalize(Image.FromStream(s));
                 }
             }
             catch
@@ -65,27 +68,62 @@ namespace Mxx1Toolbox
             }
         }
 
-        private static Image Resize16(Image raw)
+        /// <summary>Normalises a raw source image to the button icon canvas: 16 wide, 15 tall,
+        /// with the drawing on the top rows.
+        ///
+        /// A flat button paints its image one pixel below the centre of the label's line box, so a
+        /// 16px tall canvas lands one pixel lower than the button centre. Measured on the rendered
+        /// window (30px button, 8.25pt label): the canvas sat on rows 8..23 -- centre 15.5 against a
+        /// button centre of 14.5 -- and the ink on rows 9..23, centre 16.0, while the label itself
+        /// sat on the centre exactly. Every icon we generate has a fully transparent top row, so
+        /// dropping that row lifts the drawing onto the label's centre: measured again afterwards,
+        /// the ink covers rows 8..22, centre 15.0, within half a pixel of the button centre (the
+        /// best an integer canvas can do, because the generated ink is itself half a pixel low
+        /// inside its 16px source). The busy spinner goes through here too, so it is exactly as tall
+        /// as the icon it replaces and swapping it in cannot move anything.
+        ///
+        /// A source that already paints into its top row is never trimmed at the top (that would
+        /// cut ink) -- rows 0..14 are taken instead, which lands on the same canvas.</summary>
+        private static Image Normalize(Image raw)
         {
-            Bitmap bmp = new Bitmap(16, 16);
-            using (Graphics g = Graphics.FromImage(bmp))
+            if (raw == null) { return null; }
+            Bitmap full = new Bitmap(IconWidth, SourceHeight);
+            using (Graphics g = Graphics.FromImage(full))
             {
                 g.InterpolationMode = InterpolationMode.HighQualityBicubic;
-                g.DrawImage(raw, new Rectangle(0, 0, 16, 16));
+                g.DrawImage(raw, new Rectangle(0, 0, IconWidth, SourceHeight));
             }
-            return bmp;
+            int top = IsRowBlank(full, 0) ? 1 : 0;
+            Bitmap canvas = new Bitmap(IconWidth, IconHeight);
+            using (Graphics g = Graphics.FromImage(canvas))
+            {
+                g.Clear(Color.Transparent);
+                g.DrawImageUnscaled(full, 0, -top);
+            }
+            full.Dispose();
+            return canvas;
+        }
+
+        private static bool IsRowBlank(Bitmap bmp, int row)
+        {
+            for (int x = 0; x < bmp.Width; x++)
+            {
+                if (bmp.GetPixel(x, row).A > 8) { return false; }
+            }
+            return true;
         }
 
         private static Image _busy;
 
-        /// <summary>A 16x16 spinner shown while a button is running. Same size as every other icon,
-        /// so swapping it in does not move the icon or the label by a single pixel.</summary>
+        /// <summary>A spinner shown while a button is running. It goes through Normalize like every
+        /// other icon, so it is exactly as tall as the icon it replaces and swapping it in does not
+        /// move the icon or the label by a single pixel.</summary>
         public static Image Busy()
         {
             lock (Gate)
             {
                 if (_busy != null) { return _busy; }
-                Bitmap bmp = new Bitmap(16, 16);
+                Bitmap bmp = new Bitmap(IconWidth, SourceHeight);
                 using (Graphics g = Graphics.FromImage(bmp))
                 {
                     g.SmoothingMode = SmoothingMode.AntiAlias;
@@ -100,7 +138,8 @@ namespace Mxx1Toolbox
                         g.FillEllipse(dot, 6.2f, 6.2f, 3.6f, 3.6f);
                     }
                 }
-                _busy = bmp;
+                _busy = Normalize(bmp);
+                bmp.Dispose();
                 return _busy;
             }
         }
@@ -112,7 +151,7 @@ namespace Mxx1Toolbox
                 if (string.IsNullOrEmpty(path) || !File.Exists(path)) { return null; }
                 using (FileStream fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
                 {
-                    return Resize16(Image.FromStream(fs));
+                    return Normalize(Image.FromStream(fs));
                 }
             }
             catch

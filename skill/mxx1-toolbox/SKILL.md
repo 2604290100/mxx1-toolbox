@@ -17,12 +17,13 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
 
 ## 当前状态（2026-10-04）
 
-- ✅ **P0 已实现，测试 70 项全绿**：命令行回归 26 + 界面回归 44（外加编码体检）。
-  产物 `bin\Mxx1Toolbox.exe`（108,544 字节单文件），五个 `tools.*.json` + 61 个 `icons.*.png` 已内嵌。
+- ✅ **P0 已实现，测试 73 项全绿**：命令行回归 26 + 界面回归 47（外加编码体检）。
+  产物 `bin\Mxx1Toolbox.exe`（约 107 KB 单文件），五个 `tools.*.json` + 61 个 `icons.*.png` 已内嵌。
 - ✅ 「右键增强」8 个按钮是**真功能**，实测能读到隔壁引擎的 `installed=` / `fileVisible=`；
   其余 52 个按钮是 `placeholder`（点击 = 状态栏提示 + 日志 + 灰 0.6 秒，不弹窗、不改系统）。
-- ⬜ **Git 仓库还没建**（本地 + GitHub 远程 `mxx1-toolbox` 都还没做）；**推送前必须问用户**。
-- ✅ 按钮图标：61 个 16×16 PNG 由 `tools\Make-Icons.ps1` 生成并内嵌（`icons.<id>.png`）。
+- ✅ **本地 Git 仓库已建**（几笔提交都在本地）；⬜ **GitHub 远程还没建**，**推送前必须问用户**。
+- ✅ 按钮图标：61 个 16×16 PNG 由 `tools\Make-Icons.ps1` 生成并内嵌（`icons.<id>.png`），
+  全部经 `IconFactory.Normalize()` 归一化成 16×15 画布（见"界面硬规则"里那条）。
   优先级：清单里的 `icon` > `assets\icons\<id>.png` > 内嵌 > 程序内实时画的占位图标。
 - ⬜ P1：其它页签接真功能、图形化「新建按钮」、拖拽新增、编辑/排序、多步 `macro`。
 
@@ -34,8 +35,8 @@ D:\萌新工具开发\toolbox\
   bin\Mxx1Toolbox.exe              交付物：单文件 GUI+CLI（不入仓）
   src\Program.cs                   CLI 入口（list / run / status / checkupdate / help）
   src\MainForm.cs                  主窗口：页签 + 四列网格 + 底栏 + 搜索 + 日志面板 + 键盘
-  src\ToolButton.cs                紧凑按钮（Flat + 主题配色 + 16×16 图标 + 600ms 灰显）
-  src\IconFactory.cs               图标：有 PNG 用 PNG，没有就实时画
+  src\ToolButton.cs                紧凑按钮（Flat + 主题配色 + 16×15 图标画布 + 600ms 灰显）
+  src\IconFactory.cs               图标：有 PNG 用 PNG，没有就实时画；一律 Normalize 成 16×15
   src\ToolItem.cs / ToolRegistry.cs 按钮模型 + 读内嵌 tools\*.json + 用户层 tools.json
   src\Launcher.cs                  按 kind 启动；找隔壁 PermanentDeleteSetup.exe；UTF-8 输出
   src\Json.cs                      自带的小 JSON 解析器（不依赖 Newtonsoft / System.Web）
@@ -79,8 +80,9 @@ powershell -File tools\Make-Icons.ps1         # 重生成 61 个 PNG 图标（�
 | 网格列宽**运行时测量**（`ComputeCellWidth`：最长按钮名 + 36px 图标余量 + 8px 间距，钳 104…170） | 拍脑袋定 108px 时「关闭实时防护与篡改」渲染成「关闭实时防护与…」 |
 | `Dock=Top` 的 `TableLayoutPanel` **末尾要加一个 100% 空列** | 多余宽度全被塞给最后一列 → 每行第 4 个按钮比同排宽 28px |
 | `TableLayoutPanel` 的每一行都要显式 `RowStyles`（要填满就 `Percent 100`） | 行按内容 AutoSize → 底栏按钮 30px 挤在 24px 条里，下边缘被裁 5px |
-| 底栏按钮 `AutoSize=false`，**高度按字体算**（`MeasureText("国").Height + 6` = 22px），底栏高 = 按钮高 + 4 | 写死 20px 时 8.25pt 的文字下半截被裁 —— 用户看到"右下角按钮没正常显示、被挡住" |
-| **按钮运行中不许改文字**：禁用 + 换成 16×16 转圈图标（`IconFactory.Busy()`）即可 | 追加 "…" 会让"图标+文字"整组重新居中，每点一次图标横跳；长名字还会溢出被截 |
+| 底栏按钮 `AutoSize=false`，**高度 = 文字行高 + 8**（`MeasureText("国").Height + 8` = 24px），底栏高 = 按钮高 + 4。那个 `+8` 是 Flat 按钮的 1px 边框 + 约 3px 内边距 ×2，**不是**随手留的余量 | 写死 20px → 文字下半截被裁（用户："右下角按钮没正常显示、被挡住"）；按 `行高 + 6` = 22px **还是差一行**（用户："底部按钮还是差一点的才显示全文字，主要是高度问题"）——22px 只给文字 14px，实测底栏「检查更新」只剩 9 行墨迹 |
+| 图标一律经 `IconFactory.Normalize()` 变成 **16×15 画布**（首行整行透明就砍掉首行，否则取 0..14 行），PNG / 实时绘制 / 转圈图标都走同一条路 | WinForms 把图片画在文字行框中心**往下 1px** → 16px 画布比按钮中心低 1.5px（实测图标墨迹 9..23、中心 16.0，按钮中心 14.5），用户看到"图标没有上下居中"。**用 `Padding` 调没用**：它把图标和文字一起挪（每 1px 底边距抬 1px） |
+| **按钮运行中不许改文字**：禁用 + 换成同一个画布的转圈图标（`IconFactory.Busy()`）即可 | 追加 "…" 会让"图标+文字"整组重新居中，每点一次图标横跳；长名字还会溢出被截 |
 | 状态栏文字**只放短摘要**（`N 个按钮 · 本页 M · 名字 · 完成`），完整内容进日志 + 悬停提示 | 标签宽度固定，长句（旧格式实测 414px vs 392px）尾巴被截 |
 | 列宽按最长按钮名测量时，要把"运行中"也考虑进去（现在的做法是运行中不改文字，就自然不用留余量） | 只按静态文字算余量，运行态一变就溢出 |
 | 一律 `TableLayoutPanel` / 排版函数，**绝不手写坐标**；`Label` 绝不与按钮重叠 | 缩放/DPI 一变就错位；标签会吃掉鼠标点击，按钮"点了没反应" |
@@ -152,14 +154,25 @@ powershell -File tools\Make-Icons.ps1         # 重生成 61 个 PNG 图标（�
   5. "文字超长"这类问题用**测量**来判：`TextRenderer.MeasureText(文字, 同一字体)` 比控件宽度
      （B06b 按钮、D01d/E07 状态栏），别等到用户截图来报；
   6. 验证"点击后有没有跳动"不要靠像素 diff（禁用态会改颜色，看起来差很多），
-     直接**读点击过程中的控件文字**（E05）—— 文字没变 + 图标同尺寸 ⇒ 布局不可能移动。
+     直接**读点击过程中的控件文字**（E05）—— 文字没变 + 图标同尺寸 ⇒ 布局不可能移动；
+  7. **"文字被裁了没有 / 图标居中不居中"只有渲染结果能判**：`PrintWindow(PW_RENDERFULLCONTENT)`
+     抓窗口像素，再按行数墨迹判定（B09 图标中心与按钮中心之差 ≤ 1px、D01e 底栏墨迹行数不能比
+     按钮墙少）。判定窍门：图标是**亮而饱和**的色块，文字是**暗**墨迹 —— 只按饱和度分会把文字
+     的 ClearType 彩边算成图标，必须再加亮度下限；背景色取内区出现次数最多的颜色。
+- **别在 PowerShell 里按像素调函数**：一个 `Get-Pixel` 每像素调一次，几万次调用要几分钟，
+  看起来像卡死（踩过一次）。要么 `LockBits` 取一次 `byte[]` 再纯数组循环（`Get-InkRows` 的写法），
+  要么用 csc 编个临时小工具（`local\InkDiag.cs` 那种）。
+- **改完任何 `.ps1` / `.cs` 都回头看一眼 BOM**：`edit` 类工具会静默吃掉 BOM，而 PowerShell 5.1
+  读无 BOM 的 `.ps1` 按 GBK 解 → 中文注释变成语法错误，报错位置还完全不相干
+  （比如报 `using System;` 那行）。改完跑 `tools\Test-Encoding.ps1 -Fix`。
 - 界面回归会临时改 `settings.ini` 里的主题，**跑完必须按原样复原**。
 - **重编时如果 `bin\Mxx1Toolbox.exe` 被占用，不要杀进程**：`build.ps1` 会自动把旧 exe 改名成
   `Mxx1Toolbox.exe.old-<时分秒>` 再编（用户可能正开着界面在用）。
 
 ## 待办 / 别自己替他决定
 
-1. **Git 仓库还没建**：本地 `git init` + 首笔提交可以做；**GitHub 远程仓库名（建议 `mxx1-toolbox`）和推送都要先问用户**。
+1. **Git：本地仓库已经建好**（`toolbox\.git`，几笔提交都在本地）；**GitHub 远程仓库还没建**，
+   推送必须先问用户（用户原话："先只留本地仓库"）。
 2. 图标已经生成好了；要改样式就动 `tools\Make-Icons.ps1` 里的关键词映射 / 配色，然后重跑它 + `build.ps1`。
 3. P1 的范围（先接哪个页签的真功能）要问用户，别自己挑。
 4. skill 三处同步：`D:\萌新工具开发\.dsh\skills\mxx1-toolbox\SKILL.md`（已建）、

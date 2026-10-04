@@ -6,7 +6,8 @@ using System.Windows.Forms;
 
 namespace Mxx1Toolbox
 {
-    /// <summary>One compact button of the wall: 16x16 PNG icon plus a plain text label.</summary>
+    /// <summary>One compact button of the wall: a 16x15 icon canvas (see IconFactory.Normalize,
+    /// which exists so the icon lands on the label's optical centre) plus a plain text label.</summary>
     internal sealed class ToolButton : Button
     {
         public readonly ToolItem Tool;

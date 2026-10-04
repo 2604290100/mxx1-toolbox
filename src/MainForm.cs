@@ -83,7 +83,13 @@ namespace Mxx1Toolbox
             _cellWidth = ComputeCellWidth();
             using (Font barFont = new Font("Microsoft YaHei", 8.25f, FontStyle.Regular, GraphicsUnit.Point))
             {
-                _barButtonHeight = Math.Max(20, TextRenderer.MeasureText("国", barFont).Height + 6);
+                // One line of 8.25pt text measures 16px, but a flat button also reserves its 1px
+                // border plus about 3px of internal padding on each side: the label is drawn in
+                // height - 8. So a 22px button gives the glyph 14px and the bottom row of every
+                // bar label was cut off -- measured on the rendered window, "检查更新" came out
+                // with 9 ink rows instead of the 10 a grid button shows (tests\Test-Gui.ps1 D01e).
+                _barButtonHeight = TextRenderer.MeasureText("国", barFont).Height + 8;
+                if (_barButtonHeight < 24) { _barButtonHeight = 24; }
             }
             _statusBarHeight = _barButtonHeight + 4;   // 2px margin above and below
             ClientSize = new Size(Math.Max(500, Columns * _cellWidth + 24), 700);

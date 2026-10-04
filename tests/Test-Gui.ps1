@@ -81,6 +81,7 @@ public class TBGui
     [DllImport("user32.dll")] private static extern bool IsWindowEnabled(IntPtr hWnd);
     [DllImport("user32.dll")] private static extern bool IsWindow(IntPtr hWnd);
     [DllImport("user32.dll")] private static extern bool PostMessageW(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+    [DllImport("user32.dll")] private static extern bool PrintWindow(IntPtr hWnd, IntPtr hdc, uint flags);
     [DllImport("user32.dll")] private static extern IntPtr GetParent(IntPtr hWnd);
     [DllImport("user32.dll")] private static extern int GetWindowLongW(IntPtr hWnd, int index);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern IntPtr SendMessageTimeoutW(IntPtr hWnd, uint msg, IntPtr wParam, StringBuilder lParam, uint flags, uint timeout, out IntPtr result);
@@ -139,8 +140,118 @@ public class TBGui
     public static bool Click(IntPtr h) { return PostMessageW(h, 0x00F5, IntPtr.Zero, IntPtr.Zero); }        // BM_CLICK
     public static bool CloseWindow(IntPtr h) { return PostMessageW(h, 0x0010, IntPtr.Zero, IntPtr.Zero); }  // WM_CLOSE
     public static IntPtr Parent(IntPtr h) { return GetParent(h); }
+
+    // PW_RENDERFULLCONTENT (2) asks the window to paint itself into the given DC, including its
+    // children and the DWM composited title bar. The bitmap is created on the PowerShell side so
+    // that this class never mentions System.Drawing -- that keeps Add-Type working on both
+    // Windows PowerShell 5.1 and PowerShell 7 (where referencing System.Drawing needs extra work).
+    public static bool Paint(IntPtr hWnd, IntPtr hdc) { return PrintWindow(hWnd, hdc, 2); }
 }
 '@
+
+# ---------------------------------------------------------------- 渲染像素探针
+# 用户报过的两个"看着像 bug"的问题只能从渲染结果判定，所以这里读真正的像素：
+#   * 底栏按钮的文字是不是被下边缘裁掉（墨迹行数比按钮墙少 = 裁了）
+#   * 按钮图标是不是在按钮里上下居中（图标是亮而饱和的色块，文字是暗墨迹；
+#     ClearType 会给文字加彩色描边，所以判定图标必须加亮度下限）
+function Get-WindowShot {
+    param([IntPtr]$Handle)
+    $r = [TBGui]::Rect($Handle)
+    $w = $r[2] - $r[0]; $h = $r[3] - $r[1]
+    if ($w -le 0 -or $h -le 0) { return $null }
+    $bmp = New-Object System.Drawing.Bitmap($w, $h)
+    $g = [System.Drawing.Graphics]::FromImage($bmp)
+    $hdc = $g.GetHdc()
+    $ok = [TBGui]::Paint($Handle, $hdc)
+    $g.ReleaseHdc($hdc)
+    $g.Dispose()
+    if (-not $ok) { $bmp.Dispose(); return $null }
+
+    $area = New-Object System.Drawing.Rectangle(0, 0, $w, $h)
+    $data = $bmp.LockBits($area, [System.Drawing.Imaging.ImageLockMode]::ReadOnly, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+    $bytes = New-Object byte[] ($data.Stride * $h)
+    [System.Runtime.InteropServices.Marshal]::Copy($data.Scan0, $bytes, 0, $bytes.Length)
+    $stride = $data.Stride
+    $bmp.UnlockBits($data)
+    $bmp.Dispose()
+    return [pscustomobject]@{
+        Bytes = $bytes; Stride = $stride; Width = $w; Height = $h
+        Left = $r[0]; Top = $r[1]
+    }
+}
+
+# 一个矩形的墨迹行范围；返回 @{ LabelTop; LabelBottom; IconTop; IconBottom }（没找到 = -1）
+function Get-InkRows {
+    param($Shot, [int]$X, [int]$Y, [int]$W, [int]$H, [switch]$Icon)
+    $bytes = $Shot.Bytes; $stride = $Shot.Stride
+
+    # 背景色 = 内区里出现次数最多的颜色
+    $counts = @{}
+    for ($yy = 2; $yy -lt $H - 2; $yy++) {
+        $row = ($Y + $yy) * $stride
+        for ($xx = 2; $xx -lt $W - 2; $xx++) {
+            $i = $row + (($X + $xx) * 4)
+            $key = ([int]$bytes[$i + 2] -shl 16) -bor ([int]$bytes[$i + 1] -shl 8) -bor [int]$bytes[$i]
+            if ($counts.ContainsKey($key)) { $counts[$key] = $counts[$key] + 1 } else { $counts[$key] = 1 }
+        }
+    }
+    $bg = 0; $bestN = -1
+    foreach ($k in $counts.Keys) { if ($counts[$k] -gt $bestN) { $bestN = $counts[$k]; $bg = $k } }
+    $bgR = ($bg -shr 16) -band 0xFF; $bgG = ($bg -shr 8) -band 0xFF; $bgB = $bg -band 0xFF
+
+    $labelTop = -1; $labelBottom = -1; $iconTop = -1; $iconBottom = -1
+    $labelFrom = 1
+    if ($Icon) {
+        # 图标永远是最左边那块：先找第一段连续的"亮而饱和"的列
+        $iconLeft = -1; $iconRight = -1; $run = 0; $gap = 0
+        for ($xx = 1; $xx -lt $W - 1; $xx++) {
+            $n = 0
+            for ($yy = 1; $yy -lt $H - 1; $yy++) {
+                $i = (($Y + $yy) * $stride) + (($X + $xx) * 4)
+                $b = [int]$bytes[$i]; $g2 = [int]$bytes[$i + 1]; $r2 = [int]$bytes[$i + 2]
+                $mx = [Math]::Max($r2, [Math]::Max($g2, $b)); $mn = [Math]::Min($r2, [Math]::Min($g2, $b))
+                if (($mx - $mn) -gt 60 -and $mx -gt 140) { $n++ }
+            }
+            if ($n -ge 3) {
+                if ($iconLeft -lt 0) { $iconLeft = $xx }
+                $iconRight = $xx; $run++; $gap = 0
+            } elseif ($iconLeft -ge 0) {
+                $gap++
+                if ($gap -gt 1) { break }
+            }
+        }
+        if ($run -lt 4) { $iconLeft = -1; $iconRight = -1 }
+        if ($iconRight -ge 0) { $labelFrom = $iconRight + 1 }
+        for ($yy = 1; $yy -lt $H - 1; $yy++) {
+            $n = 0
+            if ($iconLeft -ge 0) {
+                for ($xx = $iconLeft; $xx -le $iconRight; $xx++) {
+                    $i = (($Y + $yy) * $stride) + (($X + $xx) * 4)
+                    $b = [int]$bytes[$i]; $g2 = [int]$bytes[$i + 1]; $r2 = [int]$bytes[$i + 2]
+                    $mx = [Math]::Max($r2, [Math]::Max($g2, $b)); $mn = [Math]::Min($r2, [Math]::Min($g2, $b))
+                    if (($mx - $mn) -gt 60 -and $mx -gt 140) { $n++ }
+                }
+            }
+            if ($n -ge 3) { if ($iconTop -lt 0) { $iconTop = $yy }; $iconBottom = $yy }
+        }
+    }
+
+    for ($yy = 1; $yy -lt $H - 1; $yy++) {
+        $n = 0
+        for ($xx = $labelFrom; $xx -lt $W - 1; $xx++) {
+            $i = (($Y + $yy) * $stride) + (($X + $xx) * 4)
+            $b = [int]$bytes[$i]; $g2 = [int]$bytes[$i + 1]; $r2 = [int]$bytes[$i + 2]
+            $mx = [Math]::Max($r2, [Math]::Max($g2, $b))
+            # 暗墨迹、且与背景不同色（ClearType 的彩边也是暗的，所以只看亮度上限）
+            if ($mx -lt 210 -and
+                ([Math]::Abs($r2 - $bgR) -gt 40 -or [Math]::Abs($g2 - $bgG) -gt 40 -or [Math]::Abs($b - $bgB) -gt 40)) {
+                $n++
+            }
+        }
+        if ($n -ge 3) { if ($labelTop -lt 0) { $labelTop = $yy }; $labelBottom = $yy }
+    }
+    return [pscustomobject]@{ LabelTop = $labelTop; LabelBottom = $labelBottom; IconTop = $iconTop; IconBottom = $iconBottom }
+}
 
 function Get-ChildControls {
     param([IntPtr]$RootHandle)
@@ -330,6 +441,35 @@ Check 'B07 段与段之间有分隔线' ($separators.Count -ge 1) ('分隔线=' 
 $visibleEdits = @($all | Where-Object { $_.Class -like '*EDIT*' -and $_.Height -gt 20 })
 Check 'B08 默认不显示日志面板（没有大文本框）' ($visibleEdits.Count -eq 0) ('可见文本框=' + $visibleEdits.Count)
 
+# 图标必须在按钮里上下居中。用户报过"按钮的图标没有上下居中"：WinForms 的 Flat 按钮会把图片
+# 画在文字行框中心往下 1px 的地方，16px 的图标因此比按钮中心低 1px（实测 1.5px）。
+# 判据用渲染像素，不依赖任何内部公式；参考行数同时给 D 组判断底栏文字有没有被裁。
+$shot = Get-WindowShot -Handle $main
+$gridProbe = @($toolButtons | Sort-Object Top, Left | Select-Object -First 1)
+$refInkH = 0
+if ($shot -eq $null -or $gridProbe.Count -eq 0) {
+    Check 'B09 按钮图标上下居中（居中误差 <= 1px）' $false '窗口截图失败'
+    Check 'B09b 按钮文字完整（墨迹行数 >= 10）' $false '窗口截图失败'
+} else {
+    $probeRect = @{
+        X = $gridProbe[0].Left - $shot.Left; Y = $gridProbe[0].Top - $shot.Top
+        W = $gridProbe[0].Width; H = $gridProbe[0].Height
+    }
+    $ink = Get-InkRows -Shot $shot -Icon -X $probeRect.X -Y $probeRect.Y -W $probeRect.W -H $probeRect.H
+    $refInkH = $ink.LabelBottom - $ink.LabelTop + 1
+    Check 'B09b 按钮文字完整（墨迹行数 >= 10）' ($refInkH -ge 10) ('墨迹行=' + $ink.LabelTop + '..' + $ink.LabelBottom + ' 行数=' + $refInkH)
+
+    if ($ink.IconTop -lt 0) {
+        Check 'B09 按钮图标上下居中（居中误差 <= 1px）' $false '没在按钮里找到图标'
+    } else {
+        $iconCentre = ($ink.IconTop + $ink.IconBottom) / 2.0
+        $btnCentre = ($gridProbe[0].Height - 1) / 2.0
+        $offset = [Math]::Abs($iconCentre - $btnCentre)
+        Check 'B09 按钮图标上下居中（居中误差 <= 1px）' ($offset -le 1.0) `
+            ('误差=' + $offset.ToString('0.0') + 'px 图标行=' + $ink.IconTop + '..' + $ink.IconBottom + ' 中心=' + $iconCentre + ' 按钮中心=' + $btnCentre)
+    }
+}
+
 # ---------------------------------------------------------------- C 组：翻页签
 Write-Host ''
 Write-Host 'C 组 · 页签切换'
@@ -371,8 +511,28 @@ if ($barButtons.Count -gt 0) {
         }
     }
     Check 'D01b 底栏按钮完全在底栏范围内（没有被裁）' ($outside.Count -eq 0) (($outside -join ' ') + (' 底栏=' + ($barRect[3] - $barRect[1]) + 'px'))
-    $tooShort = @($barButtons | Where-Object { $_.Height -lt 20 })
-    Check 'D01c 底栏按钮高度 >= 20px（装得下一行 8.25pt 文字）' ($tooShort.Count -eq 0) ((($barButtons | ForEach-Object { $_.Text + '=' + $_.Height }) -join ' '))
+    $tooShort = @($barButtons | Where-Object { $_.Height -lt 24 })
+    Check 'D01c 底栏按钮高度 >= 24px（1px 边框 + 约 3px 内边距 + 16px 文字行）' ($tooShort.Count -eq 0) ((($barButtons | ForEach-Object { $_.Text + '=' + $_.Height }) -join ' '))
+}
+
+# 用户报过两次的"底栏按钮差一点才显示全文字"：22px 的按钮只给文字留 14px，最后一行字形被下边缘
+# 裁掉。这里不看高度公式，直接数渲染出来的墨迹行数，和按钮墙上同一个字号的按钮对比。
+$barShot = Get-WindowShot -Handle $main
+if ($barShot -eq $null -or $refInkH -le 0 -or $barButtons.Count -eq 0) {
+    Check 'D01e 底栏按钮文字没有被裁（墨迹行数和按钮墙一致）' $false ('截图失败或参考行数=' + $refInkH + ' 底栏按钮=' + $barButtons.Count)
+} else {
+    $clipped = @()
+    $detail = @()
+    foreach ($b in $barButtons) {
+        $ink = Get-InkRows -Shot $barShot -X ($b.Left - $barShot.Left) -Y ($b.Top - $barShot.Top) -W $b.Width -H $b.Height
+        $rows = $ink.LabelBottom - $ink.LabelTop + 1
+        $detail += ('{0}={1}行({2}..{3})' -f $b.Text, $rows, $ink.LabelTop, $ink.LabelBottom)
+        if ($rows -lt $refInkH) { $clipped += $b.Text }
+    }
+    $note = ''
+    if ($clipped.Count -gt 0) { $note = ' 被裁=' + ($clipped -join ',') }
+    Check 'D01e 底栏按钮文字没有被裁（墨迹行数和按钮墙一致）' ($clipped.Count -eq 0) `
+        (($detail -join ' ') + ' 参考=' + $refInkH + '行' + $note)
 }
 
 $statusLabel = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*STATIC*' -and $_.Text -match '个按钮' })

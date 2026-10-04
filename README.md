@@ -94,13 +94,15 @@ bin\Mxx1Toolbox.exe help
 powershell -File tools\Test-Encoding.ps1     # 编码红线体检（BOM / 纯 ASCII / 硬编码本机路径）
 powershell -File tests\Test-All.ps1          # 全部（无桌面时加 -SkipGui）
 powershell -File tests\Test-Cli.ps1          # 命令行回归 26 项
-powershell -File tests\Test-Gui.ps1          # 界面回归 44 项（要交互式桌面，无桌面返回 3 = 跳过）
+powershell -File tests\Test-Gui.ps1          # 界面回归 47 项（要交互式桌面，无桌面返回 3 = 跳过）
 powershell -File tools\Make-Screenshots.ps1  # 重新拍 docs 里的截图
 powershell -File tools\Make-Icons.ps1        # 重新生成 61 个 16x16 PNG 图标
 ```
 
 界面回归不看截图：用 Win32 枚举子窗口矩形判"按钮/标签有没有压在一起"、读 `GWL_STYLE` 判标题栏、
 `PostMessage(BM_CLICK)` 真点按钮、`WM_GETTEXT` 跨进程读文字；按钮清单从 `list` 里读，两边必须一致。
+"文字有没有被裁 / 图标有没有上下居中"这类只有渲染结果能判断的问题，用 `PrintWindow` 抓像素、
+按行数墨迹判定（底栏文字 10 行不能少，图标中心与按钮中心之差 ≤ 1px）。
 
 ## 文件位置
 

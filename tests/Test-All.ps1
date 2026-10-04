@@ -5,8 +5,9 @@
     Test-All.ps1 -- 一条命令跑完工具箱的全部测试
 
       1) tools\Test-Encoding.ps1   编码红线体检（BOM / 纯 ASCII / 硬编码路径）
-      2) tests\Test-Cli.ps1        命令行回归
-      3) tests\Test-Gui.ps1        界面回归（需要交互式桌面；无桌面返回 3 = 跳过）
+      2) tools\Test-InlineSyntax.ps1  内联脚本语法 + 清单 JSON 体检
+3) tests\Test-Cli.ps1        命令行回归
+      4) tests\Test-Gui.ps1        界面回归（需要交互式桌面；无桌面返回 3 = 跳过）
 
     用法:
       powershell -File tests\Test-All.ps1
@@ -72,6 +73,7 @@ Write-Host '##########################################################'
 Write-Host (' 工程: ' + $root)
 
 Invoke-Suite -Title '编码红线体检' -ScriptPath (Join-Path $root 'tools\Test-Encoding.ps1')
+Invoke-Suite -Title '内联脚本与清单体检' -ScriptPath (Join-Path $root 'tools\Test-InlineSyntax.ps1')
 Invoke-Suite -Title '命令行回归' -ScriptPath (Join-Path $root 'tests\Test-Cli.ps1')
 if ($SkipGui) {
     Write-Host ''

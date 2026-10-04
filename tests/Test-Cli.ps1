@@ -97,7 +97,7 @@ Write-Host 'A 组 · status 与 list'
 $status = Invoke-Exe 'status'
 Check 'A01 status 退出码 0' ($status.Code -eq 0) ('exit=' + $status.Code)
 Check 'A02 中文输出没有乱码（UTF-8）' ($status.Out -match 'name=萌新工具箱') ('name=' + (Get-Key $status.Out 'name'))
-Check 'A03 版本号 1.2.0' ((Get-Key $status.Out 'version') -eq '1.2.0') (Get-Key $status.Out 'version')
+Check 'A03 版本号 1.3.0' ((Get-Key $status.Out 'version') -eq '1.3.0') (Get-Key $status.Out 'version')
 Check 'A04 按钮总数 103（测试期间用户层的按钮会暂停：常用 31 + 系统工具 26 + 隐私 29 + 应用 5 + 清理 8 + 右键 1 + 我的 3）' ((Get-Key $status.Out 'buttons') -eq '103') (Get-Key $status.Out 'buttons')
 Check 'A05 内置清单里没有灰色占位按钮了（两个「资源管理器」也接上了真功能；灰规则改由 B 组注入验证）' ((Get-Key $status.Out 'placeholders') -eq '0') (Get-Key $status.Out 'placeholders')
 Check 'A06 危险按钮 3 个' ((Get-Key $status.Out 'dangerous') -eq '3') (Get-Key $status.Out 'dangerous')

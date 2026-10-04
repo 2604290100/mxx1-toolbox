@@ -15,13 +15,15 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
 > **接手 / 新会话先做两件事**：读 `docs\DESIGN.md`（外观与行为的**唯一正本**）和本文件。
 > 设计一改先改 `DESIGN.md`，再同步本 skill —— 两份分叉就会出现"两套行为"。
 
-## 当前状态（2026-10-04，v1.2.0）
+## 当前状态（2026-10-04，v1.3.0）
 
-- ✅ **测试 109 项全绿**：命令行回归 44 + 界面回归 65（外加编码体检 99 个文件）。
-  产物 `bin\Mxx1Toolbox.exe`（约 150 KB 单文件），五个 `tools.*.json` + 53 个 `icons.*.png` 已内嵌。
-- ✅ **53 个按钮 = 51 个真功能 + 2 个灰色占位**：`常用设置` 31（29 真 / 2 灰）/
-  `右键增强` **1**（真）/ `清理优化` **8**（全真）/ `系统工具` **12**（全真）/
-  `我的工具` 1（图形化新建，真）。
+- ✅ **测试 154 项全绿**：命令行回归 83 + 界面回归 71（外加编码体检 113 个文件、内联脚本语法 46 个）。
+  产物 `bin\Mxx1Toolbox.exe`（约 230 KB 单文件），七个 `tools.*.json` + 103 个 `icons.*.png` 已内嵌。
+- ✅ **103 个内置按钮，全部是真功能，灰色占位一个不剩**：`常用设置` 31 / `系统工具` 26 /
+  `隐私设置` 29（11 组成对开关 + 4 个权限入口 + 状态/优化/还原）/ `应用管理` 5 /
+  `清理优化` 8 / `右键增强` 1 / `我的工具` 3（新建 / 导出 / 导入，真）。
+  灰色规则本身还在（用户自己写 `placeholder:true` 会灰掉、点不动）：两套测试会**临时往用户层
+  注入一个占位按钮**来盯住它，跑完必删。
 - ✅ **灰色 = 功能还没接入 = 禁止点击**（用户 2026-10-04 改的规则）：2 个占位按钮 `Enabled=false`、
   灰底灰字 + **置灰图标**（`IconFactory.GetMuted()`）—— 点不动、不能聚焦、不弹提示；
   禁用控件不显示 tooltip，所以状态栏在有灰按钮的页面上带一句「灰色 N 个没接功能」。
@@ -38,7 +40,8 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
   = 开它自己的窗口（安装/卸载/状态/测试/条款/日志/更新都在那里）。原来 8 条定义留在
   `tools\rightmenu.json` 的 `_disabled` 数组里当注释（加载器只读 `tools`）。
 - ✅ **本地 Git 仓库已建**（提交都在本地）；⬜ **GitHub 远程还没建**，**推送前必须问用户**。
-- ✅ 按钮图标：54 个 16×16 PNG 由 `tools\Make-Icons.ps1` 生成并内嵌（`icons.<id>.png`），
+- ✅ 按钮图标：103 个 16×16 PNG 由 `tools\Make-Icons.ps1` 生成并内嵌（`icons.<id>.png`；
+  用户自建按钮的图标**不**生成，免得把别人机器上的东西提交进仓库），
   全部经 `IconFactory.Normalize()` 归一化成 16×15 画布（见"界面硬规则"里那条）。
   优先级：清单里的 `icon` > `assets\icons\<id>.png` > 内嵌 > 程序内实时画的占位图标。
 - ✅ **外部工具目录 `bin-tools\` 已实现**（用户定的名字）：查找顺序里加一档、`build.ps1 -Package` 自动拷入、
@@ -67,13 +70,15 @@ D:\萌新工具开发\toolbox\
   src\AboutForm.cs                 署名、站点、仓库、许可证常量的唯一来源
   src\LogForm.cs / OutputForm.cs   程序内日志窗口（最新在最上）/ 命令输出窗口
   src\SettingsForm.cs              设置窗口
-  tools\*.json                     53 个按钮的内置定义（编译时内嵌，资源名 tools.<文件名>）
+  tools\*.json                     103 个按钮的内置定义（编译时内嵌，资源名 tools.<文件名>）；7 个文件 =
+                                 common / system / privacy / apps / cleanup / rightmenu / mine
   tools\Test-Encoding.ps1          编码红线体检（-Fix 修 BOM）
   tools\Make-Screenshots.ps1       拍 docs\gui-shot.png / dark-shot.png / system-shot.png（PrintWindow）
   tools\Make-Icons.ps1             批量画图标（先从 exe 的 list 读清单，所以**先 build 再跑它**）
-  assets\icons\*.png               53 个图标（编译时内嵌成 icons.<id>.png）
+  assets\icons\*.png               103 个图标（编译时内嵌成 icons.<id>.png）
   tests\Test-All.ps1               一条命令跑完全部
-  tests\Test-Cli.ps1               命令行回归 44 项
+  tools\Test-InlineSyntax.ps1      内联脚本语法 + 清单 JSON 体检（46 个脚本 / 7 个清单）
+tests\Test-Cli.ps1               命令行回归 83 项
   tests\Test-Gui.ps1               界面回归 65 项（要交互式桌面，无桌面返回 3 = 跳过）
   docs\DESIGN.md                   设计正本（含"踩过的坑"清单 + §13 打包方案）
   docs\gui-shot.png / dark-shot.png / system-shot.png  界面截图
@@ -94,7 +99,11 @@ powershell -File tools\Make-Icons.ps1         # 重生成 PNG 图标（先 build
 & bin\Mxx1Toolbox.exe list [--tab system]     # 列按钮（tab 分隔：id / 页签 / 名称 / 类型）
 & bin\Mxx1Toolbox.exe run devmgmt --dry       # 只解析按钮指向哪里，不真的启动（灰按钮回 kind=none）
 & bin\Mxx1Toolbox.exe run permdel.gui         # 跑一个按钮（和界面同一条路径）
-& bin\Mxx1Toolbox.exe status                  # key=value 状态（含 systemTargets / systemMissing）
+& bin\Mxx1Toolbox.exe status                  # key=value（含 systemTargets / systemMissing / admin / pinned）
+& bin\Mxx1Toolbox.exe tip [id]                # 打印按钮的悬停说明（界面交给 ToolTip 的就是这一串）
+& bin\Mxx1Toolbox.exe privacy status          # 只读列隐私开关状态；selftest 自检「原值→写入→还原」
+& bin\Mxx1Toolbox.exe pin / unpin <id>        # 置顶 / 取消置顶（pinned.txt）
+& bin\Mxx1Toolbox.exe export / import <文件>  # 导出 / 导入「我的工具」
 ```
 
 ## 「我的工具」：图形化加按钮（已实现）
@@ -161,7 +170,21 @@ powershell -File tools\Make-Icons.ps1         # 重生成 PNG 图标（先 build
 7. **加/删按钮后图标要跟着走**：先 `build.ps1`（`Make-Icons.ps1` 从 exe 的 `list` 读清单）→
    `tools\Make-Icons.ps1` → 删掉不在清单里的孤儿 PNG → 再 `build.ps1`。
 
-## 「系统工具」怎么点（12 个真功能）
+## 「隐私设置」怎么点（29 个按钮 = 11 组成对开关 + 4 个权限入口 + 状态 / 优化 / 还原）
+
+后端 `src\Privacy.cs`：一张「开关 → 注册表值」的表（一个开关可能对应好几个值，「系统广告」一组
+就是 8 个）。三条底线：① **只碰隐私 / 广告 / 遥测开关**，Defender / 防火墙 / UAC / SmartScreen
+一概不碰（测试 `I05` 盯着）；② **写之前先把原值记进 `privacy-original.tsv`**，而且只记第一次；
+③ **写完读回核对**。需要写 HKLM 的开关走「把自己以管理员身份再起一遍」（`run <id> --admin`），
+结果是 winexe 没有控制台，所以写进 `last-elevated-result.txt`、父进程过几秒读出来弹窗口。
+
+## 「应用管理」怎么点（5 个，只读或单个操作）
+
+查看已安装应用 / 查看启动项（都是只读脚本）/ 默认应用 / 应用和功能（`ms-settings:`）/
+卸载单个应用（图形化挑一个 + 二次确认 + `Remove-AppxPackage`，只影响当前用户）。
+**故意不做**批量卸载、卸载 Edge、卸载 Xbox/天气/邮件/地图 —— `J06`–`J08` 盯着这条底线。
+
+## 「系统工具」怎么点（26 个真功能，含 12 个 Windows 组件 + 13 个修复诊断 + 系统体检）
 
 目标表在 `src\Launcher.cs` 的 `SystemTargets`，**只写占位符路径**（`%SystemRoot%\System32\devmgmt.msc`），
 运行时展开 —— 代码里不出现本机绝对路径（编码体检会拦）。三种目标：

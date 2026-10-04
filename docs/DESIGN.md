@@ -1,6 +1,7 @@
 # 萌新工具箱（mxx1 Toolbox）· 设计 · v1.3（已实现）
 
-> 状态：**已实现并全绿**（2026-10-04，版本 1.2.0）：53 个按钮里 51 个是真功能，其余 2 个灰色占位（禁用）。
+> 状态：**已实现并全绿**（2026-10-04，版本 1.3.0）：**103 个内置按钮全部是真功能，灰色占位一个不剩**
+> （灰色规则本身还在：用户自己写 `placeholder:true` 会灰掉、点不动，测试会注入一个来盯住这条规则）。
 > 本文件是外观与行为的**唯一正本**，改设计先改这里，再同步 skill。
 > 界面截图：`docs/gui-shot.png`（浅色「常用设置」页：彩色 = 真功能，灰色 = 还没接）、
 > `docs/dark-shot.png`（深色）、`docs/system-shot.png`（系统工具页签）；
@@ -86,13 +87,28 @@
 深色不需要自绘控件：`FlatStyle=Flat` + `FlatAppearance` 逐主题赋值即可；
 标题栏用 `DwmSetWindowAttribute(hwnd, 20→19, dark)`，滚动条用 `SetWindowTheme(hwnd, "DarkMode_Explorer")`。
 
-## 4 页签与按钮清单（共 53 个：51 真功能 + 2 灰色占位）
+## 4 页签与按钮清单（共 103 个内置按钮，**全部真功能**）
+
+| 页签 | 按钮数 | 说明 |
+| --- | --- | --- |
+| 常用设置 | 31 | 任务栏 / 开始菜单 / 右键菜单 / 电源 / 安全类入口（只打开官方界面）/ hosts … |
+| 系统工具 | 26 | 12 个 Windows 自带组件 + 第 1 批 13 个修复诊断 + 系统体检 |
+| 隐私设置 | 29 | 11 组成对开关 + 4 个权限入口 + 状态 / 一键优化 / 一键还原（§4.5） |
+| 应用管理 | 5 | 查看已安装应用 / 查看启动项 / 默认应用 / 应用和功能 / 卸载单个应用（§4.6） |
+| 清理优化 | 8 | 垃圾清理 / 临时文件 / 回收站 / 浏览器缓存 / 磁盘清理 / 存储感知 / 启动项 / 大文件 |
+| 右键增强 | 1 | 「永久删除工具」（调隔壁 `permanent-delete-menu`） |
+| 我的工具 | 3 + 用户自己的 | `+ 新建按钮` / 导出我的按钮 / 导入按钮（§4.7） |
 
 `[i]` = 16×16 图标；**粗体** = 危险按钮（深红文字 + 二次确认）；灰色 = `placeholder`（禁用，点不动）。
 
-### 4.1 常用设置（31 个，两段：29 个真功能 + 2 个灰色占位）
+### 4.1 常用设置（31 个，两段，全是真功能）
 
-**真功能 29 个**（点得动；`confirm` = 点之前先弹二次确认）：
+**31 个都点得动**（`confirm` = 点之前先弹二次确认）：
+
+「Win10 资源管理器」/「Win11 资源管理器」原来是灰色占位，现在也接上了真功能（用户给了说明）：
+写 / 删 `HKCU\Software\Classes\CLSID\{2aa9162e-c906-4dd9-ad0b-3d24a8eef5a0}` 与
+`{6480100b-5a83-4d1e-9f69-8ae5a88e9a33}` 两个覆盖键，把 Win11 的资源管理器换成 Win10 经典样式
+（顺带把文件夹右键菜单也换回完整版）。**在 Win10 上只打印一句说明，一个字节都不写。**
 
 | 按钮 | 怎么实现的 |
 | --- | --- |
@@ -187,7 +203,61 @@
   `ms-settings:` → Windows 设置），链接字符串从 `AboutForm` 的常量取（署名/仓库只有一个来源）。
 - `run <id> --dry` 可以把这 12 个目标解析一遍看对不对（不启动任何东西）。
 
-### 4.5 我的工具（1 个内置按钮 + 用户自己加的按钮）
+### 4.5 隐私设置（29 个 = 11 组成对开关 + 4 个权限入口 + 状态 / 优化 / 还原）
+
+后端是 `src\Privacy.cs`：一张「开关 → 注册表值」的表（一个开关可能对应好几个值，
+「系统广告」一组就是 8 个）。三条底线：
+
+1. **只碰隐私 / 广告 / 遥测开关**，Defender、防火墙、UAC、SmartScreen 这些安全防线一概不碰 ——
+   这条有测试盯着（`I05`：隐私页签上不许出现"关掉安全防线"的按钮）。
+2. **写之前先把原值记下来**（`%LOCALAPPDATA%\mxx1-toolbox\privacy-original.tsv`），
+   而且只记第一次：反复点「关闭 X」不会把"已经改过的值"当成原值，否则还原出来的是
+   "上一次关闭后的状态"而不是出厂状态。原来没有这个值的，还原时把值删掉。
+3. **写完必须读回来核对** —— 读了不等于写进去了（「按流量计费」那次踩过"假成功"）。
+
+| 开关 | 写什么 | 注册表位置 |
+| --- | --- | --- |
+| 微软遥测 | `AllowTelemetry` = 0 / 1 | `HKLM\SOFTWARE\Policies\Microsoft\Windows\DataCollection` |
+| 错误报告 | `Disabled` = 1 / 0（HKLM）+ `DontShowUI` = 1 / 0（HKCU） | `…\Windows Error Reporting` |
+| 小娜助手 | `AllowCortana` = 0 / 1 | `HKLM\SOFTWARE\Policies\Microsoft\Windows\Windows Search` |
+| 搜索推荐 | `BingSearchEnabled`、`CortanaConsent` = 0 / 1 | `HKCU\…\CurrentVersion\Search` |
+| 语音收集 | `HasAccepted` = 0 / 1 | `HKCU\SOFTWARE\Microsoft\Speech_OneCore\Settings\OnlineSpeechPrivacy` |
+| 打字收集 | `TIPC\Enabled`、`Input\Settings\InsightsEnabled`、`RestrictImplicitText/InkCollection` | HKCU 三处 |
+| 活动历史 | `PublishUserActivities`、`EnableActivityFeed` = 0 / 1 | `HKLM\SOFTWARE\Policies\Microsoft\Windows\System` |
+| 系统广告 | 8 个 `ContentDeliveryManager` 值 = 0 / 1 | `HKCU\…\CurrentVersion\ContentDeliveryManager` |
+| 个性化广告 | `AdvertisingInfo\Enabled` = 0 / 1 | `HKCU\…\CurrentVersion\AdvertisingInfo` |
+| 传递优化 | `DODownloadMode` = 0 / 1 | `HKLM\…\CurrentVersion\DeliveryOptimization\Config` |
+| 反馈请求 | `NumberOfSIUFInPeriod` = 0 / 1 | `HKCU\SOFTWARE\Microsoft\Siuf\Rules` |
+
+- 4 个权限入口（相机 / 麦克风 / 位置 / 后台应用）是 `UrlTarget`：逐个应用的授权只能在官方页面里点，
+  工具箱不代改权限，也不假装能改。
+- 「查看隐私状态」只读；「隐私一键优化」把全部开关关掉（带确认）；「隐私一键还原」按原值记录
+  逐条写回去，**还原成功后删掉记录**（下次再动会重新记当时的原值）。
+- 需要写 HKLM 的开关（遥测 / 错误报告 / 小娜 / 活动历史 / 传递优化 / 优化 / 还原）走
+  「把自己以管理员身份再起一遍」：子进程是 winexe、没有控制台，结果写进
+  `%LOCALAPPDATA%\mxx1-toolbox\last-elevated-result.txt`，父进程过几秒读出来照常弹结果窗口
+  （`MainForm.PickUpElevatedResult`）—— 否则用户只看到"已请求管理员权限"、没有下文。
+- 命令行有 `privacy status`（只读）/ `privacy items` / `privacy selftest`（用工具箱自己的测试键
+  `HKCU\Software\mxx1-toolbox\privacy-selftest` 把「记原值 → 写入 → 读回核对 → 还原」整条链路
+  走一遍，含"原来没有这个值"的分支，跑完不留垃圾）。
+  **命令行故意不提供"直接改隐私设置"的入口**：那只能从界面点。
+
+### 4.6 应用管理（5 个，全是"只读或者单个操作"）
+
+| 按钮 | 怎么实现的 |
+| --- | --- |
+| 查看已安装应用 | `Get-AppxPackage`（只读，列非框架包的 Appx + 版本号） |
+| 查看启动项 | 三个 Run 键 + 两个「启动」文件夹（只读；更全的列表在任务管理器「启动」页） |
+| 默认应用 | `ms-settings:defaultapps` |
+| 应用和功能 | `ms-settings:appsfeatures` |
+| 卸载单个应用 | 图形化挑一个（`ListBox` + 过滤框）→ 二次确认 → `Remove-AppxPackage`（**只影响当前用户，不带 `-AllUsers`**） |
+
+- 这台机器上**没有应用商店**（`Microsoft.WindowsStore` 不存在），所以确认框里会明写
+  "卸载以后装不回来"。
+- **故意不做**：批量卸载、卸载 Edge、卸载 Xbox / 天气 / 邮件 / 地图那一套。批量不可逆、容易误删
+  用户自己装的软件，而这台机器上那些预装应用本来就已经被精简掉了。`J06`–`J08` 盯着这个底线。
+
+### 4.7 我的工具（3 个内置按钮 + 用户自己加的按钮）
 
 `[+ 新建按钮]`（`app.newtool`）是**真按钮**，三种加法：
 
@@ -205,6 +275,12 @@
   删除前二次确认，并且只删 `tools.json` 里那一条。
 - 每次写入前把旧文件备份成 `tools.json.bak`（手写的注释或特殊字段万一丢了还能捞回来）。
 - 存完会重新测量列宽：新按钮名字更长就把窗口加宽，**不会缩窄**。
+- 「导出我的按钮」/「导入按钮」（`app.exporttools` / `app.importtools`）：把用户层导成一个 json
+  （内置按钮不导出）／把导出文件并回来（同 id 覆盖）。命令行是 `export` / `import`，两条路走的是
+  同一份 `UserTools` 代码。
+- **置顶**：右键任意按钮 → 「置顶 / 取消置顶」，置顶的按钮排在这一页最前面；id 记在
+  `%LOCALAPPDATA%\mxx1-toolbox\pinned.txt`（一行一个，也可以用 `pin` / `unpin` 命令）。
+  单独一个文件而不是塞进 `settings.ini`：置顶是一条一条改的，ini 每次都要整份重写。
 
 ## 5 按钮行为
 
@@ -481,6 +557,59 @@ CLI：`list [--tab <id>]` / `run <id> [--admin] [--dry]` / `status` / `checkupda
     同一个键还有个坑：`DefaultMediaCost` 的 ACL 只给 `SYSTEM` / `Wcmsvc` / `TrustedInstaller` 写权限，
     **管理员也只有读**（提权也写不进，逐连接的 `Cost` 值写了也不改变计费类型）——
     所以"按流量计费"在第三方程序里基本只能打开设置页让用户自己点。
+### 12.30 悬停说明不能直接甩命令行（用户报的「鼠标悬停的说明没有做好」）
+
+`TipFor` 原来是「按钮名 · `Launcher.DescribeCommand`」：对 `kind=script` 且带 `inline` 的按钮，
+那就是把整段 PowerShell 摊在一行里（「一键清理垃圾」700 多字、顶出屏幕），而**真正写给人看的
+`hint` 反而不显示**。现在第一行按钮名、第二行 `hint`、再按需补「会弹确认框 / 会弹 UAC 窗口」，
+命令只在 100 字以内（人能看懂：路径、URI、短开关行）时才附上。
+
+顺带三件事：① `ToolTip.AutoPopDelay` 默认只有 5 秒（长句子读不完）、`ShowAlways` 默认 false
+（窗口一失焦就再也不弹），都调过来了；② 「系统工具」那 12 个按钮的 `hint` 原来是搜索关键词
+（"硬件 驱动 msc"），当说明太糙，全改成一句人话；③ 新增 CLI 命令 `tip [id]` 打印界面塞给
+`ToolTip` 的那条原字符串，测试才能不动鼠标就盯住它（GUI 那边还有 `B10/B11` 真悬停一次）。
+
+### 12.31 PowerShell 的逗号比 `+` 优先级高（`@($a+'x', $b+'y')` 会拼成一个字符串）
+
+`@($d + '\User Data', $up + '\User Data')` 里**逗号（数组构造）比算术 `+` 结合得更紧**，
+于是整串被算成一个字符串、循环只跑一次、`Test-Path` 永远 False —— 「清理浏览器缓存」因此
+"看起来在工作、其实一个目录都没命中"。每个元素加括号才正确。
+
+### 12.32 单引号字符串不解释反引号
+
+`'`r|`n'` 在 PowerShell 里是字面量「反引号 r 竖线 反引号 n」，不是正则的 CR/LF。
+`-split` 要真正的正则转义：写 `'\r|\n'`（JSON 里是 `'\\r|\\n'`）。踩在「系统文件修复 SFC」上。
+
+### 12.33 往 `tools\*.json` 末尾追加条目，别忘了给上一条补逗号
+
+运行时遇到坏 JSON 会把**整个文件**丢掉（只在日志里留一条警告）：那一页的按钮会全部消失。
+`tools\Test-InlineSyntax.ps1` 现在把"清单能不能解析"当失败报出来（这个坑是加它的时候现踩的）。
+
+### 12.34 WinForms 的 ToolTip 窗口类名带前缀
+
+实际类名是 `WindowsForms10.tooltips_class32.app.0.34f5582_r6_ad1`：精确匹配
+`tooltips_class32` **一个都找不到**，于是"没有出现提示"这个结论是错的（绕了一轮才用 `EnumWindows`
+把本进程的窗口全列出来看清）。判据要用 `IndexOf("tooltips_class32")`。同理：ToolTip 只认真实
+光标位置（`Cursor.Position`），合成的 `WM_MOUSEMOVE` 不会让它弹出来 —— 测试里要 `SetCursorPos`
+真把光标移过去，跑完再放回原处。
+
+### 12.35 `Get-ChildControls` 给的是屏幕坐标
+
+界面上"顶部那一排页签"不能写 `Top -lt 32`：那是屏幕 Y（几百）。要拿主窗口的上边当参照，
+而且 `GetWindowRect` 给的是整窗（含标题栏）—— 客户区在标题栏下面约 30px。
+
+### 12.36 被禁用的控件收不到鼠标消息（所以灰按钮没有悬停提示）
+
+`Enabled = false` 的按钮不响应 `WM_MOUSEMOVE`，WinForms 也就不会弹提示。灰按钮的解释因此写在
+底栏（"灰色 N 个没接功能"）。真想让灰按钮也有悬停说明，得改成"其实能点但点下去什么都不做"，
+那是另一套语义（当前实现保持"禁用"）。
+
+### 12.37 需要管理员的"进程内动作"没法自己提权
+
+隐私开关的注册表写入必须在**本进程**里做（要读回核对），所以写 HKLM 时不能像外部 exe 那样
+`Verb=runas` 直接提权。做法：`run <id> --admin` 把自己再起一遍（子进程提升权限），结果是 winexe
+没有控制台，于是写进 `last-elevated-result.txt`，父进程用 1 秒定时器盯几秒、读出来弹结果窗口。
+
 ## 13 外部工具放哪：`bin-tools\` 工具目录（① 层**已实现**）
 
 **背景**：工具箱现在会调一个外部程序（隔壁的 `PermanentDeleteSetup.exe`），以后还会加别的

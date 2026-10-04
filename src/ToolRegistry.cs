@@ -59,7 +59,7 @@ namespace Mxx1Toolbox
         }
 
         /// <summary>Tab order, then segment, then the manifest order, then the name.</summary>
-        private static int Compare(ToolItem a, ToolItem b)
+        internal static int Compare(ToolItem a, ToolItem b)
         {
             int c = Tabs.Index(a.Tab).CompareTo(Tabs.Index(b.Tab));
             if (c != 0) { return c; }

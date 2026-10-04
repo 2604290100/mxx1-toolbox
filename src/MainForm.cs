@@ -68,6 +68,7 @@ namespace Mxx1Toolbox
         private ToolStripMenuItem _miDefine;
         private ToolStripMenuItem _miEdit;
         private ToolStripMenuItem _miDelete;
+        private ToolStripMenuItem _miPin;
         private ToolButton _menuTarget;   // the button the context menu was opened on
 
         /// <summary>True while the 新建按钮 / 编辑按钮 window is up. A drop that arrives on the grid
@@ -302,8 +303,12 @@ namespace Mxx1Toolbox
             _miDelete = new ToolStripMenuItem("删除按钮");
             _miDelete.Click += delegate { DeleteUserButton(); };
 
+            _miPin = new ToolStripMenuItem("置顶 / 取消置顶（排在这一页最前）");
+            _miPin.Click += delegate { TogglePin(); };
+
             _menu.Items.Add(_miRun);
             _menu.Items.Add(_miRunAdmin);
+            _menu.Items.Add(_miPin);
             _menu.Items.Add(new ToolStripSeparator());
             _menu.Items.Add(_miEdit);
             _menu.Items.Add(_miDelete);
@@ -718,6 +723,62 @@ namespace Mxx1Toolbox
 
         /// <summary>Reloads the manifests (the user layer changed), re-measures the columns and
         /// rebuilds the wall. A longer button name widens the window -- never narrows it.</summary>
+        /// <summary>把「我的工具」导出成一个文件（换机器 / 重装之前备份）。</summary>
+        private void ExportUserTools()
+        {
+            List<ToolItem> mine = UserTools.Collect(_tools);
+            if (mine.Count == 0)
+            {
+                MessageBox.Show(this, "还没有自己建的按钮，没什么可导出的。", "导出我的按钮",
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+            using (SaveFileDialog dlg = new SaveFileDialog())
+            {
+                dlg.Title = "把「我的工具」导出成一个文件";
+                dlg.Filter = "按钮清单 (*.json)|*.json|所有文件 (*.*)|*.*";
+                dlg.FileName = "萌新工具箱-我的按钮.json";
+                if (dlg.ShowDialog(this) != DialogResult.OK) { return; }
+                string error = UserTools.Export(dlg.FileName, mine);
+                if (error.Length > 0)
+                {
+                    MessageBox.Show(this, "导出失败：" + error, "导出我的按钮", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+                SetStatus("已导出 " + mine.Count + " 个按钮 → " + dlg.FileName);
+                MessageBox.Show(this, "已导出 " + mine.Count + " 个按钮：" + Environment.NewLine + dlg.FileName,
+                    "导出我的按钮", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+        }
+
+        /// <summary>把一个导出文件里的按钮并进来（同 id 覆盖）。</summary>
+        private void ImportUserTools()
+        {
+            using (OpenFileDialog dlg = new OpenFileDialog())
+            {
+                dlg.Title = "选一个导出文件（*.json）";
+                dlg.Filter = "按钮清单 (*.json)|*.json|所有文件 (*.*)|*.*";
+                if (dlg.ShowDialog(this) != DialogResult.OK) { return; }
+                List<ToolItem> mine = UserTools.Collect(_tools);
+                int added;
+                int replaced;
+                string error = UserTools.Import(dlg.FileName, mine, out added, out replaced);
+                if (error.Length > 0)
+                {
+                    MessageBox.Show(this, "导入失败：" + error, "导入按钮", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+                string saveError = UserTools.Save(mine);
+                if (saveError.Length > 0)
+                {
+                    MessageBox.Show(this, "保存失败：" + saveError, "导入按钮", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+                ReloadAfterUserEdit(Tabs.Mine);
+                SetStatus("已导入：新增 " + added + " 个，覆盖 " + replaced + " 个");
+            }
+        }
+
         private void ReloadAfterUserEdit(string tab)
         {
             ReloadTools();
@@ -947,6 +1008,16 @@ namespace Mxx1Toolbox
                 case "checkupdate":
                     ShowUpdateNotice();
                     break;
+                case "exporttools":
+                    {
+                        ExportUserTools();
+                        break;
+                    }
+                case "importtools":
+                    {
+                        ImportUserTools();
+                        break;
+                    }
                 case "newtool":
                     NewUserButton(null, null);
                     break;
@@ -1083,7 +1154,40 @@ namespace Mxx1Toolbox
                 _tools = new List<ToolItem>();
                 _warnings.Add(ex.Message);
             }
+            // 置顶的排在本页最前（右键菜单 → 置顶 / 取消置顶；id 记在 pinned.txt 里）。
+            // 清单里自带 pinned 的（比如「+ 新建按钮」）也算置顶。
+            List<string> pinned = UserTools.LoadPinned();
+            _tools.Sort(delegate(ToolItem a, ToolItem b)
+            {
+                int pa = (a.Pinned || UserTools.IsPinned(a.Id, pinned)) ? 0 : 1;
+                int pb = (b.Pinned || UserTools.IsPinned(b.Id, pinned)) ? 0 : 1;
+                if (pa != pb) { return pa - pb; }
+                return ToolRegistry.Compare(a, b);
+            });
             foreach (string w in _warnings) { Logger.Write("按钮定义", w); }
+        }
+
+        /// <summary>右键菜单里的「置顶 / 取消置顶」：置顶的按钮排在这一页最前面。</summary>
+        private void TogglePin()
+        {
+            ToolButton b = _menuTarget;
+            if (b == null) { return; }
+            List<string> pinned = UserTools.LoadPinned();
+            bool byFile = UserTools.IsPinned(b.Tool.Id, pinned);
+            if (b.Tool.Pinned && !byFile)
+            {
+                SetStatus("「" + b.Tool.Name + "」在按钮清单里就写着置顶，改不了");
+                return;
+            }
+            string error = UserTools.SetPinned(b.Tool.Id, !byFile);
+            if (error.Length > 0)
+            {
+                MessageBox.Show(this, "置顶失败：" + error, "置顶", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            Logger.Write(b.Tool.Name, byFile ? "已取消置顶（命令行/右键）" : "已置顶：排在这一页最前面");
+            ReloadAfterUserEdit(b.Tool.Tab);
+            SetStatus("「" + b.Tool.Name + "」" + (byFile ? "已取消置顶" : "已置顶：以后排在这一页最前面"));
         }
 
         private void SetStatus(string text)
@@ -1111,6 +1215,9 @@ namespace Mxx1Toolbox
             // plus a full "完成：xxx 退出码 0" message) overflowed it, so the tail was cut off.
             // The complete line is available as a tooltip and in the run log.
             string text = total + " 个按钮 · 本页 " + here;
+            // 没提权时说一句：好几十个按钮要管理员权限，点了才弹 UAC 会让人以为是坏了。
+            // 底栏这一格是固定宽度、长了会被裁，但整行都在悬停说明里（见下面 SetToolTip）。
+            if (!Launcher.IsAdmin()) { text += " · 未提权（部分按钮会弹 UAC）"; }
             // A disabled control shows no tooltip, so the explanation for the grey buttons lives
             // here, and only while such a button is actually on this page.
             if (greyHere > 0) { text += " · 灰色 " + greyHere + " 个没接功能"; }

@@ -1,6 +1,8 @@
 {
   "_comment": "我的工具页签：用户自己加的按钮都落在这里（图形化的「新建按钮」/ 编辑 / 删除 写的是 %LOCALAPPDATA%\\mxx1-toolbox\\tools.json）。这个「+ 新建按钮」是真按钮（不是灰的）。",
   "tools": [
-    { "id": "app.newtool", "tab": "mine", "segment": 1, "order": 10, "name": "+ 新建按钮", "kind": "builtin", "module": "app", "action": "newtool", "pinned": true, "hint": "图形化新建按钮，也可以把 exe / 脚本 / 文件夹直接拖进窗口（Ctrl+N）" }
+    { "id": "app.newtool", "tab": "mine", "segment": 1, "order": 10, "name": "+ 新建按钮", "kind": "builtin", "module": "app", "action": "newtool", "pinned": true, "hint": "图形化新建按钮，也可以把 exe / 脚本 / 文件夹直接拖进窗口（Ctrl+N）" },
+    { "id": "app.exporttools", "tab": "mine", "segment": 1, "order": 20, "name": "导出我的按钮", "kind": "builtin", "module": "app", "action": "exporttools", "hint": "把「我的工具」里的按钮导出成一个 json 文件（换机器 / 重装之前备份用）；内置按钮不导出" },
+    { "id": "app.importtools", "tab": "mine", "segment": 1, "order": 30, "name": "导入按钮", "kind": "builtin", "module": "app", "action": "importtools", "hint": "选一个导出文件，把里面的按钮并进来（同一个 id 会覆盖；导入前会自己先存一份 tools.json.bak）" }
   ]
 }

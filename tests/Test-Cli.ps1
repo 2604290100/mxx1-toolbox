@@ -98,11 +98,11 @@ $status = Invoke-Exe 'status'
 Check 'A01 status 退出码 0' ($status.Code -eq 0) ('exit=' + $status.Code)
 Check 'A02 中文输出没有乱码（UTF-8）' ($status.Out -match 'name=萌新工具箱') ('name=' + (Get-Key $status.Out 'name'))
 Check 'A03 版本号 1.2.0' ((Get-Key $status.Out 'version') -eq '1.2.0') (Get-Key $status.Out 'version')
-Check 'A04 按钮总数 100（测试期间用户层的按钮会暂停：常用 31 + 系统工具 25 + 隐私 29 + 应用 5 + 清理 8 + 右键 1 + 我的 1）' ((Get-Key $status.Out 'buttons') -eq '100') (Get-Key $status.Out 'buttons')
+Check 'A04 按钮总数 103（测试期间用户层的按钮会暂停：常用 31 + 系统工具 26 + 隐私 29 + 应用 5 + 清理 8 + 右键 1 + 我的 3）' ((Get-Key $status.Out 'buttons') -eq '103') (Get-Key $status.Out 'buttons')
 Check 'A05 内置清单里没有灰色占位按钮了（两个「资源管理器」也接上了真功能；灰规则改由 B 组注入验证）' ((Get-Key $status.Out 'placeholders') -eq '0') (Get-Key $status.Out 'placeholders')
 Check 'A06 危险按钮 3 个' ((Get-Key $status.Out 'dangerous') -eq '3') (Get-Key $status.Out 'dangerous')
 
-$tabExpect = @{ 'common' = 31; 'rightmenu' = 1; 'cleanup' = 8; 'system' = 25; 'privacy' = 29; 'apps' = 5; 'mine' = 1 }
+$tabExpect = @{ 'common' = 31; 'rightmenu' = 1; 'cleanup' = 8; 'system' = 26; 'privacy' = 29; 'apps' = 5; 'mine' = 3 }
 $tabOk = $true
 $tabDetail = @()
 foreach ($k in $tabExpect.Keys) {
@@ -110,13 +110,13 @@ foreach ($k in $tabExpect.Keys) {
     $tabDetail += ($k + '=' + $v)
     if ($v -ne [string]$tabExpect[$k]) { $tabOk = $false }
 }
-Check 'A07 七个页签的按钮数正确（31/1/8/25/29/5/1）' $tabOk ($tabDetail -join ' ')
+Check 'A07 七个页签的按钮数正确（31/1/8/26/29/5/3）' $tabOk ($tabDetail -join ' ')
 
 $list = Invoke-Exe 'list'
 Check 'A08 list 退出码 0' ($list.Code -eq 0) ('exit=' + $list.Code)
-Check 'A09 list 报的按钮数一致' ((Get-Key $list.Out 'buttons') -eq '100') (Get-Key $list.Out 'buttons')
+Check 'A09 list 报的按钮数一致' ((Get-Key $list.Out 'buttons') -eq '103') (Get-Key $list.Out 'buttons')
 $lines = @($list.Out -split "`r?`n" | Where-Object { $_ -match "`t" })
-Check 'A10 list 打出 100 行按钮' ($lines.Count -eq 100) ('lines=' + $lines.Count)
+Check 'A10 list 打出 103 行按钮' ($lines.Count -eq 103) ('lines=' + $lines.Count)
 
 $rmList = Invoke-Exe 'list --tab rightmenu'
 Check 'A11 右键增强只有 1 个按钮' ((Get-Key $rmList.Out 'shown') -eq '1') (Get-Key $rmList.Out 'shown')
@@ -214,14 +214,14 @@ Check 'D01 status 报 20 个系统工具动作（12 组件 + 2 诊断 + 4 权限
     ('targets=' + (Get-Key $status.Out 'systemTargets') + ' missing=' + (Get-Key $status.Out 'systemMissing'))
 
 $sysList = Invoke-Exe 'list --tab system'
-Check 'D02 系统工具页签 25 个按钮、没有 placeholder' `
-    (((Get-Key $sysList.Out 'shown') -eq '25') -and (-not ($sysList.Out -match 'placeholder'))) ''
+Check 'D02 系统工具页签 26 个按钮（25 + 系统体检）、没有 placeholder' `
+    (((Get-Key $sysList.Out 'shown') -eq '26') -and (-not ($sysList.Out -match 'placeholder'))) ''
 
 $sysIds = @()
 foreach ($line in ($sysList.Out -split "`r?`n")) {
     if ($line -match "`t") { $sysIds += ($line -split "`t")[0] }
 }
-Check 'D03 读到 25 个系统工具 id' ($sysIds.Count -eq 25) ($sysIds -join ' ')
+Check 'D03 读到 26 个系统工具 id' ($sysIds.Count -eq 26) ($sysIds -join ' ')
 
 $bad = @()
 $detail = @()
@@ -234,7 +234,7 @@ foreach ($id in $sysIds) {    $d = Invoke-Exe ('run ' + $id + ' --dry')
     if ($exists -ne 'yes' -and $hint.Length -eq 0) { $bad += ($id + ':没有解释'); continue }
     $detail += ($id + '=' + (Get-Key $d.Out 'kind'))
 }
-Check 'D04 25 个系统工具都有目标、且缺了就说明原因' ($bad.Count -eq 0) (($bad -join ' ') + ' ' + ($detail -join ' '))
+Check 'D04 26 个系统工具都有目标、且缺了就说明了原因' ($bad.Count -eq 0) (($bad -join ' ') + ' ' + ($detail -join ' '))
 
 $dryMissing = Invoke-Exe 'run no.such.button --dry'
 Check 'D05 不存在的按钮 --dry 也是退出码 2' ($dryMissing.Code -eq 2) ('exit=' + $dryMissing.Code)
@@ -403,7 +403,7 @@ Write-Host 'H 组 · 悬停说明（用户 2026-10-04 报过「鼠标悬停的�
 # tip 命令打印的就是界面塞给 ToolTip 的那个字符串，所以这里能直接断言，不用去动真鼠标。
 $tipsAll = Invoke-Exe 'tip'
 Check 'H01 tip 退出码 0' ($tipsAll.Code -eq 0) ('exit=' + $tipsAll.Code)
-Check 'H02 tip 覆盖了每个按钮（100 个）' ((Get-Key $tipsAll.Out 'tips') -eq '100') (Get-Key $tipsAll.Out 'tips')
+Check 'H02 tip 覆盖了每个按钮（103 个）' ((Get-Key $tipsAll.Out 'tips') -eq '103') (Get-Key $tipsAll.Out 'tips')
 
 $blocks = @{}
 $curId = ''
@@ -559,6 +559,72 @@ $un = @($appTools | Where-Object { $_.id -eq 'apps-uninstall' })[0]
 Check 'J07 单个卸载只用 Remove-AppxPackage（不带 -AllUsers，只影响当前用户）' `
     (($un.inline -match 'Remove-AppxPackage') -and ($un.inline -notmatch '-AllUsers')) ''
 Check 'J08 单个卸载带二次确认（confirm: true）' ($un.confirm -eq $true) ('confirm=' + $un.confirm)
+
+# ---------------------------------------------------------------- K 组：自助功能
+Write-Host ''
+Write-Host 'K 组 · 置顶 / 导入导出 / 提权状态 / 系统体检'
+
+Check 'K01 status 报出当前是否以管理员运行' ((Get-Key $status.Out 'admin') -match '^(yes|no)$') (Get-Key $status.Out 'admin')
+Check 'K02 status 报出置顶列表（可能是空）' ($status.Out -match '(?m)^pinned=') ((Get-Key $status.Out 'pinned'))
+
+# 置顶往返：pin → status 里能看到 → unpin → 回到原样。跑完把用户原来的 pinned.txt 放回去。
+$pinnedFile = Join-Path $env:LOCALAPPDATA 'mxx1-toolbox\pinned.txt'
+$pinnedBackup = $null
+$hadPinned = Test-Path -LiteralPath $pinnedFile
+if ($hadPinned) { $pinnedBackup = [System.IO.File]::ReadAllText($pinnedFile, [System.Text.Encoding]::UTF8) }
+try {
+    $pinOk = Invoke-Exe 'pin devmgmt'
+    $afterPin = Invoke-Exe 'status'
+    Check 'K03 pin 一个按钮之后 status 里能看到' `
+        (($pinOk.Code -eq 0) -and ((Get-Key $afterPin.Out 'pinned') -match 'devmgmt')) `
+        ('pin退出=' + $pinOk.Code + ' pinned=' + (Get-Key $afterPin.Out 'pinned'))
+    $unOk = Invoke-Exe 'unpin devmgmt'
+    $afterUn = Invoke-Exe 'status'
+    Check 'K04 unpin 之后就不在置顶列表里了' `
+        (($unOk.Code -eq 0) -and ((Get-Key $afterUn.Out 'pinned') -notmatch 'devmgmt')) `
+        ('pinned=' + (Get-Key $afterUn.Out 'pinned'))
+    $pinBad = Invoke-Exe 'pin no.such.button'
+    Check 'K05 pin 一个不存在的按钮 → 退出码 2' ($pinBad.Code -eq 2) ('exit=' + $pinBad.Code)
+} finally {
+    if ($hadPinned -and $pinnedBackup -ne $null) { [System.IO.File]::WriteAllText($pinnedFile, $pinnedBackup, (New-Object System.Text.UTF8Encoding($false))) }
+    elseif (Test-Path -LiteralPath $pinnedFile) { Remove-Item -LiteralPath $pinnedFile -Force -ErrorAction SilentlyContinue }
+}
+
+# 导出 / 导入：这时用户层的按钮被暂停了，所以先看"没东西可导出"这条路是否老实报错
+$kTmp = Join-Path $env:TEMP ('mxx1-k-' + [Guid]::NewGuid().ToString('N').Substring(0, 8) + '.json')
+try {
+    $noExport = Invoke-Exe ('export "' + $kTmp + '"')
+    Check 'K06 没有自建按钮时 export 老实报错（退出码 1）' `
+        (($noExport.Code -eq 1) -and ($noExport.Err -match '没什么可导出')) ('exit=' + $noExport.Code)
+
+    # 造一个用户层（两条按钮），再导出 / 导入往返
+    [void][System.IO.Directory]::CreateDirectory((Split-Path -Parent $UserToolsJson))
+    [System.IO.File]::WriteAllText($UserToolsJson,
+        '{ "tools": [ { "id": "test.k1", "tab": "mine", "name": "K1", "kind": "exe", "path": "C:\\Windows\\notepad.exe" }, { "id": "test.k2", "tab": "mine", "name": "K2", "kind": "exe", "path": "C:\\Windows\\notepad.exe" } ] }',
+        (New-Object System.Text.UTF8Encoding($false)))
+    $ex = Invoke-Exe ('export "' + $kTmp + '"')
+    $exported = ''
+    try { $exported = (Get-Content -LiteralPath $kTmp -Raw -Encoding UTF8 | ConvertFrom-Json).tools.Count } catch { $exported = '解析失败' }
+    Check 'K07 有按钮时 export 写出两份、文件是合法 JSON' (($ex.Code -eq 0) -and ($exported -eq 2)) ('exported=' + $exported)
+
+    $im = Invoke-Exe ('import "' + $kTmp + '"')
+    Check 'K08 import 同一份文件 → 全部按 id 覆盖（added=0 replaced=2）' `
+        (($im.Code -eq 0) -and ((Get-Key $im.Out 'added') -eq '0') -and ((Get-Key $im.Out 'replaced') -eq '2')) `
+        ('added=' + (Get-Key $im.Out 'added') + ' replaced=' + (Get-Key $im.Out 'replaced'))
+
+    $imBad = Invoke-Exe 'import no-such-file-xyz.json'
+    Check 'K09 import 一个不存在的文件 → 退出码 1 且说明原因' `
+        (($imBad.Code -eq 1) -and ($imBad.Err -match '找不到')) ('exit=' + $imBad.Code)
+} finally {
+    Remove-Item -LiteralPath $kTmp -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $UserToolsJson -Force -ErrorAction SilentlyContinue
+}
+
+$health = Invoke-Exe 'run sys-health' 300
+Check 'K10 「系统体检」跑得通而且是只读的' (($health.Code -eq 0) -and ($health.Out -match '系统：')) ('exit=' + $health.Code)
+$need = @('系统：', '激活：', '内存：', '磁盘 ', '开机自启项', 'hosts', '管理员：')
+$miss = @($need | Where-Object { $health.Out.IndexOf($_) -lt 0 })
+Check 'K11 体检报告包含系统/激活/内存/磁盘/自启项/hosts/管理员' ($miss.Count -eq 0) ('缺=' + ($miss -join ' '))
 
 # ---------------------------------------------------------------- 汇总
 Write-Host ''

@@ -34,9 +34,23 @@ function Report-Problem {
 }
 
 foreach ($f in $files) {
-    $json = Get-Content -LiteralPath $f.FullName -Raw -Encoding UTF8 | ConvertFrom-Json
+    # 清单本身必须能解析：运行时遇到坏 JSON 会把**整个文件**丢掉（那一页的按钮会全部消失，
+    # 只在日志里留一条"警告"），所以在测试里直接当失败报出来。
+    # 2026-10-04 踩过：往清单末尾追加一条时忘了给上一条补逗号，整页按钮就没了。
+    $json = $null
+    try {
+        $json = Get-Content -LiteralPath $f.FullName -Raw -Encoding UTF8 | ConvertFrom-Json
+    } catch {
+        $problems++
+        Report-Problem $f.Name '(整个文件)' ('清单 JSON 解析失败：' + $_.Exception.Message + '  —— 运行时会把这一页的按钮全部丢掉')
+        continue
+    }
     $list = $json.tools
-    if (-not $list) { continue }
+    if (-not $list) {
+        $problems++
+        Report-Problem $f.Name '(整个文件)' '清单里没有 tools 数组'
+        continue
+    }
     foreach ($t in $list) {
         if (-not $t.inline) { continue }
         $checked++

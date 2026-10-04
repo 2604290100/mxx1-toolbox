@@ -72,6 +72,10 @@ namespace Mxx1Toolbox
                     case "status": return Status();
                     case "tip": return Tip(args);
                     case "privacy": return PrivacyCommand(args);
+                    case "pin": return PinCommand(args, true);
+                    case "unpin": return PinCommand(args, false);
+                    case "export": return ExportCommand(args);
+                    case "import": return ImportCommand(args);
                     case "checkupdate": return CheckUpdate();
                     case "help":
                     case "h":
@@ -91,6 +95,87 @@ namespace Mxx1Toolbox
             }
         }
 
+        /// <summary>`pin &lt;id&gt;` / `unpin &lt;id&gt;`：把按钮置顶（排在这一页最前面）。界面上
+        /// 右键按钮也有这一项，两条路走的是同一个文件 pinned.txt。</summary>
+        private static int PinCommand(string[] args, bool pinned)
+        {
+            if (args.Length < 2 || args[1].Trim().Length == 0)
+            {
+                Console.Error.WriteLine("用法: " + (pinned ? "pin" : "unpin") + " <按钮 id>");
+                return 2;
+            }
+            string name = "";
+            foreach (ToolItem t in Load())
+            {
+                if (string.Equals(t.Id, args[1], StringComparison.OrdinalIgnoreCase)) { name = t.Name; break; }
+            }
+            if (name.Length == 0)
+            {
+                Console.Error.WriteLine("没有这个按钮: " + args[1]);
+                return 2;
+            }
+            string error = UserTools.SetPinned(args[1], pinned);
+            if (error.Length > 0)
+            {
+                Console.Error.WriteLine("失败: " + error);
+                return 1;
+            }
+            Console.WriteLine("pinned=" + (pinned ? "yes" : "no"));
+            Console.WriteLine("id=" + args[1]);
+            Console.WriteLine("name=" + name);
+            Logger.Write(name, pinned ? "已置顶（命令行）" : "已取消置顶（命令行）");
+            return 0;
+        }
+
+        /// <summary>`export &lt;文件&gt;`：把「我的工具」导出成一个文件（内置按钮不导出）。</summary>
+        private static int ExportCommand(string[] args)
+        {
+            if (args.Length < 2 || args[1].Trim().Length == 0)
+            {
+                Console.Error.WriteLine("用法: export <文件路径>");
+                return 2;
+            }
+            List<ToolItem> mine = UserTools.Collect(Load());
+            string error = UserTools.Export(args[1], mine);
+            if (error.Length > 0)
+            {
+                Console.Error.WriteLine("导出失败: " + error);
+                return 1;
+            }
+            Console.WriteLine("exported=" + mine.Count.ToString(CultureInfo.InvariantCulture));
+            Console.WriteLine("file=" + args[1]);
+            return 0;
+        }
+
+        /// <summary>`import &lt;文件&gt;`：把导出文件里的按钮并进用户层（同 id 覆盖）。</summary>
+        private static int ImportCommand(string[] args)
+        {
+            if (args.Length < 2 || args[1].Trim().Length == 0)
+            {
+                Console.Error.WriteLine("用法: import <文件路径>");
+                return 2;
+            }
+            List<ToolItem> mine = UserTools.Collect(Load());
+            int added;
+            int replaced;
+            string error = UserTools.Import(args[1], mine, out added, out replaced);
+            if (error.Length > 0)
+            {
+                Console.Error.WriteLine("导入失败: " + error);
+                return 1;
+            }
+            string saveError = UserTools.Save(mine);
+            if (saveError.Length > 0)
+            {
+                Console.Error.WriteLine("保存失败: " + saveError);
+                return 1;
+            }
+            Console.WriteLine("added=" + added.ToString(CultureInfo.InvariantCulture));
+            Console.WriteLine("replaced=" + replaced.ToString(CultureInfo.InvariantCulture));
+            Console.WriteLine("total=" + mine.Count.ToString(CultureInfo.InvariantCulture));
+            return 0;
+        }
+
         private static void Help()
         {
             Console.WriteLine("萌新工具箱 v" + AboutForm.VersionText);
@@ -105,6 +190,9 @@ namespace Mxx1Toolbox
             Console.WriteLine("  Mxx1Toolbox.exe tip [id]             打印按钮的悬停说明（界面上鼠标停住时看到的那段）");
             Console.WriteLine("  Mxx1Toolbox.exe privacy status       只读列出隐私开关的当前状态（不改任何东西）");
             Console.WriteLine("  Mxx1Toolbox.exe privacy selftest     用工具箱自己的测试键自检「原值 → 写入 → 还原」链路");
+            Console.WriteLine("  Mxx1Toolbox.exe pin <id> / unpin <id>  把按钮置顶 / 取消置顶（排在这一页最前面）");
+            Console.WriteLine("  Mxx1Toolbox.exe export <文件>        把「我的工具」导出成一个文件");
+            Console.WriteLine("  Mxx1Toolbox.exe import <文件>        把导出文件里的按钮并进来（同 id 覆盖）");
             Console.WriteLine("  Mxx1Toolbox.exe checkupdate          只读版本号，不下载不替换");
             Console.WriteLine("  Mxx1Toolbox.exe help                 这份帮助");
             Console.WriteLine();
@@ -431,6 +519,8 @@ namespace Mxx1Toolbox
             }
 
             Console.WriteLine("name=" + AboutForm.ProductTitle);
+            Console.WriteLine("admin=" + (Launcher.IsAdmin() ? "yes" : "no"));
+            Console.WriteLine("pinned=" + string.Join(",", UserTools.LoadPinned().ToArray()));
             Console.WriteLine("version=" + AboutForm.VersionText);
             Console.WriteLine("buttons=" + tools.Count.ToString(CultureInfo.InvariantCulture));
             Console.WriteLine("placeholders=" + placeholders.ToString(CultureInfo.InvariantCulture));

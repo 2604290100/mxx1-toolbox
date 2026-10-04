@@ -94,6 +94,106 @@ namespace Mxx1Toolbox
             return false;
         }
 
+        // ---------------------------------------------------------------- 导出 / 导入
+
+        /// <summary>把用户层原样写到一个文件里（换机器 / 重装之前备份）。只导用户自己建的按钮：
+        /// 内置按钮跟着 exe 走，导出它们只会塞给用户一份巨大而且会过期的清单。</summary>
+        public static string Export(string destination, List<ToolItem> mine)
+        {
+            if (destination.Length == 0) { return "没有指定导出文件"; }
+            if (mine.Count == 0) { return "还没有自己建的按钮，没什么可导出的"; }
+            try
+            {
+                string dir = Path.GetDirectoryName(destination);
+                if (!string.IsNullOrEmpty(dir)) { Directory.CreateDirectory(dir); }
+                File.WriteAllText(destination, ToJson(mine), new UTF8Encoding(false));
+                Logger.Write("导出按钮", mine.Count + " 个 → " + destination);
+                return "";
+            }
+            catch (Exception ex) { return ex.Message; }
+        }
+
+        /// <summary>把另一个导出文件里的按钮并进用户层，按 id 去重（同 id 覆盖）。</summary>
+        public static string Import(string source, List<ToolItem> mine, out int added, out int replaced)
+        {
+            added = 0;
+            replaced = 0;
+            if (!File.Exists(source)) { return "找不到这个文件：" + source; }
+            try
+            {
+                object root = Json.Parse(File.ReadAllText(source, Encoding.UTF8));
+                List<object> items = null;
+                Dictionary<string, object> obj = Json.AsObject(root);
+                if (obj != null) { items = Json.AsArray(Json.GetObject(obj, "tools")); }
+                if (items == null) { items = Json.AsArray(root); }
+                if (items == null) { return "这个文件里没有按钮清单（顶层既不是数组，也不是带 tools 的对象）"; }
+                foreach (object entry in items)
+                {
+                    Dictionary<string, object> eo = Json.AsObject(entry);
+                    if (eo == null) { continue; }
+                    ToolItem t;
+                    try { t = ToolItem.FromJson(eo, "导入"); }
+                    catch (Exception ex) { return "有一个按钮读不出来：" + ex.Message; }
+                    t.UserLayer = true;
+                    int at = -1;
+                    for (int i = 0; i < mine.Count; i++)
+                    {
+                        if (string.Equals(mine[i].Id, t.Id, StringComparison.OrdinalIgnoreCase)) { at = i; break; }
+                    }
+                    if (at >= 0) { mine[at] = t; replaced++; }
+                    else { mine.Add(t); added++; }
+                }
+                Logger.Write("导入按钮", "新增 " + added + " 个、覆盖 " + replaced + " 个，来自 " + source);
+                return "";
+            }
+            catch (Exception ex) { return "读不了这个文件：" + ex.Message; }
+        }
+
+        // ---------------------------------------------------------------- 置顶
+
+        /// <summary>置顶的按钮 id，一行一个。单独放一个文件而不是塞进 settings.ini：置顶是一条一条
+        /// 改的，ini 每次都要整份重写，写坏了会连主题设置一起丢。</summary>
+        public static string PinnedFile { get { return Path.Combine(AppPaths.BaseDir, "pinned.txt"); } }
+
+        public static List<string> LoadPinned()
+        {
+            List<string> list = new List<string>();
+            try
+            {
+                if (!File.Exists(PinnedFile)) { return list; }
+                foreach (string line in File.ReadAllLines(PinnedFile, Encoding.UTF8))
+                {
+                    string id = line.Trim();
+                    if (id.Length > 0 && !id.StartsWith("#")) { list.Add(id); }
+                }
+            }
+            catch { }
+            return list;
+        }
+
+        public static bool IsPinned(string id, List<string> pinned)
+        {
+            return pinned.Exists(delegate(string s) { return string.Equals(s, id, StringComparison.OrdinalIgnoreCase); });
+        }
+
+        public static string SetPinned(string id, bool pinned)
+        {
+            if (id.Length == 0) { return "没有指定按钮"; }
+            try
+            {
+                List<string> list = LoadPinned();
+                list.RemoveAll(delegate(string s) { return string.Equals(s, id, StringComparison.OrdinalIgnoreCase); });
+                if (pinned) { list.Insert(0, id); }
+                AppPaths.EnsureBase();
+                StringBuilder sb = new StringBuilder();
+                sb.AppendLine("# 置顶的按钮 id（一行一个）。界面里右键按钮可以置顶 / 取消置顶。");
+                foreach (string s in list) { sb.AppendLine(s); }
+                File.WriteAllText(PinnedFile, sb.ToString(), new UTF8Encoding(false));
+                return "";
+            }
+            catch (Exception ex) { return ex.Message; }
+        }
+
         /// <summary>Writes the whole user layer. Returns "" on success, otherwise the reason.</summary>
         public static string Save(List<ToolItem> mine)
         {

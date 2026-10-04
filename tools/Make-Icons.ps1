@@ -38,6 +38,34 @@ function Get-Shape {
     $key = ($Id + ' ' + $Name).ToLowerInvariant()
     # 顺序有意义：先匹配更具体的词
     $map = @(
+        @('update-cache',   'trash'),
+        @('sfc',            'wrench'),
+        @('dism',           'wrench'),
+        @('disk-check',     'disk'),
+        @('chkdsk',         'disk'),
+        @('net-reset',      'globe'),
+        @('time-sync',      'clock'),
+        @('export-logs',    'doc'),
+        @('restore-point',  'refresh'),
+        @('backup',         'doc'),
+        @('perfmon',        'chart'),
+        @('eventvwr',       'list'),
+        @('privacy',        'eye'),
+        @('telemetry',      'eye'),
+        @('advertis',       'eye'),
+        @('activity',       'list'),
+        @('speech',         'speaker'),
+        @('cortana',        'search'),
+        @('delivery',       'refresh'),
+        @('typing',         'doc'),
+        @('camera',         'eye'),
+        @('microphone',     'speaker'),
+        @('background',     'window'),
+        @('appx',           'list'),
+        @('uninstall-app',  'minus'),
+        @('default-app',    'window'),
+        @('permission',     'shield'),
+        @('health',         'check'),
         @('taskbar',        'monitor'),
         @('startmenu',      'window'),
         @('desktop',        'monitor'),
@@ -243,6 +271,18 @@ function Draw-Shape {
             $G.FillRectangle($Brush, 7.0, 3.6, 2.0, 2.0)
             $G.FillRectangle($Brush, 7.0, 6.8, 2.0, 5.8)
         }
+        'eye' {
+            # 隐私类：一只眼睛（画两段弧 + 瞳孔）
+            $G.DrawArc($Pen, 2.6, 5.0, 10.8, 7.0, 200, 140)
+            $G.DrawArc($Pen, 2.6, 4.0, 10.8, 7.0, 20, 140)
+            $G.FillEllipse($Brush, 6.6, 6.6, 2.8, 2.8)
+        }
+        'disk' {
+            # 磁盘检测：两个同心圆 = 盘片 + 中间的轴
+            $G.DrawEllipse($Pen, 3.0, 3.0, 10.0, 10.0)
+            $G.DrawEllipse($Pen, 6.0, 6.0, 4.0, 4.0)
+            $G.FillEllipse($Brush, 7.2, 7.2, 1.6, 1.6)
+        }
         default {
             $G.FillEllipse($Brush, 5.6, 5.6, 4.8, 4.8)
         }
@@ -293,8 +333,27 @@ foreach ($line in $listOut) {
 if ($items.Count -eq 0) { throw '没有从 exe 里读到按钮清单（先跑 build.ps1）' }
 [void][System.IO.Directory]::CreateDirectory($outDir)
 
+# 用户自己建的按钮（%LOCALAPPDATA%\mxx1-toolbox\tools.json）不该被画进仓库的 assets\icons\：
+# 那是别人机器上的东西，提交进来只会污染仓库。先把它们的 id 读出来跳过。
+$userIds = @{}
+$userJson = Join-Path $env:LOCALAPPDATA 'mxx1-toolbox\tools.json'
+if (Test-Path -LiteralPath $userJson) {
+    try {
+        $u = Get-Content -LiteralPath $userJson -Raw -Encoding UTF8 | ConvertFrom-Json
+        foreach ($e in @($u)) { if ($e.id) { $userIds[[string]$e.id] = $true } }
+        if ($u.tools) { foreach ($e in @($u.tools)) { if ($e.id) { $userIds[[string]$e.id] = $true } } }
+    } catch {
+        Write-Host ('note     : 读不了用户 tools.json（跳过）: ' + $_.Exception.Message)
+    }
+}
+if ($userIds.Count -gt 0) {
+    Write-Host ('note     : 跳过 ' + $userIds.Count + ' 个用户自建按钮：' + (($userIds.Keys | Sort-Object) -join ' '))
+}
+
 $made = 0
+$skipped = 0
 foreach ($it in $items) {
+    if ($userIds.ContainsKey($it.Id)) { $skipped++; continue }
     $colorHex = $tabColor[$it.Tab]
     if ($it.Danger) { $colorHex = $dangerColor }
     $color = [System.Drawing.ColorTranslator]::FromHtml($colorHex)
@@ -323,7 +382,7 @@ foreach ($it in $items) {
     $made++
 }
 
-Write-Host ('已生成 ' + $made + ' 个图标 → ' + $outDir)
+Write-Host ('已生成 ' + $made + ' 个图标 → ' + $outDir + $(if ($skipped -gt 0) { '（跳过 ' + $skipped + ' 个用户按钮）' } else { '' }))
 $byShape = @{}
 foreach ($it in $items) {
     $s = Get-Shape -Id $it.Id -Name $it.Name

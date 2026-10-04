@@ -98,11 +98,11 @@ $status = Invoke-Exe 'status'
 Check 'A01 status 退出码 0' ($status.Code -eq 0) ('exit=' + $status.Code)
 Check 'A02 中文输出没有乱码（UTF-8）' ($status.Out -match 'name=萌新工具箱') ('name=' + (Get-Key $status.Out 'name'))
 Check 'A03 版本号 1.2.0' ((Get-Key $status.Out 'version') -eq '1.2.0') (Get-Key $status.Out 'version')
-Check 'A04 按钮总数 53（右键增强 1 个、Windows 激活已删）' ((Get-Key $status.Out 'buttons') -eq '53') (Get-Key $status.Out 'buttons')
-Check 'A05 灰色占位按钮 2 个（界面上点不动；只剩两个「资源管理器」没定用途）' ((Get-Key $status.Out 'placeholders') -eq '2') (Get-Key $status.Out 'placeholders')
+Check 'A04 按钮总数 66（测试期间用户层的按钮会暂停：常用 31 + 系统工具 25 + 清理 8 + 右键 1 + 我的 1）' ((Get-Key $status.Out 'buttons') -eq '66') (Get-Key $status.Out 'buttons')
+Check 'A05 内置清单里没有灰色占位按钮了（两个「资源管理器」也接上了真功能；灰规则改由 B 组注入验证）' ((Get-Key $status.Out 'placeholders') -eq '0') (Get-Key $status.Out 'placeholders')
 Check 'A06 危险按钮 3 个' ((Get-Key $status.Out 'dangerous') -eq '3') (Get-Key $status.Out 'dangerous')
 
-$tabExpect = @{ 'common' = 31; 'rightmenu' = 1; 'cleanup' = 8; 'system' = 12; 'mine' = 1 }
+$tabExpect = @{ 'common' = 31; 'rightmenu' = 1; 'cleanup' = 8; 'system' = 25; 'mine' = 1 }
 $tabOk = $true
 $tabDetail = @()
 foreach ($k in $tabExpect.Keys) {
@@ -110,13 +110,13 @@ foreach ($k in $tabExpect.Keys) {
     $tabDetail += ($k + '=' + $v)
     if ($v -ne [string]$tabExpect[$k]) { $tabOk = $false }
 }
-Check 'A07 五个页签的按钮数正确（31/1/8/12/1）' $tabOk ($tabDetail -join ' ')
+Check 'A07 五个页签的按钮数正确（31/1/8/25/1）' $tabOk ($tabDetail -join ' ')
 
 $list = Invoke-Exe 'list'
 Check 'A08 list 退出码 0' ($list.Code -eq 0) ('exit=' + $list.Code)
-Check 'A09 list 报的按钮数一致' ((Get-Key $list.Out 'buttons') -eq '53') (Get-Key $list.Out 'buttons')
+Check 'A09 list 报的按钮数一致' ((Get-Key $list.Out 'buttons') -eq '66') (Get-Key $list.Out 'buttons')
 $lines = @($list.Out -split "`r?`n" | Where-Object { $_ -match "`t" })
-Check 'A10 list 打出 53 行按钮' ($lines.Count -eq 53) ('lines=' + $lines.Count)
+Check 'A10 list 打出 66 行按钮' ($lines.Count -eq 66) ('lines=' + $lines.Count)
 
 $rmList = Invoke-Exe 'list --tab rightmenu'
 Check 'A11 右键增强只有 1 个按钮' ((Get-Key $rmList.Out 'shown') -eq '1') (Get-Key $rmList.Out 'shown')
@@ -143,7 +143,25 @@ foreach ($line in ((Invoke-Exe 'list').Out -split "`r?`n")) {
         $phId = $cells[0]; $phName = $cells[2]; break
     }
 }
-Check 'B00 清单里能找到一个灰色占位按钮（B01–B05 就用它）' ($phId.Length -gt 0) ('id=' + $phId + ' name=' + $phName)
+# 2026-10-04：两个「资源管理器」也接上真功能后，内置清单里一个灰色占位都不剩了。
+# 「灰按钮禁止点击」这条规则本身还在（用户自己在 tools.json 里写 placeholder:true 就会灰掉），
+# 所以这里临时往用户层塞一个占位按钮来测这条路径，跑完立刻删掉（用户原来的 tools.json 早就请到一边了）。
+$script:InjectedPh = $false
+if ($phId.Length -eq 0) {
+    try {
+        [void][System.IO.Directory]::CreateDirectory((Split-Path -Parent $UserToolsJson))
+        [System.IO.File]::WriteAllText($UserToolsJson,
+            '{ "tools": [ { "id": "test.placeholder", "tab": "common", "segment": 2, "order": 999, "name": "占位自检", "kind": "builtin", "module": "todo", "action": "todo", "placeholder": true, "hint": "测试用的占位按钮" } ] }',
+            (New-Object System.Text.UTF8Encoding($false)))
+        $script:InjectedPh = $true
+        foreach ($line in ((Invoke-Exe 'list').Out -split "`r?`n")) {
+            if ($line -match 'placeholder') { $cells = $line -split "`t"; $phId = $cells[0]; $phName = $cells[2]; break }
+        }
+    } catch {
+        Write-Host ('  注入占位按钮失败：' + $_.Exception.Message)
+    }
+}
+Check 'B00 能找到灰色占位按钮（内置的没有了就用临时注入的；B01–B05 用它）' ($phId.Length -gt 0) ('id=' + $phId + ' name=' + $phName + ' injected=' + $script:InjectedPh)
 
 $ph = Invoke-Exe ('run ' + $phId)
 Check 'B01 灰色按钮 run 退出码 0' ($ph.Code -eq 0) ('exit=' + $ph.Code)
@@ -160,7 +178,11 @@ $logAfter = @(Get-Content -LiteralPath $logPath -Encoding UTF8 -ErrorAction Sile
 Check 'B04 运行写进了日志（最新一条）' ($logAfter.Count -gt $logBefore) ('before=' + $logBefore + ' after=' + $logAfter.Count)
 $newest = ''
 if ($logAfter.Count -gt 0) { $newest = $logAfter[$logAfter.Count - 1] }
-Check ('B05 日志里能看到「{0}」和"功能待接入"' -f $phName) (($newest -match [regex]::Escape($phName)) -and ($newest -match '功能待接入')) ($newest.Trim())
+if ($script:InjectedPh) {
+    Remove-Item -LiteralPath $UserToolsJson -Force -ErrorAction SilentlyContinue
+    Write-Host '  （临时注入的占位按钮已删除，用户原来的 tools.json 留到最后一段复原）'
+}
+Check ('B05 日志里能看到「{0}」和""功能待接入""' -f $phName) (($newest -match [regex]::Escape($phName)) -and ($newest -match '功能待接入')) ($newest.Trim())
 
 # ---------------------------------------------------------------- C 组：真按钮（调隔壁 exe）
 Write-Host ''
@@ -185,21 +207,21 @@ if ($permdel -eq '(未找到)' -or $permdel.Length -eq 0) {
 
 # ---------------------------------------------------------------- D 组：系统工具
 Write-Host ''
-Write-Host 'D 组 · 「系统工具」12 个按钮（Windows 自带组件，--dry 只解析不启动）'
+Write-Host 'D 组 · 「系统工具」25 个按钮（Windows 自带组件 + 修复/诊断，--dry 只解析不启动）'
 
-Check 'D01 status 报 12 个系统工具、0 个缺失' `
-    (((Get-Key $status.Out 'systemTargets') -eq '12') -and ((Get-Key $status.Out 'systemMissing') -eq '0')) `
+Check 'D01 status 报 14 个系统工具动作、0 个缺失' `
+    (((Get-Key $status.Out 'systemTargets') -eq '14') -and ((Get-Key $status.Out 'systemMissing') -eq '0')) `
     ('targets=' + (Get-Key $status.Out 'systemTargets') + ' missing=' + (Get-Key $status.Out 'systemMissing'))
 
 $sysList = Invoke-Exe 'list --tab system'
-Check 'D02 系统工具页签 12 个按钮、没有 placeholder' `
-    (((Get-Key $sysList.Out 'shown') -eq '12') -and (-not ($sysList.Out -match 'placeholder'))) ''
+Check 'D02 系统工具页签 25 个按钮、没有 placeholder' `
+    (((Get-Key $sysList.Out 'shown') -eq '25') -and (-not ($sysList.Out -match 'placeholder'))) ''
 
 $sysIds = @()
 foreach ($line in ($sysList.Out -split "`r?`n")) {
     if ($line -match "`t") { $sysIds += ($line -split "`t")[0] }
 }
-Check 'D03 读到 12 个系统工具 id' ($sysIds.Count -eq 12) ($sysIds -join ' ')
+Check 'D03 读到 25 个系统工具 id' ($sysIds.Count -eq 25) ($sysIds -join ' ')
 
 $bad = @()
 $detail = @()
@@ -212,7 +234,7 @@ foreach ($id in $sysIds) {    $d = Invoke-Exe ('run ' + $id + ' --dry')
     if ($exists -ne 'yes' -and $hint.Length -eq 0) { $bad += ($id + ':没有解释'); continue }
     $detail += ($id + '=' + (Get-Key $d.Out 'kind'))
 }
-Check 'D04 12 个系统工具都有目标、且缺了就说明原因' ($bad.Count -eq 0) (($bad -join ' ') + ' ' + ($detail -join ' '))
+Check 'D04 25 个系统工具都有目标、且缺了就说明原因' ($bad.Count -eq 0) (($bad -join ' ') + ' ' + ($detail -join ' '))
 
 $dryMissing = Invoke-Exe 'run no.such.button --dry'
 Check 'D05 不存在的按钮 --dry 也是退出码 2' ($dryMissing.Code -eq 2) ('exit=' + $dryMissing.Code)
@@ -371,6 +393,56 @@ $help = Invoke-Exe 'help'
 Check 'E03 help 退出码 0 且有用法' (($help.Code -eq 0) -and ($help.Out -match '用法')) ('exit=' + $help.Code)
 $chk = Invoke-Exe 'checkupdate'
 Check 'E04 checkupdate 只读、不下载' (($chk.Code -eq 0) -and ($chk.Out -match 'update=disabled')) (($chk.Out -split "`r?`n" | Where-Object { $_ -match '^update=' }) -join '')
+
+# ---------------------------------------------------------------- H 组：鼠标悬停说明
+Write-Host ''
+Write-Host 'H 组 · 悬停说明（用户 2026-10-04 报过「鼠标悬停的说明没有做好」）'
+
+# 悬停说明原来是「按钮名 · 直接可跑的那条命令」：内联脚本按钮于是把整段 PowerShell 摊成一行
+# （「一键清理垃圾」有 700 多个字符），而真正写给人的那句 hint 反而不显示。
+# tip 命令打印的就是界面塞给 ToolTip 的那个字符串，所以这里能直接断言，不用去动真鼠标。
+$tipsAll = Invoke-Exe 'tip'
+Check 'H01 tip 退出码 0' ($tipsAll.Code -eq 0) ('exit=' + $tipsAll.Code)
+Check 'H02 tip 覆盖了每个按钮（66 个）' ((Get-Key $tipsAll.Out 'tips') -eq '66') (Get-Key $tipsAll.Out 'tips')
+
+$blocks = @{}
+$curId = ''
+$curLines = @()
+foreach ($line in ($tipsAll.Out -split "`r?`n")) {
+    if ($line -match '^--- (.+)$') {
+        if ($curId) { $blocks[$curId] = $curLines }
+        $curId = $Matches[1]; $curLines = @()
+        continue
+    }
+    if ($curId -and ($line -notmatch '^tips=')) { $curLines += $line }
+}
+if ($curId) { $blocks[$curId] = $curLines }
+
+$hintSource = @{}
+foreach ($f in @(Get-ChildItem (Join-Path $root 'tools\*.json'))) {
+    $j = Get-Content -LiteralPath $f.FullName -Raw -Encoding UTF8 | ConvertFrom-Json
+    foreach ($e in $j.tools) { if ($e.id) { $hintSource[[string]$e.id] = [string]$e.hint } }
+}
+
+$noHint = @(); $tooLong = @(); $scriptDump = @()
+foreach ($id in @($blocks.Keys)) {
+    $lines = @($blocks[$id])
+    $joined = ($lines -join "`n")
+    if ($hintSource.ContainsKey($id) -and $hintSource[$id].Length -gt 0) {
+        if ($joined.IndexOf($hintSource[$id]) -lt 0) { $noHint += $id }
+    }
+    foreach ($l in $lines) { if ($l.Length -gt 110) { $tooLong += ($id + '(' + $l.Length + '字)') } }
+    if ($joined -match 'powershell -Command|EncodedCommand') { $scriptDump += $id }
+}
+Check ('H03 每个按钮的悬停说明里都有它自己的 hint 文案（查了 {0} 个）' -f $blocks.Count) ($noHint.Count -eq 0) ($noHint -join ' ')
+Check 'H04 悬停说明里不再摊开内联脚本正文' ($scriptDump.Count -eq 0) ($scriptDump -join ' ')
+Check 'H05 悬停说明每行都不超过 110 字（ToolTip 不换行，太长了会顶出屏幕）' ($tooLong.Count -eq 0) ($tooLong -join ' ')
+
+$tipOne = Invoke-Exe 'tip clean-junk'
+Check 'H06 危险按钮的说明写明了"会改动系统、先弹确认框"' ($tipOne.Out -match '会改动系统') ''
+Check 'H07 要管理员权限的按钮写明了"会弹 UAC 窗口"' ($tipOne.Out -match 'UAC') ''
+$tipMissing = Invoke-Exe 'tip no.such.button'
+Check 'H08 tip 一个不存在的 id → 退出码 2' ($tipMissing.Code -eq 2) ('exit=' + $tipMissing.Code)
 
 # ---------------------------------------------------------------- 汇总
 Write-Host ''

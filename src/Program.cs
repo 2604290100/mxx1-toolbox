@@ -70,6 +70,7 @@ namespace Mxx1Toolbox
                     case "run": return RunOne(args);
                     case "draft": return Draft(args);
                     case "status": return Status();
+                    case "tip": return Tip(args);
                     case "checkupdate": return CheckUpdate();
                     case "help":
                     case "h":
@@ -100,10 +101,41 @@ namespace Mxx1Toolbox
             Console.WriteLine("  Mxx1Toolbox.exe run <id> --dry       只解析按钮指向哪里，不真的启动");
             Console.WriteLine("  Mxx1Toolbox.exe draft <路径>         把文件/文件夹按「拖进窗口」的规则变成按钮草稿");
             Console.WriteLine("  Mxx1Toolbox.exe status               打印 key=value 状态（脚本用）");
+            Console.WriteLine("  Mxx1Toolbox.exe tip [id]             打印按钮的悬停说明（界面上鼠标停住时看到的那段）");
             Console.WriteLine("  Mxx1Toolbox.exe checkupdate          只读版本号，不下载不替换");
             Console.WriteLine("  Mxx1Toolbox.exe help                 这份帮助");
             Console.WriteLine();
             Console.WriteLine("页签 id: " + string.Join(" / ", Tabs.Ids));
+        }
+
+        /// <summary>Prints the hover text of every button (or of one id). It is the very same string
+        /// MainForm.TipFor hands to the ToolTip control, so the test suite can prove a tooltip is a
+        /// readable sentence instead of a screen-wide command line -- without moving the mouse.</summary>
+        private static int Tip(string[] args)
+        {
+            string want = (args.Length > 1 && !args[1].StartsWith("-")) ? args[1] : "";
+            List<ToolItem> tools = Load();
+            Settings settings = Settings.Load();
+            int shown = 0;
+            foreach (ToolItem t in tools)
+            {
+                if (want.Length > 0 && !string.Equals(t.Id, want, StringComparison.OrdinalIgnoreCase)) { continue; }
+                Console.WriteLine("--- " + t.Id);
+                Console.WriteLine(TipText(t, settings));
+                shown++;
+            }
+            Console.WriteLine("tips=" + shown.ToString(CultureInfo.InvariantCulture));
+            if (want.Length > 0 && shown == 0)
+            {
+                Console.Error.WriteLine("没有这个按钮: " + want);
+                return 2;
+            }
+            return 0;
+        }
+
+        private static string TipText(ToolItem t, Settings settings)
+        {
+            return MainForm.TipFor(t, settings);
         }
 
         private static List<ToolItem> Load()

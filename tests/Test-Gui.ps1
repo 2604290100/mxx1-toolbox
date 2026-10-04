@@ -133,6 +133,41 @@ public class TBGui
         return new int[] { r.Left, r.Top, r.Right, r.Bottom };
     }
 
+    [DllImport("user32.dll")] private static extern bool SetCursorPos(int x, int y);
+    [DllImport("user32.dll")] private static extern bool GetCursorPos(out POINT pt);
+    [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hWnd);
+    [StructLayout(LayoutKind.Sequential)] private struct POINT { public int X; public int Y; }
+
+    public static bool MoveCursor(int x, int y) { return SetCursorPos(x, y); }
+    public static bool Focus(IntPtr h) { return SetForegroundWindow(h); }
+
+    public static int[] CursorAt()
+    {
+        POINT p;
+        GetCursorPos(out p);
+        return new int[] { p.X, p.Y };
+    }
+
+    /// <summary>The text of the app's own visible tooltip window (B10/B11). WinForms names it
+    /// "WindowsForms10.tooltips_class32.app.0.34f5582_r6_ad1", so the class has to be matched with
+    /// IndexOf: an exact "tooltips_class32" match finds nothing, and the test then wrongly reports
+    /// "no tooltip appears" (which is exactly what happened the first time round).</summary>
+    public static string TooltipText(uint pid)
+    {
+        string found = "";
+        EnumWindows(delegate(IntPtr h, IntPtr l)
+        {
+            if (found.Length > 0) { return true; }
+            if (Class(h).IndexOf("tooltips_class32", StringComparison.OrdinalIgnoreCase) < 0) { return true; }
+            uint p; GetWindowThreadProcessId(h, out p);
+            if (p != pid) { return true; }
+            if (!IsWindowVisible(h)) { return true; }
+            found = Text(h);
+            return true;
+        }, IntPtr.Zero);
+        return found;
+    }
+
     public static int Styles(IntPtr h) { return GetWindowLongW(h, -16); }
     public static bool Visible(IntPtr h) { return IsWindowVisible(h); }
     public static bool Enabled(IntPtr h) { return IsWindowEnabled(h); }
@@ -455,6 +490,26 @@ if ($UserToolsHad) {
     Move-Item -LiteralPath $UserToolsJson -Destination $UserToolsPaused -Force
 }
 
+# 2026-10-04：两个「资源管理器」也接上真功能之后，内置清单里一个灰色占位按钮都不剩了，而
+# 「灰按钮禁止点击、必须明显比真按钮淡」（B09 / C01d / E02 / E03）这条规则本身还在 —— 用户自己
+# 在 tools.json 里写 placeholder:true 就会灰掉。所以往用户层临时注入一个占位按钮来测这条路径。
+# 注意它必须挂在 common 页签上：「我的工具」那几条检查（C04/C07/C13–C15）数的是 mine 页签。
+function Add-TestPlaceholder {
+    try {
+        [void][System.IO.Directory]::CreateDirectory((Split-Path -Parent $UserToolsJson))
+        [System.IO.File]::WriteAllText($UserToolsJson,
+            '{ "tools": [ { "id": "test.placeholder", "tab": "common", "segment": 2, "order": 999, "name": "占位自检", "kind": "builtin", "module": "todo", "action": "todo", "placeholder": true, "hint": "测试用的占位按钮" } ] }',
+            (New-Object System.Text.UTF8Encoding($false)))
+        $script:InjectedPh = $true
+        return $true
+    } catch {
+        Write-Host ('  注入占位按钮失败：' + $_.Exception.Message)
+        return $false
+    }
+}
+$script:InjectedPh = $false
+[void](Add-TestPlaceholder)
+
 $commonNames = Get-ToolNames 'common'
 $rightNames = Get-ToolNames 'rightmenu'
 $cleanNames = Get-ToolNames 'cleanup'
@@ -501,13 +556,13 @@ $expectRows = [Math]::Ceiling($toolButtons.Count / 4.0)
 Check ('B02 排成 4 列') ($cols.Count -eq 4) ('列数=' + $cols.Count)
 Check ('B03 排成多行（{0} 个按钮 = {1} 行）' -f $toolButtons.Count, $expectRows) ($rows.Count -eq $expectRows) ('行数=' + $rows.Count)
 
-# 除最后一行外每行必须满 4 个；最后一行 1..4 个（按钮总数不一定是 4 的倍数）
+# 除最后一行外每行必须满 4 个；最后一行 1..4 个（正好是 4 的倍数时最后一行也是满的）
 $rowCounts = @($toolButtons | Group-Object Top | Sort-Object Name | ForEach-Object { $_.Count })
 $fullRows = @($rowCounts | Where-Object { $_ -eq 4 })
 $lastCount = 0
 if ($rowCounts.Count -gt 0) { $lastCount = $rowCounts[$rowCounts.Count - 1] }
 Check 'B04 除最后一行外每行都是 4 个按钮（最后一行 1..4 个）' `
-    (($fullRows.Count -eq ($rows.Count - 1)) -and ($lastCount -ge 1) -and ($lastCount -le 4)) ($rowCounts -join ',')
+    (($fullRows.Count -ge ($rows.Count - 1)) -and ($lastCount -ge 1) -and ($lastCount -le 4)) ($rowCounts -join ',')
 
 $sizes = @($toolButtons | ForEach-Object { '{0}x{1}' -f $_.Width, $_.Height } | Sort-Object -Unique)
 Check 'B05 所有按钮尺寸完全一致' ($sizes.Count -eq 1) ($sizes -join ' ')
@@ -588,6 +643,42 @@ if ($shot -eq $null -or $gridProbe.Count -eq 0 -or $refProbe.Count -eq 0) {
     # 阈值取 60；真正有说服力的对比在 C01d —— 灰按钮必须比真按钮明显淡一截。
     Check 'B09 占位按钮是灰的（最暗墨迹 >= 60）' ($dark -ge 60) ('最暗=' + $dark + ' 按钮=' + $gridProbe[0].Text)
 }
+
+# ---------------------------------------------------------------- B10：鼠标悬停的说明
+# 用户 2026-10-04 报过「鼠标悬停的说明没有做好」：说明以前是「按钮名 · 直接可跑的那条命令」，
+# 内联脚本按钮于是把整段 PowerShell 摊成一行（「一键清理垃圾」700 多字），而写给人的那句 hint
+# 反而不显示。这条只有真把鼠标停上去才测得到，所以这里用 SetCursorPos 真悬停一次；
+# 跑完（包括中途出错）立刻把光标放回原处，别打扰正在用电脑的人。
+$hoverTip = ''
+$hoverSeen = @()
+$hoverBtn = $refProbe[0]
+$cursorHome = [TBGui]::CursorAt()
+try {
+    [void][TBGui]::Focus($main)
+    Start-Sleep -Milliseconds 200
+    # 从按钮旁边挪进去：同一点连按两次不会产生 mousemove，ToolTip 的计时器就不会启动
+    [void][TBGui]::MoveCursor(($hoverBtn.Left + [int]($hoverBtn.Width / 2)), ($hoverBtn.Top - 20))
+    Start-Sleep -Milliseconds 150
+    [void][TBGui]::MoveCursor(($hoverBtn.Left + [int]($hoverBtn.Width / 2)), ($hoverBtn.Top + [int]($hoverBtn.Height / 2)))
+    # 只认"这个按钮自己的"那条说明：主窗口只有一个 ToolTip 实例，鼠标从旁边挪进来时
+    # 会先弹出旁边控件（页签）的说明，见一条就收会让 B10 假红（2026-10-04 踩过）。
+    for ($i = 0; $i -lt 16; $i++) {
+        Start-Sleep -Milliseconds 250
+        $seen = [TBGui]::TooltipText([uint32]$proc.Id)
+        if ($seen.Length -eq 0) { continue }
+        if ($hoverSeen -notcontains $seen) { $hoverSeen += $seen }
+        if ($seen -match [regex]::Escape($hoverBtn.Text)) { $hoverTip = $seen; break }
+    }
+} finally {
+    [void][TBGui]::MoveCursor($cursorHome[0], $cursorHome[1])
+}
+$hoverFlat = ($hoverTip -replace "`r?`n", ' / ')
+$hoverSeenFlat = (($hoverSeen | ForEach-Object { $_ -replace "`r?`n", ' / ' }) -join ' ;; ')
+Check 'B10 鼠标停在按钮上会弹出说明，第一行就是这个按钮的名字' `
+    (($hoverTip.Length -gt 0) -and ($hoverTip -match [regex]::Escape($hoverBtn.Text))) `
+    ('按钮=' + $hoverBtn.Text + ' 说明=' + $hoverFlat + ' 途中见过的=' + $hoverSeenFlat)
+Check 'B11 悬停说明里不再摊开内联脚本正文' `
+    (($hoverTip.Length -gt 0) -and ($hoverTip -notmatch 'powershell -Command|EncodedCommand')) $hoverFlat
 
 # ---------------------------------------------------------------- C 组：翻页签
 Write-Host ''
@@ -711,6 +802,7 @@ if ($newBtn.Count -gt 0) {
                 } else {
                     Remove-Item -LiteralPath $UserToolsJson -Force -ErrorAction SilentlyContinue
                 }
+                if ($script:InjectedPh) { [void](Add-TestPlaceholder) }   # E 组的灰按钮检查还要用
                 $after = Invoke-Exe 'list --tab mine'
                 Check 'C15 收尾后测试按钮已经不在了' (-not ($after -match '图形化测试按钮')) ''
             } else {
@@ -1001,6 +1093,10 @@ try {
     # 复原成功才删备份；没跑完就被中断的话备份还在，下次开工能救回来
     Remove-Item -LiteralPath $settingsBackup -Force -ErrorAction SilentlyContinue
 } catch { }
+
+# 测试注入的占位按钮文件必须先删掉：用户本来就没有 tools.json 时，下面那段复原根本不会执行，
+# 留下来的话用户会看到一个自己没建过的"占位自检"按钮。
+if ($script:InjectedPh) { Remove-Item -LiteralPath $UserToolsJson -Force -ErrorAction SilentlyContinue }
 
 if ($UserToolsHad -and (Test-Path -LiteralPath $UserToolsPaused)) {
     if (Test-Path -LiteralPath $UserToolsJson) { Remove-Item -LiteralPath $UserToolsJson -Force }

@@ -85,6 +85,12 @@ namespace Mxx1Toolbox
             Font = new Font("Microsoft YaHei", 9f, FontStyle.Regular, GraphicsUnit.Point);
             AutoScaleMode = AutoScaleMode.Font;
             KeyPreview = true;
+            // 悬停提示：默认 5 秒就消失（长句子根本读不完），而且主窗口一失焦就再也不弹了
+            // （ShowAlways=false 时，点过别的窗口再回来悬停会没反应）—— 两样都调过来。
+            _tips.AutoPopDelay = 20000;
+            _tips.InitialDelay = 400;
+            _tips.ReshowDelay = 200;
+            _tips.ShowAlways = true;
 
             ReloadTools();
             _cellWidth = ComputeCellWidth();
@@ -455,16 +461,31 @@ namespace Mxx1Toolbox
                 || Tabs.Display(t.Tab).ToLowerInvariant().IndexOf(n, StringComparison.Ordinal) >= 0;
         }
 
-        /// <summary>Hover text: the runnable command for a real button, and a plain sentence for a
-        /// button whose feature is not wired up (those are the grey ones).</summary>
-        private static string TipFor(ToolItem t, Settings settings)
+        /// <summary>Hover text. It says what the button DOES in plain words first -- the button's own
+        /// hint -- and never dumps a wall of script: the old version appended the ready-to-run command
+        /// line, so hovering 「一键清理垃圾」 showed a 700-character PowerShell body on one line, and
+        /// the hint sentence (the only part written for a human) was not shown at all. A live
+        /// complaint from the user, 2026-10-04: 「鼠标悬停的说明没有做好」.
+        ///
+        /// The command is appended only when a person can actually read it: a path, a URI, a short
+        /// switch line. Longer than ~100 characters means it is an inline script body -- that belongs
+        /// in 「查看按钮定义」 (right-click menu), not in a tooltip.
+        ///
+        /// Public so the CLI can print the exact same string (Mxx1Toolbox.exe tip) and the test suite
+        /// can assert on it without moving the real mouse pointer.</summary>
+        public static string TipFor(ToolItem t, Settings settings)
         {
+            string s = t.Name;
+            if (t.Hint.Length > 0) { s += Environment.NewLine + t.Hint; }
             if (t.Placeholder)
             {
-                return t.Name + " · 功能还没接入（" + (t.Hint.Length > 0 ? t.Hint : "P1") + "）· 点击只写日志";
+                return s + Environment.NewLine + "功能还没接入：这个按钮是灰的，点不动";
             }
-            if (t.Danger) { return t.Name + " · 会改动系统，点击先弹确认框"; }
-            return t.Name + " · " + Launcher.DescribeCommand(t, settings, false);
+            if (t.Danger) { s += Environment.NewLine + "会改动系统：点下去先弹确认框"; }
+            if (t.RunAsAdmin) { s += Environment.NewLine + "需要管理员权限：会弹 UAC 窗口"; }
+            string cmd = Launcher.DescribeCommand(t, settings, false);
+            if (cmd.Length > 0 && cmd.Length <= 100) { s += Environment.NewLine + cmd; }
+            return s;
         }
 
         // ---------------------------------------------------------------- theme
@@ -1045,6 +1066,17 @@ namespace Mxx1Toolbox
             _statusLabel.Text = text;
             _tips.SetToolTip(_statusLabel, text);
             _btnLog.Text = _logPanel.Visible ? "收起日志" : "日志";
+
+            // 页签按钮的悬停说明：这一页有几个按钮。放在这里（而不是建按钮的时候）是因为
+            // 「我的工具」里的按钮随时会被增删，建的时候算出来的数会过期。
+            foreach (string id in Tabs.Ids)
+            {
+                Button tabButton;
+                if (!_tabButtons.TryGetValue(id, out tabButton)) { continue; }
+                int onTab = 0;
+                foreach (ToolItem t in _tools) { if (t.Tab == id && !t.Hidden) { onTab++; } }
+                _tips.SetToolTip(tabButton, Tabs.Display(id) + " · " + onTab + " 个按钮（点这里切换）");
+            }
         }
 
         private void RefreshLogBox()

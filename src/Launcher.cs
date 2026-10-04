@@ -79,7 +79,13 @@ namespace Mxx1Toolbox
             FileTarget("sysinfo", "系统信息", "%SystemRoot%\\System32\\msinfo32.exe",
                 "这台电脑上找不到系统信息（msinfo32.exe）"),
             WindowTarget("links", "常用链接"),
-            ShellTarget("controlpanel", "控制面板", "shell:ControlPanelFolder")
+            ShellTarget("controlpanel", "控制面板", "shell:ControlPanelFolder"),
+
+            // 诊断类：同样是「先探测再打开」，组件被精简掉的系统会得到一句说明而不是静默失败。
+            FileTarget("eventvwr", "事件查看器", "%SystemRoot%\\System32\\eventvwr.msc",
+                "这台电脑上找不到事件查看器（eventvwr.msc）—— 系统日志、蓝屏记录都在它里面"),
+            FileTarget("perfmon", "性能监视器", "%SystemRoot%\\System32\\perfmon.exe",
+                "这台电脑上找不到性能监视器（perfmon.exe）")
         };
 
         // NOTE: these helpers must not be called File / Shell / Url / Links -- a method named File

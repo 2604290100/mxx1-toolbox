@@ -1,6 +1,6 @@
 ---
 name: mxx1-toolbox
-description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Windows button-wall launcher whose main window is a multi-row, multi-column grid of small buttons that each start another program, script, or feature. Covers its interface rules (four column compact buttons, top tabs, separator segments, light/dark theme, computed column width, grey "not wired up yet" buttons), the tools\*.json button registry, how buttons launch things (exe / script / open / builtin / macro), how the 12 系统工具 buttons open Windows components, how the "永久删除（不进回收站）" right-click tool is wired in through PermanentDeleteSetup.exe, plus build.ps1, screenshot tool and the GUI/CLI test suites.
+description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Windows button-wall launcher whose main window is a multi-row, multi-column grid of small buttons that each start another program, script, or feature. Covers its interface rules (four column compact buttons, top tabs, separator segments, light/dark theme, computed column width, grey "not wired up yet" buttons), the tools\*.json button registry, how buttons launch things (exe / script / open / builtin / macro), how the 26 系统工具 buttons open Windows components, how the 常用设置 registry switches record the original value so every change can be undone, how a run reports success or failure, plus build.ps1, screenshot tool and the GUI/CLI test suites.
 ---
 
 # 萌新工具箱（mxx1 Toolbox）
@@ -8,27 +8,40 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
 **主界面 = 多行多列的小按钮墙**，点一下按钮就启动一个已经做好的程序 / 脚本 / 功能。
 加按钮只是往 `tools\*.json` 丢配置，**不需要重新编译主程序**。
 
-- 程序名 **萌新工具箱**，标题栏 `萌新工具箱 v1.2.0`；署名 `mxx1` / `mxx1.cn`；GPL-3.0-or-later
+- 程序名 **萌新工具箱**，标题栏 `萌新工具箱 v1.4.0`；署名 `mxx1` / `mxx1.cn`；GPL-3.0-or-later
 - 工程目录 **`D:\萌新工具开发\toolbox\`**，与隔壁 `permanent-delete-menu` **互不修改**（只调它的 exe）
 - 外观参考：`C:\Users\Administrator\Pictures\Snipaste_2026-10-04_10-29-34.png`（那种紧凑按钮墙）
 
 > **接手 / 新会话先做两件事**：读 `docs\DESIGN.md`（外观与行为的**唯一正本**）和本文件。
 > 设计一改先改 `DESIGN.md`，再同步本 skill —— 两份分叉就会出现"两套行为"。
 
-## 当前状态（2026-10-04，v1.3.0）
+## 当前状态（2026-10-04，v1.4.0）
 
-- ✅ **测试 154 项全绿**：命令行回归 83 + 界面回归 71（外加编码体检 113 个文件、内联脚本语法 46 个）。
-  产物 `bin\Mxx1Toolbox.exe`（约 230 KB 单文件），七个 `tools.*.json` + 103 个 `icons.*.png` 已内嵌。
-- ✅ **103 个内置按钮，全部是真功能，灰色占位一个不剩**：`常用设置` 31 / `系统工具` 26 /
-  `隐私设置` 29（11 组成对开关 + 4 个权限入口 + 状态/优化/还原）/ `应用管理` 5 /
-  `清理优化` 8 / `右键增强` 1 / `我的工具` 3（新建 / 导出 / 导入，真）。
+- ✅ **测试 186 项全绿**：命令行回归 96 + 界面回归 90（外加编码体检 158 个文件、内联脚本与清单体检
+  34 个脚本 / 7 个清单）。产物 `bin\Mxx1Toolbox.exe`（约 260 KB 单文件），
+  七个 `tools.*.json` + 105 个 `icons.*.png` 已内嵌。
+- ✅ **八个页签、105 个内置按钮，全部是真功能，灰色占位一个不剩**：`常用`（置顶 + 最近使用，
+  算出来的）/ `常用设置` 33 / `系统工具` 26 / `隐私设置` 29（11 组成对开关 + 4 个权限入口 +
+  状态/优化/还原）/ `应用管理` 5 / `清理优化` 8 / `右键增强` 1 / `我的工具` 3（新建 / 导出 / 导入，真）。
   灰色规则本身还在（用户自己写 `placeholder:true` 会灰掉、点不动）：两套测试会**临时往用户层
   注入一个占位按钮**来盯住它，跑完必删。
 - ✅ **灰色 = 功能还没接入 = 禁止点击**（用户 2026-10-04 改的规则）：2 个占位按钮 `Enabled=false`、
   灰底灰字 + **置灰图标**（`IconFactory.GetMuted()`）—— 点不动、不能聚焦、不弹提示；
   禁用控件不显示 tooltip，所以状态栏在有灰按钮的页面上带一句「灰色 N 个没接功能」。
-- ✅ **「系统工具」12 个 + 「清理优化」8 个 + 「常用设置」29 个都是真功能**；
+- ✅ **「系统工具」26 个 + 「清理优化」8 个 + 「常用设置」33 个都是真功能**；
   `run <id> --dry` 能把它们的目标解析一遍（缺组件给整句说明，家庭版没有 gpedit）。
+- ✅ **「常用设置」里 12 个写注册表的开关都能一键还原**（v1.4.0）：全部走 `src\RegEngine.cs`
+  （和隐私设置**共用同一份**"记原值 → 写入 → 读回核对 → 还原"的实现），记录写在
+  `%LOCALAPPDATA%\mxx1-toolbox\sysreg-original.tsv`；另有「查看设置改动 / 还原设置改动」两个按钮。
+  6 组开关：任务栏合并方式 / 开始菜单对齐 / 驱动自动安装 / 内核隔离 HVCI /
+  Win10-Win11 资源管理器 / Win10-Win11 右键菜单。**命令行没有写入口**（Test-Cli 的 L07 盯着）。
+- ✅ **窗口默认固定尺寸**（v1.4.0，用户定的）：高度 620，宽度 = 4 × 列宽 + 24 并且**粘在
+  `settings.ini` 的 `WindowWidth` 上**（第一次量出来就写进去）；名字超长的按钮改用省略号
+  （悬停提示里是全名），**不许把窗口撑宽**。「高度跟随当前页签的内容」降级成设置里的选项。
+- ✅ **跑完必有反馈**（v1.4.0，用户报的「点击确认以后也没有成功或者失败的反馈」）：页签下面一条
+  绿/红结果条（8 秒后自动收，点它看日志）+ 有输出就开结果窗口（标题写「成功/失败（用时 X 秒）」）
+  + 底栏「运行中（已 X 秒）」。确认改用自家的 `src\ConfirmForm.cs`，不再用 `MessageBox` 甩命令。
+- ✅ **搜索跨全部八个页签**（结果按页签分块），页签顺序按使用频率排过（`常用` 在最前）。
 - ⚠️ **这台机器是精简版 Windows（2026-10-04 实测）**：Windows 安全中心 App 没装、Defender 组件被移除、
   `SettingsPageVisibility` 策略藏了设置里的 `windowsdefender` 页、BitLocker 的 `BitLockerWizard.exe`
   不在、`wf.msc` 不在、`netsh advfirewall` 不存在、`firewall.cpl` 与 `control.exe /name …` 打开是空的、
@@ -60,7 +73,11 @@ D:\萌新工具开发\toolbox\
   src\ToolButton.cs                紧凑按钮（Flat + 主题配色 + 16×15 图标画布 + 灰色占位 + Flash/SetBusy）
   src\IconFactory.cs               图标：有 PNG 用 PNG，没有就实时画；一律 Normalize 成 16×15；GetMuted 出灰版
   src\ToolItem.cs / ToolRegistry.cs 按钮模型 + 读内嵌 tools\*.json + 用户层 tools.json（只认 tools 数组）
-  src\Launcher.cs                  按 kind 启动；SystemTargets 表（12 个系统工具）；找隔壁 exe / bin-tools；UTF-8 输出
+  src\Launcher.cs                  按 kind 启动；SystemTargets 表（26 个系统工具）；找隔壁 exe / bin-tools；
+                                   `LaunchElevatedCopy`（自己提权再起一遍 = 静默、不弹黑窗口）；UTF-8 输出
+  src\RegEngine.cs                 "记原值 → 写入 → 读回核对 → 一键还原"的唯一实现（Privacy 与 SysReg 共用）
+  src\SysReg.cs                    6 组系统设置开关（12 个按钮）+ 查看/还原改动 + selftest（TSV 记录）
+  src\ConfirmForm.cs               自家的确认窗口「请确认」（不再用 MessageBox 甩命令，见 §"运行反馈"）
   src\UserTools.cs                 用户层 tools.json 的读写（最小 JSON writer，写入前备份 .bak）
   src\NewToolForm.cs               图形化「新建按钮 / 编辑按钮」窗口（4 种类型）
   src\LinksForm.cs                 「常用链接」窗口（项目主页/仓库/几个 ms-settings 入口）
@@ -70,16 +87,16 @@ D:\萌新工具开发\toolbox\
   src\AboutForm.cs                 署名、站点、仓库、许可证常量的唯一来源
   src\LogForm.cs / OutputForm.cs   程序内日志窗口（最新在最上）/ 命令输出窗口
   src\SettingsForm.cs              设置窗口
-  tools\*.json                     103 个按钮的内置定义（编译时内嵌，资源名 tools.<文件名>）；7 个文件 =
+  tools\*.json                     105 个按钮的内置定义（编译时内嵌，资源名 tools.<文件名>）；7 个文件 =
                                  common / system / privacy / apps / cleanup / rightmenu / mine
   tools\Test-Encoding.ps1          编码红线体检（-Fix 修 BOM）
   tools\Make-Screenshots.ps1       拍 docs\gui-shot.png / dark-shot.png / system-shot.png（PrintWindow）
   tools\Make-Icons.ps1             批量画图标（先从 exe 的 list 读清单，所以**先 build 再跑它**）
-  assets\icons\*.png               103 个图标（编译时内嵌成 icons.<id>.png）
+  assets\icons\*.png               105 个图标（编译时内嵌成 icons.<id>.png）
   tests\Test-All.ps1               一条命令跑完全部
   tools\Test-InlineSyntax.ps1      内联脚本语法 + 清单 JSON 体检（46 个脚本 / 7 个清单）
-tests\Test-Cli.ps1               命令行回归 83 项
-  tests\Test-Gui.ps1               界面回归 65 项（要交互式桌面，无桌面返回 3 = 跳过）
+tests\Test-Cli.ps1               命令行回归 96 项（L 组 12 项盯 sysreg：成对 / 只读 / 无写入口 / 自检 / 合规底线）
+  tests\Test-Gui.ps1               界面回归 90 项（要交互式桌面，无桌面返回 3 = 跳过；H 组 5 项盯固定尺寸）
   docs\DESIGN.md                   设计正本（含"踩过的坑"清单 + §13 打包方案）
   docs\gui-shot.png / dark-shot.png / system-shot.png  界面截图
 ```
@@ -102,6 +119,8 @@ powershell -File tools\Make-Icons.ps1         # 重生成 PNG 图标（先 build
 & bin\Mxx1Toolbox.exe status                  # key=value（含 systemTargets / systemMissing / admin / pinned）
 & bin\Mxx1Toolbox.exe tip [id]                # 打印按钮的悬停说明（界面交给 ToolTip 的就是这一串）
 & bin\Mxx1Toolbox.exe privacy status          # 只读列隐私开关状态；selftest 自检「原值→写入→还原」
+& bin\Mxx1Toolbox.exe sysreg  status          # 只读列 6 组系统设置开关的现状；items / selftest 同上
+& bin\Mxx1Toolbox.exe tip <id>                # 打印按钮的悬停说明（界面交给 ToolTip 的就是这一串）
 & bin\Mxx1Toolbox.exe pin / unpin <id>        # 置顶 / 取消置顶（pinned.txt）
 & bin\Mxx1Toolbox.exe export / import <文件>  # 导出 / 导入「我的工具」
 ```
@@ -135,7 +154,12 @@ powershell -File tools\Make-Icons.ps1         # 重生成 PNG 图标（先 build
 
 | 规则 | 违反后的症状 |
 | --- | --- |
-| 网格列宽**运行时测量**（`ComputeCellWidth`：最长按钮名 + 36px 图标余量 + 8px 间距，钳 104…170） | 拍脑袋定 108px 时「关闭实时防护与篡改」渲染成「关闭实时防护与…」。当前最长名 106px → 列宽 150、按钮 144×30 |
+| 网格列宽**运行时测量**（`ComputeCellWidth`：最长按钮名 + 44px 图标余量，钳 104…170），**再用 `ClampCellWidthToWindow()` 卡在窗口宽度允许的上限内** | 拍脑袋定 108px 时名字会被渲染成「关闭实时防护与…」。当前最长名 103px → 列宽 147、按钮 141×30 |
+| **窗口默认固定尺寸**：高度 620、宽度 = 4 × 列宽 + 24（最窄 520），宽度**第一次量出来就写进 `settings.ini` 的 `WindowWidth`**，之后加多长的按钮名都不改宽度 | 只禁用 AutoSize 不够：列宽按最长名字量，用户加一个 32 字的按钮 → 下次开机窗口 628 → 720（还是"跟着内容变"）。判据：Test-Gui 的 H03/H04/H05 |
+| **名字比按钮宽就出省略号**（`ToolButton.AutoEllipsis`），全名在悬停提示里 | 强行加宽按钮 = 撑宽窗口 + 把同排别的按钮挤出去 |
+| **跑完必须有反馈**：① 页签下面一条绿/红结果条（8 秒，点它看日志）② 有输出就开结果窗口，标题写「成功/失败（用时 X 秒）」③ 只有"失败且无输出"才弹消息框；运行中底栏写「运行中（已 X 秒）」 | 用户原话「点击确认以后也没有成功或者失败的反馈」——点了按钮完全不知道成没成 |
+| **需要确认的按钮用自家的 `ConfirmForm`，不要用 `MessageBox`** | `MessageBox` 只能塞纯文本，内联脚本按钮会摊出 700 多字的命令（顶出屏幕、也没人看得懂）。用户原话「点击按钮后弹出的确认执行的提示没做好」 |
+| **已经提权就不要再 `runas`**（`Launcher`：`if (elevate && IsAdmin()) elevate = false;`），脚本按钮要提权走 `LaunchElevatedCopy` | `runas` 一定会带一个控制台 → 每次点按钮都蹦一个 PowerShell 黑窗口（用户原话「每次都会弹出 powershell 体验不好」） |
 | `Dock=Top` 的 `TableLayoutPanel` **末尾要加一个 100% 空列** | 多余宽度全被塞给最后一列 → 每行第 4 个按钮比同排宽 28px |
 | `TableLayoutPanel` 的每一行都要显式 `RowStyles`（要填满就 `Percent 100`） | 行按内容 AutoSize → 底栏按钮 30px 挤在 24px 条里，下边缘被裁 5px |
 | 底栏按钮 `AutoSize=false`，**高度 = 文字行高 + 8**（`MeasureText("国").Height + 8` = 24px），底栏高 = 按钮高 + 4。那个 `+8` 是 Flat 按钮的 1px 边框 + 约 3px 内边距 ×2，**不是**随手留的余量 | 写死 20px → 文字下半截被裁（用户："右下角按钮没正常显示、被挡住"）；按 `行高 + 6` = 22px **还是差一行**（用户："底部按钮还是差一点的才显示全文字，主要是高度问题"）——22px 只给文字 14px，实测底栏「检查更新」只剩 9 行墨迹 |
@@ -177,6 +201,24 @@ powershell -File tools\Make-Icons.ps1         # 重生成 PNG 图标（先 build
 一概不碰（测试 `I05` 盯着）；② **写之前先把原值记进 `privacy-original.tsv`**，而且只记第一次；
 ③ **写完读回核对**。需要写 HKLM 的开关走「把自己以管理员身份再起一遍」（`run <id> --admin`），
 结果是 winexe 没有控制台，所以写进 `last-elevated-result.txt`、父进程过几秒读出来弹窗口。
+
+## 「常用设置」怎么点（33 个；其中 12 个注册表开关都能一键还原）
+
+三段：段 1 = 6 组「关 X / 开 X」成对开关，段 2 = 安全入口 / 电源 / 系统维护
+（**只打开官方界面，绝不代关系统防线**），段 3 = 改动的记录与还原。
+
+- 6 组注册表开关（走 `src\SysReg.cs` + `src\RegEngine.cs`，**和隐私设置共用同一份引擎**）：
+  `taskbar-combine`（`TaskbarGlomLevel` 2 / 0，Win11 已取消这个开关 → `MaxBuild 22000`）、
+  `startmenu-align`（`TaskbarAl` 0 / 1）、`driver-install`（HKLM `SearchOrderConfig` 1 / 0）、
+  `core-isolation`（HKLM HVCI `Enabled` 1 / 0，重启后生效）、
+  `explorer-classic`（3 个 CLSID 键树，Win11 专属）、`ctxmenu-classic`（`{86ca1aa0-…}\InprocServer32`）。
+- 三条底线和隐私设置一样：**写之前记原值**（`sysreg-original.tsv`，只记第一次）→ 写入 → **读回核对**
+  → 「还原设置改动」按记录逐条写回（记录里"原来整个键都不存在"的，还原时连键一起删掉）。
+  **不碰 Defender / 防火墙 / UAC / SmartScreen / 实时防护 / 篡改保护**（Test-Cli 的 L11 盯着）。
+- **命令行故意没有写入口**：只有 `sysreg status` / `items` / `selftest` 三个只读（自检在临时键里
+  走完"记原值 → 写入 → 读回 → 还原"），L07 盯着这条。
+- 加一个开关：`SysReg.cs` 的表里加一行 + `tools\common.json` 里加两条同 `options` 的按钮（on / off）
+  + 两个图标（`tools\Make-Icons.ps1`），然后 `build.ps1` → `Make-Icons.ps1` → `build.ps1`。
 
 ## 「应用管理」怎么点（5 个，只读或单个操作）
 
@@ -268,6 +310,19 @@ powershell -File tools\Make-Icons.ps1         # 重生成 PNG 图标（先 build
       中途被 Ctrl+C / 卡死，这个"放回来"就永远不执行 → 用户看到"我建的按钮没了"。
       所以**开工先自愈**（发现 `.paused-by-*` 在而正式文件不在，先搬回去），
       `settings.ini` 另留一份 `.before-test` 备份，收尾成功才删。
+  13. **函数定义必须放在第一次调用之前**：PowerShell 边解析边执行，`Switch-Tab` 定义在第 735 行、
+      第 566 行就调用 → `CommandNotFoundException` 当场终止脚本，**收尾那段"把用户 tools.json 放回来"
+      根本没跑**（2026-10-04 真发生：用户的按钮文件被留在 `.paused-by-gui-test` 状态）。
+      除了把定义提前，还要在脚本开头挂**脚本级 `trap`** 调 `Restore-UserLayer`（复原设置 / 用户
+      `tools.json` / 杀掉 `$script:Procs` 里自己拉起来的界面进程）**只杀自己起的进程**。
+  14. **改 `settings.ini` 之前必须先关掉那个正在跑的窗口**：窗口关闭时会把**当前停留的页签**写回
+      `LastTab`，先写设置再关窗口 = 被覆盖 → 下一个实例开在别的页签上，后面一组检查全假红
+      （深色组 G03/G05 就是这么红的）。顺序：**先关窗口 → 再写设置 → 再 Start-Gui**。
+  15. **改完清单要"严格"校验 JSON**：`Json.cs` 严格解析，多一个逗号整份清单被丢掉（105 → 73），
+      而 PS 7 的 `ConvertFrom-Json` 对尾随逗号很宽容、验不出来。用
+      `[System.Text.Json.JsonDocument]::Parse(...)` 或直接 `Mxx1Toolbox.exe list --tab <页签>` 数一遍。
+  16. **H 组注入长名字按钮时，要把原来的占位按钮一起留着**：`$commonNames` 是带着占位按钮读出来的，
+      换掉它会让 H05 数按钮数少一个而假红。
 - **别在 PowerShell 里按像素调函数**：一个 `Get-Pixel` 每像素调一次，几万次调用要几分钟，
   看起来像卡死（踩过一次）。要么 `LockBits` 取一次 `byte[]` 再纯数组循环（`Get-InkRows` 的写法），
   要么用 csc 编个临时小工具（`local\InkDiag.cs` 那种）。
@@ -280,7 +335,7 @@ powershell -File tools\Make-Icons.ps1         # 重生成 PNG 图标（先 build
 ## 待办 / 别自己替他决定
 
 1. **Git：本地仓库已经建好**；**GitHub 远程仓库还没建**，推送必须先问用户
-   （用户原话："先只留本地仓库"）。
+   （用户原话："推送的时候不要每次都推送，太卡了要问过我才行"）。
 2. **外部工具目录 `bin-tools\`**：用户 2026-10-04 选了这个方案并定了名字，**已经实现**（见 `docs\DESIGN.md` §13）。
    还没做的只有两层：② 把 `bin-tools\` 里的 exe 内嵌进 exe、首次点击释放到固定目录当兜底；
    ③ 扫 `bin-tools\<工具>\tool.json` 自动长出按钮。**这两层等用户说要再做，别自己开工。**

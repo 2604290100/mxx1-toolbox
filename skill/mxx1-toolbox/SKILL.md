@@ -17,7 +17,7 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
 
 ## 当前状态（2026-10-04，v1.2.0）
 
-- ✅ **测试 95 项全绿**：命令行回归 35 + 界面回归 60（外加编码体检 98 个文件）。
+- ✅ **测试 99 项全绿**：命令行回归 35 + 界面回归 64（外加编码体检 98 个文件）。
   产物 `bin\Mxx1Toolbox.exe`（约 136 KB 单文件），五个 `tools.*.json` + 53 个 `icons.*.png` 已内嵌。
 - ✅ **53 个按钮 = 35 个真功能 + 18 个灰色占位**：`常用设置` 31（13 真 / 18 灰）/
   `右键增强` **1**（真）/ `清理优化` **8**（全真）/ `系统工具` **12**（全真）/
@@ -67,7 +67,7 @@ D:\萌新工具开发\toolbox\
   assets\icons\*.png               53 个图标（编译时内嵌成 icons.<id>.png）
   tests\Test-All.ps1               一条命令跑完全部
   tests\Test-Cli.ps1               命令行回归 35 项
-  tests\Test-Gui.ps1               界面回归 60 项（要交互式桌面，无桌面返回 3 = 跳过）
+  tests\Test-Gui.ps1               界面回归 64 项（要交互式桌面，无桌面返回 3 = 跳过）
   docs\DESIGN.md                   设计正本（含"踩过的坑"清单 + §13 打包方案）
   docs\gui-shot.png / dark-shot.png / system-shot.png  界面截图
 ```
@@ -228,6 +228,16 @@ powershell -File tools\Make-Icons.ps1         # 重生成 PNG 图标（先 build
      所以 `$x.Count -gt 0` 恒为 False —— 调用处再包一层 `@(f ...)`；
   10. **界面回归不能依赖用户的 `settings.ini`**：一开头先写一份已知设置（浅色 / 单击 / 二次确认开 /
       日志面板关），跑完在"现场复原"里按原样写回。用户开着日志面板时 B08 会假红（踩过一次）。
+  11. **跨进程往输入框填字要用 `WM_SETTEXT`，而且 `DllImport` 必须写 `ExactSpelling = true`**：
+      `CharSet = CharSet.Unicode` 会把 `W` 追加到**入口点**上（不只是方法名），写法不对就抛
+      `EntryPointNotFoundException`。填完**一定要回读**（`[TBGui]::Text`）再往下走 ——
+      填不进去就点不动「创建按钮」，**模态窗口一直开着会把主窗口压成禁用**，后面每一组检查全部连带失败，
+      看着像"测试卡死"（2026-10-04 真卡了一次）。
+      开过模态窗口的测试，**每条分支出口都要关掉它**：`Close-StrayDialogs` 收尾 + C16 专门盯残留。
+  12. **测试对用户真实数据是"临时占用"**：为了数按钮数会把用户的 `tools.json` 改名成 `.paused-by-*`。
+      中途被 Ctrl+C / 卡死，这个"放回来"就永远不执行 → 用户看到"我建的按钮没了"。
+      所以**开工先自愈**（发现 `.paused-by-*` 在而正式文件不在，先搬回去），
+      `settings.ini` 另留一份 `.before-test` 备份，收尾成功才删。
 - **别在 PowerShell 里按像素调函数**：一个 `Get-Pixel` 每像素调一次，几万次调用要几分钟，
   看起来像卡死（踩过一次）。要么 `LockBits` 取一次 `byte[]` 再纯数组循环（`Get-InkRows` 的写法），
   要么用 csc 编个临时小工具（`local\InkDiag.cs` 那种）。

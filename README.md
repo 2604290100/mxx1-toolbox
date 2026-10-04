@@ -104,7 +104,7 @@ bin\Mxx1Toolbox.exe help
 powershell -File tools\Test-Encoding.ps1     # 编码红线体检（BOM / 纯 ASCII / 硬编码本机路径）
 powershell -File tests\Test-All.ps1          # 全部（无桌面时加 -SkipGui）
 powershell -File tests\Test-Cli.ps1          # 命令行回归 35 项
-powershell -File tests\Test-Gui.ps1          # 界面回归 60 项（要交互式桌面，无桌面返回 3 = 跳过）
+powershell -File tests\Test-Gui.ps1          # 界面回归 64 项（要交互式桌面，无桌面返回 3 = 跳过）
 powershell -File tools\Make-Screenshots.ps1  # 重新拍 docs 里的截图（浅色 / 深色 / 系统工具页签）
 powershell -File tools\Make-Icons.ps1        # 重新生成 16x16 PNG 图标（先 build 再跑，改完还要再 build）
 ```

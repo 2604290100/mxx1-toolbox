@@ -82,6 +82,11 @@ namespace Mxx1Toolbox
             l.Add("current=" + Current);
             l.Add("latest=" + Latest);
             l.Add("url=" + Url);
+            // 真去请求的是哪个地址也报出来：默认值是 GitHub 的接口（api.github.com/repos/…），
+            // 被 MXX1_UPDATE_URL / MXX1_UPDATE_TAGS_URL 覆盖时这里跟着变。
+            // 排障时把它贴进浏览器就能看出是接口写错了还是网络不通（2026-10-05 就是这么发现
+            // 「接口被写成了网页地址 → 406」的）。
+            l.Add("api=" + UpdateCheck.ReleasesApiUrl);
             l.Add("detail=" + Detail);
             return l.ToArray();
         }
@@ -101,9 +106,39 @@ namespace Mxx1Toolbox
     internal static class UpdateCheck
     {
         internal const string RepoUrl = AboutForm.RepoUrl;
-        internal const string ReleasesApi = AboutForm.RepoUrl + "/releases/latest";
-        internal const string TagsApi = AboutForm.RepoUrl + "/tags";
-        internal const string ReleasesPage = AboutForm.RepoUrl + "/releases";
+
+        /// <summary>接口根：`https://github.com/&lt;账号&gt;/&lt;仓库&gt;` → `https://api.github.com/repos/&lt;账号&gt;/&lt;仓库&gt;`。
+        ///
+        /// **2026-10-05 修**：原来这里直接把**网页地址**后面接上 `/releases/latest` 当接口用了
+        /// （`https://github.com/…/releases/latest` 是个 HTML 页面）。GitHub 对页面请求里那个
+        /// `Accept: application/vnd.github+json` 直接回 **406 Not Acceptable**，于是真实环境下的
+        /// 更新检查一直是「检查失败：http-406」—— 而测试全程用 `MXX1_UPDATE_URL` 指到本机假接口，
+        /// 正好绕开了这个默认值，所以两套测试都是绿的。现在从仓库地址现推接口根，两处不会再跑偏。</summary>
+        private static readonly string ApiBase = MakeApiBase();
+
+        private static string MakeApiBase()
+        {
+            try
+            {
+                Uri u = new Uri(RepoUrl);
+                string path = u.AbsolutePath.TrimEnd('/');
+                if (path.Length == 0) { return ""; }
+                return "https://api.github.com/repos" + path;
+            }
+            catch (Exception) { return ""; }
+        }
+
+        internal static string ReleasesApi
+        {
+            get { return ApiBase.Length > 0 ? ApiBase + "/releases/latest" : RepoUrl; }
+        }
+
+        internal static string TagsApi
+        {
+            get { return ApiBase.Length > 0 ? ApiBase + "/tags" : RepoUrl; }
+        }
+
+        internal const string ReleasesPage = RepoUrl + "/releases";
 
         private static readonly object Gate = new object();
         private static UpdateResult _last = new UpdateResult();

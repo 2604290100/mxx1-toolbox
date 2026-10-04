@@ -18,7 +18,7 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
 
 ## 当前状态（2026-10-05，v1.5.3）
 
-- ✅ **测试 326 项全绿**：命令行回归 **186**（A03b–A03d/D01 盯兼容、R 组 14 项盯 **bin-tools 自动按钮**、
+- ✅ **测试 327 项全绿**（本机 326 通过 + 1 跳过）：命令行回归 **187**（A03b–A03d/D01 盯兼容、R 组 14 项盯 **bin-tools 自动按钮**、
   S 组 26 项盯**条款确认门 + 更新检查**、M 组盯「右键增强」、A14–A17 盯 **exe 自己的图标**）
   + 界面回归 **140**（I 组 25 项把**条款确认窗口**真开起来点一遍、N 组 19 项盯「解除文件占用」小窗口）
   （外加编码体检 181 个文件、内联脚本与清单体检 34 个脚本 / 7 个清单）。
@@ -36,6 +36,14 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
   ③ **Win7 / Win10 / Win11 兼容**（用户：「兼容只需要考虑 win7 win10 win11 就行了」）；
   ④ **建 GitHub 仓库并推送**（用户：「你做好以后就上传仓库吧，没有建仓库那就建一个」）。
   细节见下面各节，设计正本 `docs\DESIGN.md` §13.7 / §16 / §17。
+- ⚠️ **发布当天抓到的真 bug：更新检查的接口地址被写成了网页地址**（`2604290100/mxx1-toolbox`）。
+  原来 `UpdateCheck.ReleasesApi/TagsApi` 是拿 `AboutForm.RepoUrl` 拼的 →
+  `https://github.com/<账号>/<仓库>/releases/latest` 是 **HTML 页面**，请求里带着
+  `Accept: application/vnd.github+json` 时 GitHub 回 **406**，用户那边永远「检查失败：http-406」。
+  现在从仓库地址现推接口根（`MakeApiBase()` → `https://api.github.com/repos/<账号>/<仓库>`）。
+  **为什么两套测试都没抓到**：S 组全程用 `MXX1_UPDATE_URL` 指到本机假接口，绕开了默认值 ——
+  补了 **S01b**（只看 `checkupdate` 打印的 `api=` 那一行，**不联网也能跑**）。
+  **教训：凡是"默认值只在真实环境生效"的东西，必须有一条不依赖外部服务的断言盯着它。**
 - ⚠️ **v1.5.2 收尾修的三件事**（用户当天第三轮反馈）：① **编出来的 exe 没有图标** ——
   `build.ps1` 里 `/win32icon:assets\app.ico` 要的文件**从来不存在**（那行等于没写），
   现在有了 `assets\app.ico`（`tools\Make-AppIcon.ps1` 生成，八尺寸）+ `src\AppIcon.cs`
@@ -154,7 +162,7 @@ D:\萌新工具开发\toolbox\
   assets\app.ico                   程序图标（`/win32icon` 用的就是它）
   tests\Test-All.ps1               一条命令跑完全部
   tools\Test-InlineSyntax.ps1      内联脚本语法 + 清单 JSON 体检（34 个脚本 / 7 个清单）
-  tests\Test-Cli.ps1               命令行回归 186 项（A03b–A03d/D01 盯兼容、A14–A17 盯 exe 图标、
+  tests\Test-Cli.ps1               命令行回归 187 项（A03b–A03d/D01 盯兼容、A14–A17 盯 exe 图标、
                                    L 组 12 项盯 sysreg、J09–J11 盯卸载窗口的列表、M 组盯右键增强、
                                    R 组 14 项盯 bin-tools 自动按钮、S 组 26 项盯条款门 + 更新检查；
                                    环境不满足的项走 Skip()，打印 [SKIP] 不算失败）

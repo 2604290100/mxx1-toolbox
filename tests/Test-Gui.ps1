@@ -2043,6 +2043,21 @@ Write-Host 'I 组：首次运行的使用条款确认门 · 更新检查 · 免�
 # 这一组盯界面这一半：确认门（默认不勾选、不同意就退出、同意后写指纹）、底栏更新提示、条款窗口。
 # 注意 Start-Gui 拉起来的是**新进程**，环境变量继承本脚本（MXX1_NO_UPDATE=1 已在开头设好）。
 
+# 先把**自己起过**的界面进程收干净，再 reset 条款状态：任何一个还在退出的旧实例都会在关闭时把
+# settings.ini 连同"已同意"的指纹写回去，于是新实例读到 agreed、不弹确认框 —— I02–I10 会整组假红。
+# （2026-10-05 真踩过：前面 H 组那个实例退出得慢，正好盖掉了这一次 reset。用户自己开着工具箱时同理。）
+foreach ($p in $script:Procs) {
+    try {
+        if ($p -and -not $p.HasExited) {
+            [void]$p.CloseMainWindow()
+            [void]$p.WaitForExit(5000)
+            $p.Refresh()
+            if (-not $p.HasExited) { $p.Kill(); [void]$p.WaitForExit(3000) }
+        }
+    } catch { }
+}
+Start-Sleep -Milliseconds 500
+
 $null = Invoke-Exe 'consent --reset'
 $cI = Invoke-Exe 'consent'
 Check 'I01 --reset 之后条款状态是"需要确认"' ($cI -match '(?m)^consent=required') ''
@@ -2054,7 +2069,16 @@ for ($i = 0; $i -lt 60; $i++) {
     $winI = Find-TopWindow -ProcessId $procI.Id -TextPrefix '使用条款确认'
     if ($winI) { break }
 }
-Check 'I02 没同意过时打开界面会弹《使用条款确认》' ($null -ne $winI) $(if ($winI) { $winI.Text } else { '没出现' })
+$i02Why = '没出现'
+if (-not $winI) {
+    # 没弹出来时把现场写进失败说明：多半是**另一个实例**（用户开着的那个 / 上一个测试实例还没退完）
+    # 在 reset 之后又把 settings.ini 写成了"已同意"，或者它抢在前面把条款确认点掉了。
+    $again = [string](Invoke-Exe 'consent')
+    $stateLine = (@(($again -split "`r?`n") | Where-Object { $_ -match '^consent=' }) -join ' ')
+    $others = @(Get-Process Mxx1Toolbox -ErrorAction SilentlyContinue | Where-Object { $_.Id -ne $procI.Id }).Count
+    $i02Why = '没出现（当前 ' + $stateLine + '，另有 ' + $others + ' 个工具箱实例在跑）'
+}
+Check 'I02 没同意过时打开界面会弹《使用条款确认》' ($null -ne $winI) $(if ($winI) { $winI.Text } else { $i02Why })
 
 if ($winI) {
     $ic = @(Get-ChildControls -RootHandle $winI.H)

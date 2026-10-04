@@ -1434,6 +1434,15 @@ exe 是 **anycpu**：64 位系统按 64 位跑，32 位系统按 32 位跑（所
 假接口，全程不碰外网**）；`CheckAsync` 把等待期间的界面动作排在回调**之后**执行
 （这个顺序 bug 就是"关于窗口永远停在正在检查…"的原因）。
 
+**接口地址必须现推，不能拿网页地址拼**（2026-10-05 发布当天发现的真 bug）：
+`https://github.com/<账号>/<仓库>/releases/latest` 是 HTML 页面，请求里带着
+`Accept: application/vnd.github+json` 时 GitHub 回 **406**，于是用户那边永远是"检查失败：http-406"。
+正确做法是从 `AboutForm.RepoUrl` 现推接口根：`https://github.com/A/B` →
+`https://api.github.com/repos/A/B`（`UpdateCheck.MakeApiBase()`）。
+**为什么两套测试没抓到**：S 组全程拿 `MXX1_UPDATE_URL` 指到本机假接口，绕开了默认值 ——
+所以补了 **S01b**：只看 `checkupdate` 打出来的 `api=` 那一行（要求 `https://api.github.com/repos/…`），
+**不联网也能跑**。输出里那一行 `api=` 是故意留的：排障时贴进浏览器就能分清"接口写错了"和"网络不通"。
+
 ### 17.2 免责声明与服务条款
 
 - **正本只有一份**：`docs\DISCLAIMER.md`，`build.ps1` 用 `/resource:...,Disclaimer.md` 内嵌进 exe

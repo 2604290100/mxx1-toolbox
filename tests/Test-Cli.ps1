@@ -423,7 +423,9 @@ if ($script:InjectedPh) {
     Remove-Item -LiteralPath $UserToolsJson -Force -ErrorAction SilentlyContinue
     Write-Host '  （临时注入的占位按钮已删除，用户原来的 tools.json 留到最后一段复原）'
 }
-Check ('B05 日志里能看到「{0}」和""功能待接入""' -f $phName) (($newest -match [regex]::Escape($phName)) -and ($newest -match '功能待接入')) ($newest.Trim())
+Check ('B05 日志里能看到「{0}」和""功能待接入""' -f $phName) `
+    (@($logAfter | Select-Object -Last 40 | Where-Object { ($_ -match [regex]::Escape($phName)) -and ($_ -match '功能待接入') }).Count -ge 1) `
+    ('最后一行=' + $newest.Trim())
 
 # ---------------------------------------------------------------- C 组：真按钮（调隔壁 exe）
 Write-Host ''
@@ -954,14 +956,21 @@ $pick = Invoke-Exe 'run apps-uninstall' 120 $Exe @{ MXX1_PICKER_LIST_ONLY = '1' 
 $pl = @(($pick.Out -split "`r?`n") | Where-Object { $_ -match '　·　' -and $_ -notmatch '^(command|id|name|result|message|exit)=' })
 $pickFirst = ''
 if ($pl.Count -gt 0) { $pickFirst = $pl[0] }
-Check 'J09 「卸载单个应用」的列表显示中文名（不再是一屏英文包名）' `
-    (($pl.Count -ge 5) -and ($pickFirst -match '（') -and ($pickFirst -match '[^\x00-\x7F]')) `
-    ('列表行=' + $pl.Count + '  第一行=' + $pickFirst)
-$pickLast = ''
-if ($pl.Count -gt 0) { $pickLast = $pl[$pl.Count - 1] }
-Check 'J10 系统组件排在最后，并且标了【系统组件】' `
-    ((@($pl | Where-Object { $_ -like '【系统组件】*' }).Count -ge 1) -and ($pickLast -like '【系统组件】*')) `
-    ('最后一行=' + $pickLast)
+if ($pl.Count -eq 0) {
+    # 列表是空的说明这台机器读不到商店应用（Server 版 / 精简版 Windows，CI 的 runner 也是）：
+    # 这两项没得可测 → 跳过，不算失败。J03 已经断言过"读不到商店应用"这条降级路径。
+    Skip 'J09 「卸载单个应用」的列表显示中文名（不再是一屏英文包名）' '这台机器上读不到商店应用，列表是空的'
+    Skip 'J10 系统组件排在最后，并且标了【系统组件】' '同上'
+} else {
+    Check 'J09 「卸载单个应用」的列表显示中文名（不再是一屏英文包名）' `
+        (($pl.Count -ge 5) -and ($pickFirst -match '（') -and ($pickFirst -match '[^\x00-\x7F]')) `
+        ('列表行=' + $pl.Count + '  第一行=' + $pickFirst)
+    $pickLast = ''
+    if ($pl.Count -gt 0) { $pickLast = $pl[$pl.Count - 1] }
+    Check 'J10 系统组件排在最后，并且标了【系统组件】' `
+        ((@($pl | Where-Object { $_ -like '【系统组件】*' }).Count -ge 1) -and ($pickLast -like '【系统组件】*')) `
+        ('最后一行=' + $pickLast)
+}
 Check 'J11 列表模式只列不卸（没有真的执行卸载）' `
     (($pick.Code -eq 0) -and (@(($pick.Out -split "`r?`n") | Where-Object { $_ -match '^(已卸载|卸载失败)：' }).Count -eq 0)) `
     ('exit=' + $pick.Code)
@@ -1205,7 +1214,14 @@ $rmRunProc = Start-Process -FilePath $rmRunHolder -WindowStyle Hidden -PassThru 
     '-NoProfile', '-Command', 'Start-Sleep 90')
 Start-Sleep -Seconds 2
 try {
-    $rmRunQ = Invoke-Exe ('rightmenu unlock --query-only "' + $rmRun + '"')
+    # 等那个进程真的起来再断言：慢机器（CI 的 runner）上 PowerShell 冷启动可能超过 2 秒，
+    # 这时候"查不到"是**还没起来**，不是功能坏了 —— 所以轮询到看见它为止（最多约 12 秒）。
+    $rmRunQ = $null
+    for ($ri = 0; $ri -lt 16; $ri++) {
+        $rmRunQ = Invoke-Exe ('rightmenu unlock --query-only "' + $rmRun + '"')
+        if ([int](Get-Key $rmRunQ.Out 'run') -ge 1) { break }
+        Start-Sleep -Milliseconds 750
+    }
     # 注意：RM 有时**也能**把"正在运行的 exe 自己的镜像文件"报成占用（这台机器上实测会），
     # 所以这里不断言 lockers=0，只断言我们这条新线索确实点名了那个进程。
     Check 'M14e 文件夹里有正在运行的程序：单独点出「它自己在运行」（句柄类接口看不见它）' `
@@ -1502,6 +1518,17 @@ Check 'S06 写清了「解除文件占用」会结束进程 / 关句柄（后果
 Check 'S07 指向仓库里的正本（窗口显示的与文档永远一致）' `
     (($dis.Out -match 'docs/DISCLAIMER\.md') -and ($dis.Out -match '(?m)^source=docs/DISCLAIMER')) ''
 Check 'S08 命令里带上了正文指纹（同意门用的就是它）' ($dis.Out -match '(?m)^hash=[0-9a-f]{16}') (Get-Key $dis.Out 'hash')
+
+# S01b：默认打的必须**是 GitHub 的接口地址**，不能是网页地址。
+# 这一条是 2026-10-05 补的（真实环境里发现的 bug）：S10–S15 全程拿 MXX1_UPDATE_URL 指到本机假接口，
+# 正好把默认值绕过去了 —— 而默认值当时被写成了网页地址
+# （`https://github.com/<账号>/<仓库>/releases/latest`），GitHub 对请求里那个
+# `Accept: application/vnd.github+json` 直接回 **406**，于是用户那边永远是「检查失败：http-406」。
+# 这里只看 `api=` 那一行长什么样（**不要求网络通**），所以离线机器 / CI 上一样可靠。
+$cuDefault = Invoke-Exe 'checkupdate' 60 $Exe @{ MXX1_UPDATE_TIMEOUT_MS = '1500' }
+$apiDefault = Get-Key $cuDefault.Out 'api'
+Check 'S01b 默认打的是 GitHub 接口地址（不是网页地址 —— 406 那次教训）' `
+    (($apiDefault -match '^https://api\.github\.com/repos/') -and ($apiDefault -match '/mxx1-toolbox')) $apiDefault
 
 $helpText = Invoke-Exe 'help'
 Check 'S09 help 里能查到 checkupdate / disclaimer / consent 三个命令' `

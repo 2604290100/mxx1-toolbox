@@ -38,6 +38,14 @@ function Get-Shape {
     $key = ($Id + ' ' + $Name).ToLowerInvariant()
     # 顺序有意义：先匹配更具体的词
     $map = @(
+        # 「右键增强」页签那 7 个按钮（v1.5.0）：装上 = 加号、撤掉 = 减号、
+        # 解除占用 = 钥匙（解锁）、常用功能 = 清单、重建 = 刷新、说明 = 文档
+        @('rightmenu.unlock.on',  'key'),
+        @('rightmenu.unlock.off', 'minus'),
+        @('rightmenu.common.on',  'list'),
+        @('rightmenu.common.off', 'minus'),
+        @('rightmenu.rebuild',    'refresh'),
+        @('rightmenu.help',       'doc'),
         @('update-cache',   'trash'),
         @('sfc',            'wrench'),
         @('dism',           'wrench'),

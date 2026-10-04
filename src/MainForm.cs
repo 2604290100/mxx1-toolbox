@@ -38,6 +38,10 @@ namespace Mxx1Toolbox
 
         private readonly Settings _settings;
         private Theme _theme;
+
+        /// <summary>`ui log` / `ui settings`：右键「常用功能」子菜单里那几个固定入口用 —— 打开界面之后
+        /// 替用户点一下那个界面动作（否则从资源管理器点出来会"什么都不发生"）。</summary>
+        public static string StartupAction = "";
         private List<ToolItem> _tools = new List<ToolItem>();
         private readonly List<string> _warnings = new List<string>();
         private readonly ToolTip _tips = new ToolTip();
@@ -796,6 +800,26 @@ namespace Mxx1Toolbox
                 Location = new Point(_settings.WindowX, _settings.WindowY);
             }
             FitToContent();
+            if (StartupAction.Length > 0)
+            {
+                string action = StartupAction;
+                StartupAction = "";   // 只执行一次
+                BeginInvoke((MethodInvoker)delegate { RunStartupAction(action); });
+            }
+        }
+
+        /// <summary>`ui &lt;动作&gt;` 进来的：窗口已经显示出来了，再做那件事
+        /// （右键「常用功能」子菜单里的「运行日志」「设置」就是这条路）。</summary>
+        private void RunStartupAction(string action)
+        {
+            if (action == "log") { OpenToolboxLog(); }
+            else if (action == "settings") { OpenSettings(); }
+            else if (action == "about") { OpenAbout(); }
+            else
+            {
+                SetStatus("不认识的界面动作：" + action);
+                Logger.Write("启动", "不认识的界面动作：" + action);
+            }
         }
 
         /// <summary>上次的位置还在屏幕里吗（换显示器、拔掉外接屏之后，记下来的坐标可能已经在屏幕外）。</summary>
@@ -1296,6 +1320,9 @@ namespace Mxx1Toolbox
             }
             // 「常用」页的「最近使用」：点过的按钮自动排到最前面（写进 recent.txt）
             UserTools.PushRecent(t.Id);
+            // 装了右键「常用功能」子菜单的话，它列的就是这一份最近使用 —— 跟着重建一次
+            // （没装就什么都不做，不许因为用户点了个按钮就悄悄改注册表）。
+            RightMenu.SyncIfInstalled();
             SetStatus(t.Name + " · 正在运行…");
             UpdateStatusBar();
             Logger.Write(t.Name, "开始：" + Launcher.DescribeCommand(t, _settings, asAdmin));
@@ -1615,6 +1642,7 @@ namespace Mxx1Toolbox
                 return;
             }
             Logger.Write(b.Tool.Name, byFile ? "已取消置顶（命令行/右键）" : "已置顶：排在这一页最前面");
+            RightMenu.SyncIfInstalled();   // 置顶的按钮就是右键「常用功能」里最上面那一段
             ReloadAfterUserEdit(b.Tool.Tab);
             SetStatus("「" + b.Tool.Name + "」" + (byFile ? "已取消置顶" : "已置顶：以后排在这一页最前面"));
         }

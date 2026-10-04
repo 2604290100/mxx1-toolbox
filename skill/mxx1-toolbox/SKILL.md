@@ -8,21 +8,22 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
 **主界面 = 多行多列的小按钮墙**，点一下按钮就启动一个已经做好的程序 / 脚本 / 功能。
 加按钮只是往 `tools\*.json` 丢配置，**不需要重新编译主程序**。
 
-- 程序名 **萌新工具箱**，标题栏 `萌新工具箱 v1.4.0`；署名 `mxx1` / `mxx1.cn`；GPL-3.0-or-later
+- 程序名 **萌新工具箱**，标题栏 `萌新工具箱 v1.5.0`；署名 `mxx1` / `mxx1.cn`；GPL-3.0-or-later
 - 工程目录 **`D:\萌新工具开发\toolbox\`**，与隔壁 `permanent-delete-menu` **互不修改**（只调它的 exe）
 - 外观参考：`C:\Users\Administrator\Pictures\Snipaste_2026-10-04_10-29-34.png`（那种紧凑按钮墙）
 
 > **接手 / 新会话先做两件事**：读 `docs\DESIGN.md`（外观与行为的**唯一正本**）和本文件。
 > 设计一改先改 `DESIGN.md`，再同步本 skill —— 两份分叉就会出现"两套行为"。
 
-## 当前状态（2026-10-04，v1.4.0）
+## 当前状态（2026-10-04，v1.5.0）
 
-- ✅ **测试 191 项全绿**：命令行回归 99 + 界面回归 92（外加编码体检 158 个文件、内联脚本与清单体检
-  34 个脚本 / 7 个清单）。产物 `bin\Mxx1Toolbox.exe`（约 260 KB 单文件），
-  七个 `tools.*.json` + 105 个 `icons.*.png` 已内嵌。
-- ✅ **八个页签、105 个内置按钮，全部是真功能，灰色占位一个不剩**：`常用`（置顶 + 最近使用，
+- ✅ **测试 219 项全绿**：命令行回归 **122**（新增 M 组 23 项盯「右键增强」）+ 界面回归 **97**
+  （新增 N 组 5 项盯「解除文件占用」那个小窗口）（外加编码体检 169 个文件、内联脚本与清单体检
+  34 个脚本 / 7 个清单）。产物 `bin\Mxx1Toolbox.exe`（约 300 KB 单文件），
+  七个 `tools.*.json` + 112 个 `icons.*.png` 已内嵌。
+- ✅ **八个页签、112 个内置按钮，全部是真功能，灰色占位一个不剩**：`常用`（置顶 + 最近使用**最多 30 个**，
   算出来的）/ `常用设置` 33 / `系统工具` 26 / `隐私设置` 29（11 组成对开关 + 4 个权限入口 +
-  状态/优化/还原）/ `应用管理` 5 / `清理优化` 8 / `右键增强` 1 / `我的工具` 3（新建 / 导出 / 导入，真）。
+  状态/优化/还原）/ `应用管理` 5 / `清理优化` 8 / `右键增强` 8 / `我的工具` 3（新建 / 导出 / 导入，真）。
   灰色规则本身还在（用户自己写 `placeholder:true` 会灰掉、点不动）：两套测试会**临时往用户层
   注入一个占位按钮**来盯住它，跑完必删。
 - ✅ **灰色 = 功能还没接入 = 禁止点击**（用户 2026-10-04 改的规则）：2 个占位按钮 `Enabled=false`、
@@ -49,9 +50,9 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
   **凡是"打开某个官方界面"的按钮，一律先探测再打开，探测不到就说明原因**
   （探测用 `Test-Path` / `Get-Command` / `Get-AppxPackage` / WMI，别用 `Get-NetAdapter` 当判据）。
   安全类按钮（实时防护 / Defender / SmartScreen / 防火墙 / UAC / 更新）**只打开官方界面，绝不代关系统防线**。
-- ✅ **「右键增强」只剩 1 个按钮「永久删除工具」**：不带参数启动隔壁 `PermanentDeleteSetup.exe`
-  = 开它自己的窗口（安装/卸载/状态/测试/条款/日志/更新都在那里）。原来 8 条定义留在
-  `tools\rightmenu.json` 的 `_disabled` 数组里当注释（加载器只读 `tools`）。
+- ✅ **「右键增强」8 个按钮（v1.5.0）**：前 7 个是工具箱自己在 `HKCU\Software\Classes` 下装的两样东西
+  （「解除文件占用」verb + 「常用功能」级联子菜单）—— 装 / 撤 / 状态 / 重建 / 说明；第 8 个还是
+  「永久删除工具」（不带参数启动隔壁 `PermanentDeleteSetup.exe`，开它自己的窗口）。详见下面那一节。
 - ✅ **本地 Git 仓库已建**（提交都在本地）；⬜ **GitHub 远程还没建**，**推送前必须问用户**。
 - ✅ 按钮图标：103 个 16×16 PNG 由 `tools\Make-Icons.ps1` 生成并内嵌（`icons.<id>.png`；
   用户自建按钮的图标**不**生成，免得把别人机器上的东西提交进仓库），
@@ -68,7 +69,8 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
 D:\萌新工具开发\toolbox\
   build.ps1                        一键编译（系统自带 csc.exe，不需要 .NET SDK）
   bin\Mxx1Toolbox.exe              交付物：单文件 GUI+CLI（不入仓）
-  src\Program.cs                   CLI 入口（list / run [--dry] / draft / status / checkupdate / help）
+  src\Program.cs                   CLI 入口（list / run [--dry|--confirm] / draft / status / tip / privacy /
+                                   sysreg / rightmenu / ui / pin / export / import / checkupdate / help）
   src\MainForm.cs                  主窗口：页签 + 四列网格 + 底栏 + 搜索 + 日志面板 + 键盘
   src\ToolButton.cs                紧凑按钮（Flat + 主题配色 + 16×15 图标画布 + 灰色占位 + Flash/SetBusy）
   src\IconFactory.cs               图标：有 PNG 用 PNG，没有就实时画；一律 Normalize 成 16×15；GetMuted 出灰版
@@ -77,6 +79,11 @@ D:\萌新工具开发\toolbox\
                                    `LaunchElevatedCopy`（自己提权再起一遍 = 静默、不弹黑窗口）；UTF-8 输出
   src\RegEngine.cs                 "记原值 → 写入 → 读回核对 → 一键还原"的唯一实现（Privacy 与 SysReg 共用）
   src\SysReg.cs                    6 组系统设置开关（12 个按钮）+ 查看/还原改动 + selftest（TSV 记录）
+  src\RightMenu.cs                 「右键增强」后端：在 HKCU\Software\Classes 下装 / 卸 verb 与级联子菜单、
+                                   写前记原值（rightmenu-installed.tsv）、读 Context Menu Manager Plus 的态度
+  src\FileLock.cs                  「谁占着这个文件」：Restart Manager（rstrtmgr.dll）P/Invoke +
+                                   整批失败逐个重试 + 系统关键进程禁止结束
+  src\UnlockForm.cs                「解除文件占用」的结果窗口（`rightmenu unlock` 起来的独立进程，不开主界面）
   src\ConfirmForm.cs               自家的确认窗口「请确认」（不再用 MessageBox 甩命令，见 §"运行反馈"）
   src\UserTools.cs                 用户层 tools.json 的读写（最小 JSON writer，写入前备份 .bak）
   src\NewToolForm.cs               图形化「新建按钮 / 编辑按钮」窗口（4 种类型）
@@ -87,16 +94,18 @@ D:\萌新工具开发\toolbox\
   src\AboutForm.cs                 署名、站点、仓库、许可证常量的唯一来源
   src\LogForm.cs / OutputForm.cs   程序内日志窗口（最新在最上）/ 命令输出窗口
   src\SettingsForm.cs              设置窗口
-  tools\*.json                     105 个按钮的内置定义（编译时内嵌，资源名 tools.<文件名>）；7 个文件 =
+  tools\*.json                     112 个按钮的内置定义（编译时内嵌，资源名 tools.<文件名>）；7 个文件 =
                                  common / system / privacy / apps / cleanup / rightmenu / mine
   tools\Test-Encoding.ps1          编码红线体检（-Fix 修 BOM）
   tools\Make-Screenshots.ps1       拍 docs\gui-shot.png / dark-shot.png / system-shot.png（PrintWindow）
   tools\Make-Icons.ps1             批量画图标（先从 exe 的 list 读清单，所以**先 build 再跑它**）
-  assets\icons\*.png               105 个图标（编译时内嵌成 icons.<id>.png）
+  assets\icons\*.png               112 个图标（编译时内嵌成 icons.<id>.png）
   tests\Test-All.ps1               一条命令跑完全部
-  tools\Test-InlineSyntax.ps1      内联脚本语法 + 清单 JSON 体检（46 个脚本 / 7 个清单）
-tests\Test-Cli.ps1               命令行回归 99 项（L 组 12 项盯 sysreg、J09–J11 盯卸载窗口的列表）
-  tests\Test-Gui.ps1               界面回归 92 项（要交互式桌面，无桌面返回 3 = 跳过；H 组盯固定尺寸、E04b 盯窗口位置、A09 盯 bin-tools 说明）
+  tools\Test-InlineSyntax.ps1      内联脚本语法 + 清单 JSON 体检（34 个脚本 / 7 个清单）
+  tests\Test-Cli.ps1               命令行回归 122 项（L 组 12 项盯 sysreg、J09–J11 盯卸载窗口的列表、
+                                   M 组 23 项盯右键增强：查占用认出 PID / 隔离根里装卸 / 不碰真实右键菜单）
+  tests\Test-Gui.ps1               界面回归 97 项（要交互式桌面，无桌面返回 3 = 跳过；H 组盯固定尺寸、
+                                   E04b 盯窗口位置、A09 盯 bin-tools 说明、N 组盯解除占用小窗口）
   docs\DESIGN.md                   设计正本（含"踩过的坑"清单 + §13 打包方案）
   docs\gui-shot.png / dark-shot.png / system-shot.png  界面截图
 ```
@@ -120,6 +129,9 @@ powershell -File tools\Make-Icons.ps1         # 重生成 PNG 图标（先 build
 & bin\Mxx1Toolbox.exe tip [id]                # 打印按钮的悬停说明（界面交给 ToolTip 的就是这一串）
 & bin\Mxx1Toolbox.exe privacy status          # 只读列隐私开关状态；selftest 自检「原值→写入→还原」
 & bin\Mxx1Toolbox.exe sysreg  status          # 只读列 6 组系统设置开关的现状；items / selftest 同上
+& bin\Mxx1Toolbox.exe rightmenu status        # 只读列右键菜单里装了什么 / 子菜单几项（**写入口只在界面里点**）
+& bin\Mxx1Toolbox.exe rightmenu unlock --query-only <路径>   # 只查谁占着这个文件，不弹窗也不结束进程
+& bin\Mxx1Toolbox.exe ui log | ui settings    # 打开界面并直接看日志 / 设置（右键子菜单里那两个固定入口）
 & bin\Mxx1Toolbox.exe tip <id>                # 打印按钮的悬停说明（界面交给 ToolTip 的就是这一串）
 & bin\Mxx1Toolbox.exe pin / unpin <id>        # 置顶 / 取消置顶（pinned.txt）
 & bin\Mxx1Toolbox.exe export / import <文件>  # 导出 / 导入「我的工具」
@@ -258,9 +270,61 @@ powershell -File tools\Make-Icons.ps1         # 重生成 PNG 图标（先 build
 - 全是只读查看：**不加 `danger` / `runAsAdmin` / 二次确认**。
 - 想加一个系统工具：在 `SystemTargets` 数组里加一行 + `tools\system.json` 里加一条同 `action` 的按钮。
 
-## 「右键增强」怎么接现成 exe（零改动集成）
+## 「右键增强」怎么点（8 个按钮 = 7 个右键菜单按钮 + 隔壁工具）
 
-只剩一个按钮：**「永久删除工具」`permdel.gui`** = 不带参数启动隔壁 exe = 开它自己的窗口
+**用户 2026-10-04 定的方案**（设计正本 `docs\DESIGN.md` §14）：工具箱自己往 Windows 右键菜单里装两样
+东西 —— **只写 `HKCU\Software\Classes`**，不要管理员、不装 shell 扩展 DLL、不起服务、不加开机启动
+（微软文档写明在这个根下注册子动词不需要提升权限；实测也是真的不用）。四个位置：任意文件 /
+文件夹 / 文件夹里的空白处（= 当前文件夹）/ 桌面空白处。
+
+| 装什么 | 键（都在 HKCU\Software\Classes 下） | 点了做什么 |
+| --- | --- | --- |
+| 解除文件占用 | `*\shell\Mxx1Unlock` 等 4 个 verb | `"<exe>" rightmenu unlock "%1"` → 开一个小窗口列出谁占着它 |
+| 常用功能（级联子菜单） | `*\shell\Mxx1Common` + 共用子项键 `Mxx1Toolbox.Common` | 子项 = 「常用」页的镜像，命令是 `"<exe>" run <id>` |
+
+- **「解除文件占用」**（`src\FileLock.cs`）：用 **Windows 自带的 Restart Manager**（`rstrtmgr.dll`
+  的 `RmStartSession` → `RmRegisterResources` → `RmGetList`）查"谁占着这个文件"，**不装 handle.exe、
+  不要管理员**（实测非管理员也能查出别人的进程）。三个反直觉的坑必须记住：
+  ① **绝不能把目录路径传进去** —— 回 `ERROR_ACCESS_DENIED(5)` 而且**污染整批**（目录 + 锁着的文件
+   一起传，连那个文件也不报了），所以文件夹要自己枚举成文件列表（取第一层，上限 200）；
+  ② **一个坏路径能毁掉整批**（非法字符、`kernel32.dll` 这种已知 DLL → 可能回 0 结果 +
+   `ERROR_INVALID_HANDLE(6)`），所以整批失败要**逐个文件重试**（上限 80）；
+  ③ `strAppName` 是**友好显示名**（`Windows PowerShell` / `Windows 资源管理器`）不是路径，
+  `svchost` 里几个服务会返回**同一个 PID 好几行** → 按 PID 去重。
+- **底线（代码里写死 + M/N 组盯着）**：只结束用户勾选的进程；`explorer.exe` 默认不勾（结束它 = 桌面
+  重启一次）；系统关键进程（System / csrss / winlogon / lsass / services…）**列出来但禁止勾选**；
+  **不做句柄级强杀**（那种内核动作有蓝屏风险）；查不到就如实说查不到并列出可能原因，**不谎报「已解除」**。
+  结果窗口是 `src\UnlockForm.cs`，**独立进程、不开主界面**（`Program.Main` 里 `rightmenu unlock` 走
+  `Application.Run(new UnlockForm(paths))`）。
+- **装 / 卸 / 状态**（`src\RightMenu.cs`）：写之前记原值（`rightmenu-installed.tsv`，和
+  `sysreg-original.tsv` 同一套路）、写完读回核对、撤掉时**只删自己那几个 `Mxx1*` 键** ——
+  同名键不是工具箱写的就跳过并在报告里说明（不覆盖、不删别人的东西）。
+  **命令行只有只读入口**（`rightmenu status|items|help`、`rightmenu unlock --query-only <路径>`），
+  写注册表只在界面里点（和 `sysreg` 同一条规矩）。
+- **子菜单内容会自动跟着变**：点一次按钮（`PushRecent` 之后）、置顶 / 取消置顶、清空最近使用之后
+  都会重建（只在"装了「常用功能」"时才动注册表；没装就空转）；另有「重建常用功能」手动兜底。
+  清单里 `danger: true` 的按钮进菜单时命令带 `--confirm`，点了先弹自家确认框（`run <id> --confirm`）。
+  挑不出东西的按钮（灰色占位 / 界面动作 / 隐藏 / 「右键增强」自己这一页）不进菜单。
+- **测试隔离**：环境变量 `MXX1_RIGHTMENU_ROOT` 把根挪到 `HKCU\Software\mxx1-toolbox\rightmenu-test`。
+  **回归一律用它，绝不把测试项真装到用户的右键菜单上**（M22 断言用户真实的
+  `HKCU\Software\Classes\*\shell` 一个键都没变；M23 断言测试根和原值记录都收拾干净了）。
+- **「最近使用」上限 30**（`UserTools.RecentLimit`，v1.5.0 从 12 改上来）：工具箱「常用」页签那条
+  「最近使用 · N 个（最多 30 个）」跟着变，右键「常用功能」子菜单里的「最近用过」也按这个数。
+- **右键菜单管理器（Context Menu Manager Plus）**：用户提醒过「我电脑装了 Context Menu Manager Plus，
+  你给的叫我审核」。实测（本机 `D:\Context Menu Manager Plus` v1.6.8，带服务 +
+  shell 扩展 `{004B0726-…}`，数据在 `C:\ProgramData\ContextMenuMgr\`）：它靠
+  `backend-protection-settings.json` 里的 **`lockNewContextMenuItems`** 决定新装进去的项要不要走
+  "待审核"（开着就必须去它那里放行才出现在右键里）；它自己的 `context-menu-state.json` 逐项记着
+  `isPendingApproval` / `desiredEnabled` / `onlyWithShift`。所以「右键菜单状态」会主动念出
+  「装了什么版本的菜单管理器 / 它的锁定开关是开是关 / 我们这两项被它标成待审核没有」
+  （`RightMenu.CcmpNote()`，路径用系统文件夹拼，**代码里不写本机绝对路径**）。
+- **还需要人眼确认一次的两件事**（自动化回归验不了，别假装测过）：① 右键菜单里真的出现了这两项
+  （Win11 要先点「显示更多选项」；被菜单管理器藏了要去放行）；② 多选几个文件时命令被调用几次
+  （现在写的是 `MultiSelectModel=Player`）。见 `docs\DESIGN.md` §14.10。
+
+### 第 8 个按钮：隔壁「永久删除工具」（零改动集成）
+
+**「永久删除工具」`permdel.gui`** = 不带参数启动隔壁 exe = 开它自己的窗口
 （安装 / 卸载 / 查看状态 / 测试一下 / 使用条款 / 引擎日志 / 版本与更新 / 关于作者都在那个窗口里）。
 工具箱**不重新实现**任何删除逻辑，也不重复它那套界面。
 
@@ -280,6 +344,10 @@ powershell -File tools\Make-Icons.ps1         # 重生成 PNG 图标（先 build
 - `.cs` / `.ps1` 必须 **UTF-8 带 BOM**（csc 与 PS 5.1 都按 ANSI 解码无 BOM 的文件）；
   `.md` / `.yml` / `.json` **无 BOM**。`build.ps1` 会给 `src\*.cs` / `tests\*.ps1` / `tools\*.ps1` 自动补 BOM，
   并去掉 `tools\*.json` 的 BOM；提交前跑 `tools\Test-Encoding.ps1`（`-Fix` 可修）。
+- **补丁/编辑工具会静默吃掉 BOM，所以"改完先修再跑"是硬顺序**：2026-10-04 给 `tests\Test-Cli.ps1`
+  追加 M 组之后直接跑回归，PowerShell 5.1 按 GBK 读中文 → 满屏 `Unexpected token '}'`，
+  报错位置还全在别的函数上（看着像"我改错了"，其实是编码）。**改完任何 `.cs` / `.ps1`：
+  先 `tools\Test-Encoding.ps1 -Fix` → 再 `build.ps1` → 最后跑测试。**
 - **没有 BOM 的临时脚本 + 中文注释 = PS 5.1 按 GBK 读，注释可能吞掉换行**（本仓库踩过：
   补丁脚本解析报一堆莫名其妙的错）。写一次性脚本要么纯 ASCII 注释，要么用 `pwsh`（7）跑。
 - **C# 里别用 `File` / `Shell` / `Url` 这种方法名**：它们会盖住 `System.IO.File`，
@@ -342,6 +410,11 @@ powershell -File tools\Make-Icons.ps1         # 重生成 PNG 图标（先 build
       工具箱实例时，两个窗口叠在一起、鼠标被上面那个接走 → 假红"没找到说明"（2026-10-04 真踩过）。
       所以测试实例写 `settings.ini` 前会先枚举屏幕上的工具箱窗口，挑一个不相交的角落放自己；悬停重试 3 次；
       失败信息里带 `[TBGui]::WindowAt(x,y)` 与 `Foreground()`，一眼能看出是不是环境问题。
+  18. **按钮增减会连累一批"写死数量"的老断言**：v1.5.0 加 7 个按钮，Test-Cli 里 A04/A07/A09/A10/A11/H02
+      六项全红（都是 105 / 右键 1 这种硬编码），Test-Gui 那边因为名字是 `list` 读出来的反而没事。
+      加按钮时顺手搜一遍 `105` / `右键增强 1` / 页签分布那串数字。
+  19. **悬停说明（`hint`）别超过 110 字**：`ToolTip` 不换行，太长会顶出屏幕（H05 盯着）。
+      长说明写进「右键增强说明」那种窗口里，`hint` 只留一句话。
 - **别在 PowerShell 里按像素调函数**：一个 `Get-Pixel` 每像素调一次，几万次调用要几分钟，
   看起来像卡死（踩过一次）。要么 `LockBits` 取一次 `byte[]` 再纯数组循环（`Get-InkRows` 的写法），
   要么用 csc 编个临时小工具（`local\InkDiag.cs` 那种）。
@@ -355,6 +428,7 @@ powershell -File tools\Make-Icons.ps1         # 重生成 PNG 图标（先 build
 
 1. **Git：本地仓库已经建好**；**GitHub 远程仓库还没建**，推送必须先问用户
    （用户原话："推送的时候不要每次都推送，太卡了要问过我才行"）。
+   v1.5.0（右键增强）是本地的第 6 笔提交，和前面几笔一样**没推送**。
 2. **外部工具目录 `bin-tools\`**：用户 2026-10-04 选了这个方案并定了名字，**已经实现**（见 `docs\DESIGN.md` §13）。
    还没做的只有两层：② 把 `bin-tools\` 里的 exe 内嵌进 exe、首次点击释放到固定目录当兜底；
    ③ 扫 `bin-tools\<工具>\tool.json` 自动长出按钮。**这两层等用户说要再做，别自己开工。**

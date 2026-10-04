@@ -197,8 +197,10 @@ namespace Mxx1Toolbox
         // ---------------------------------------------------------------- 最近用过
 
         /// <summary>最近点过的按钮 id，最新的在最前面（「常用」页签用它）。和 pinned.txt 一样
-        /// 独立成一个文件：每次点按钮都会重写它，塞进 settings.ini 会连主题设置一起赔进去。</summary>
-        public const int RecentLimit = 12;
+        /// 独立成一个文件：每次点按钮都会重写它，塞进 settings.ini 会连主题设置一起赔进去。
+        /// 上限 2026-10-04 用户定成 30（原来是 12）—— 它同时决定右键「常用功能」子菜单里
+        /// 「最近用过」那一段最多列几个（见 docs\DESIGN.md §14.3）。</summary>
+        public const int RecentLimit = 30;
 
         public static string RecentFile { get { return Path.Combine(AppPaths.BaseDir, "recent.txt"); } }
 

@@ -1435,6 +1435,84 @@ try {
     Start-Sleep -Milliseconds 500
 }
 
+# ---------------------------------------------------------------- N 组：右键「解除文件占用」的小窗口
+# 资源管理器右键点「解除文件占用」时，工具箱是以 `rightmenu unlock "<路径>"` 起来的：**只开一个小窗口、
+# 不开主界面**（用户 2026-10-04 定的方案，见 docs\DESIGN.md §14.2）。这一组真起一个那样的进程：
+# 自己锁一个文件 → 看它认不认（认出来 = 窗口里那句"查到 N 个程序"）→ 看排版是不是没重叠 → 关掉。
+# 后端（Restart Manager 认出 PID、文件夹被占用、不谎报）由 Test-Cli 的 M11–M14 盯着。
+Write-Host ''
+Write-Host 'N 组 · 「解除文件占用」的结果窗口（从资源管理器右键调起来的那个独立小窗口）'
+
+$unlockDir = Join-Path $env:TEMP 'mxx1-unlock-gui'
+if (Test-Path -LiteralPath $unlockDir) { Remove-Item -LiteralPath $unlockDir -Recurse -Force }
+New-Item -ItemType Directory -Path $unlockDir | Out-Null
+$unlockFile = Join-Path $unlockDir 'gui-locked.txt'
+Set-Content -LiteralPath $unlockFile -Value 'x' -Encoding UTF8
+$unlockChild = Start-Process powershell.exe -WindowStyle Hidden -PassThru -ArgumentList @(
+    '-NoProfile', '-Command', ("`$fs=[System.IO.File]::Open('" + $unlockFile + "','Open','ReadWrite','None'); Start-Sleep 90"))
+Start-Sleep -Seconds 2
+$unlockProc = $null
+try {
+    $unlockProc = Start-Process -FilePath $Exe -PassThru -ArgumentList @('rightmenu', 'unlock', $unlockFile)
+    [void]$script:Procs.Add($unlockProc)
+    $unlockWin = @()
+    for ($i = 0; $i -lt 40; $i++) {
+        Start-Sleep -Milliseconds 250
+        $unlockWin = @((Get-TopWindows -ProcessId $unlockProc.Id) | Where-Object { $_.Visible -and $_.Text -eq '解除文件占用' })
+        if ($unlockWin.Count -gt 0) { break }
+    }
+    $unlockTitles = @((Get-TopWindows -ProcessId $unlockProc.Id) | Where-Object { $_.Visible } | ForEach-Object { $_.Text })
+    Check 'N01 右键调起来的是「解除文件占用」小窗口（不打开主界面）' `
+        (($unlockWin.Count -eq 1) -and ($unlockTitles.Count -eq 1)) ('窗口=' + ($unlockTitles -join ' / '))
+
+    if ($unlockWin.Count -gt 0) {
+        $uh = $unlockWin[0].H
+        $ukids = @(Get-ChildControls -RootHandle $uh)
+        $ubtns = @($ukids | Where-Object { $_.Class -like '*BUTTON*' } | ForEach-Object { $_.Text })
+        $want = @('结束选中的进程', '重新检查', '复制路径', '关闭')
+        $missBtn = @($want | Where-Object { $ubtns -notcontains $_ })
+        Check 'N02 四个按钮都在（结束选中的进程 / 重新检查 / 复制路径 / 关闭）' `
+            ($missBtn.Count -eq 0) ('缺=' + ($missBtn -join ' ') + ' 实际=' + ($ubtns -join ' '))
+
+        $utexts = @($ukids | Where-Object { $_.Class -like '*STATIC*' } | ForEach-Object { $_.Text })
+        $found = @($utexts | Where-Object { $_ -match '查到 \d+ 个程序正在占用它' })
+        Check 'N03 窗口里念出了「查到 N 个程序正在占用它」（真查到了那个锁）' ($found.Count -eq 1) ($utexts -join ' | ')
+
+        # 排版硬规矩：按钮之间、按钮与文字之间都不许重叠（重叠的标签会吃掉鼠标点击）
+        $rects = @()
+        foreach ($k in $ukids) {
+            if (($k.Class -like '*BUTTON*') -or ($k.Class -like '*STATIC*')) {
+                $r = [TBGui]::Rect($k.H)
+                if ((($r[2] - $r[0]) -gt 0) -and (($r[3] - $r[1]) -gt 0)) { $rects += , @($k, $r) }
+            }
+        }
+        $overlap = @()
+        for ($i = 0; $i -lt $rects.Count; $i++) {
+            for ($j = $i + 1; $j -lt $rects.Count; $j++) {
+                $a = $rects[$i][1]; $b = $rects[$j][1]
+                $ow = [Math]::Min($a[2], $b[2]) - [Math]::Max($a[0], $b[0])
+                $oh = [Math]::Min($a[3], $b[3]) - [Math]::Max($a[1], $b[1])
+                if (($ow -gt 2) -and ($oh -gt 2)) { $overlap += ($rects[$i][0].Text + ' × ' + $rects[$j][0].Text) }
+            }
+        }
+        Check 'N04 按钮和文字互不重叠（这个窗口也守那条硬规矩）' ($overlap.Count -eq 0) ($overlap -join ' ')
+
+        [void][TBGui]::CloseWindow($uh)
+        Start-Sleep -Milliseconds 900
+        $unlockProc.Refresh()
+        Check 'N05 关掉小窗口之后那个进程自己退出了（不留后台进程）' ($unlockProc.HasExited) ''
+    } else {
+        Check 'N02 四个按钮都在（结束选中的进程 / 重新检查 / 复制路径 / 关闭）' $false 'skipped'
+        Check 'N03 窗口里念出了「查到 N 个程序正在占用它」（真查到了那个锁）' $false 'skipped'
+        Check 'N04 按钮和文字互不重叠（这个窗口也守那条硬规矩）' $false 'skipped'
+        Check 'N05 关掉小窗口之后那个进程自己退出了（不留后台进程）' $false 'skipped'
+    }
+} finally {
+    if ($unlockChild -and -not $unlockChild.HasExited) { Stop-Process -Id $unlockChild.Id -Force -ErrorAction SilentlyContinue }
+    if ($unlockProc -and -not $unlockProc.HasExited) { try { $unlockProc.Kill() } catch { } }
+    if (Test-Path -LiteralPath $unlockDir) { Remove-Item -LiteralPath $unlockDir -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
 # ---------------------------------------------------------------- 现场复原
 Restore-UserLayer
 

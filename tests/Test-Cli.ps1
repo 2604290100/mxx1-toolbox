@@ -113,13 +113,13 @@ Write-Host 'A 组 · status 与 list'
 $status = Invoke-Exe 'status'
 Check 'A01 status 退出码 0' ($status.Code -eq 0) ('exit=' + $status.Code)
 Check 'A02 中文输出没有乱码（UTF-8）' ($status.Out -match 'name=萌新工具箱') ('name=' + (Get-Key $status.Out 'name'))
-Check 'A03 版本号 1.4.0' ((Get-Key $status.Out 'version') -eq '1.4.0') (Get-Key $status.Out 'version')
-Check 'A04 按钮总数 105（测试期间用户层的按钮会暂停：常用 33 + 系统工具 26 + 隐私 29 + 应用 5 + 清理 8 + 右键 1 + 我的 3）' ((Get-Key $status.Out 'buttons') -eq '105') (Get-Key $status.Out 'buttons')
+Check 'A03 版本号 1.5.0' ((Get-Key $status.Out 'version') -eq '1.5.0') (Get-Key $status.Out 'version')
+Check 'A04 按钮总数 112（测试期间用户层的按钮会暂停：常用 33 + 系统工具 26 + 隐私 29 + 应用 5 + 清理 8 + 右键 8 + 我的 3）' ((Get-Key $status.Out 'buttons') -eq '112') (Get-Key $status.Out 'buttons')
 Check 'A05 内置清单里没有灰色占位按钮了（两个「资源管理器」也接上了真功能；灰规则改由 B 组注入验证）' ((Get-Key $status.Out 'placeholders') -eq '0') (Get-Key $status.Out 'placeholders')
 Check 'A06 危险按钮 3 个' ((Get-Key $status.Out 'dangerous') -eq '3') (Get-Key $status.Out 'dangerous')
 
 # 「常用」页签是合成的（置顶 + 最近使用），清单里没有它的按钮，所以是 0
-$tabExpect = @{ 'recent' = 0; 'common' = 33; 'mine' = 3; 'system' = 26; 'cleanup' = 8; 'privacy' = 29; 'apps' = 5; 'rightmenu' = 1 }
+$tabExpect = @{ 'recent' = 0; 'common' = 33; 'mine' = 3; 'system' = 26; 'cleanup' = 8; 'privacy' = 29; 'apps' = 5; 'rightmenu' = 8 }
 $tabOk = $true
 $tabDetail = @()
 foreach ($k in $tabExpect.Keys) {
@@ -127,16 +127,16 @@ foreach ($k in $tabExpect.Keys) {
     $tabDetail += ($k + '=' + $v)
     if ($v -ne [string]$tabExpect[$k]) { $tabOk = $false }
 }
-Check 'A07 八个页签的按钮数正确（0/33/3/26/8/29/5/1）' $tabOk ($tabDetail -join ' ')
+Check 'A07 八个页签的按钮数正确（0/33/3/26/8/29/5/8）' $tabOk ($tabDetail -join ' ')
 
 $list = Invoke-Exe 'list'
 Check 'A08 list 退出码 0' ($list.Code -eq 0) ('exit=' + $list.Code)
-Check 'A09 list 报的按钮数一致' ((Get-Key $list.Out 'buttons') -eq '105') (Get-Key $list.Out 'buttons')
+Check 'A09 list 报的按钮数一致' ((Get-Key $list.Out 'buttons') -eq '112') (Get-Key $list.Out 'buttons')
 $lines = @($list.Out -split "`r?`n" | Where-Object { $_ -match "`t" })
-Check 'A10 list 打出 105 行按钮' ($lines.Count -eq 105) ('lines=' + $lines.Count)
+Check 'A10 list 打出 112 行按钮' ($lines.Count -eq 112) ('lines=' + $lines.Count)
 
 $rmList = Invoke-Exe 'list --tab rightmenu'
-Check 'A11 右键增强只有 1 个按钮' ((Get-Key $rmList.Out 'shown') -eq '1') (Get-Key $rmList.Out 'shown')
+Check 'A11 右键增强 8 个按钮（7 个右键菜单 + 隔壁永久删除工具）' ((Get-Key $rmList.Out 'shown') -eq '8') (Get-Key $rmList.Out 'shown')
 Check 'A12 右键增强里的按钮是"真功能"（不带 placeholder 标记）' (-not ($rmList.Out -match 'placeholder')) ''
 Check 'A13 右键增强那个按钮叫「永久删除工具」' ($rmList.Out -match '永久删除工具') (($rmList.Out -split "`r?`n" | Where-Object { $_ -match "`t" }) -join '')
 
@@ -420,7 +420,7 @@ Write-Host 'H 组 · 悬停说明（用户 2026-10-04 报过「鼠标悬停的�
 # tip 命令打印的就是界面塞给 ToolTip 的那个字符串，所以这里能直接断言，不用去动真鼠标。
 $tipsAll = Invoke-Exe 'tip'
 Check 'H01 tip 退出码 0' ($tipsAll.Code -eq 0) ('exit=' + $tipsAll.Code)
-Check 'H02 tip 覆盖了每个按钮（105 个）' ((Get-Key $tipsAll.Out 'tips') -eq '105') (Get-Key $tipsAll.Out 'tips')
+Check 'H02 tip 覆盖了每个按钮（112 个）' ((Get-Key $tipsAll.Out 'tips') -eq '112') (Get-Key $tipsAll.Out 'tips')
 
 $blocks = @{}
 $curId = ''
@@ -717,6 +717,141 @@ $srDry = Invoke-Exe 'run taskbar-never-combine --dry'
 Check 'L12 sysreg 按钮 --dry 解析成注册表动作，说明里点明了可一键还原' `
     (((Get-Key $srDry.Out 'kind') -eq 'registry') -and ((Get-Key $srDry.Out 'target') -match '可一键还原')) `
     ('kind=' + (Get-Key $srDry.Out 'kind') + ' target=' + (Get-Key $srDry.Out 'target'))
+
+# ---------------------------------------------------------------- M 组：右键增强（HKCU 右键菜单）
+# 2026-10-04 用户定的方案（docs\DESIGN.md §14）：把「解除文件占用」和「常用功能」级联子菜单装进
+# Windows 右键菜单，只写 HKCU\Software\Classes（不要管理员、不装 shell 扩展 DLL、不起服务）。
+# 这一组盯五件事：
+#   ① 只读命令能跑（items / status / help），而且状态里念得出装没装、子菜单几项、上限 30；
+#   ② 查占用真能认出占用者（自己锁一个文件，看它认不认那个 PID）—— 用的是 Windows 自带的
+#      Restart Manager，不装 handle.exe；
+#   ③ 装 / 卸的键结构和微软文档那套写法一致，而且**测试用的根是隔离的**；
+#   ④ 命令行没有"直接写注册表"的入口（和 sysreg 同一条规矩）；
+#   ⑤ 全程不碰用户真实的右键菜单，收尾把测试根和"原值记录"都还原。
+Write-Host ''
+Write-Host 'M 组 · 右键增强（装 / 卸 / 状态 / 查占用；写注册表只在界面里点）'
+
+$rmItems = Invoke-Exe 'rightmenu items'
+Check 'M01 rightmenu items 退出码 0（只读）' ($rmItems.Code -eq 0) ('exit=' + $rmItems.Code)
+$rmLoc = @($rmItems.Out -split "`r?`n" | Where-Object { $_ -match "`t" })
+Check 'M02 装 4 个位置（任意文件 / 文件夹 / 文件夹里的空白处 / 桌面空白处）' ($rmLoc.Count -eq 4) ('数=' + $rmLoc.Count)
+Check 'M03 两项的名字对得上（解除文件占用 / 常用功能）' `
+    (($rmItems.Out.IndexOf('解除文件占用') -ge 0) -and ($rmItems.Out.IndexOf('常用功能') -ge 0)) ''
+
+$rmList = Invoke-Exe 'list --tab rightmenu'
+$rmBtns = @($rmList.Out -split "`r?`n" | Where-Object { $_ -match '^rightmenu\.' })
+Check 'M04 「右键增强」页签新增 7 个按钮（加上隔壁永久删除工具 = 8 个）' ($rmBtns.Count -eq 7) ('新按钮=' + $rmBtns.Count)
+$rmOnOff = @($rmBtns | Where-Object { $_ -match 'rightmenu/(unlock|common)\.(on|off)' })
+Check 'M05 装 / 撤是成对的（解除占用一对 + 常用功能一对）' ($rmOnOff.Count -eq 4) ('数=' + $rmOnOff.Count)
+
+$rmStatus = Invoke-Exe 'rightmenu status'
+Check 'M06 rightmenu status 退出码 0（只读）' ($rmStatus.Code -eq 0) ('exit=' + $rmStatus.Code)
+$rmNeed = @('解除文件占用', '常用功能 子菜单', '菜单里的 exe', '最近使用最多留 30 个')
+$rmMiss = @($rmNeed | Where-Object { $rmStatus.Out.IndexOf($_) -lt 0 })
+Check 'M07 状态里念了：装没装 / 子菜单几项 / 菜单里的 exe / 最近使用上限 30' ($rmMiss.Count -eq 0) ('缺=' + ($rmMiss -join ' '))
+
+$rmHelp = Invoke-Exe 'rightmenu help'
+Check 'M08 说明里写清了怎么卸干净 + 四条底线（系统关键进程不能结束）' `
+    (($rmHelp.Code -eq 0) -and ($rmHelp.Out.IndexOf('怎么卸干净') -ge 0) -and ($rmHelp.Out.IndexOf('系统关键进程') -ge 0)) ('exit=' + $rmHelp.Code)
+
+$rmWrite = Invoke-Exe 'rightmenu install'
+Check 'M09 命令行没有"直接装右键菜单"的入口（退出码 2）' ($rmWrite.Code -eq 2) ('exit=' + $rmWrite.Code)
+
+$rmDry = Invoke-Exe 'run rightmenu.unlock.on --dry'
+Check 'M10 右键增强按钮 --dry 解析成注册表动作（不真的写）' ((Get-Key $rmDry.Out 'kind') -eq 'registry') ('kind=' + (Get-Key $rmDry.Out 'kind'))
+
+# ---- 查占用：自己锁一个文件，看它认不认得（Restart Manager）
+$rmDir = Join-Path $env:TEMP 'mxx1-rightmenu-check'
+if (Test-Path -LiteralPath $rmDir) { Remove-Item -LiteralPath $rmDir -Recurse -Force }
+New-Item -ItemType Directory -Path $rmDir | Out-Null
+$rmFile = Join-Path $rmDir 'locked.txt'
+Set-Content -LiteralPath $rmFile -Value 'x' -Encoding UTF8
+Set-Content -LiteralPath (Join-Path $rmDir 'other.txt') -Value 'y' -Encoding UTF8
+$rmChild = Start-Process powershell.exe -WindowStyle Hidden -PassThru -ArgumentList @(
+    '-NoProfile', '-Command', ("`$fs=[System.IO.File]::Open('" + $rmFile + "','Open','ReadWrite','None'); Start-Sleep 90"))
+Start-Sleep -Seconds 2
+try {
+    $rmQ = Invoke-Exe ('rightmenu unlock --query-only "' + $rmFile + '"')
+    Check 'M11 查占用：认出占着文件的那个进程（自己锁的文件报出自己的 PID）' `
+        (($rmQ.Code -eq 0) -and ($rmQ.Out -match ('pid=' + $rmChild.Id + '\b'))) `
+        ('lockers=' + (Get-Key $rmQ.Out 'lockers') + ' 期望 pid=' + $rmChild.Id)
+    Check 'M12 查占用是只读的：没有结束任何进程（那个子进程还活着）' (-not $rmChild.HasExited) ''
+    $rmFolder = Invoke-Exe ('rightmenu unlock --query-only "' + $rmDir + '"')
+    Check 'M13 文件夹被占用也能查（传目录会被系统拒绝，所以按里面第一层的文件查）' `
+        (($rmFolder.Code -eq 0) -and ([int](Get-Key $rmFolder.Out 'lockers') -ge 1)) ('lockers=' + (Get-Key $rmFolder.Out 'lockers'))
+}
+finally {
+    if (-not $rmChild.HasExited) { Stop-Process -Id $rmChild.Id -Force -ErrorAction SilentlyContinue }
+}
+Start-Sleep -Milliseconds 500
+$rmAfter = Invoke-Exe ('rightmenu unlock --query-only "' + $rmFile + '"')
+Check 'M14 占用没了就查不到（不谎报还占着）' ((Get-Key $rmAfter.Out 'lockers') -eq '0') ('lockers=' + (Get-Key $rmAfter.Out 'lockers'))
+
+# ---- 装 / 卸：整段都在**隔离的根**里做（MXX1_RIGHTMENU_ROOT），绝不碰用户真实的右键菜单
+$rmTestRoot = 'HKCU:\Software\mxx1-toolbox\rightmenu-test'
+$rmRealShell = 'HKCU:\Software\Classes\*\shell'
+$rmRecord = Join-Path $env:LOCALAPPDATA 'mxx1-toolbox\rightmenu-installed.tsv'
+$rmRecordHad = Test-Path -LiteralPath $rmRecord
+$rmRecordOld = ''
+if ($rmRecordHad) { $rmRecordOld = [System.IO.File]::ReadAllText($rmRecord) }
+$rmRealBefore = @(Get-ChildItem -LiteralPath $rmRealShell -ErrorAction SilentlyContinue | Select-Object -ExpandProperty PSChildName)
+$rmEnv = @{ MXX1_RIGHTMENU_ROOT = 'HKCU\Software\mxx1-toolbox\rightmenu-test' }
+$rmRealAfter = $rmRealBefore
+try {
+    $rmIns = Invoke-Exe 'run rightmenu.unlock.on' 60 $Exe $rmEnv
+    $rmOkLines = @($rmIns.Out -split "`r?`n" | Where-Object { $_ -match '√ 解除文件占用' })
+    Check 'M15 在隔离根里装上「解除文件占用」：4 个位置都写了、读回核对过' `
+        (($rmIns.Code -eq 0) -and ($rmOkLines.Count -eq 4)) ('exit=' + $rmIns.Code + ' √=' + $rmOkLines.Count)
+
+    $rmVerb = Join-Path $rmTestRoot '*\shell\Mxx1Unlock'
+    $rmProp = Get-ItemProperty -LiteralPath $rmVerb -ErrorAction SilentlyContinue
+    $rmCmd = (Get-ItemProperty -LiteralPath (Join-Path $rmVerb 'command') -ErrorAction SilentlyContinue).'(default)'
+    Check 'M16 verb 就是微软文档那套写法：MUIVerb + 默认值留空 + MultiSelectModel=Player + 命令带 %1' `
+        (($rmProp.MUIVerb -eq '解除文件占用') -and ($rmProp.MultiSelectModel -eq 'Player') -and `
+         ("$($rmProp.'(default)')" -eq '') -and ("$rmCmd" -match 'rightmenu unlock "%1"')) `
+        ('MUIVerb=' + $rmProp.MUIVerb + ' cmd=' + $rmCmd)
+
+    $rmIns2 = Invoke-Exe 'run rightmenu.common.on' 60 $Exe $rmEnv
+    Check 'M17 装上「常用功能」：级联子菜单的子项写出来了' `
+        (($rmIns2.Code -eq 0) -and ($rmIns2.Out -match '子菜单写了 \d+ 项')) ('exit=' + $rmIns2.Code)
+    $rmParent = Get-ItemProperty -LiteralPath (Join-Path $rmTestRoot 'Directory\shell\Mxx1Common') -ErrorAction SilentlyContinue
+    Check 'M18 父键指向共用的子项键（ExtendedSubCommandsKey=Mxx1Toolbox.Common，四个位置共用一份）' `
+        ("$($rmParent.ExtendedSubCommandsKey)" -eq 'Mxx1Toolbox.Common') ('=' + $rmParent.ExtendedSubCommandsKey)
+
+    $rmShared = @(Get-ChildItem -LiteralPath (Join-Path $rmTestRoot 'Mxx1Toolbox.Common\shell') -ErrorAction SilentlyContinue)
+    Check 'M19 子项 = 置顶 + 最近用过 + 固定 3 项（至少 3 项，最多 30+3）' `
+        (($rmShared.Count -ge 3) -and ($rmShared.Count -le 33)) ('数=' + $rmShared.Count)
+    $rmFixed = @()
+    foreach ($rmIt in $rmShared) {
+        $rmV = Get-ItemProperty -LiteralPath $rmIt.PSPath -ErrorAction SilentlyContinue
+        $rmC = (Get-ItemProperty -LiteralPath (Join-Path $rmIt.PSPath 'command') -ErrorAction SilentlyContinue).'(default)'
+        if (@('打开工具箱', '运行日志', '设置') -contains "$($rmV.MUIVerb)") { $rmFixed += ("$($rmV.MUIVerb)=" + "$rmC") }
+    }
+    Check 'M20 固定三项：打开工具箱（不带参数）/ 运行日志（ui log）/ 设置（ui settings）' `
+        (($rmFixed.Count -eq 3) -and (($rmFixed -join ' ') -match 'ui log') -and (($rmFixed -join ' ') -match 'ui settings')) `
+        ($rmFixed -join ' | ')
+
+    $rmOff = Invoke-Exe 'run rightmenu.common.off' 60 $Exe $rmEnv
+    $rmOff2 = Invoke-Exe 'run rightmenu.unlock.off' 60 $Exe $rmEnv
+    Check 'M21 撤掉两项：自己写的键全删了（verb + 共用子项键）' `
+        (((Test-Path -LiteralPath (Join-Path $rmTestRoot '*\shell\Mxx1Unlock')) -eq $false) -and `
+         ((Test-Path -LiteralPath (Join-Path $rmTestRoot 'Mxx1Toolbox.Common')) -eq $false)) `
+        ('off=' + $rmOff.Code + '/' + $rmOff2.Code)
+    $rmRealAfter = @(Get-ChildItem -LiteralPath $rmRealShell -ErrorAction SilentlyContinue | Select-Object -ExpandProperty PSChildName)
+    $rmRealMine = @($rmRealAfter | Where-Object { $_ -match 'Mxx1' })
+    Check 'M22 全程没碰用户真实的右键菜单（HKCU\Software\Classes\*\shell 一个键都没变）' `
+        ((($rmRealBefore -join ',') -eq ($rmRealAfter -join ',')) -and ($rmRealMine.Count -eq 0)) `
+        ('before=' + ($rmRealBefore -join ',') + ' after=' + ($rmRealAfter -join ','))
+}
+finally {
+    Remove-Item -LiteralPath 'HKCU:\Software\mxx1-toolbox' -Recurse -Force -ErrorAction SilentlyContinue
+    if ($rmRecordHad) { [System.IO.File]::WriteAllText($rmRecord, $rmRecordOld) }
+    elseif (Test-Path -LiteralPath $rmRecord) { Remove-Item -LiteralPath $rmRecord -Force }
+    if (Test-Path -LiteralPath $rmDir) { Remove-Item -LiteralPath $rmDir -Recurse -Force -ErrorAction SilentlyContinue }
+}
+Check 'M23 收尾干净：测试根删掉了、用户的原值记录按原样放回' `
+    (((Test-Path -LiteralPath 'HKCU:\Software\mxx1-toolbox') -eq $false) -and `
+     ((Test-Path -LiteralPath $rmRecord) -eq $rmRecordHad)) ('记录文件=' + (Test-Path -LiteralPath $rmRecord))
 
 # ---------------------------------------------------------------- 汇总
 Write-Host ''

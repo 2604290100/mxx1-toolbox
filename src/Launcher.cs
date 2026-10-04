@@ -61,6 +61,10 @@ namespace Mxx1Toolbox
         /// 记原值 + 读回核对 + 一键还原的机制（见 RegEngine）。</summary>
         public const string ModuleSysreg = "sysreg";
 
+        /// <summary>「右键增强」：把「解除文件占用」「常用功能」装进 Windows 右键菜单
+        /// （只写 HKCU\Software\Classes，见 src\RightMenu.cs 和 docs\DESIGN.md §14）。</summary>
+        public const string ModuleRightMenu = "rightmenu";
+
         /// <summary>The「系统工具」page. Every entry is a read-only viewer or a Windows settings
         /// page: nothing here changes the system, so none of them needs elevation.</summary>
         private static readonly SystemTarget[] SystemTargets = new SystemTarget[]
@@ -270,6 +274,19 @@ namespace Mxx1Toolbox
                         }
                         return "内置动作: " + t.Module + "/" + t.Action;
                     }
+                    if (t.Module == ModuleRightMenu)
+                    {
+                        // 同样写成一句人话：悬停说明里附的就是这一行
+                        string a = t.Action.ToLowerInvariant();
+                        if (a == "unlock.on") { return "把「" + RightMenu.UnlockTitle + "」装进右键菜单（只写当前用户，可一键撤掉）"; }
+                        if (a == "unlock.off") { return "把「" + RightMenu.UnlockTitle + "」从右键菜单里撤掉（只删工具箱自己写的键）"; }
+                        if (a == "common.on") { return "把「" + RightMenu.CommonTitle + "」子菜单装进右键菜单（内容 = 「常用」页：置顶 + 最近使用）"; }
+                        if (a == "common.off") { return "把「" + RightMenu.CommonTitle + "」子菜单撤掉（只删工具箱自己写的键）"; }
+                        if (a == "status") { return "只读：列出右键菜单里装了什么、子菜单现在几项"; }
+                        if (a == "rebuild") { return "重写「" + RightMenu.CommonTitle + "」子菜单的内容（置顶 / 最近使用变了之后手动兜底）"; }
+                        if (a == "help") { return "一页说明：装在哪、怎么卸干净、右键里看不到怎么办"; }
+                        return "内置动作: " + t.Module + "/" + t.Action;
+                    }
                     return "内置动作: " + t.Module + "/" + t.Action;
             }
             return t.Kind + " (未实现)";
@@ -400,6 +417,8 @@ namespace Mxx1Toolbox
             if (t.Module == ModulePrivacy) { return RunPrivacy(t, asAdmin); }
 
             if (t.Module == ModuleSysreg) { return RunSysreg(t, asAdmin); }
+
+            if (t.Module == ModuleRightMenu) { return RunRightMenu(t); }
 
             if (t.Module != ModulePermdel)
             {
@@ -573,6 +592,31 @@ namespace Mxx1Toolbox
             r.Ok = ok;
             r.Output = report;
             r.Message = ok ? "系统设置已处理" : "有地方没成功（细节见报告）";
+            Logger.Write(t.Name, report);
+            return r;
+        }
+
+        /// <summary>「右键增强」：把两件事装进 / 撤出 Windows 右键菜单，外加状态、重建、说明。
+        /// 只写 HKCU（**不需要管理员**，所以没有 runas 那条路），写之前记原值、写完读回核对，
+        /// 撤掉按记录只删自己那几个键。三条底线见 src\RightMenu.cs 的注释和 docs\DESIGN.md §14.7。</summary>
+        private static LaunchResult RunRightMenu(ToolItem t)
+        {
+            LaunchResult r = new LaunchResult();
+            bool ok;
+            string report;
+            string a = t.Action.ToLowerInvariant();
+            if (a == "unlock.on") { report = RightMenu.Install(true, false, out ok); }
+            else if (a == "unlock.off") { report = RightMenu.Uninstall(true, false, out ok); }
+            else if (a == "common.on") { report = RightMenu.Install(false, true, out ok); }
+            else if (a == "common.off") { report = RightMenu.Uninstall(false, true, out ok); }
+            else if (a == "status") { report = RightMenu.Status(); ok = true; }
+            else if (a == "rebuild") { report = RightMenu.Rebuild(out ok); }
+            else if (a == "help") { report = RightMenu.Help(); ok = true; }
+            else { report = "右键增强里没有这个动作：" + t.Action; ok = false; }
+
+            r.Ok = ok;
+            r.Output = report;
+            r.Message = ok ? "右键增强已处理" : "有地方没成功（细节见报告）";
             Logger.Write(t.Name, report);
             return r;
         }

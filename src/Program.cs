@@ -19,6 +19,23 @@ namespace Mxx1Toolbox
 
             if (args != null && args.Length > 0)
             {
+                // 资源管理器右键「解除文件占用」调起来的就是这一条：只开那个小窗口，不打开主界面、
+                // 不挂控制台 —— 它自己就是一个独立的窗口进程，看完关掉就走。
+                if (IsUnlockGui(args))
+                {
+                    Application.Run(new UnlockForm(PathsFrom(args)));
+                    return 0;
+                }
+                // `ui log` / `ui settings`：右键「常用功能」子菜单里那几个固定入口。打开主界面，
+                // 然后替用户点一下那个界面动作（否则从资源管理器点出来会"什么都不发生"）。
+                if (string.Equals(args[0], "ui", StringComparison.OrdinalIgnoreCase))
+                {
+                    MainForm.StartupAction = (args.Length > 1) ? args[1].Trim().ToLowerInvariant() : "";
+                    Logger.PruneOld(Settings.Load().LogKeepDays);
+                    AppPaths.EnsurePayloadDir();
+                    Application.Run(new MainForm());
+                    return 0;
+                }
                 Native.AttachParentConsole();
                 return Cli.Run(args);
             }
@@ -30,6 +47,31 @@ namespace Mxx1Toolbox
             AppPaths.EnsurePayloadDir();
             Application.Run(new MainForm());
             return 0;
+        }
+
+        /// <summary>`rightmenu unlock "&lt;路径&gt;"` = 要开那个小窗口（不是查一下就退出）。</summary>
+        private static bool IsUnlockGui(string[] args)
+        {
+            if (args.Length < 2) { return false; }
+            if (!string.Equals(args[0], "rightmenu", StringComparison.OrdinalIgnoreCase)) { return false; }
+            if (!string.Equals(args[1], "unlock", StringComparison.OrdinalIgnoreCase)) { return false; }
+            foreach (string a in args)
+            {
+                if (string.Equals(a, "--query-only", StringComparison.OrdinalIgnoreCase)) { return false; }
+            }
+            return true;
+        }
+
+        /// <summary>解锁窗口要处理的路径（跳过开关；多选时资源管理器会给多个）。</summary>
+        private static string[] PathsFrom(string[] args)
+        {
+            List<string> list = new List<string>();
+            for (int i = 2; i < args.Length; i++)
+            {
+                if (args[i].StartsWith("--")) { continue; }
+                if (args[i].Trim().Length > 0) { list.Add(args[i]); }
+            }
+            return list.ToArray();
         }
     }
 
@@ -77,6 +119,7 @@ namespace Mxx1Toolbox
                     case "tip": return Tip(args);
                     case "privacy": return PrivacyCommand(args);
                     case "sysreg": return SysRegCommand(args);
+                    case "rightmenu": return RightMenuCommand(args);
                     case "pin": return PinCommand(args, true);
                     case "unpin": return PinCommand(args, false);
                     case "export": return ExportCommand(args);
@@ -128,6 +171,7 @@ namespace Mxx1Toolbox
             Console.WriteLine("pinned=" + (pinned ? "yes" : "no"));
             Console.WriteLine("id=" + args[1]);
             Console.WriteLine("name=" + name);
+            RightMenu.SyncIfInstalled();   // 置顶段就是右键「常用功能」里最上面那一段（没装则空转）
             Logger.Write(name, pinned ? "已置顶（命令行）" : "已取消置顶（命令行）");
             return 0;
         }
@@ -190,6 +234,7 @@ namespace Mxx1Toolbox
             Console.WriteLine("  Mxx1Toolbox.exe list [--tab <页签>]  列出全部按钮");
             Console.WriteLine("  Mxx1Toolbox.exe run <id> [--admin]   执行一个按钮（和界面同一条路径）");
             Console.WriteLine("  Mxx1Toolbox.exe run <id> --dry       只解析按钮指向哪里，不真的启动");
+            Console.WriteLine("  Mxx1Toolbox.exe run <id> --confirm   执行前先弹确认框（右键菜单里那批危险按钮用的）");
             Console.WriteLine("  Mxx1Toolbox.exe draft <路径>         把文件/文件夹按「拖进窗口」的规则变成按钮草稿");
             Console.WriteLine("  Mxx1Toolbox.exe status               打印 key=value 状态（脚本用）");
             Console.WriteLine("  Mxx1Toolbox.exe tip [id]             打印按钮的悬停说明（界面上鼠标停住时看到的那段）");
@@ -197,6 +242,10 @@ namespace Mxx1Toolbox
             Console.WriteLine("  Mxx1Toolbox.exe privacy selftest     用工具箱自己的测试键自检「原值 → 写入 → 还原」链路");
             Console.WriteLine("  Mxx1Toolbox.exe sysreg status        只读列出系统设置开关（任务栏/开始菜单/内核隔离…）的状态与原值");
             Console.WriteLine("  Mxx1Toolbox.exe sysreg selftest      自检系统设置那条链路（DWORD / 字符串 / 整棵键三种值）");
+            Console.WriteLine("  Mxx1Toolbox.exe rightmenu status     只读列出右键菜单里装了什么（装 / 卸只在界面里点）");
+            Console.WriteLine("  Mxx1Toolbox.exe rightmenu help       右键增强的说明（怎么卸干净 / 菜单没出现怎么办）");
+            Console.WriteLine("  Mxx1Toolbox.exe rightmenu unlock --query-only <路径>   只查谁占着这个文件，不弹窗不结束进程");
+            Console.WriteLine("  Mxx1Toolbox.exe ui [log|settings]    打开界面并直接看日志 / 设置（右键子菜单的固定入口用它）");
             Console.WriteLine("  Mxx1Toolbox.exe pin <id> / unpin <id>  把按钮置顶 / 取消置顶（排在这一页最前面）");
             Console.WriteLine("  Mxx1Toolbox.exe export <文件>        把「我的工具」导出成一个文件");
             Console.WriteLine("  Mxx1Toolbox.exe import <文件>        把导出文件里的按钮并进来（同 id 覆盖）");
@@ -303,6 +352,72 @@ namespace Mxx1Toolbox
             return 2;
         }
 
+        /// <summary>`rightmenu status | items | help` 只读；`rightmenu unlock --query-only &lt;路径&gt;` 只打印
+        /// 谁占着它（不弹窗、也**不结束任何进程**）。
+        ///
+        /// 和 `sysreg` 同一条规矩：**写注册表的入口故意只在界面**（「装上 / 撤掉…」那两个按钮，
+        /// 会过确认框），命令行不提供写入口 —— Test-Cli 的 L07 那条底线。
+        /// 回归测试要验装 / 卸的键结构时，用环境变量 MXX1_RIGHTMENU_ROOT 把根挪到测试键下。</summary>
+        private static int RightMenuCommand(string[] args)
+        {
+            string what = (args.Length > 1) ? args[1].ToLowerInvariant() : "status";
+            if (what == "status")
+            {
+                Console.Write(RightMenu.Status());
+                return 0;
+            }
+            if (what == "items")
+            {
+                foreach (RightMenuLocation loc in RightMenu.Locations)
+                {
+                    Console.WriteLine(loc.Id + "\t" + loc.Label + "\t" + loc.Key);
+                }
+                Console.WriteLine("titles=" + RightMenu.UnlockTitle + " / " + RightMenu.CommonTitle);
+                Console.WriteLine("shared=" + RightMenu.SharedKey);
+                Console.WriteLine("root=" + RightMenu.RootLabel);
+                return 0;
+            }
+            if (what == "help")
+            {
+                Console.Write(RightMenu.Help());
+                return 0;
+            }
+            if (what == "unlock")
+            {
+                return UnlockQuery(args);
+            }
+            Console.Error.WriteLine("用法: rightmenu status | items | help | unlock [--query-only] <文件或文件夹路径>");
+            return 2;
+        }
+
+        /// <summary>只查不改：谁占着这个文件。测试用它（自己锁一个文件 → 断言能查到自己的 PID）。</summary>
+        private static int UnlockQuery(string[] args)
+        {
+            string path = "";
+            for (int i = 2; i < args.Length; i++)
+            {
+                if (args[i].StartsWith("--")) { continue; }
+                path = args[i];
+                break;
+            }
+            if (path.Trim().Length == 0)
+            {
+                Console.Error.WriteLine("用法: rightmenu unlock [--query-only] <文件或文件夹路径>");
+                return 2;
+            }
+            string error;
+            List<FileLocker> found = FileLock.WhoLocks(path, out error);
+            bool exists = false;
+            try { exists = File.Exists(path) || Directory.Exists(path); }
+            catch { }
+            Console.WriteLine("path=" + path);
+            Console.WriteLine("exists=" + (exists ? "yes" : "no"));
+            Console.WriteLine("lockers=" + found.Count.ToString(CultureInfo.InvariantCulture));
+            foreach (FileLocker f in found) { Console.WriteLine(FileLock.DescribeLine(f)); }
+            if (error.Length > 0) { Console.WriteLine("error=" + error); }
+            return 0;
+        }
+
         private static List<ToolItem> Load()
         {
             List<string> warnings = new List<string>();
@@ -347,10 +462,12 @@ namespace Mxx1Toolbox
             string id = args[1];
             bool admin = false;
             bool dry = false;
+            bool confirm = false;
             for (int i = 2; i < args.Length; i++)
             {
                 if (args[i] == "--admin") { admin = true; }
                 if (args[i] == "--dry") { dry = true; }
+                if (args[i] == "--confirm") { confirm = true; }
             }
 
             ToolItem target = null;
@@ -374,6 +491,25 @@ namespace Mxx1Toolbox
             // anything: that is how the test suite checks all twelve 系统工具 buttons without
             // opening Device Manager twelve times.
             if (dry) { return DryRun(target, settings); }
+
+            // --confirm：右键菜单「常用功能」里标了 danger 的按钮命令带的就是这个 —— 右键菜单是
+            // 误点高发区，所以走命令行这条路也要先弹自家确认框（界面里点按钮本来就过确认框，
+            // 两条路必须一致）。用户把「危险按钮要先确认」关掉了就按他的设置来。
+            if (confirm && settings.ConfirmDangerous)
+            {
+                DialogResult answer;
+                using (ConfirmForm f = new ConfirmForm(target, command, admin,
+                    Launcher.IsAdmin() && admin, Theme.Resolve(settings.Theme)))
+                {
+                    answer = f.ShowDialog();
+                }
+                if (answer != DialogResult.OK)
+                {
+                    Console.WriteLine("cancelled=yes");
+                    Logger.Write(target.Name, "已取消（右键菜单里的确认框选了取消）");
+                    return 0;
+                }
+            }
 
             if (target.Placeholder)
             {
@@ -489,6 +625,13 @@ namespace Mxx1Toolbox
                     hint = "系统设置里没有这个开关: " + t.Options;
                 }
                 else { hint = tw != null ? tw.Item.What : ""; }
+            }
+            else if (t.Kind == "builtin" && t.Module == Launcher.ModuleRightMenu)
+            {
+                // 右键增强动的也是注册表（HKCU\Software\Classes 下自己那几个键）：kind=registry
+                kind = "registry";
+                target = Launcher.DescribeCommand(t, settings, false);
+                hint = "装 / 卸只在界面里点（命令行没有写入口）";
             }
             else if (t.Kind == "builtin" && t.Module == Launcher.ModuleSystem)
             {

@@ -24,6 +24,14 @@ $root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $Exe = Join-Path $root 'bin\Mxx1Toolbox.exe'
 $SettingsIni = Join-Path $env:LOCALAPPDATA 'mxx1-toolbox\settings.ini'
 
+# 量文字宽度要用同一套渲染器，才能判断"文字装不装得下"
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
+$MeasureFont = New-Object System.Drawing.Font('Microsoft YaHei', 8.25)
+function Measure-Width([string]$Text) {
+    return [System.Windows.Forms.TextRenderer]::MeasureText($Text, $MeasureFont).Width
+}
+
 $script:Pass = 0
 $script:Fail = 0
 
@@ -308,6 +316,14 @@ for ($i = 0; $i -lt $leaf.Count; $i++) {
 }
 Check 'B06 按钮/标签之间零重叠' ($overlaps.Count -eq 0) (($overlaps | Select-Object -First 4) -join ' | ')
 
+# 每个按钮的文字都必须装得下：装不下就会截断/挤开图标（用户报过"文字超长出现偏移"）
+$overflow = @()
+foreach ($b in $toolButtons) {
+    $need = (Measure-Width $b.Text) + 22   # 22 = 16px 图标 + 图文间距 + 内边距
+    if ($need -gt ($b.Width - 2)) { $overflow += ('{0}(需{1}>宽{2})' -f $b.Text, $need, $b.Width) }
+}
+Check 'B06b 每个按钮的文字都装得下（不溢出、不截断）' ($overflow.Count -eq 0) (($overflow | Select-Object -First 3) -join ' ')
+
 $separators = @($all | Where-Object { $_.Height -le 2 -and $_.Width -gt 200 })
 Check 'B07 段与段之间有分隔线' ($separators.Count -ge 1) ('分隔线=' + $separators.Count)
 
@@ -357,6 +373,14 @@ if ($barButtons.Count -gt 0) {
     Check 'D01b 底栏按钮完全在底栏范围内（没有被裁）' ($outside.Count -eq 0) (($outside -join ' ') + (' 底栏=' + ($barRect[3] - $barRect[1]) + 'px'))
     $tooShort = @($barButtons | Where-Object { $_.Height -lt 20 })
     Check 'D01c 底栏按钮高度 >= 20px（装得下一行 8.25pt 文字）' ($tooShort.Count -eq 0) ((($barButtons | ForEach-Object { $_.Text + '=' + $_.Height }) -join ' '))
+}
+
+$statusLabel = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*STATIC*' -and $_.Text -match '个按钮' })
+if ($statusLabel.Count -gt 0) {
+    $need = Measure-Width $statusLabel[0].Text
+    Check 'D01d 状态栏文字装得下（不会被截）' ($need -le $statusLabel[0].Width) ('文字=' + $need + 'px 标签=' + $statusLabel[0].Width + 'px')
+} else {
+    Check 'D01d 状态栏文字装得下（不会被截）' $false '没找到状态栏标签'
 }
 
 $logButton = @($barButtons | Where-Object { $_.Text -eq '日志' })
@@ -417,6 +441,32 @@ $disabled = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -lik
 Check 'E03 占位按钮那 600ms 灰显结束后自己恢复' ($disabled.Count -eq 0) (($disabled | ForEach-Object { $_.Text }) -join ' ')
 $back = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq $targetName })
 Check 'E04 被点的那个按钮文字恢复原样（没有卡在"…"）' ($back.Count -eq 1 -and $back[0].Text -eq $targetName) (($back | ForEach-Object { $_.Text }) -join ' ')
+
+# 运行中不许改文字：旧版会追加 "…"，图标+文字整组重新居中 → 每点一次图标就跳一下
+$probeName = 'hosts 修改'
+$probeBtn = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq $probeName })
+if ($probeBtn.Count -gt 0) {
+    [void][TBGui]::Click($probeBtn[0].H)
+    Start-Sleep -Milliseconds 180
+    $during = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -like 'hosts*' })
+    $duringText = ''
+    if ($during.Count -gt 0) { $duringText = $during[0].Text }
+    Check 'E05 运行中按钮文字一字不变（不许追加"…"造成跳动）' ($duringText -eq $probeName) ('运行中="' + $duringText + '"')
+    $stillThere = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq $probeName })
+    Check 'E06 运行中按钮仍然可用（文字没变说明没被重排）' ($stillThere.Count -eq 1) ''
+    Start-Sleep -Milliseconds 900
+    $statusNow = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*STATIC*' -and $_.Text -match '个按钮' })
+    if ($statusNow.Count -gt 0) {
+        $needNow = Measure-Width $statusNow[0].Text
+        Check 'E07 出现长状态文字后仍然装得下' ($needNow -le $statusNow[0].Width) ('文字=' + $needNow + 'px 标签=' + $statusNow[0].Width + 'px 内容="' + $statusNow[0].Text + '"')
+    } else {
+        Check 'E07 出现长状态文字后仍然装得下' $false '没找到状态栏标签'
+    }
+} else {
+    Check 'E05 运行中按钮文字一字不变（不许追加"…"造成跳动）' $false '没找到 hosts 修改 按钮'
+    Check 'E06 运行中按钮仍然可用（文字没变说明没被重排）' $false 'skipped'
+    Check 'E07 出现长状态文字后仍然装得下' $false 'skipped'
+}
 
 # ---------------------------------------------------------------- F 组：危险按钮的确认框
 Write-Host ''

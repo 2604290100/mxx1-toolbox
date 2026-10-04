@@ -76,6 +76,35 @@ namespace Mxx1Toolbox
             return bmp;
         }
 
+        private static Image _busy;
+
+        /// <summary>A 16x16 spinner shown while a button is running. Same size as every other icon,
+        /// so swapping it in does not move the icon or the label by a single pixel.</summary>
+        public static Image Busy()
+        {
+            lock (Gate)
+            {
+                if (_busy != null) { return _busy; }
+                Bitmap bmp = new Bitmap(16, 16);
+                using (Graphics g = Graphics.FromImage(bmp))
+                {
+                    g.SmoothingMode = SmoothingMode.AntiAlias;
+                    using (Pen ring = new Pen(Color.FromArgb(0x00, 0x78, 0xD7), 2.6f))
+                    {
+                        ring.StartCap = LineCap.Round;
+                        ring.EndCap = LineCap.Round;
+                        g.DrawArc(ring, 2.6f, 2.6f, 10.8f, 10.8f, 30f, 275f);
+                    }
+                    using (SolidBrush dot = new SolidBrush(Color.FromArgb(0x00, 0x78, 0xD7)))
+                    {
+                        g.FillEllipse(dot, 6.2f, 6.2f, 3.6f, 3.6f);
+                    }
+                }
+                _busy = bmp;
+                return _busy;
+            }
+        }
+
         private static Image LoadPng(string path)
         {
             try

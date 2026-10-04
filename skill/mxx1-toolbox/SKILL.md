@@ -17,7 +17,7 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
 
 ## 当前状态（2026-10-04）
 
-- ✅ **P0 已实现，测试 65 项全绿**：命令行回归 26 + 界面回归 39（外加编码体检）。
+- ✅ **P0 已实现，测试 70 项全绿**：命令行回归 26 + 界面回归 44（外加编码体检）。
   产物 `bin\Mxx1Toolbox.exe`（108,544 字节单文件），五个 `tools.*.json` + 61 个 `icons.*.png` 已内嵌。
 - ✅ 「右键增强」8 个按钮是**真功能**，实测能读到隔壁引擎的 `installed=` / `fileVisible=`；
   其余 52 个按钮是 `placeholder`（点击 = 状态栏提示 + 日志 + 灰 0.6 秒，不弹窗、不改系统）。
@@ -51,7 +51,7 @@ D:\萌新工具开发\toolbox\
   assets\icons\*.png               61 个图标（编译时内嵌成 icons.<id>.png）
   tests\Test-All.ps1               一条命令跑完全部
   tests\Test-Cli.ps1               命令行回归 26 项
-  tests\Test-Gui.ps1               界面回归 39 项（要交互式桌面，无桌面返回 3 = 跳过）
+  tests\Test-Gui.ps1               界面回归 44 项（要交互式桌面，无桌面返回 3 = 跳过）
   docs\DESIGN.md                   设计正本（含"踩过的坑"清单）
   docs\gui-shot.png / dark-shot.png 界面截图
 ```
@@ -80,6 +80,9 @@ powershell -File tools\Make-Icons.ps1         # 重生成 61 个 PNG 图标（�
 | `Dock=Top` 的 `TableLayoutPanel` **末尾要加一个 100% 空列** | 多余宽度全被塞给最后一列 → 每行第 4 个按钮比同排宽 28px |
 | `TableLayoutPanel` 的每一行都要显式 `RowStyles`（要填满就 `Percent 100`） | 行按内容 AutoSize → 底栏按钮 30px 挤在 24px 条里，下边缘被裁 5px |
 | 底栏按钮 `AutoSize=false`，**高度按字体算**（`MeasureText("国").Height + 6` = 22px），底栏高 = 按钮高 + 4 | 写死 20px 时 8.25pt 的文字下半截被裁 —— 用户看到"右下角按钮没正常显示、被挡住" |
+| **按钮运行中不许改文字**：禁用 + 换成 16×16 转圈图标（`IconFactory.Busy()`）即可 | 追加 "…" 会让"图标+文字"整组重新居中，每点一次图标横跳；长名字还会溢出被截 |
+| 状态栏文字**只放短摘要**（`N 个按钮 · 本页 M · 名字 · 完成`），完整内容进日志 + 悬停提示 | 标签宽度固定，长句（旧格式实测 414px vs 392px）尾巴被截 |
+| 列宽按最长按钮名测量时，要把"运行中"也考虑进去（现在的做法是运行中不改文字，就自然不用留余量） | 只按静态文字算余量，运行态一变就溢出 |
 | 一律 `TableLayoutPanel` / 排版函数，**绝不手写坐标**；`Label` 绝不与按钮重叠 | 缩放/DPI 一变就错位；标签会吃掉鼠标点击，按钮"点了没反应" |
 | 页签用一排 `Flat` 按钮，**不用 `TabControl`** | `TabControl` 深色主题下不可控（白底标签刺眼） |
 | `MinimizeBox=false` + `MaximizeBox=false` | 标题栏多一个**灰掉的**最大化方框，点了没反应 |
@@ -145,8 +148,14 @@ powershell -File tools\Make-Icons.ps1         # 重生成 61 个 PNG 图标（�
   3. 读 `status` 的 `key=value` 时**别让行尾 `\r` 混进值里**（`([^\r\n]*)` + `Trim()`），
      否则 `Test-Path` 会报"路径含非法字符"；
   4. "按钮/文字被裁"这类问题**用 `GetParent` + 矩形包含**来判（D01b）：
-     子控件的矩形必须完全落在父容器里，别靠肉眼看截图（缩略图会骗人）。
+     子控件的矩形必须完全落在父容器里，别靠肉眼看截图（缩略图会骗人）；
+  5. "文字超长"这类问题用**测量**来判：`TextRenderer.MeasureText(文字, 同一字体)` 比控件宽度
+     （B06b 按钮、D01d/E07 状态栏），别等到用户截图来报；
+  6. 验证"点击后有没有跳动"不要靠像素 diff（禁用态会改颜色，看起来差很多），
+     直接**读点击过程中的控件文字**（E05）—— 文字没变 + 图标同尺寸 ⇒ 布局不可能移动。
 - 界面回归会临时改 `settings.ini` 里的主题，**跑完必须按原样复原**。
+- **重编时如果 `bin\Mxx1Toolbox.exe` 被占用，不要杀进程**：`build.ps1` 会自动把旧 exe 改名成
+  `Mxx1Toolbox.exe.old-<时分秒>` 再编（用户可能正开着界面在用）。
 
 ## 待办 / 别自己替他决定
 

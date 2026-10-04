@@ -238,7 +238,7 @@ namespace Mxx1Toolbox
             b.AutoSize = false;
             b.Font = new Font("Microsoft YaHei", 8.25f, FontStyle.Regular, GraphicsUnit.Point);
             b.Height = _barButtonHeight;
-            b.Width = TextRenderer.MeasureText(text, b.Font).Width + 16;
+            b.Width = TextRenderer.MeasureText(text, b.Font).Width + 12;
             b.Margin = new Padding(4, 2, 0, 2);
             b.FlatStyle = FlatStyle.Flat;
             b.FlatAppearance.BorderSize = 1;
@@ -607,7 +607,8 @@ namespace Mxx1Toolbox
             if (b != null && !b.IsDisposed) { b.SetBusy(false, 0); }
 
             Logger.Write(t.Name, (r.Ok ? "完成" : "失败") + " · " + r.Message);
-            SetStatus(t.Name + " · " + (r.Ok ? "完成" : "失败") + "：" + r.Message);
+            SetStatus(t.Name + " · " + (r.Ok ? "完成" : "失败")
+                + (r.ExitCode != 0 ? "（退出码 " + r.ExitCode + "）" : ""));
             RefreshLogBox();
             UpdateStatusBar();
 
@@ -727,7 +728,7 @@ namespace Mxx1Toolbox
             string path = RevealPath(_menuTarget.Tool);
             if (path.Length == 0) { SetStatus("这个按钮没有对应的本地文件"); return; }
             Launcher.RevealInExplorer(path);
-            SetStatus("已在资源管理器中打开：" + path);
+            SetStatus("已在资源管理器中打开 " + Path.GetFileName(path));
         }
 
         private void CopyCommand()
@@ -790,11 +791,15 @@ namespace Mxx1Toolbox
                 total++;
                 if (string.Equals(t.Tab, _currentTab, StringComparison.OrdinalIgnoreCase)) { here++; }
             }
-            string text = "共 " + total + " 个按钮（本页 " + here + "）";
-            if (_warnings.Count > 0) { text += " · 定义有 " + _warnings.Count + " 处问题（见日志）"; }
+            // Kept short on purpose: the label is a fixed width and a long line (the old format
+            // plus a full "完成：xxx 退出码 0" message) overflowed it, so the tail was cut off.
+            // The complete line is available as a tooltip and in the run log.
+            string text = total + " 个按钮 · 本页 " + here;
+            if (_warnings.Count > 0) { text += " · 定义有 " + _warnings.Count + " 处问题"; }
             if (_running > 0) { text += " · 运行中 " + _running; }
             text += " · " + _statusText;
             _statusLabel.Text = text;
+            _tips.SetToolTip(_statusLabel, text);
             _btnLog.Text = _logPanel.Visible ? "收起日志" : "日志";
         }
 

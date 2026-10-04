@@ -28,7 +28,7 @@ powershell -ExecutionPolicy Bypass -File build.ps1     # 编译，产物 bin\Mxx
 
 | 操作 | 结果 |
 | --- | --- |
-| 左键单击按钮 | 执行（占位按钮显示「功能待接入（P1）」并写日志，按钮灰 0.6 秒表示点到了） |
+| 左键单击按钮 | 执行（占位按钮显示「功能待接入（P1）」并写日志，按钮灰 0.6 秒表示点到了；**运行中按钮文字不变**，只有图标变成转圈） |
 | 按住 Shift 单击 / 右键「以管理员身份运行」 | 提权执行（UAC） |
 | 右键按钮 | 运行 / 以管理员身份运行 / 打开所在文件夹 / 复制启动命令 / 查看按钮定义 |
 | 底部 `[搜索]`、`[日志]` | 展开搜索框 / 运行日志面板（日志**最新的在最上面**） |
@@ -94,7 +94,7 @@ bin\Mxx1Toolbox.exe help
 powershell -File tools\Test-Encoding.ps1     # 编码红线体检（BOM / 纯 ASCII / 硬编码本机路径）
 powershell -File tests\Test-All.ps1          # 全部（无桌面时加 -SkipGui）
 powershell -File tests\Test-Cli.ps1          # 命令行回归 26 项
-powershell -File tests\Test-Gui.ps1          # 界面回归 39 项（要交互式桌面，无桌面返回 3 = 跳过）
+powershell -File tests\Test-Gui.ps1          # 界面回归 44 项（要交互式桌面，无桌面返回 3 = 跳过）
 powershell -File tools\Make-Screenshots.ps1  # 重新拍 docs 里的截图
 powershell -File tools\Make-Icons.ps1        # 重新生成 61 个 16x16 PNG 图标
 ```

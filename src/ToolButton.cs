@@ -58,7 +58,11 @@ namespace Mxx1Toolbox
         {
             _busy = busy;
             Enabled = !busy;
-            Text = busy ? Tool.Name + "…" : Tool.Name;
+            // Text is deliberately NOT touched. Appending "…" widened the image+text group, and
+            // because the group is centred the icon jumped sideways on every click; on the widest
+            // labels the text even overflowed the button. The busy state is shown by this icon
+            // (same 16x16 size) plus the disabled colours.
+            Image = busy ? IconFactory.Busy() : IconFactory.Get(Tool);
             if (_theme != null && !busy) { ForeColor = Tool.Danger ? _theme.Danger : _theme.ButtonText; }
             if (_theme != null && busy) { ForeColor = _theme.ButtonDisabledText; }
 

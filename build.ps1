@@ -68,6 +68,19 @@ if ($sources.Count -eq 0) { throw 'src\*.cs not found' }
 
 [void][System.IO.Directory]::CreateDirectory($binDir)
 
+# A running copy locks the exe. Never kill it (the user may be using the tool): rename it aside
+# instead -- renaming works while the process holds the file, and the process keeps running.
+if (Test-Path $out) {
+    $locked = $false
+    try { $fs = [System.IO.File]::Open($out, 'Open', 'ReadWrite', 'None'); $fs.Close() }
+    catch { $locked = $true }
+    if ($locked) {
+        $aside = $out + '.old-' + (Get-Date -Format 'HHmmss')
+        Move-Item $out $aside -Force
+        Write-Host ('note     : exe was in use, moved aside -> ' + (Split-Path -Leaf $aside))
+    }
+}
+
 $cscArgs = @(
     '/nologo'
     '/target:winexe'

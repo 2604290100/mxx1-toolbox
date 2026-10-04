@@ -17,7 +17,7 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
 
 ## 当前状态（2026-10-04，v1.4.0）
 
-- ✅ **测试 187 项全绿**：命令行回归 96 + 界面回归 91（外加编码体检 158 个文件、内联脚本与清单体检
+- ✅ **测试 188 项全绿**：命令行回归 96 + 界面回归 92（外加编码体检 158 个文件、内联脚本与清单体检
   34 个脚本 / 7 个清单）。产物 `bin\Mxx1Toolbox.exe`（约 260 KB 单文件），
   七个 `tools.*.json` + 105 个 `icons.*.png` 已内嵌。
 - ✅ **八个页签、105 个内置按钮，全部是真功能，灰色占位一个不剩**：`常用`（置顶 + 最近使用，
@@ -96,7 +96,7 @@ D:\萌新工具开发\toolbox\
   tests\Test-All.ps1               一条命令跑完全部
   tools\Test-InlineSyntax.ps1      内联脚本语法 + 清单 JSON 体检（46 个脚本 / 7 个清单）
 tests\Test-Cli.ps1               命令行回归 96 项（L 组 12 项盯 sysreg：成对 / 只读 / 无写入口 / 自检 / 合规底线）
-  tests\Test-Gui.ps1               界面回归 91 项（要交互式桌面，无桌面返回 3 = 跳过；H 组盯固定尺寸、E04b 盯窗口位置）
+  tests\Test-Gui.ps1               界面回归 92 项（要交互式桌面，无桌面返回 3 = 跳过；H 组盯固定尺寸、E04b 盯窗口位置、A09 盯 bin-tools 说明）
   docs\DESIGN.md                   设计正本（含"踩过的坑"清单 + §13 打包方案）
   docs\gui-shot.png / dark-shot.png / system-shot.png  界面截图
 ```
@@ -143,6 +143,11 @@ powershell -File tools\Make-Icons.ps1         # 重生成 PNG 图标（先 build
 
 - 位置：**工具箱 exe 旁边**的 `bin-tools\`（`AppPaths.PayloadDir`）；`%LOCALAPPDATA%\mxx1-toolbox\bin-tools\`
   是备用（exe 在只读目录时用，将来内嵌兜底也释放到那）。
+- **这个目录空着是正常的**：第一次打开界面时 `AppPaths.EnsurePayloadDir()`（在 `Program.Main` 的 GUI
+  分支里）会建好目录并放一份 **`说明.txt`**（只在缺文件时写、不覆盖用户改过的）。用户 2026-10-04
+  问过「bin-tools 里面为什么是空的？」—— 开发机上不放东西照样能用，查找顺序最后会命中上一层相邻
+  仓库的 `permanent-delete-menu\bin\`；放进去的文件优先级更高，所以隔壁重新编译后要换掉旧副本。
+  回归：Test-Gui 的 A09 盯着这个文件必须在。
 - 查找顺序：设置里指定的路径 → `bin-tools\<文件名>` → exe 同目录同名文件 → 用户目录 `bin-tools\` →
   向上三层找隔壁仓库 `permanent-delete-menu\bin\`（开发用）→ `%LOCALAPPDATA%\PermanentDelete\`。
 - **相对路径按「工具箱目录 → `bin-tools\`」解析**（`AppPaths.Resolve`），所以清单里只写文件名就行；

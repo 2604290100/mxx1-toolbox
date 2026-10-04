@@ -120,22 +120,64 @@ namespace Mxx1Toolbox
         }
 
         /// <summary>Creates bin-tools next to the exe (falls back to the per user folder when the
-        /// toolbox sits somewhere read only). Returns the folder it managed to create.</summary>
+        /// toolbox sits somewhere read only). Returns the folder it managed to create.
+        /// A short 说明.txt is dropped in as well: an empty folder looks broken (the user asked
+        /// "bin-tools 里面为什么是空的？" on 2026-10-04).</summary>
         public static string EnsurePayloadDir()
         {
             try
             {
                 Directory.CreateDirectory(PayloadDir);
+                WritePayloadNote(PayloadDir);
                 return PayloadDir;
             }
             catch { }
             try
             {
                 Directory.CreateDirectory(UserPayloadDir);
+                WritePayloadNote(UserPayloadDir);
                 return UserPayloadDir;
             }
             catch { }
             return PayloadDir;
+        }
+
+        /// <summary>Name of the note that explains what bin-tools is for.</summary>
+        public const string PayloadNoteName = "说明.txt";
+
+        /// <summary>Written once (never overwritten), so the user can edit or delete it freely.</summary>
+        private static readonly string[] PayloadNoteLines = new string[]
+        {
+            "这个文件夹是给「外部工具」用的：把别的 exe / 脚本丢进来，按钮就能找到它们。",
+            "现在是空的完全正常 —— 工具箱不依赖这里的东西。",
+            "",
+            "为什么空着也能用：「永久删除工具」按钮按这个顺序找 PermanentDeleteSetup.exe",
+            "    设置里指定的路径 → 环境变量 MXX1_PERMDEL_EXE → 工具箱同目录 → 本目录 bin-tools\\",
+            "    → 上一层相邻的 permanent-delete-menu\\bin\\ → %LOCALAPPDATA%\\PermanentDelete\\",
+            "  开发机上后面那两条就能命中，所以这里不放东西照样能用。",
+            "",
+            "什么时候该往这里放东西：",
+            "  1. 想让工具箱「自带」某个工具（把整个 bin 目录拷到别的机器也还能用）→ 把那个 exe 复制进来；",
+            "  2. 按钮里写的是相对路径（kind: exe 的 path、open 的 target）→ 按「工具箱目录 → bin-tools\\」解析；",
+            "  3. 放进来是按文件名匹配的，名字要和按钮期望的完全一致。",
+            "",
+            "注意：这里的东西优先于上面那些兜底路径 —— 隔壁工程重新编译过之后，",
+            "记得把这里的旧副本一起换掉，否则用的还是旧版本。",
+            "",
+            "打包时（build.ps1 -Package）隔壁的安装器会复制进「发布包」里的 bin-tools\\，不是这一个。",
+        };
+
+        private static void WritePayloadNote(string dir)
+        {
+            try
+            {
+                string p = Path.Combine(dir, PayloadNoteName);
+                if (File.Exists(p)) { return; }
+                File.WriteAllText(p,
+                    string.Join(Environment.NewLine, PayloadNoteLines) + Environment.NewLine,
+                    new System.Text.UTF8Encoding(false));
+            }
+            catch { }
         }
     }
 }

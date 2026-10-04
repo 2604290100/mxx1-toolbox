@@ -24,6 +24,10 @@ namespace Mxx1Toolbox
             }
 
             Logger.PruneOld(Settings.Load().LogKeepDays);
+            // 工具目录 bin-tools 在第一次打开界面时就建好，并放一份「说明.txt」进去：空文件夹看着
+            // 像坏了（用户 2026-10-04 就问过「bin-tools 里面为什么是空的？」）。位置不可写时
+            // EnsurePayloadDir 自己会退到用户目录，所以这里不用管返回值。
+            AppPaths.EnsurePayloadDir();
             Application.Run(new MainForm());
             return 0;
         }

@@ -120,7 +120,7 @@ bin\Mxx1Toolbox.exe help
 powershell -File tools\Test-Encoding.ps1     # 编码红线体检（BOM / 纯 ASCII / 硬编码本机路径）
 powershell -File tests\Test-All.ps1          # 全部（无桌面时加 -SkipGui）
 powershell -File tests\Test-Cli.ps1          # 命令行回归 96 项
-powershell -File tests\Test-Gui.ps1          # 界面回归 91 项（要交互式桌面，无桌面返回 3 = 跳过）
+powershell -File tests\Test-Gui.ps1          # 界面回归 92 项（要交互式桌面，无桌面返回 3 = 跳过）
 powershell -File tools\Make-Screenshots.ps1  # 重新拍 docs 里的截图（浅色 / 深色 / 系统工具页签）
 powershell -File tools\Make-Icons.ps1        # 重新生成 16x16 PNG 图标（先 build 再跑，改完还要再 build）
 ```
@@ -139,7 +139,7 @@ powershell -File tools\Make-Icons.ps1        # 重新生成 16x16 PNG 图标（�
 | `%LOCALAPPDATA%\mxx1-toolbox\tools.json` | 你自己加的按钮（图形化新建 / 拖拽 / 编辑 / 删除写的都是它，写入前备份 .bak） |
 | `%LOCALAPPDATA%\mxx1-toolbox\pinned.txt` `recent.txt` | 「常用」页签的两份数据：置顶的按钮 / 最近用过的按钮 |
 | `%LOCALAPPDATA%\mxx1-toolbox\sysreg-original.tsv` `privacy-original.tsv` | **改动前的原值**（「还原设置改动」/「隐私一键还原」按它写回去；删掉文件就等于放弃还原） |
-| `工具箱目录\bin-tools\` | **外部工具**都放这里（丢进去就能被按钮找到） |
+| `工具箱目录\bin-tools\` | **外部工具**都放这里（丢进去就能被按钮找到）；第一次打开界面时会自动建好并放一份 `说明.txt`（空着也不影响用） |
 | `%LOCALAPPDATA%\mxx1-toolbox\logs\toolbox-YYYY-MM-DD.log` | 运行日志 |
 
 ## 作者与许可

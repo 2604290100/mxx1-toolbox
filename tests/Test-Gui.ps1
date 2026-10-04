@@ -632,6 +632,11 @@ if (Switch-Tab -Handle $main -TabName '右键增强' -ExpectNames @()) {
     Check 'A08 切回常用设置后窗口又变回来（高度跟着内容）' $false 'skipped'
 }
 
+# 工具目录 bin-tools 会在第一次打开界面时建好，并放一份「说明.txt」进去 —— 空文件夹看着像坏了
+# （用户 2026-10-04 问过「bin-tools 里面为什么是空的？」）。界面起来之后这个文件必须已经在。
+$payloadNote = Join-Path (Split-Path -Parent $Exe) 'bin-tools\说明.txt'
+Check 'A09 工具目录 bin-tools 建好了，里面有一份说明.txt' (Test-Path -LiteralPath $payloadNote) $payloadNote
+
 # ---------------------------------------------------------------- B 组：按钮墙
 Write-Host ''
 Write-Host 'B 组 · 按钮墙（对照 CLI 的按钮清单）'

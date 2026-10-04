@@ -1,0 +1,11 @@
+# build output (never committed; released as a GitHub Release asset)
+bin/
+
+# user / IDE noise
+*.user
+*.suo
+.vs/
+.idea/
+
+# local scratch
+local/

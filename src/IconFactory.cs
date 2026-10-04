@@ -1,0 +1,132 @@
+﻿// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 mxx1.cn
+using System;
+using System.Collections.Generic;
+using System.Drawing;
+using System.Drawing.Drawing2D;
+using System.IO;
+
+namespace Mxx1Toolbox
+{
+    /// <summary>16x16 button icons. A real PNG wins (assets\icons\&lt;id&gt;.png, or the path given
+    /// by the manifest); when it is missing the icon is drawn, so the wall always looks complete
+    /// even before the icon pack is generated.</summary>
+    internal static class IconFactory
+    {
+        private static readonly Dictionary<string, Image> Cache = new Dictionary<string, Image>(StringComparer.OrdinalIgnoreCase);
+        private static readonly object Gate = new object();
+
+        private static readonly Color[] Palette = new Color[]
+        {
+            Color.FromArgb(0x2E, 0x74, 0xB5),
+            Color.FromArgb(0x1B, 0x9E, 0x74),
+            Color.FromArgb(0xC0, 0x50, 0x4D),
+            Color.FromArgb(0x8E, 0x6F, 0xB0),
+            Color.FromArgb(0xD1, 0x8A, 0x2A),
+            Color.FromArgb(0x2A, 0x8C, 0x8C),
+            Color.FromArgb(0x9A, 0x5F, 0xB0),
+            Color.FromArgb(0x5B, 0x7C, 0x99)
+        };
+
+        public static Image Get(ToolItem tool)
+        {
+            if (tool == null) { return null; }
+            lock (Gate)
+            {
+                Image cached;
+                if (Cache.TryGetValue(tool.Id, out cached)) { return cached; }
+                Image img = LoadPng(tool.IconPath);
+                if (img == null) { img = DrawFallback(tool); }
+                Cache[tool.Id] = img;
+                return img;
+            }
+        }
+
+        private static Image LoadPng(string path)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(path) || !File.Exists(path)) { return null; }
+                using (FileStream fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                {
+                    Image raw = Image.FromStream(fs);
+                    Bitmap bmp = new Bitmap(16, 16);
+                    using (Graphics g = Graphics.FromImage(bmp))
+                    {
+                        g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                        g.DrawImage(raw, new Rectangle(0, 0, 16, 16));
+                    }
+                    return bmp;
+                }
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        /// <summary>Rounded square in a colour picked from the id, with the first character on top.
+        /// No emoji, no symbol font: 微软雅黑 has no glyph for characters like U+2713.</summary>
+        private static Image DrawFallback(ToolItem tool)
+        {
+            Bitmap bmp = new Bitmap(16, 16);
+            Color color = Palette[Math.Abs(StableHash(tool.Id)) % Palette.Length];
+            using (Graphics g = Graphics.FromImage(bmp))
+            {
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+                g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
+                using (GraphicsPath path = RoundedRect(new Rectangle(1, 1, 14, 14), 4))
+                using (SolidBrush brush = new SolidBrush(color))
+                {
+                    g.FillPath(brush, path);
+                }
+                string text = FirstChar(tool.Name);
+                if (text.Length > 0)
+                {
+                    using (Font font = new Font("Microsoft YaHei", 8f, FontStyle.Bold, GraphicsUnit.Point))
+                    using (SolidBrush white = new SolidBrush(Color.White))
+                    using (StringFormat sf = new StringFormat())
+                    {
+                        sf.Alignment = StringAlignment.Center;
+                        sf.LineAlignment = StringAlignment.Center;
+                        g.DrawString(text, font, white, new RectangleF(1f, 0.5f, 14f, 15f), sf);
+                    }
+                }
+            }
+            return bmp;
+        }
+
+        private static string FirstChar(string name)
+        {
+            if (string.IsNullOrEmpty(name)) { return ""; }
+            string s = name.Trim();
+            if (s.StartsWith("+")) { return "+"; }
+            return s.Substring(0, 1).ToUpperInvariant();
+        }
+
+        private static int StableHash(string s)
+        {
+            int h = 17;
+            if (s == null) { return h; }
+            for (int i = 0; i < s.Length; i++) { h = h * 31 + s[i]; }
+            return h;
+        }
+
+        private static GraphicsPath RoundedRect(Rectangle r, int radius)
+        {
+            int d = radius * 2;
+            GraphicsPath path = new GraphicsPath();
+            path.AddArc(r.X, r.Y, d, d, 180, 90);
+            path.AddArc(r.Right - d, r.Y, d, d, 270, 90);
+            path.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90);
+            path.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
+            path.CloseFigure();
+            return path;
+        }
+
+        public static void Clear()
+        {
+            lock (Gate) { Cache.Clear(); }
+        }
+    }
+}

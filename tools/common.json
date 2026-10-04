@@ -1,0 +1,44 @@
+{
+  "_comment": "常用设置页签。P0 只做按钮外观，点击走「功能待接入（P1）」提示，不动系统。",
+  "tools": [
+    { "id": "taskbar-never-combine",   "tab": "common", "segment": 1, "order": 10, "name": "任务栏从不合并",       "kind": "builtin", "module": "system", "action": "tweak", "placeholder": true, "hint": "P1" },
+    { "id": "startmenu-left",          "tab": "common", "segment": 1, "order": 20, "name": "开始菜单居左",         "kind": "builtin", "module": "system", "action": "tweak", "placeholder": true, "hint": "P1" },
+    { "id": "explorer-win10",          "tab": "common", "segment": 1, "order": 30, "name": "Win10 资源管理器",     "kind": "builtin", "module": "system", "action": "tweak", "placeholder": true, "hint": "P1" },
+    { "id": "ctxmenu-win10",           "tab": "common", "segment": 1, "order": 40, "name": "Win10 右键菜单",       "kind": "builtin", "module": "system", "action": "tweak", "placeholder": true, "hint": "P1" },
+
+    { "id": "taskbar-always-combine",  "tab": "common", "segment": 1, "order": 50, "name": "任务栏始终合并",       "kind": "builtin", "module": "system", "action": "tweak", "placeholder": true, "hint": "P1" },
+    { "id": "startmenu-center",        "tab": "common", "segment": 1, "order": 60, "name": "开始菜单居中",         "kind": "builtin", "module": "system", "action": "tweak", "placeholder": true, "hint": "P1" },
+    { "id": "explorer-win11",          "tab": "common", "segment": 1, "order": 70, "name": "Win11 资源管理器",     "kind": "builtin", "module": "system", "action": "tweak", "placeholder": true, "hint": "P1" },
+    { "id": "ctxmenu-win11",           "tab": "common", "segment": 1, "order": 80, "name": "Win11 右键菜单",       "kind": "builtin", "module": "system", "action": "tweak", "placeholder": true, "hint": "P1" },
+
+    { "id": "desktop-icons",           "tab": "common", "segment": 1, "order": 90,  "name": "桌面图标设置",        "kind": "builtin", "module": "system", "action": "tweak", "placeholder": true, "hint": "P1" },
+    { "id": "driver-install-off",      "tab": "common", "segment": 1, "order": 100, "name": "关闭驱动自动安装",    "kind": "builtin", "module": "system", "action": "tweak", "placeholder": true, "hint": "P1" },
+    { "id": "metered-off",             "tab": "common", "segment": 1, "order": 110, "name": "关闭按流量计费",      "kind": "builtin", "module": "system", "action": "tweak", "placeholder": true, "hint": "P1" },
+    { "id": "core-isolation-off",      "tab": "common", "segment": 1, "order": 120, "name": "关闭内核隔离",        "kind": "builtin", "module": "system", "action": "tweak", "placeholder": true, "hint": "P1", "danger": true },
+
+    { "id": "taskbar-search",          "tab": "common", "segment": 1, "order": 130, "name": "任务栏搜索设置",      "kind": "builtin", "module": "system", "action": "tweak", "placeholder": true, "hint": "P1" },
+    { "id": "driver-install-on",       "tab": "common", "segment": 1, "order": 140, "name": "开启驱动自动安装",    "kind": "builtin", "module": "system", "action": "tweak", "placeholder": true, "hint": "P1" },
+    { "id": "metered-on",              "tab": "common", "segment": 1, "order": 150, "name": "开启按流量计费",      "kind": "builtin", "module": "system", "action": "tweak", "placeholder": true, "hint": "P1" },
+    { "id": "core-isolation-on",       "tab": "common", "segment": 1, "order": 160, "name": "开启内核隔离",        "kind": "builtin", "module": "system", "action": "tweak", "placeholder": true, "hint": "P1" },
+
+    { "id": "tamper-protection-off",   "tab": "common", "segment": 2, "order": 10, "name": "关闭实时防护与篡改",   "kind": "builtin", "module": "system", "action": "tweak", "placeholder": true, "hint": "P1", "danger": true },
+    { "id": "windows-activate",        "tab": "common", "segment": 2, "order": 20, "name": "Windows 激活",         "kind": "builtin", "module": "system", "action": "tweak", "placeholder": true, "hint": "P1" },
+    { "id": "defender-toggle",         "tab": "common", "segment": 2, "order": 30, "name": "Defender 开关设置",    "kind": "builtin", "module": "system", "action": "tweak", "placeholder": true, "hint": "P1", "danger": true },
+    { "id": "windows-update-toggle",   "tab": "common", "segment": 2, "order": 40, "name": "Windows 更新开关",     "kind": "builtin", "module": "system", "action": "tweak", "placeholder": true, "hint": "P1" },
+
+    { "id": "uac-off",                 "tab": "common", "segment": 2, "order": 50, "name": "关闭 UAC 通知",        "kind": "builtin", "module": "system", "action": "tweak", "placeholder": true, "hint": "P1", "danger": true },
+    { "id": "activate-status",         "tab": "common", "segment": 2, "order": 60, "name": "激活状态",             "kind": "builtin", "module": "system", "action": "tweak", "placeholder": true, "hint": "P1" },
+    { "id": "firewall-toggle",         "tab": "common", "segment": 2, "order": 70, "name": "开启/关闭防火墙",      "kind": "builtin", "module": "system", "action": "tweak", "placeholder": true, "hint": "P1" },
+    { "id": "bitlocker-toggle",        "tab": "common", "segment": 2, "order": 80, "name": "BitLocker 加密开关",   "kind": "builtin", "module": "system", "action": "tweak", "placeholder": true, "hint": "P1" },
+
+    { "id": "hibernate-toggle",        "tab": "common", "segment": 2, "order": 90,  "name": "禁用/启用休眠",       "kind": "builtin", "module": "system", "action": "tweak", "placeholder": true, "hint": "P1" },
+    { "id": "power-ultimate",          "tab": "common", "segment": 2, "order": 100, "name": "电源卓越模式",        "kind": "builtin", "module": "system", "action": "tweak", "placeholder": true, "hint": "P1" },
+    { "id": "power-high",              "tab": "common", "segment": 2, "order": 110, "name": "电源高性能模式",      "kind": "builtin", "module": "system", "action": "tweak", "placeholder": true, "hint": "P1" },
+    { "id": "power-balanced",          "tab": "common", "segment": 2, "order": 120, "name": "电源平衡模式",        "kind": "builtin", "module": "system", "action": "tweak", "placeholder": true, "hint": "P1" },
+
+    { "id": "restart-explorer",        "tab": "common", "segment": 2, "order": 130, "name": "重启资源管理器",      "kind": "builtin", "module": "system", "action": "tweak", "placeholder": true, "hint": "P1" },
+    { "id": "smartscreen-off",         "tab": "common", "segment": 2, "order": 140, "name": "禁用 SmartScreen",     "kind": "builtin", "module": "system", "action": "tweak", "placeholder": true, "hint": "P1", "danger": true },
+    { "id": "flush-dns",               "tab": "common", "segment": 2, "order": 150, "name": "刷新 DNS 缓存",        "kind": "builtin", "module": "system", "action": "tweak", "placeholder": true, "hint": "P1" },
+    { "id": "hosts-edit",              "tab": "common", "segment": 2, "order": 160, "name": "hosts 修改",           "kind": "builtin", "module": "system", "action": "tweak", "placeholder": true, "hint": "P1" }
+  ]
+}

@@ -1,0 +1,6 @@
+{
+  "_comment": "我的工具页签：用户自己加的按钮。图形化的「新建按钮」在 P1 接入，现在可以直接编辑 %LOCALAPPDATA%\\mxx1-toolbox\\tools.json。",
+  "tools": [
+    { "id": "app.newtool", "tab": "mine", "segment": 1, "order": 10, "name": "+ 新建按钮", "kind": "builtin", "module": "app", "action": "newtool" }
+  ]
+}

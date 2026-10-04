@@ -1,0 +1,14 @@
+{
+  "_comment": "右键增强页签 —— 这里的按钮是真能跑的：调隔壁 permanent-delete-menu 的 PermanentDeleteSetup.exe（零改动集成）。",
+  "tools": [
+    { "id": "permdel.install",    "tab": "rightmenu", "segment": 1, "order": 10, "name": "安装到右键",   "kind": "builtin", "module": "permdel", "action": "install",    "options": "--quiet", "runAsAdmin": true, "confirm": true, "pinned": true },
+    { "id": "permdel.uninstall",  "tab": "rightmenu", "segment": 1, "order": 20, "name": "卸载右键菜单", "kind": "builtin", "module": "permdel", "action": "uninstall",  "options": "--quiet", "runAsAdmin": true, "confirm": true },
+    { "id": "permdel.status",     "tab": "rightmenu", "segment": 1, "order": 30, "name": "查看状态",     "kind": "builtin", "module": "permdel", "action": "status" },
+    { "id": "permdel.verify",     "tab": "rightmenu", "segment": 1, "order": 40, "name": "测试一下",     "kind": "builtin", "module": "permdel", "action": "verify" },
+
+    { "id": "permdel.disclaimer", "tab": "rightmenu", "segment": 2, "order": 10, "name": "使用条款",     "kind": "builtin", "module": "permdel", "action": "disclaimer" },
+    { "id": "permdel.enginelog",  "tab": "rightmenu", "segment": 2, "order": 20, "name": "引擎日志",     "kind": "builtin", "module": "permdel", "action": "enginelog" },
+    { "id": "permdel.checkupdate","tab": "rightmenu", "segment": 2, "order": 30, "name": "版本与更新",   "kind": "builtin", "module": "permdel", "action": "checkupdate" },
+    { "id": "permdel.about",      "tab": "rightmenu", "segment": 2, "order": 40, "name": "关于作者",     "kind": "builtin", "module": "app",     "action": "about" }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "_comment": "系统工具页签。P0 只有外观，点击走「功能待接入（P1）」。",
+  "tools": [
+    { "id": "devmgmt",          "tab": "system", "segment": 1, "order": 10, "name": "设备管理器",   "kind": "builtin", "module": "system", "action": "tweak", "placeholder": true, "hint": "P1" },
+    { "id": "sound-settings",   "tab": "system", "segment": 1, "order": 20, "name": "打开声音设置", "kind": "builtin", "module": "system", "action": "tweak", "placeholder": true, "hint": "P1" },
+    { "id": "devices-printers", "tab": "system", "segment": 1, "order": 30, "name": "设备和打印机", "kind": "builtin", "module": "system", "action": "tweak", "placeholder": true, "hint": "P1" },
+    { "id": "task-scheduler",   "tab": "system", "segment": 1, "order": 40, "name": "计划任务",     "kind": "builtin", "module": "system", "action": "tweak", "placeholder": true, "hint": "P1" },
+
+    { "id": "regedit",          "tab": "system", "segment": 2, "order": 10, "name": "打开注册表",   "kind": "builtin", "module": "system", "action": "tweak", "placeholder": true, "hint": "P1" },
+    { "id": "services",         "tab": "system", "segment": 2, "order": 20, "name": "打开服务",     "kind": "builtin", "module": "system", "action": "tweak", "placeholder": true, "hint": "P1" },
+    { "id": "gpedit",           "tab": "system", "segment": 2, "order": 30, "name": "打开组策略",   "kind": "builtin", "module": "system", "action": "tweak", "placeholder": true, "hint": "P1" },
+    { "id": "appwiz",           "tab": "system", "segment": 2, "order": 40, "name": "程序和功能",   "kind": "builtin", "module": "system", "action": "tweak", "placeholder": true, "hint": "P1" },
+
+    { "id": "taskmgr",          "tab": "system", "segment": 3, "order": 10, "name": "任务管理器",   "kind": "builtin", "module": "system", "action": "tweak", "placeholder": true, "hint": "P1" },
+    { "id": "sysinfo",          "tab": "system", "segment": 3, "order": 20, "name": "系统信息",     "kind": "builtin", "module": "system", "action": "tweak", "placeholder": true, "hint": "P1" },
+    { "id": "useful-links",     "tab": "system", "segment": 3, "order": 30, "name": "常用链接",     "kind": "builtin", "module": "system", "action": "tweak", "placeholder": true, "hint": "P1" },
+    { "id": "control-panel",    "tab": "system", "segment": 3, "order": 40, "name": "控制面板",     "kind": "builtin", "module": "system", "action": "tweak", "placeholder": true, "hint": "P1" }
+  ]
+}

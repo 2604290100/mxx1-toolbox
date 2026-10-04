@@ -1,0 +1,14 @@
+{
+  "_comment": "清理优化页签。P0 只有外观，点击走「功能待接入（P1）」。",
+  "tools": [
+    { "id": "clean-junk",           "tab": "cleanup", "segment": 1, "order": 10, "name": "一键清理垃圾",   "kind": "builtin", "module": "cleanup", "action": "tweak", "placeholder": true, "hint": "P1", "danger": true },
+    { "id": "clean-temp",           "tab": "cleanup", "segment": 1, "order": 20, "name": "清理临时文件",   "kind": "builtin", "module": "cleanup", "action": "tweak", "placeholder": true, "hint": "P1" },
+    { "id": "empty-recyclebin",     "tab": "cleanup", "segment": 1, "order": 30, "name": "清空回收站",     "kind": "builtin", "module": "cleanup", "action": "tweak", "placeholder": true, "hint": "P1", "danger": true },
+    { "id": "clean-browser-cache",  "tab": "cleanup", "segment": 1, "order": 40, "name": "清理浏览器缓存", "kind": "builtin", "module": "cleanup", "action": "tweak", "placeholder": true, "hint": "P1" },
+
+    { "id": "disk-cleanup",         "tab": "cleanup", "segment": 2, "order": 10, "name": "磁盘清理",       "kind": "builtin", "module": "cleanup", "action": "tweak", "placeholder": true, "hint": "P1" },
+    { "id": "storage-sense",        "tab": "cleanup", "segment": 2, "order": 20, "name": "存储感知设置",   "kind": "builtin", "module": "cleanup", "action": "tweak", "placeholder": true, "hint": "P1" },
+    { "id": "startup-items",        "tab": "cleanup", "segment": 2, "order": 30, "name": "开机启动项管理", "kind": "builtin", "module": "cleanup", "action": "tweak", "placeholder": true, "hint": "P1" },
+    { "id": "big-file-find",        "tab": "cleanup", "segment": 2, "order": 40, "name": "大文件查找",     "kind": "builtin", "module": "cleanup", "action": "tweak", "placeholder": true, "hint": "P1" }
+  ]
+}

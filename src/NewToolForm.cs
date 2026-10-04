@@ -166,6 +166,7 @@ namespace Mxx1Toolbox
             CancelButton = cancel;
             SyncRows();
             ApplyTheme(theme);
+            EnableDrop(this);      // 拖进来直接填这个窗口，不再开第二个（见 EnableDrop 的注释）
         }
 
         // ---------------------------------------------------------------- layout helpers
@@ -240,6 +241,53 @@ namespace Mxx1Toolbox
             {
                 _tip.Text = "直接写一行命令，用 PowerShell 或 cmd 执行；输出会显示在结果窗口里。";
             }
+        }
+
+        // ---------------------------------------------------------------- 拖进来就能填
+
+        /// <summary>Lets the window itself accept drops, so a file dropped while it is open fills
+        /// THIS window instead of opening a second one. Every child control needs AllowDrop: the
+        /// drop goes to whatever control is under the cursor.</summary>
+        private void EnableDrop(Control c)
+        {
+            try
+            {
+                c.AllowDrop = true;
+                c.DragEnter += OnDropEnter;
+                c.DragDrop += OnDropHere;
+            }
+            catch { }
+            foreach (Control child in c.Controls) { EnableDrop(child); }
+        }
+
+        private void OnDropEnter(object sender, DragEventArgs e)
+        {
+            bool files = (e.Data != null) && e.Data.GetDataPresent(DataFormats.FileDrop);
+            e.Effect = files ? DragDropEffects.Copy : DragDropEffects.None;
+        }
+
+        private void OnDropHere(object sender, DragEventArgs e)
+        {
+            string[] files = null;
+            try { files = e.Data.GetData(DataFormats.FileDrop) as string[]; }
+            catch { }
+            if (files == null || files.Length == 0) { return; }
+            ToolItem d = DroppedFile.Draft(files[0]);
+            if (d == null) { return; }
+
+            _kindBox.SelectedIndex = KindIndex(d.Kind, d.Inline.Length > 0);
+            if (d.Kind == "open") { _targetBox.Text = d.Target; }
+            else
+            {
+                _targetBox.Text = d.Path;
+                if (_argsBox.Text.Trim().Length == 0) { _argsBox.Text = d.Args; }
+            }
+            if (d.Kind == "script") { _shellBox.SelectedIndex = (d.Shell == "cmd") ? 1 : 0; }
+            if (_nameBox.Text.Trim().Length == 0) { _nameBox.Text = d.Name; }
+            if (d.Hint.Length > 0) { _hintBox.Text = d.Hint; }
+            SyncRows();
+            _tip.Text = "已按拖进来的东西填好：" + files[0] + (files.Length > 1 ? "（只取了第一个）" : "");
+            _targetBox.Focus();
         }
 
         private void Browse()

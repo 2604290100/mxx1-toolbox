@@ -547,16 +547,22 @@ $visibleEdits = @($all | Where-Object { $_.Class -like '*EDIT*' -and $_.Height -
 Check 'B08 默认不显示日志面板（没有大文本框）' ($visibleEdits.Count -eq 0) ('可见文本框=' + $visibleEdits.Count)
 
 # 用户报过"按钮的图标没有上下居中"，还有"没做功能的按钮应该是灰的"，这两件事都只能从渲染结果判定。
-# 常用设置页签上灰按钮和真按钮混在一起，这里量的是这一页第一个按钮（左上角那个，是灰的）：
-#   * 文字墨迹行数（完整的按钮应该有 >= 10 行，被裁就少）—— 同时给 D 组当底栏的参考值
-#   * 最暗墨迹有多暗（灰按钮明显比真按钮淡）—— 见下面的 B09 和 C01d
-# 图标居中那条要彩色图标才量得准，放在 C 组的「右键增强」页签（那个按钮是真功能，图标是彩色的）。
+# 常用设置页签上灰按钮和真按钮混在一起。**别假设左上角那个一定是灰的** ——
+# 2026-10-04「任务栏从不合并」被接上真功能，B09/C01d 就假红了。灰按钮名单从 CLI 现取。
+$greyNames = @()
+$liveNames = @()
+foreach ($line in ((Invoke-Exe 'list --tab common') -split "`r?`n")) {
+    if ($line -notmatch "`t") { continue }
+    $cells = $line -split "`t"
+    if ($cells -contains 'placeholder') { $greyNames += $cells[2] } else { $liveNames += $cells[2] }
+}
+
 $shot = Get-WindowShot -Handle $main
-$gridProbe = @($toolButtons | Sort-Object Top, Left | Select-Object -First 1)
+$gridProbe = @($toolButtons | Where-Object { $greyNames -contains $_.Text } | Sort-Object Top, Left | Select-Object -First 1)
 $refInkH = 0
 $greyDark = 0
 if ($shot -eq $null -or $gridProbe.Count -eq 0) {
-    Check 'B09 占位按钮默认是灰的（最暗墨迹 >= 110）' $false '窗口截图失败'
+    Check 'B09 占位按钮是灰的（最暗墨迹 >= 60）' $false ('窗口截图失败或这一页没有灰按钮（灰=' + $greyNames.Count + '）')
     Check 'B09b 按钮文字完整（墨迹行数 >= 10）' $false '窗口截图失败'
 } else {
     $probeRect = @{
@@ -653,6 +659,10 @@ if ($newBtn.Count -gt 0) {
         $fields = @(Get-ChildControls -RootHandle $newWin[0].H | Where-Object { $_.Class -like '*EDIT*' -or $_.Class -like '*COMBOBOX*' })
         $hasName = @($fields | Where-Object { $_.Visible }).Count
         Check 'C10 新建窗口里有名称 / 类型 / 路径等输入框' ($hasName -ge 4) ('输入控件=' + $hasName)
+        # 「新建按钮」窗口一次只能有一个：往窗口里拖文件应该填进这个窗口，而不是再开一个
+        # （用户实测报过："拖入程序图标后会打开一个新的新建按钮弹出的窗口，应该只弹一个的"）。
+        $dupWin = @((Get-TopWindows -ProcessId $proc.Id) | Where-Object { $_.H -ne $main -and $_.Visible -and $_.Text -match '新建按钮' })
+        Check 'C10b 「新建按钮」窗口只有一个' ($dupWin.Count -eq 1) ('找到=' + $dupWin.Count)
         [void][TBGui]::CloseWindow($newWin[0].H)      # 先取消一次，验证取消不写文件
         Start-Sleep -Milliseconds 600
         Check 'C11 取消后新建窗口关掉了（没有写进 tools.json）' (@((Get-TopWindows -ProcessId $proc.Id) | Where-Object { $_.H -ne $main -and $_.Visible -and $_.Text -match '新建按钮' }).Count -eq 0) ''

@@ -17,12 +17,12 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
 
 ## 当前状态（2026-10-04，v1.2.0）
 
-- ✅ **测试 101 项全绿**：命令行回归 37 + 界面回归 64（外加编码体检 98 个文件）。
+- ✅ **测试 109 项全绿**：命令行回归 44 + 界面回归 65（外加编码体检 99 个文件）。
   产物 `bin\Mxx1Toolbox.exe`（约 136 KB 单文件），五个 `tools.*.json` + 53 个 `icons.*.png` 已内嵌。
-- ✅ **53 个按钮 = 35 个真功能 + 18 个灰色占位**：`常用设置` 31（13 真 / 18 灰）/
+- ✅ **53 个按钮 = 38 个真功能 + 15 个灰色占位**：`常用设置` 31（16 真 / 15 灰）/
   `右键增强` **1**（真）/ `清理优化` **8**（全真）/ `系统工具` **12**（全真）/
   `我的工具` 1（图形化新建，真）。
-- ✅ **灰色 = 功能还没接入 = 禁止点击**（用户 2026-10-04 改的规则）：18 个占位按钮 `Enabled=false`、
+- ✅ **灰色 = 功能还没接入 = 禁止点击**（用户 2026-10-04 改的规则）：15 个占位按钮 `Enabled=false`、
   灰底灰字 + **置灰图标**（`IconFactory.GetMuted()`）—— 点不动、不能聚焦、不弹提示；
   禁用控件不显示 tooltip，所以状态栏在有灰按钮的页面上带一句「灰色 N 个没接功能」。
 - ✅ **「系统工具」12 个 + 「清理优化」8 个 + 「常用设置」13 个都是真功能**；
@@ -37,7 +37,7 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
 - ✅ **外部工具目录 `bin-tools\` 已实现**（用户定的名字）：查找顺序里加一档、`build.ps1 -Package` 自动拷入、
   设置 / 关于窗口有「打开工具目录」、`kind: exe` 的相对路径按「工具箱目录 → `bin-tools\`」解析。
   ⬜ 还没做：把工具内嵌进 exe 当兜底、`bin-tools\<工具>\tool.json` 自动扫按钮（`docs\DESIGN.md` §13 的 ② ③）。
-- ⬜ P1：把 18 个灰色占位里安全的那些接上（其余按 hint 里写的理由继续灰着）、按钮排序 / 隐藏 / 固定到常用、多步 `macro`。
+- ⬜ P1：把 15 个灰色占位里安全的那些接上（其余按 hint 里写的理由继续灰着）、按钮排序 / 隐藏 / 固定到常用、多步 `macro`。
 
 ## 结构
 
@@ -45,7 +45,7 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
 D:\萌新工具开发\toolbox\
   build.ps1                        一键编译（系统自带 csc.exe，不需要 .NET SDK）
   bin\Mxx1Toolbox.exe              交付物：单文件 GUI+CLI（不入仓）
-  src\Program.cs                   CLI 入口（list / run [--dry] / status / checkupdate / help）
+  src\Program.cs                   CLI 入口（list / run [--dry] / draft / status / checkupdate / help）
   src\MainForm.cs                  主窗口：页签 + 四列网格 + 底栏 + 搜索 + 日志面板 + 键盘
   src\ToolButton.cs                紧凑按钮（Flat + 主题配色 + 16×15 图标画布 + 灰色占位 + Flash/SetBusy）
   src\IconFactory.cs               图标：有 PNG 用 PNG，没有就实时画；一律 Normalize 成 16×15；GetMuted 出灰版
@@ -66,8 +66,8 @@ D:\萌新工具开发\toolbox\
   tools\Make-Icons.ps1             批量画图标（先从 exe 的 list 读清单，所以**先 build 再跑它**）
   assets\icons\*.png               53 个图标（编译时内嵌成 icons.<id>.png）
   tests\Test-All.ps1               一条命令跑完全部
-  tests\Test-Cli.ps1               命令行回归 37 项
-  tests\Test-Gui.ps1               界面回归 64 项（要交互式桌面，无桌面返回 3 = 跳过）
+  tests\Test-Cli.ps1               命令行回归 44 项
+  tests\Test-Gui.ps1               界面回归 65 项（要交互式桌面，无桌面返回 3 = 跳过）
   docs\DESIGN.md                   设计正本（含"踩过的坑"清单 + §13 打包方案）
   docs\gui-shot.png / dark-shot.png / system-shot.png  界面截图
 ```

@@ -64,7 +64,11 @@ namespace Mxx1Toolbox
         private ToolStripMenuItem _miDefine;
         private ToolStripMenuItem _miEdit;
         private ToolStripMenuItem _miDelete;
-        private ToolButton _menuTarget;
+        private ToolButton _menuTarget;   // the button the context menu was opened on
+
+        /// <summary>True while the 新建按钮 / 编辑按钮 window is up. A drop that arrives on the grid
+        /// during that time must not open a second one (the user hit exactly that).</summary>
+        private bool _userDialogOpen;
 
         public MainForm()
         {
@@ -587,56 +591,74 @@ namespace Mxx1Toolbox
         /// <summary>Graphical 新建按钮 / 编辑按钮. Saves into the user layer and rebuilds the wall.</summary>
         private void NewUserButton(ToolItem prefill, string droppedPath)
         {
-            using (NewToolForm f = new NewToolForm(null, prefill, _theme))
+            // Only one of these windows at a time. A file dropped while the window is already open
+            // used to reach the grid's drop handler and open a SECOND 新建按钮 window (the user
+            // reported exactly that: "拖入程序图标后会打开一个新的新建按钮弹出的窗口，应该只弹一个的").
+            if (_userDialogOpen)
             {
-                if (f.ShowDialog(this) != DialogResult.OK || f.Result == null) { return; }
-                List<ToolItem> mine = UserTools.Collect(_tools);
-                f.Result.Id = UserTools.NextId(f.Result.Name, mine, _tools);
-                f.Result.Order = UserTools.NextOrder(mine, f.Result.Tab);
-                mine.Add(f.Result);
-                string error = UserTools.Save(mine);
-                if (error.Length > 0)
-                {
-                    MessageBox.Show(this, "保存失败：" + error, "新建按钮", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                    return;
-                }
-                Logger.Write(f.Result.Name, "新建按钮 " + f.Result.Id + (droppedPath == null ? "" : "（拖进来的 " + droppedPath + "）"));
-                ReloadAfterUserEdit(f.Result.Tab);
-                SetStatus("已添加按钮「" + f.Result.Name + "」");
+                SetStatus("「新建按钮」窗口已经开着了 · 拖进来的文件会填进那个窗口");
+                return;
             }
+            _userDialogOpen = true;
+            try
+            {
+                using (NewToolForm f = new NewToolForm(null, prefill, _theme))
+                {
+                    if (f.ShowDialog(this) != DialogResult.OK || f.Result == null) { return; }
+                    List<ToolItem> mine = UserTools.Collect(_tools);
+                    f.Result.Id = UserTools.NextId(f.Result.Name, mine, _tools);
+                    f.Result.Order = UserTools.NextOrder(mine, f.Result.Tab);
+                    mine.Add(f.Result);
+                    string error = UserTools.Save(mine);
+                    if (error.Length > 0)
+                    {
+                        MessageBox.Show(this, "保存失败：" + error, "新建按钮", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        return;
+                    }
+                    Logger.Write(f.Result.Name, "新建按钮 " + f.Result.Id + (droppedPath == null ? "" : "（拖进来的 " + droppedPath + "）"));
+                    ReloadAfterUserEdit(f.Result.Tab);
+                    SetStatus("已添加按钮「" + f.Result.Name + "」");
+                }
+            }
+            finally { _userDialogOpen = false; }
         }
 
         private void EditUserButton()
         {
-            if (_menuTarget == null) { return; }
+            if (_menuTarget == null || _userDialogOpen) { return; }
             ToolItem target = _menuTarget.Tool;
             if (!target.UserLayer) { return; }
-            using (NewToolForm f = new NewToolForm(target, null, _theme))
+            _userDialogOpen = true;
+            try
             {
-                if (f.ShowDialog(this) != DialogResult.OK || f.Result == null) { return; }
-                List<ToolItem> mine = UserTools.Collect(_tools);
-                bool replaced = false;
-                for (int i = 0; i < mine.Count; i++)
+                using (NewToolForm f = new NewToolForm(target, null, _theme))
                 {
-                    if (!string.Equals(mine[i].Id, target.Id, StringComparison.OrdinalIgnoreCase)) { continue; }
-                    f.Result.Id = target.Id;          // id / position stay put, only the rest changes
-                    f.Result.Segment = target.Segment;
-                    f.Result.Order = target.Order;
-                    mine[i] = f.Result;
-                    replaced = true;
-                    break;
+                    if (f.ShowDialog(this) != DialogResult.OK || f.Result == null) { return; }
+                    List<ToolItem> mine = UserTools.Collect(_tools);
+                    bool replaced = false;
+                    for (int i = 0; i < mine.Count; i++)
+                    {
+                        if (!string.Equals(mine[i].Id, target.Id, StringComparison.OrdinalIgnoreCase)) { continue; }
+                        f.Result.Id = target.Id;          // id / position stay put, only the rest changes
+                        f.Result.Segment = target.Segment;
+                        f.Result.Order = target.Order;
+                        mine[i] = f.Result;
+                        replaced = true;
+                        break;
+                    }
+                    if (!replaced) { mine.Add(f.Result); }
+                    string error = UserTools.Save(mine);
+                    if (error.Length > 0)
+                    {
+                        MessageBox.Show(this, "保存失败：" + error, "编辑按钮", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        return;
+                    }
+                    Logger.Write(f.Result.Name, "编辑按钮 " + f.Result.Id);
+                    ReloadAfterUserEdit(f.Result.Tab);
+                    SetStatus("已保存按钮「" + f.Result.Name + "」");
                 }
-                if (!replaced) { mine.Add(f.Result); }
-                string error = UserTools.Save(mine);
-                if (error.Length > 0)
-                {
-                    MessageBox.Show(this, "保存失败：" + error, "编辑按钮", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                    return;
-                }
-                Logger.Write(f.Result.Name, "编辑按钮 " + f.Result.Id);
-                ReloadAfterUserEdit(f.Result.Tab);
-                SetStatus("已保存按钮「" + f.Result.Name + "」");
             }
+            finally { _userDialogOpen = false; }
         }
 
         private void DeleteUserButton()
@@ -687,36 +709,7 @@ namespace Mxx1Toolbox
             UpdateStatusBar();
         }
 
-        /// <summary>Builds a draft button from a dropped file or folder.</summary>
-        private static ToolItem PrefillFromFile(string path)
-        {
-            if (string.IsNullOrEmpty(path)) { return null; }
-            ToolItem t = new ToolItem();
-            t.UserLayer = true;
-            t.Source = "tools.json（用户）";
-            t.Tab = Tabs.Mine;
-            try
-            {
-                if (Directory.Exists(path))
-                {
-                    t.Kind = "open";
-                    t.Target = path;
-                    t.Name = new DirectoryInfo(path).Name;
-                }
-                else
-                {
-                    string ext = Path.GetExtension(path).ToLowerInvariant();
-                    t.Name = Path.GetFileNameWithoutExtension(path);
-                    if (ext == ".bat" || ext == ".cmd") { t.Kind = "script"; t.Path = path; t.Shell = "cmd"; }
-                    else if (ext == ".ps1" || ext == ".vbs") { t.Kind = "script"; t.Path = path; t.Shell = "powershell"; }
-                    else { t.Kind = "exe"; t.Path = path; }
-                }
-            }
-            catch { return null; }
-            if (t.Name.Length > 24) { t.Name = t.Name.Substring(0, 24); }
-            return t;
-        }
-
+        /// <summary>Builds a draft button from a dropped file or folder (see DroppedFile).</summary>
         private void OnDragEnter(object sender, DragEventArgs e)
         {
             bool files = (e.Data != null) && e.Data.GetDataPresent(DataFormats.FileDrop);
@@ -734,7 +727,7 @@ namespace Mxx1Toolbox
 
             if (files.Length == 1)
             {
-                ToolItem draft = PrefillFromFile(files[0]);
+                ToolItem draft = DroppedFile.Draft(files[0]);
                 if (draft == null) { SetStatus("拖进来的东西不支持"); return; }
                 NewUserButton(draft, files[0]);
                 return;
@@ -744,7 +737,7 @@ namespace Mxx1Toolbox
             List<string> added = new List<string>();
             foreach (string file in files)
             {
-                ToolItem t = PrefillFromFile(file);
+                ToolItem t = DroppedFile.Draft(file);
                 if (t == null) { continue; }
                 t.Id = UserTools.NextId(t.Name, mine, _tools);
                 t.Order = UserTools.NextOrder(mine, t.Tab);

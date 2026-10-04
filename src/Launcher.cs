@@ -238,6 +238,12 @@ namespace Mxx1Toolbox
             return args.Trim();
         }
 
+        /// <summary>Prefixed to every inline PowerShell button before it is encoded. PowerShell
+        /// writes progress records ("正在准备首次使用模块。") to the redirected stderr as CLIXML,
+        /// which the result window then shows as "#&lt; CLIXML &lt;Objs ...&gt;" garbage; turning
+        /// progress off inside the script keeps the output readable.</summary>
+        private const string NoProgressPrelude = "$ProgressPreference='SilentlyContinue';";
+
         /// <summary>Expands %SystemRoot% / %USERPROFILE% placeholders inside an argument list.
         /// The path field was always expanded but the arguments were passed verbatim, so
         /// 「hosts 修改」 handed Notepad the literal text "%SystemRoot%\System32\drivers\etc\hosts"
@@ -262,11 +268,36 @@ namespace Mxx1Toolbox
                 case "exe":
                     {
                         string file = AppPaths.Resolve(t.Path);
+                        string exeArgs = ExpandArgs(t.Args);
+                        // A button can still point at a .lnk (made by an older build, or typed in by
+                        // hand): resolve it so the program starts even if the shortcut is moved later.
+                        // Dropping a shortcut now stores the real target directly (see DroppedFile).
+                        if (DroppedFile.IsShortcut(file))
+                        {
+                            string lnkTarget, lnkArgs, lnkDir;
+                            if (DroppedFile.ResolveShortcut(file, out lnkTarget, out lnkArgs, out lnkDir)
+                                && lnkTarget.Length > 0)
+                            {
+                                file = lnkTarget;
+                                if (exeArgs.Length == 0) { exeArgs = lnkArgs; }
+                            }
+                        }
+                        if (Directory.Exists(file))
+                        {
+                            // e.g. a shortcut that points at a folder: open it like a double click.
+                            try
+                            {
+                                Process.Start(new ProcessStartInfo(file) { UseShellExecute = true });
+                                r.Message = "已打开文件夹：" + file;
+                            }
+                            catch (Exception ex) { r.Ok = false; r.Message = "打开失败：" + ex.Message; }
+                            return r;
+                        }
                         if (!File.Exists(file))
                         {
                             r.Ok = false; r.Message = "找不到程序：" + file; return r;
                         }
-                        return Exec(file, ExpandArgs(t.Args), AppPaths.Resolve(t.WorkDir), asAdmin, t.Wait, t.TimeoutSec);
+                        return Exec(file, exeArgs, AppPaths.Resolve(t.WorkDir), asAdmin, t.Wait, t.TimeoutSec);
                     }
                 case "script":
                     {
@@ -279,7 +310,7 @@ namespace Mxx1Toolbox
                         string args = (t.Shell == "cmd")
                             ? "/c " + (t.Inline.Length > 0 ? t.Inline : Quote(file) + " " + ExpandArgs(t.Args))
                             : "-NoProfile -ExecutionPolicy Bypass " +
-                              (t.Inline.Length > 0 ? "-EncodedCommand " + ToBase64(t.Inline) : "-File " + Quote(file) + " " + ExpandArgs(t.Args));
+                              (t.Inline.Length > 0 ? "-EncodedCommand " + ToBase64(NoProgressPrelude + t.Inline) : "-File " + Quote(file) + " " + ExpandArgs(t.Args));
                         return Exec(shell, args, AppPaths.Resolve(t.WorkDir), asAdmin, true, t.TimeoutSec);
                     }
                 case "open":

@@ -18,7 +18,7 @@
 - 图标：53 个 16×16 PNG（按页签配色 + 按名字选图形，`tools\Make-Icons.ps1` 一键重生成），
   编译时内嵌进 exe；`assets\icons\<id>.png` 或清单里的 `icon` 字段可以覆盖
 - 浅色 / 深色 / 跟随系统三种主题，标题栏也跟着变
-- **灰色按钮 = 功能还没接入**（18 个）：灰底灰字 + 图标置灰，而且**禁止点击**（点不动）；状态栏会写明"灰色 N 个没接功能"
+- **灰色按钮 = 功能还没接入**（15 个）：灰底灰字 + 图标置灰，而且**禁止点击**（点不动）；状态栏会写明"灰色 N 个没接功能"
 - 「右键增强」只放一个按钮 **「永久删除工具」**：打开隔壁的
   [永久删除（不进回收站）](../permanent-delete-menu) 安装器窗口，零改动集成
 - 「系统工具」12 个按钮**都是真功能**：设备管理器 / 声音设置 / 设备和打印机 / 计划任务 / 注册表 / 服务 /
@@ -103,8 +103,8 @@ bin\Mxx1Toolbox.exe help
 ```powershell
 powershell -File tools\Test-Encoding.ps1     # 编码红线体检（BOM / 纯 ASCII / 硬编码本机路径）
 powershell -File tests\Test-All.ps1          # 全部（无桌面时加 -SkipGui）
-powershell -File tests\Test-Cli.ps1          # 命令行回归 37 项
-powershell -File tests\Test-Gui.ps1          # 界面回归 64 项（要交互式桌面，无桌面返回 3 = 跳过）
+powershell -File tests\Test-Cli.ps1          # 命令行回归 44 项
+powershell -File tests\Test-Gui.ps1          # 界面回归 65 项（要交互式桌面，无桌面返回 3 = 跳过）
 powershell -File tools\Make-Screenshots.ps1  # 重新拍 docs 里的截图（浅色 / 深色 / 系统工具页签）
 powershell -File tools\Make-Icons.ps1        # 重新生成 16x16 PNG 图标（先 build 再跑，改完还要再 build）
 ```

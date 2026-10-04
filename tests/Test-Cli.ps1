@@ -99,7 +99,7 @@ Check 'A01 status 退出码 0' ($status.Code -eq 0) ('exit=' + $status.Code)
 Check 'A02 中文输出没有乱码（UTF-8）' ($status.Out -match 'name=萌新工具箱') ('name=' + (Get-Key $status.Out 'name'))
 Check 'A03 版本号 1.2.0' ((Get-Key $status.Out 'version') -eq '1.2.0') (Get-Key $status.Out 'version')
 Check 'A04 按钮总数 53（右键增强 1 个、Windows 激活已删）' ((Get-Key $status.Out 'buttons') -eq '53') (Get-Key $status.Out 'buttons')
-Check 'A05 灰色占位按钮 18 个（界面上点不动）' ((Get-Key $status.Out 'placeholders') -eq '18') (Get-Key $status.Out 'placeholders')
+Check 'A05 灰色占位按钮 15 个（界面上点不动）' ((Get-Key $status.Out 'placeholders') -eq '15') (Get-Key $status.Out 'placeholders')
 Check 'A06 危险按钮 6 个' ((Get-Key $status.Out 'dangerous') -eq '6') (Get-Key $status.Out 'dangerous')
 
 $tabExpect = @{ 'common' = 31; 'rightmenu' = 1; 'cleanup' = 8; 'system' = 12; 'mine' = 1 }
@@ -133,12 +133,24 @@ if (Test-Path -LiteralPath $logPath) {
     $logBefore = @(Get-Content -LiteralPath $logPath -Encoding UTF8 -ErrorAction SilentlyContinue).Count
 }
 
-$ph = Invoke-Exe 'run taskbar-never-combine'
+# 灰按钮样本从清单里现取，**不要写死某个按钮**：它哪天被接上真功能，这里就会假红
+# （2026-10-04 踩过：「任务栏从不合并」接上真功能后，B 组连带红了 4 条）。
+$phId = ''
+$phName = ''
+foreach ($line in ((Invoke-Exe 'list').Out -split "`r?`n")) {
+    if ($line -match 'placeholder') {
+        $cells = $line -split "`t"
+        $phId = $cells[0]; $phName = $cells[2]; break
+    }
+}
+Check 'B00 清单里能找到一个灰色占位按钮（B01–B05 就用它）' ($phId.Length -gt 0) ('id=' + $phId + ' name=' + $phName)
+
+$ph = Invoke-Exe ('run ' + $phId)
 Check 'B01 灰色按钮 run 退出码 0' ($ph.Code -eq 0) ('exit=' + $ph.Code)
 $phHint = Get-Key $ph.Out 'placeholder'
 Check 'B02 输出里标明是占位按钮' ($phHint.Length -gt 0) ('placeholder=' + $phHint)
 Check 'B03 没有真的执行（命令带"暂不执行"）' ($ph.Out -match '暂不执行') ''
-$phDry = Invoke-Exe 'run taskbar-never-combine --dry'
+$phDry = Invoke-Exe ('run ' + $phId + ' --dry')
 Check 'B03b --dry 明说它没有目标（kind=none）' `
     (((Get-Key $phDry.Out 'kind') -eq 'none') -and ((Get-Key $phDry.Out 'exists') -eq 'no')) `
     ('kind=' + (Get-Key $phDry.Out 'kind') + ' exists=' + (Get-Key $phDry.Out 'exists'))
@@ -148,7 +160,7 @@ $logAfter = @(Get-Content -LiteralPath $logPath -Encoding UTF8 -ErrorAction Sile
 Check 'B04 运行写进了日志（最新一条）' ($logAfter.Count -gt $logBefore) ('before=' + $logBefore + ' after=' + $logAfter.Count)
 $newest = ''
 if ($logAfter.Count -gt 0) { $newest = $logAfter[$logAfter.Count - 1] }
-Check 'B05 日志里能看到「任务栏从不合并」和"功能待接入"' (($newest -match '任务栏从不合并') -and ($newest -match '功能待接入')) ($newest.Trim())
+Check ('B05 日志里能看到「{0}」和"功能待接入"' -f $phName) (($newest -match [regex]::Escape($phName)) -and ($newest -match '功能待接入')) ($newest.Trim())
 
 # ---------------------------------------------------------------- C 组：真按钮（调隔壁 exe）
 Write-Host ''
@@ -286,6 +298,65 @@ if ($userTools.Length -gt 0 -and $toolDir.Length -gt 0) {
     }
 } else {
     Check 'F04 相对路径按工具目录解析（不再是进程当前目录）' $false 'status 没给出 userTools / toolDir'
+}
+
+# ---------------------------------------------------------------- G 组：拖进来的东西变成什么按钮
+Write-Host ''
+Write-Host 'G 组 · 拖进来的东西会变成什么按钮（draft，用户报过快捷方式进来就失败）'
+
+$gTmp = Join-Path $env:TEMP ('mxx1-g-' + [Guid]::NewGuid().ToString('N').Substring(0, 8))
+[void][System.IO.Directory]::CreateDirectory($gTmp)
+try {
+    $gBat = Join-Path $gTmp 'probe.bat'
+    [System.IO.File]::WriteAllText($gBat, "@echo off`r`n", (New-Object System.Text.UTF8Encoding($false)))
+    $gTxt = Join-Path $gTmp 'probe.txt'
+    [System.IO.File]::WriteAllText($gTxt, 'hi', (New-Object System.Text.UTF8Encoding($false)))
+
+    $dFolder = Invoke-Exe ('draft "' + $gTmp + '"')
+    Check 'G01 拖一个文件夹 → 打开它（kind=open）' `
+        (((Get-Key $dFolder.Out 'kind') -eq 'open') -and ((Get-Key $dFolder.Out 'target') -eq $gTmp)) `
+        ('kind=' + (Get-Key $dFolder.Out 'kind') + ' target=' + (Get-Key $dFolder.Out 'target'))
+
+    $dBat = Invoke-Exe ('draft "' + $gBat + '"')
+    Check 'G02 拖一个 .bat → 用 cmd 跑它（kind=script / shell=cmd）' `
+        (((Get-Key $dBat.Out 'kind') -eq 'script') -and ((Get-Key $dBat.Out 'shell') -eq 'cmd') -and ((Get-Key $dBat.Out 'path') -eq $gBat)) `
+        ('kind=' + (Get-Key $dBat.Out 'kind') + ' shell=' + (Get-Key $dBat.Out 'shell'))
+
+    $dTxt = Invoke-Exe ('draft "' + $gTxt + '"')
+    Check 'G03 拖一个普通文件 → 像双击那样打开（kind=open）' `
+        (((Get-Key $dTxt.Out 'kind') -eq 'open') -and ((Get-Key $dTxt.Out 'target') -eq $gTxt)) `
+        ('kind=' + (Get-Key $dTxt.Out 'kind') + ' target=' + (Get-Key $dTxt.Out 'target'))
+
+    # 快捷方式必须解析成它指向的真程序：用户实测"拖入快捷方式图标程序会失败"，
+    # 原来是直接把 .lnk 路径存成按钮（快捷方式一挪就废）。
+    $gLnkOk = $false
+    $gLnk = Join-Path $gTmp 'probe.lnk'
+    try {
+        $ws = New-Object -ComObject WScript.Shell
+        $sc = $ws.CreateShortcut($gLnk)
+        $sc.TargetPath = (Join-Path $env:SystemRoot 'system32\notepad.exe')
+        $sc.Arguments = '--lnk-arg'
+        $sc.WorkingDirectory = $env:SystemRoot
+        $sc.Save()
+        $gLnkOk = Test-Path -LiteralPath $gLnk
+    } catch { $gLnkOk = $false }
+
+    if ($gLnkOk) {
+        $dLnk = Invoke-Exe ('draft "' + $gLnk + '"')
+        $lnkPath = Get-Key $dLnk.Out 'path'
+        Check 'G04 拖一个快捷方式 → 指向它真正指向的 exe（不是 .lnk 本身）' `
+            (((Get-Key $dLnk.Out 'kind') -eq 'exe') -and ($lnkPath -match 'notepad\.exe$')) `
+            ('kind=' + (Get-Key $dLnk.Out 'kind') + ' path=' + $lnkPath)
+        Check 'G05 快捷方式上带的参数也带过来' ((Get-Key $dLnk.Out 'args') -eq '--lnk-arg') (Get-Key $dLnk.Out 'args')
+    } else {
+        Check 'G04 拖一个快捷方式 → 指向它真正指向的 exe（不是 .lnk 本身）' $false '这台机器上建不出 .lnk（COM 不可用），跳过'
+        Check 'G05 快捷方式上带的参数也带过来' $false '跳过'
+    }
+
+    $dNone = Invoke-Exe 'draft'
+    Check 'G06 draft 不带参数 → 退出码 2 并给用法' (($dNone.Code -eq 2) -and ($dNone.Err -match '用法')) ('exit=' + $dNone.Code)
+} finally {
+    Remove-Item -LiteralPath $gTmp -Recurse -Force -ErrorAction SilentlyContinue
 }
 
 # ---------------------------------------------------------------- E 组：用法与错误

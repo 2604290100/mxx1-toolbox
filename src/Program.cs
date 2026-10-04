@@ -47,13 +47,28 @@ namespace Mxx1Toolbox
                     Console.SetOut(utf8);
                 }
                 catch { }
-            }            string command = args[0].ToLowerInvariant().TrimStart('-', '/');
+            }
+            // stderr needs the same treatment: error messages are Chinese too, and without this the
+            // caller reads "用法:" / "找不到..." as GBK mojibake (caught by the draft regression G06).
+            if (Console.IsErrorRedirected)
+            {
+                try
+                {
+                    StreamWriter utf8err = new StreamWriter(Console.OpenStandardError(), new UTF8Encoding(false));
+                    utf8err.AutoFlush = true;
+                    Console.SetError(utf8err);
+                }
+                catch { }
+            }
+
+            string command = args[0].ToLowerInvariant().TrimStart('-', '/');
             try
             {
                 switch (command)
                 {
                     case "list": return List(args);
                     case "run": return RunOne(args);
+                    case "draft": return Draft(args);
                     case "status": return Status();
                     case "checkupdate": return CheckUpdate();
                     case "help":
@@ -83,6 +98,7 @@ namespace Mxx1Toolbox
             Console.WriteLine("  Mxx1Toolbox.exe list [--tab <页签>]  列出全部按钮");
             Console.WriteLine("  Mxx1Toolbox.exe run <id> [--admin]   执行一个按钮（和界面同一条路径）");
             Console.WriteLine("  Mxx1Toolbox.exe run <id> --dry       只解析按钮指向哪里，不真的启动");
+            Console.WriteLine("  Mxx1Toolbox.exe draft <路径>         把文件/文件夹按「拖进窗口」的规则变成按钮草稿");
             Console.WriteLine("  Mxx1Toolbox.exe status               打印 key=value 状态（脚本用）");
             Console.WriteLine("  Mxx1Toolbox.exe checkupdate          只读版本号，不下载不替换");
             Console.WriteLine("  Mxx1Toolbox.exe help                 这份帮助");
@@ -187,6 +203,36 @@ namespace Mxx1Toolbox
 
         /// <summary>Resolves where a button points, without running it. Prints
         /// kind / target / exists and, when something is missing, a sentence explaining what.
+        /// <summary>`draft &lt;路径&gt;` —— 把一个文件 / 文件夹按"拖进窗口"的规则变成按钮草稿，只打印结果、
+        /// 不写任何文件。界面上的拖拽手势没法在测试里合成（不是 WM_DROPFILES，是 OLE 拖放），
+        /// 所以回归测试盯的是这个决策本身：.lnk 必须解析成它指向的真程序（用户实测报过
+        /// "拖入快捷方式图标程序会失败"）；顺手也是拖拽出问题时的排查工具。</summary>
+        private static int Draft(string[] args)
+        {
+            if (args.Length < 2 || args[1].Trim().Length == 0)
+            {
+                Console.Error.WriteLine("用法: draft <文件或文件夹路径>");
+                return 2;
+            }
+            string path = args[1];
+            ToolItem t = DroppedFile.Draft(path);
+            if (t == null)
+            {
+                Console.Error.WriteLine("这个路径做不成按钮: " + path);
+                return 1;
+            }
+            Console.WriteLine("input=" + path);
+            Console.WriteLine("name=" + t.Name);
+            Console.WriteLine("kind=" + t.Kind);
+            Console.WriteLine("path=" + t.Path);
+            Console.WriteLine("args=" + t.Args);
+            Console.WriteLine("workdir=" + t.WorkDir);
+            Console.WriteLine("target=" + t.Target);
+            Console.WriteLine("shell=" + t.Shell);
+            Console.WriteLine("isShortcut=" + (DroppedFile.IsShortcut(path) ? "yes" : "no"));
+            return 0;
+        }
+
         /// Always exits 0: it answers a question, it does not fail at anything.</summary>
         private static int DryRun(ToolItem t, Settings settings)
         {

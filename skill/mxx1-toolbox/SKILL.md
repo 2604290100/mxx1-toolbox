@@ -33,7 +33,8 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
 - ✅ 按钮图标：54 个 16×16 PNG 由 `tools\Make-Icons.ps1` 生成并内嵌（`icons.<id>.png`），
   全部经 `IconFactory.Normalize()` 归一化成 16×15 画布（见"界面硬规则"里那条）。
   优先级：清单里的 `icon` > `assets\icons\<id>.png` > 内嵌 > 程序内实时画的占位图标。
-- ⬜ **等用户拍板**：隔壁 exe 要不要内嵌进工具箱（方案见 `docs\DESIGN.md` §13，**没实现**）。
+- ⬜ **等用户拍板**：外部工具放哪 —— 用户倾向"**建一个子文件夹，以后还要加别的 exe 工具**"，
+  方案（`payload\` 工具目录 + 查找顺序 + 可选内嵌兜底）在 `docs\DESIGN.md` §13，**没实现，别自己开工**。
 - ⬜ P1：常用设置 / 清理优化接真功能、图形化「新建按钮」、拖拽新增、编辑/排序、多步 `macro`。
 
 ## 结构
@@ -208,8 +209,11 @@ powershell -File tools\Make-Icons.ps1         # 重生成 PNG 图标（先 build
 
 1. **Git：本地仓库已经建好**；**GitHub 远程仓库还没建**，推送必须先问用户
    （用户原话："先只留本地仓库"）。
-2. **隔壁 exe 要不要内嵌进工具箱**：方案在 `docs\DESIGN.md` §13（推荐"内嵌 payload + 释放到
-   `%LOCALAPPDATA%\mxx1-toolbox\payload\`，外部优先"），**等用户拍板，别自己实现**。
+2. **外部工具放哪**：用户 2026-10-04 的意思是"建一个子文件夹，毕竟后续还得加其他 exe 工具"。
+   方案在 `docs\DESIGN.md` §13：① 工具箱目录下 `payload\` 工具目录（推荐先做）
+   ② 把 payload 内嵌进 exe、首次点击释放到固定目录当兜底 ③ `payload\<工具>\tool.json` 自动扫出按钮（P2）。
+   连带要做的：`kind: exe` 的相对 `path` 改成**相对工具箱 exe 目录**解析（现在按进程当前目录，不可靠）。
+   **等用户拍板，别自己实现。**
 3. P1 的范围（先接哪个页签的真功能）要问用户，别自己挑。
 4. 图标要改样式就动 `tools\Make-Icons.ps1` 的关键词映射 / 配色，然后按
    `build.ps1 → Make-Icons.ps1 → 删孤儿 → build.ps1` 的顺序跑。

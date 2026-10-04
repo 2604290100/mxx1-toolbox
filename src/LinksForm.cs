@@ -48,7 +48,8 @@ namespace Mxx1Toolbox
             Text = "常用链接";
             ClientSize = new Size(560, 296);
             MinimumSize = new Size(480, 260);
-            StartPosition = FormStartPosition.CenterParent;
+            // 位置不在这里定：StartPosition=CenterParent 只对 ShowDialog 打开的模态窗口有效，
+            // 这三个窗口都是用 Show() 开的非模态窗口 —— 位置交给 WindowPlacement.ShowCentered（那里有说明）。
             MinimizeBox = false;
             MaximizeBox = false;
             ShowInTaskbar = false;

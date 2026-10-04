@@ -1367,7 +1367,7 @@ namespace Mxx1Toolbox
             {
                 string head = t.Name + "　——　" + (r.Ok ? "成功" : "失败") + "（用时 " + took + "）· " + r.Message;
                 OutputForm f = new OutputForm(t.Name, head, r.Output, _theme);
-                f.Show(this);
+                WindowPlacement.ShowCentered(f, this);
             }
             else if (!r.Ok)
             {
@@ -1394,7 +1394,7 @@ namespace Mxx1Toolbox
                         Logger.Write("管理员动作", "结果已从提升权限的进程取回");
                         RefreshLogBox();
                         OutputForm form = new OutputForm("管理员动作的结果", "已用管理员身份执行完", text, _theme);
-                        form.Show(this);
+                        WindowPlacement.ShowCentered(form, this);
                         SetStatus("管理员动作已完成（结果见窗口和日志）");
                     }
                     return;
@@ -1496,20 +1496,20 @@ namespace Mxx1Toolbox
         {
             LogForm f = new LogForm("引擎日志（永久删除）", AppPaths.PermdelEngineLog,
                 "最新的在最上面 —— " + AppPaths.PermdelEngineLog, _theme, true);
-            f.Show(this);
+            WindowPlacement.ShowCentered(f, this);
         }
 
         private void OpenLinks()
         {
             LinksForm f = new LinksForm(_theme);
-            f.Show(this);
+            WindowPlacement.ShowCentered(f, this);
         }
 
         private void OpenToolboxLog()
         {
             LogForm f = new LogForm("运行日志（工具箱）", Logger.CurrentFile(),
                 "最新的在最上面 —— " + Logger.CurrentFile(), _theme, true);
-            f.Show(this);
+            WindowPlacement.ShowCentered(f, this);
         }
 
         // ---------------------------------------------------------------- helper bits
@@ -1571,7 +1571,7 @@ namespace Mxx1Toolbox
             sb.AppendLine("待接入      : " + (t.Placeholder ? "是（" + (t.Hint.Length > 0 ? t.Hint : "P1") + "）" : "否"));
             sb.AppendLine("图标        : " + t.IconPath + (File.Exists(t.IconPath) ? "（已找到）" : "（没有 PNG，界面用画的占位图标）"));
             OutputForm f = new OutputForm(t.Name + " · 按钮定义", "按钮定义（只读）", sb.ToString(), _theme);
-            f.Show(this);
+            WindowPlacement.ShowCentered(f, this);
         }
 
         private void ReloadTools()

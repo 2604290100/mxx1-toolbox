@@ -17,7 +17,7 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
 
 ## 当前状态（2026-10-04，v1.4.0）
 
-- ✅ **测试 186 项全绿**：命令行回归 96 + 界面回归 90（外加编码体检 158 个文件、内联脚本与清单体检
+- ✅ **测试 187 项全绿**：命令行回归 96 + 界面回归 91（外加编码体检 158 个文件、内联脚本与清单体检
   34 个脚本 / 7 个清单）。产物 `bin\Mxx1Toolbox.exe`（约 260 KB 单文件），
   七个 `tools.*.json` + 105 个 `icons.*.png` 已内嵌。
 - ✅ **八个页签、105 个内置按钮，全部是真功能，灰色占位一个不剩**：`常用`（置顶 + 最近使用，
@@ -96,7 +96,7 @@ D:\萌新工具开发\toolbox\
   tests\Test-All.ps1               一条命令跑完全部
   tools\Test-InlineSyntax.ps1      内联脚本语法 + 清单 JSON 体检（46 个脚本 / 7 个清单）
 tests\Test-Cli.ps1               命令行回归 96 项（L 组 12 项盯 sysreg：成对 / 只读 / 无写入口 / 自检 / 合规底线）
-  tests\Test-Gui.ps1               界面回归 90 项（要交互式桌面，无桌面返回 3 = 跳过；H 组 5 项盯固定尺寸）
+  tests\Test-Gui.ps1               界面回归 91 项（要交互式桌面，无桌面返回 3 = 跳过；H 组盯固定尺寸、E04b 盯窗口位置）
   docs\DESIGN.md                   设计正本（含"踩过的坑"清单 + §13 打包方案）
   docs\gui-shot.png / dark-shot.png / system-shot.png  界面截图
 ```
@@ -174,6 +174,7 @@ powershell -File tools\Make-Icons.ps1         # 重生成 PNG 图标（先 build
 | 界面文字不用 `✓ ⚠ →`（微软雅黑没字形）；图标走 PNG 或程序内绘制 | 渲染成空白 |
 | 日志显示**最新在最上面**，不给正序开关 | 想看刚点的那次结果得滚到底 |
 | DPI：清单里 `dpiAware=true`（System aware）+ `AutoScaleMode.Font` | 不要用 PerMonitorV2：它需要 app.config，而 exe.config 会破坏单文件 |
+| **非模态窗口（结果 / 日志 / 常用链接）必须手工居中**：`StartPosition = CenterParent` **只对 `ShowDialog()` 的模态窗口有效**，`Show()` 出来的窗口 Windows 会放在屏幕左上角 → 用 `WindowPlacement.ShowCentered(f, owner)`（对 owner 居中 + 夹进工作区 + 多开时错开 28px） | 用户报的「点击激活状态为什么会弹到左上角窗口」。判据：Test-Gui 的 E04b，比的是结果窗口与主窗口的**重叠比例**（要 ≥ 50%，居中时实测 99%） |
 
 深色不需要自绘控件：`FlatStyle=Flat` + `FlatAppearance.BorderColor / MouseOverBackColor / MouseDownBackColor`
 + `BackColor` / `ForeColor` 逐主题赋值即可；标题栏 `DwmSetWindowAttribute(hwnd, 20 → 19, dark)`，

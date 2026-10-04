@@ -1131,6 +1131,22 @@ if ($realBtn.Count -gt 0) {
     }
     Check ('E04 点真按钮「{0}」弹出结果窗口' -f $probeReal) ($outWin.Count -gt 0) `
         ('现有窗口=' + (@((Get-TopWindows -ProcessId $proc.Id) | Where-Object { $_.H -ne $main -and $_.Visible } | ForEach-Object { $_.Text }) -join ' / '))
+    # 结果窗口是**非模态**的（Show() 开的），而 StartPosition=CenterParent 只对 ShowDialog 有效 ——
+    # 不处理它会落到屏幕左上角（用户报的：「点击激活状态为什么会弹到左上角窗口」）。
+    # 判据：结果窗口必须和主窗口明显重叠（居中放才对），光"弹出来了"不算数。
+    if ($outWin.Count -gt 0) {
+        $mainRect = [TBGui]::Rect($main)
+        $outRect = [TBGui]::Rect($outWin[0].H)
+        $ix = [Math]::Max(0, [Math]::Min($mainRect[2], $outRect[2]) - [Math]::Max($mainRect[0], $outRect[0]))
+        $iy = [Math]::Max(0, [Math]::Min($mainRect[3], $outRect[3]) - [Math]::Max($mainRect[1], $outRect[1]))
+        $outArea = ($outRect[2] - $outRect[0]) * ($outRect[3] - $outRect[1])
+        $cover = 0
+        if ($outArea -gt 0) { $cover = [Math]::Round(100.0 * $ix * $iy / $outArea) }
+        Check 'E04b 结果窗口居中弹在主窗口上（不再落到屏幕左上角）' ($cover -ge 50) `
+            ('重叠=' + $cover + '%  结果窗口@' + $outRect[0] + ',' + $outRect[1] + ' ' + ($outRect[2] - $outRect[0]) + 'x' + ($outRect[3] - $outRect[1]) + '  主窗口@' + $mainRect[0] + ',' + $mainRect[1])
+    } else {
+        Check 'E04b 结果窗口居中弹在主窗口上（不再落到屏幕左上角）' $false '没找到结果窗口'
+    }
     if ($outWin.Count -gt 0) { [void][TBGui]::CloseWindow($outWin[0].H) ; Start-Sleep -Milliseconds 500 }
     Start-Sleep -Milliseconds 800
     $after = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq $probeReal })

@@ -202,7 +202,10 @@ function Get-InkRows {
     $labelTop = -1; $labelBottom = -1; $iconTop = -1; $iconBottom = -1
     $labelFrom = 1
     if ($Icon) {
-        # 图标永远是最左边那块：先找第一段连续的"亮而饱和"的列
+        # 图标永远是最左边那块：先找第一段连续的"看得出是图标"的列。
+        # 判据两种都认：① 亮而饱和（彩色图标，PNG 那套）② 明显比底色暗（灰色占位图标是灰的，
+        # 一点饱和度都没有 —— 只认①的话灰图标会被当成背景，于是文字行数会把图标也算进去）。
+        $bgMax = [Math]::Max($bgR, [Math]::Max($bgG, $bgB))
         $iconLeft = -1; $iconRight = -1; $run = 0; $gap = 0
         for ($xx = 1; $xx -lt $W - 1; $xx++) {
             $n = 0
@@ -210,7 +213,7 @@ function Get-InkRows {
                 $i = (($Y + $yy) * $stride) + (($X + $xx) * 4)
                 $b = [int]$bytes[$i]; $g2 = [int]$bytes[$i + 1]; $r2 = [int]$bytes[$i + 2]
                 $mx = [Math]::Max($r2, [Math]::Max($g2, $b)); $mn = [Math]::Min($r2, [Math]::Min($g2, $b))
-                if (($mx - $mn) -gt 60 -and $mx -gt 140) { $n++ }
+                if ((($mx - $mn) -gt 60 -and $mx -gt 140) -or ($mx -lt ($bgMax - 45))) { $n++ }
             }
             if ($n -ge 3) {
                 if ($iconLeft -lt 0) { $iconLeft = $xx }
@@ -229,7 +232,7 @@ function Get-InkRows {
                     $i = (($Y + $yy) * $stride) + (($X + $xx) * 4)
                     $b = [int]$bytes[$i]; $g2 = [int]$bytes[$i + 1]; $r2 = [int]$bytes[$i + 2]
                     $mx = [Math]::Max($r2, [Math]::Max($g2, $b)); $mn = [Math]::Min($r2, [Math]::Min($g2, $b))
-                    if (($mx - $mn) -gt 60 -and $mx -gt 140) { $n++ }
+                    if ((($mx - $mn) -gt 60 -and $mx -gt 140) -or ($mx -lt ($bgMax - 45))) { $n++ }
                 }
             }
             if ($n -ge 3) { if ($iconTop -lt 0) { $iconTop = $yy }; $iconBottom = $yy }
@@ -253,8 +256,43 @@ function Get-InkRows {
     return [pscustomobject]@{ LabelTop = $labelTop; LabelBottom = $labelBottom; IconTop = $iconTop; IconBottom = $iconBottom }
 }
 
-function Get-ChildControls {
-    param([IntPtr]$RootHandle)
+# 一个矩形里"最暗的墨迹"有多暗（背景色不算）。用来判定按钮是不是灰的：
+# 真功能按钮的文字是近黑（最暗约 26），灰色占位按钮的文字与图标都是灰的（最暗约 130+）。
+# 返回 -1 = 这块地方什么都没有。
+function Get-DarkestInk {
+    param($Shot, [int]$X, [int]$Y, [int]$W, [int]$H)
+    $bytes = $Shot.Bytes; $stride = $Shot.Stride
+
+    $counts = @{}
+    for ($yy = 2; $yy -lt $H - 2; $yy++) {
+        $row = ($Y + $yy) * $stride
+        for ($xx = 2; $xx -lt $W - 2; $xx++) {
+            $i = $row + (($X + $xx) * 4)
+            $key = ([int]$bytes[$i + 2] -shl 16) -bor ([int]$bytes[$i + 1] -shl 8) -bor [int]$bytes[$i]
+            if ($counts.ContainsKey($key)) { $counts[$key] = $counts[$key] + 1 } else { $counts[$key] = 1 }
+        }
+    }
+    $bg = 0; $bestN = -1
+    foreach ($k in $counts.Keys) { if ($counts[$k] -gt $bestN) { $bestN = $counts[$k]; $bg = $k } }
+    $bgR = ($bg -shr 16) -band 0xFF; $bgG = ($bg -shr 8) -band 0xFF; $bgB = $bg -band 0xFF
+
+    $darkest = 255
+    for ($yy = 2; $yy -lt $H - 2; $yy++) {
+        for ($xx = 2; $xx -lt $W - 2; $xx++) {
+            $i = (($Y + $yy) * $stride) + (($X + $xx) * 4)
+            $b = [int]$bytes[$i]; $g2 = [int]$bytes[$i + 1]; $r2 = [int]$bytes[$i + 2]
+            # 与背景同色 = 空处，跳过（留 40 的余量吃掉抗锯齿）
+            if (([Math]::Abs($r2 - $bgR) -le 40) -and ([Math]::Abs($g2 - $bgG) -le 40) -and
+                ([Math]::Abs($b - $bgB) -le 40)) { continue }
+            $mx = [Math]::Max($r2, [Math]::Max($g2, $b))
+            if ($mx -lt $darkest) { $darkest = $mx }
+        }
+    }
+    if ($darkest -eq 255) { return -1 }
+    return $darkest
+}
+
+function Get-ChildControls {    param([IntPtr]$RootHandle)
     $out = @()
     foreach ($h in [TBGui]::Children($RootHandle)) {
         $r = [TBGui]::Rect($h)
@@ -355,6 +393,16 @@ $settingsBefore = $null
 $settingsExisted = Test-Path -LiteralPath $SettingsIni
 if ($settingsExisted) { $settingsBefore = [System.IO.File]::ReadAllText($SettingsIni, [System.Text.Encoding]::UTF8) }
 
+# 先把设置写成一个已知状态再开界面：用户自己可能把日志面板开着（ShowLogPanel=1），
+# 那样 B08「默认不显示日志面板」会莫名其妙地红 —— 测试不能依赖用户的个人设置。
+# 跑完在最后按原样写回去（见文件末尾"现场复原"）。
+try {
+    [void][System.IO.Directory]::CreateDirectory((Split-Path -Parent $SettingsIni))
+    [System.IO.File]::WriteAllText($SettingsIni,
+        "Theme=light`r`nClickMode=single`r`nConfirmDangerous=1`r`nHideConsole=1`r`nShowLogPanel=0`r`nLogKeepDays=30`r`nPermanentDeleteExe=`r`n",
+        (New-Object System.Text.UTF8Encoding($false)))
+} catch { }
+
 $commonNames = Get-ToolNames 'common'
 $rightNames = Get-ToolNames 'rightmenu'
 $cleanNames = Get-ToolNames 'cleanup'
@@ -374,7 +422,7 @@ $top = @(Get-TopWindows -ProcessId $proc.Id)
 $mainWin = @($top | Where-Object { $_.H -eq $main })
 $title = ''
 if ($mainWin.Count -gt 0) { $title = $mainWin[0].Text }
-Check 'A02 标题栏写着「萌新工具箱 v1.0.0」' ($title -match '萌新工具箱' -and $title -match '1\.0\.0') $title
+Check 'A02 标题栏写着「萌新工具箱 v<版本号>」' ($title -match '萌新工具箱\s*v\d+\.\d+\.\d+') $title
 
 $style = [TBGui]::Styles($main)
 Check 'A03 标题栏没有最小化方框' (($style -band 0x00020000) -eq 0) ('style=0x{0:X}' -f $style)
@@ -441,14 +489,16 @@ Check 'B07 段与段之间有分隔线' ($separators.Count -ge 1) ('分隔线=' 
 $visibleEdits = @($all | Where-Object { $_.Class -like '*EDIT*' -and $_.Height -gt 20 })
 Check 'B08 默认不显示日志面板（没有大文本框）' ($visibleEdits.Count -eq 0) ('可见文本框=' + $visibleEdits.Count)
 
-# 图标必须在按钮里上下居中。用户报过"按钮的图标没有上下居中"：WinForms 的 Flat 按钮会把图片
-# 画在文字行框中心往下 1px 的地方，16px 的图标因此比按钮中心低 1px（实测 1.5px）。
-# 判据用渲染像素，不依赖任何内部公式；参考行数同时给 D 组判断底栏文字有没有被裁。
+# 用户报过"按钮的图标没有上下居中"，还有"没做功能的按钮应该是灰的"，这两件事都只能从渲染结果判定。
+# 常用设置页签上的按钮**全是灰色占位按钮**，所以这里量两件事：
+#   * 文字墨迹行数（完整的按钮应该有 >= 10 行，被裁就少）—— 同时给 D 组当底栏的参考值
+#   * 最暗墨迹有多暗（灰按钮的最暗像素也是灰的，真按钮是近黑）—— 见下面的 B09
+# 图标居中那条要彩色图标才量得准，挪到 C 组的「右键增强」页签（那个按钮是真功能，图标是彩色的）。
 $shot = Get-WindowShot -Handle $main
 $gridProbe = @($toolButtons | Sort-Object Top, Left | Select-Object -First 1)
 $refInkH = 0
 if ($shot -eq $null -or $gridProbe.Count -eq 0) {
-    Check 'B09 按钮图标上下居中（居中误差 <= 1px）' $false '窗口截图失败'
+    Check 'B09 占位按钮默认是灰的（最暗墨迹 >= 110）' $false '窗口截图失败'
     Check 'B09b 按钮文字完整（墨迹行数 >= 10）' $false '窗口截图失败'
 } else {
     $probeRect = @{
@@ -459,15 +509,9 @@ if ($shot -eq $null -or $gridProbe.Count -eq 0) {
     $refInkH = $ink.LabelBottom - $ink.LabelTop + 1
     Check 'B09b 按钮文字完整（墨迹行数 >= 10）' ($refInkH -ge 10) ('墨迹行=' + $ink.LabelTop + '..' + $ink.LabelBottom + ' 行数=' + $refInkH)
 
-    if ($ink.IconTop -lt 0) {
-        Check 'B09 按钮图标上下居中（居中误差 <= 1px）' $false '没在按钮里找到图标'
-    } else {
-        $iconCentre = ($ink.IconTop + $ink.IconBottom) / 2.0
-        $btnCentre = ($gridProbe[0].Height - 1) / 2.0
-        $offset = [Math]::Abs($iconCentre - $btnCentre)
-        Check 'B09 按钮图标上下居中（居中误差 <= 1px）' ($offset -le 1.0) `
-            ('误差=' + $offset.ToString('0.0') + 'px 图标行=' + $ink.IconTop + '..' + $ink.IconBottom + ' 中心=' + $iconCentre + ' 按钮中心=' + $btnCentre)
-    }
+    $dark = Get-DarkestInk -Shot $shot -X $probeRect.X -Y $probeRect.Y -W $probeRect.W -H $probeRect.H
+    Check 'B09 占位按钮默认是灰的（最暗墨迹 >= 110，图标和文字都灰）' ($dark -ge 110) `
+        ('最暗=' + $dark + ' 按钮=' + $gridProbe[0].Text)
 }
 
 # ---------------------------------------------------------------- C 组：翻页签
@@ -483,6 +527,34 @@ function Switch-Tab {
 }
 
 Check ('C01 点「右键增强」→ {0} 个按钮' -f $rightNames.Count) (Switch-Tab -Handle $main -TabName '右键增强' -ExpectNames $rightNames) ''
+
+# 真功能按钮长什么样：图标是彩色的，而且要上下居中；文字是近黑的（不是灰的）。
+# 用户报过两条："图标没有上下居中"、"没做功能的按钮应该是灰的"，这两条只有渲染像素能判。
+$rightProbe = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*BUTTON*' -and $rightNames -contains $_.Text })
+Start-Sleep -Milliseconds 400     # 换页签后等它重画完再抓像素
+$rightShot = Get-WindowShot -Handle $main
+if ($rightProbe.Count -eq 0 -or $rightShot -eq $null) {
+    Check 'C01b 真功能按钮不是灰的（最暗墨迹 <= 80）' $false '没找到按钮或截图失败'
+    Check 'C01c 真功能按钮的图标上下居中（误差 <= 1px）' $false '没找到按钮或截图失败'
+} else {
+    $rr = @{ X = $rightProbe[0].Left - $rightShot.Left; Y = $rightProbe[0].Top - $rightShot.Top
+             W = $rightProbe[0].Width; H = $rightProbe[0].Height }
+    $rightDark = Get-DarkestInk -Shot $rightShot -X $rr.X -Y $rr.Y -W $rr.W -H $rr.H
+    Check 'C01b 真功能按钮不是灰的（最暗墨迹 <= 80）' ($rightDark -ge 0 -and $rightDark -le 80) `
+        ('最暗=' + $rightDark + ' 按钮=' + $rightProbe[0].Text)
+
+    $rightInk = Get-InkRows -Shot $rightShot -Icon -X $rr.X -Y $rr.Y -W $rr.W -H $rr.H
+    if ($rightInk.IconTop -lt 0) {
+        Check 'C01c 真功能按钮的图标上下居中（误差 <= 1px）' $false '没在按钮里找到彩色图标'
+    } else {
+        $iconCentre = ($rightInk.IconTop + $rightInk.IconBottom) / 2.0
+        $btnCentre = ($rightProbe[0].Height - 1) / 2.0
+        $offset = [Math]::Abs($iconCentre - $btnCentre)
+        Check 'C01c 真功能按钮的图标上下居中（误差 <= 1px）' ($offset -le 1.0) `
+            ('误差=' + $offset.ToString('0.0') + 'px 图标行=' + $rightInk.IconTop + '..' + $rightInk.IconBottom + ' 中心=' + $iconCentre + ' 按钮中心=' + $btnCentre)
+    }
+}
+
 Check ('C02 点「清理优化」→ {0} 个按钮' -f $cleanNames.Count) (Switch-Tab -Handle $main -TabName '清理优化' -ExpectNames $cleanNames) ''
 Check ('C03 点「系统工具」→ {0} 个按钮' -f $sysNames.Count) (Switch-Tab -Handle $main -TabName '系统工具' -ExpectNames $sysNames) ''
 Check ('C04 点「我的工具」→ {0} 个按钮' -f $mineNames.Count) (Switch-Tab -Handle $main -TabName '我的工具' -ExpectNames $mineNames) ''
@@ -632,20 +704,32 @@ if ($probeBtn.Count -gt 0) {
 Write-Host ''
 Write-Host 'F 组 · 危险按钮必须先确认'
 
+# "弹窗"必须按窗口类判定：消息框的类是 #32770。WinForms 的 ToolTip 也是一个顶层窗口
+# （类名 tooltips_class32、标题为空），所以按"除主窗口以外的可见窗口"来判会把 tooltip
+# 当成弹窗，$dialog[0] 取到的就不是消息框了（加了按钮悬停提示以后踩到过）。
+# 注意：调用处必须再包一层 @()。函数里 `return @(单个对象)` 会被解包成一个 PSCustomObject，
+# 而单个 PSCustomObject **没有** .Count（返回空），于是 `.Count -gt 0` 恒为 False。
+function Get-Dialogs {
+    param([int]$ProcessId, [IntPtr]$Main)
+    return @((Get-TopWindows -ProcessId $ProcessId) | Where-Object {
+        $_.H -ne $Main -and $_.Visible -and $_.Text.Length -gt 0 -and $_.Class -eq '#32770'
+    })
+}
+
 $danger = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '禁用 SmartScreen' })
 if ($danger.Count -gt 0) { [void][TBGui]::Click($danger[0].H) }
-$dialog = $null
+$dialog = @()
 for ($i = 0; $i -lt 25; $i++) {
     Start-Sleep -Milliseconds 200
-    $dialog = @((Get-TopWindows -ProcessId $proc.Id) | Where-Object { $_.H -ne $main -and $_.Visible })
+    $dialog = @(Get-Dialogs -ProcessId $proc.Id -Main $main)
     if ($dialog.Count -gt 0) { break }
 }
-Check 'F01 点危险按钮弹出确认框' ($dialog -ne $null -and $dialog.Count -gt 0) (($dialog | ForEach-Object { $_.Text }) -join ' ')
-if ($dialog -ne $null -and $dialog.Count -gt 0) {
-    Check 'F02 确认框标题是「确认执行」' ($dialog[0].Text -match '确认') $dialog[0].Text
+Check 'F01 点危险按钮弹出确认框' ($dialog.Count -gt 0) (($dialog | ForEach-Object { $_.Text }) -join ' ')
+if ($dialog.Count -gt 0) {
+    Check 'F02 确认框标题是「确认执行」' ($dialog[0].Text -match '确认执行') $dialog[0].Text
     [void][TBGui]::CloseWindow($dialog[0].H)
     Start-Sleep -Milliseconds 600
-    Check 'F03 取消后确认框关掉了' (@((Get-TopWindows -ProcessId $proc.Id) | Where-Object { $_.H -ne $main -and $_.Visible }).Count -eq 0) ''
+    Check 'F03 取消后确认框关掉了' (@(Get-Dialogs -ProcessId $proc.Id -Main $main).Count -eq 0) ''
 } else {
     Check 'F02 确认框标题是「确认执行」' $false '没有弹出确认框'
     Check 'F03 取消后确认框关掉了' $false 'skipped'

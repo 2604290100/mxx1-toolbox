@@ -1,19 +1,19 @@
 {
-  "_comment": "系统工具页签。P0 只有外观，点击走「功能待接入（P1）」。",
+  "_comment": "系统工具页签 —— 12 个都是真功能：调 Windows 自带组件（.msc / .cpl / ms-settings:），只读查看，不改系统、不需要管理员。目标由 src\\Launcher.cs 的 SystemTargets 表解析（%SystemRoot% 占位符运行时展开），这里只写动作名。",
   "tools": [
-    { "id": "devmgmt",          "tab": "system", "segment": 1, "order": 10, "name": "设备管理器",   "kind": "builtin", "module": "system", "action": "tweak", "placeholder": true, "hint": "P1" },
-    { "id": "sound-settings",   "tab": "system", "segment": 1, "order": 20, "name": "打开声音设置", "kind": "builtin", "module": "system", "action": "tweak", "placeholder": true, "hint": "P1" },
-    { "id": "devices-printers", "tab": "system", "segment": 1, "order": 30, "name": "设备和打印机", "kind": "builtin", "module": "system", "action": "tweak", "placeholder": true, "hint": "P1" },
-    { "id": "task-scheduler",   "tab": "system", "segment": 1, "order": 40, "name": "计划任务",     "kind": "builtin", "module": "system", "action": "tweak", "placeholder": true, "hint": "P1" },
+    { "id": "devmgmt",          "tab": "system", "segment": 1, "order": 10, "name": "设备管理器",   "kind": "builtin", "module": "system", "action": "devmgmt",      "hint": "硬件 驱动 msc" },
+    { "id": "sound-settings",   "tab": "system", "segment": 1, "order": 20, "name": "打开声音设置", "kind": "builtin", "module": "system", "action": "sound",        "hint": "音量 音频 ms-settings" },
+    { "id": "devices-printers", "tab": "system", "segment": 1, "order": 30, "name": "设备和打印机", "kind": "builtin", "module": "system", "action": "printers",     "hint": "打印机 扫描仪" },
+    { "id": "task-scheduler",   "tab": "system", "segment": 1, "order": 40, "name": "计划任务",     "kind": "builtin", "module": "system", "action": "taskschd",     "hint": "定时 开机启动 msc" },
 
-    { "id": "regedit",          "tab": "system", "segment": 2, "order": 10, "name": "打开注册表",   "kind": "builtin", "module": "system", "action": "tweak", "placeholder": true, "hint": "P1" },
-    { "id": "services",         "tab": "system", "segment": 2, "order": 20, "name": "打开服务",     "kind": "builtin", "module": "system", "action": "tweak", "placeholder": true, "hint": "P1" },
-    { "id": "gpedit",           "tab": "system", "segment": 2, "order": 30, "name": "打开组策略",   "kind": "builtin", "module": "system", "action": "tweak", "placeholder": true, "hint": "P1" },
-    { "id": "appwiz",           "tab": "system", "segment": 2, "order": 40, "name": "程序和功能",   "kind": "builtin", "module": "system", "action": "tweak", "placeholder": true, "hint": "P1" },
+    { "id": "regedit",          "tab": "system", "segment": 2, "order": 10, "name": "打开注册表",   "kind": "builtin", "module": "system", "action": "regedit",      "hint": "regedit 注册表编辑器" },
+    { "id": "services",         "tab": "system", "segment": 2, "order": 20, "name": "打开服务",     "kind": "builtin", "module": "system", "action": "services",     "hint": "服务管理器 msc" },
+    { "id": "gpedit",           "tab": "system", "segment": 2, "order": 30, "name": "打开组策略",   "kind": "builtin", "module": "system", "action": "gpedit",       "hint": "gpedit 本地组策略（家庭版没有）" },
+    { "id": "appwiz",           "tab": "system", "segment": 2, "order": 40, "name": "程序和功能",   "kind": "builtin", "module": "system", "action": "appwiz",       "hint": "卸载程序 cpl" },
 
-    { "id": "taskmgr",          "tab": "system", "segment": 3, "order": 10, "name": "任务管理器",   "kind": "builtin", "module": "system", "action": "tweak", "placeholder": true, "hint": "P1" },
-    { "id": "sysinfo",          "tab": "system", "segment": 3, "order": 20, "name": "系统信息",     "kind": "builtin", "module": "system", "action": "tweak", "placeholder": true, "hint": "P1" },
-    { "id": "useful-links",     "tab": "system", "segment": 3, "order": 30, "name": "常用链接",     "kind": "builtin", "module": "system", "action": "tweak", "placeholder": true, "hint": "P1" },
-    { "id": "control-panel",    "tab": "system", "segment": 3, "order": 40, "name": "控制面板",     "kind": "builtin", "module": "system", "action": "tweak", "placeholder": true, "hint": "P1" }
+    { "id": "taskmgr",          "tab": "system", "segment": 3, "order": 10, "name": "任务管理器",   "kind": "builtin", "module": "system", "action": "taskmgr",      "hint": "进程 性能 占用" },
+    { "id": "sysinfo",          "tab": "system", "segment": 3, "order": 20, "name": "系统信息",     "kind": "builtin", "module": "system", "action": "sysinfo",      "hint": "msinfo32 硬件配置 版本" },
+    { "id": "useful-links",     "tab": "system", "segment": 3, "order": 30, "name": "常用链接",     "kind": "builtin", "module": "system", "action": "links",        "hint": "项目主页 github 系统设置入口" },
+    { "id": "control-panel",    "tab": "system", "segment": 3, "order": 40, "name": "控制面板",     "kind": "builtin", "module": "system", "action": "controlpanel", "hint": "经典控制面板" }
   ]
 }

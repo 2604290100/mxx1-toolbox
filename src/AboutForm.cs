@@ -66,7 +66,9 @@ namespace Mxx1Toolbox
             note.MaximumSize = new Size(410, 0);
             note.Margin = new Padding(2, 10, 2, 8);
             note.Text = "主界面是多行多列的按钮墙：点一下按钮就启动一个已经做好的程序或功能。"
-                + "「右键增强」页签里的按钮调用隔壁的「永久删除（不进回收站）」安装器，工具箱本身不改动它。"
+                + "灰色的按钮表示功能还没接入（点一下只会写日志，鼠标停上去会说明）。"
+                + "「右键增强」里的按钮打开隔壁的「永久删除（不进回收站）」安装器，工具箱本身不改动它。"
+                + "「系统工具」调的是 Windows 自带的组件，只读查看、不改系统。"
                 + "按钮全部由 tools\\*.json 定义，加按钮不需要重新编译。";
             _root.Controls.Add(note);
             _root.SetColumnSpan(note, 2);

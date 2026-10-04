@@ -27,6 +27,14 @@ namespace Mxx1Toolbox
         public Color ButtonDisabledText;
         public Color Danger;          // text colour of a dangerous button
 
+        // A button whose feature is not wired up yet is drawn muted (grey label, grey label
+        // colour, no coloured icon). It is still clickable: clicking explains what is missing.
+        public Color PlaceholderBack;
+        public Color PlaceholderBorder;
+        public Color PlaceholderText;
+        public Color PlaceholderHover;
+        public Color PlaceholderPressed;
+
         public Color BarBack;
         public Color BarText;
         public Color InputBack;
@@ -55,6 +63,12 @@ namespace Mxx1Toolbox
             t.ButtonPressed = Color.FromArgb(0xCC, 0xE4, 0xF7);
             t.ButtonDisabledText = Color.FromArgb(0x9A, 0x9A, 0x9A);
             t.Danger = Color.FromArgb(0xB0, 0x00, 0x20);
+
+            t.PlaceholderBack = Color.FromArgb(0xEA, 0xEA, 0xEA);
+            t.PlaceholderBorder = Color.FromArgb(0xC8, 0xC8, 0xC8);
+            t.PlaceholderText = Color.FromArgb(0x8A, 0x8A, 0x8A);
+            t.PlaceholderHover = Color.FromArgb(0xE0, 0xE0, 0xE0);
+            t.PlaceholderPressed = Color.FromArgb(0xD6, 0xD6, 0xD6);
 
             t.BarBack = Color.FromArgb(0xE8, 0xE8, 0xE8);
             t.BarText = Color.FromArgb(0x33, 0x33, 0x33);
@@ -86,6 +100,12 @@ namespace Mxx1Toolbox
             t.ButtonPressed = Color.FromArgb(0x0E, 0x5A, 0x94);
             t.ButtonDisabledText = Color.FromArgb(0x76, 0x76, 0x76);
             t.Danger = Color.FromArgb(0xFF, 0x6B, 0x6B);
+
+            t.PlaceholderBack = Color.FromArgb(0x26, 0x26, 0x29);
+            t.PlaceholderBorder = Color.FromArgb(0x35, 0x35, 0x3A);
+            t.PlaceholderText = Color.FromArgb(0x7C, 0x7C, 0x82);
+            t.PlaceholderHover = Color.FromArgb(0x2E, 0x2E, 0x33);
+            t.PlaceholderPressed = Color.FromArgb(0x35, 0x35, 0x3B);
 
             t.BarBack = Color.FromArgb(0x1B, 0x1B, 0x1B);
             t.BarText = Color.FromArgb(0xD0, 0xD0, 0xD0);

@@ -5,9 +5,10 @@
     Test-Cli.ps1 -- 工具箱命令行回归测试
 
     覆盖：
-      * list / status 的机器可读输出（按钮数、页签分布、占位按钮数）
+      * list / status 的机器可读输出（按钮数、页签分布、灰色占位按钮数）
       * 占位按钮点击路径（run 一个 placeholder 必须有反应、写日志、退出码 0）
-      * 「右键增强」真按钮：调用隔壁 permanent-delete-menu 的 PermanentDeleteSetup.exe
+      * 「右键增强」那一个按钮：解析出隔壁 permanent-delete-menu 的 PermanentDeleteSetup.exe
+      * 「系统工具」12 个按钮：--dry 必须解析出目标，缺组件必须说明原因（不静默失灵）
       * 输出必须是 UTF-8（中文按钮名不能变成乱码）
       * 错误用法返回退出码 2
 
@@ -42,9 +43,9 @@ Write-Host ''
 
 # GUI 子系统程序：必须自己起进程、边跑边读，输出按 UTF-8 解
 function Invoke-Exe {
-    param([string]$ArgLine, [int]$TimeoutSec = 120)
+    param([string]$ArgLine, [int]$TimeoutSec = 120, [string]$FilePath = $Exe)
     $si = New-Object System.Diagnostics.ProcessStartInfo
-    $si.FileName = $Exe
+    $si.FileName = $FilePath
     $si.Arguments = $ArgLine
     $si.UseShellExecute = $false
     $si.RedirectStandardOutput = $true
@@ -80,12 +81,12 @@ Write-Host 'A 组 · status 与 list'
 $status = Invoke-Exe 'status'
 Check 'A01 status 退出码 0' ($status.Code -eq 0) ('exit=' + $status.Code)
 Check 'A02 中文输出没有乱码（UTF-8）' ($status.Out -match 'name=萌新工具箱') ('name=' + (Get-Key $status.Out 'name'))
-Check 'A03 版本号 1.0.0' ((Get-Key $status.Out 'version') -eq '1.0.0') (Get-Key $status.Out 'version')
-Check 'A04 按钮总数 61' ((Get-Key $status.Out 'buttons') -eq '61') (Get-Key $status.Out 'buttons')
-Check 'A05 占位按钮 52 个' ((Get-Key $status.Out 'placeholders') -eq '52') (Get-Key $status.Out 'placeholders')
+Check 'A03 版本号 1.1.0' ((Get-Key $status.Out 'version') -eq '1.1.0') (Get-Key $status.Out 'version')
+Check 'A04 按钮总数 54（右键增强只留 1 个）' ((Get-Key $status.Out 'buttons') -eq '54') (Get-Key $status.Out 'buttons')
+Check 'A05 灰色占位按钮 41 个' ((Get-Key $status.Out 'placeholders') -eq '41') (Get-Key $status.Out 'placeholders')
 Check 'A06 危险按钮 7 个' ((Get-Key $status.Out 'dangerous') -eq '7') (Get-Key $status.Out 'dangerous')
 
-$tabExpect = @{ 'common' = 32; 'rightmenu' = 8; 'cleanup' = 8; 'system' = 12; 'mine' = 1 }
+$tabExpect = @{ 'common' = 32; 'rightmenu' = 1; 'cleanup' = 8; 'system' = 12; 'mine' = 1 }
 $tabOk = $true
 $tabDetail = @()
 foreach ($k in $tabExpect.Keys) {
@@ -93,17 +94,18 @@ foreach ($k in $tabExpect.Keys) {
     $tabDetail += ($k + '=' + $v)
     if ($v -ne [string]$tabExpect[$k]) { $tabOk = $false }
 }
-Check 'A07 五个页签的按钮数正确（32/8/8/12/1）' $tabOk ($tabDetail -join ' ')
+Check 'A07 五个页签的按钮数正确（32/1/8/12/1）' $tabOk ($tabDetail -join ' ')
 
 $list = Invoke-Exe 'list'
 Check 'A08 list 退出码 0' ($list.Code -eq 0) ('exit=' + $list.Code)
-Check 'A09 list 报的按钮数一致' ((Get-Key $list.Out 'buttons') -eq '61') (Get-Key $list.Out 'buttons')
+Check 'A09 list 报的按钮数一致' ((Get-Key $list.Out 'buttons') -eq '54') (Get-Key $list.Out 'buttons')
 $lines = @($list.Out -split "`r?`n" | Where-Object { $_ -match "`t" })
-Check 'A10 list 打出 61 行按钮' ($lines.Count -eq 61) ('lines=' + $lines.Count)
+Check 'A10 list 打出 54 行按钮' ($lines.Count -eq 54) ('lines=' + $lines.Count)
 
 $rmList = Invoke-Exe 'list --tab rightmenu'
-Check 'A11 list --tab 只列这个页签的按钮' ((Get-Key $rmList.Out 'shown') -eq '8') (Get-Key $rmList.Out 'shown')
+Check 'A11 右键增强只有 1 个按钮' ((Get-Key $rmList.Out 'shown') -eq '1') (Get-Key $rmList.Out 'shown')
 Check 'A12 右键增强里的按钮是"真功能"（不带 placeholder 标记）' (-not ($rmList.Out -match 'placeholder')) ''
+Check 'A13 右键增强那个按钮叫「永久删除工具」' ($rmList.Out -match '永久删除工具') (($rmList.Out -split "`r?`n" | Where-Object { $_ -match "`t" }) -join '')
 
 # ---------------------------------------------------------------- B 组：占位按钮路径
 Write-Host ''
@@ -130,34 +132,71 @@ Check 'B05 日志里能看到「刷新 DNS 缓存」和"功能待接入"' (($new
 
 # ---------------------------------------------------------------- C 组：真按钮（调隔壁 exe）
 Write-Host ''
-Write-Host 'C 组 · 「右键增强」真按钮（零改动集成隔壁 permanent-delete-menu）'
+Write-Host 'C 组 · 「右键增强」那一个按钮（调隔壁 permanent-delete-menu，零改动集成）'
 
 $permdel = Get-Key $status.Out 'permdelExe'
 if ($permdel -eq '(未找到)' -or $permdel.Length -eq 0) {
     Check 'C01 找到 PermanentDeleteSetup.exe' $false '没找到（自家工程之外运行时会自动跳过）'
-    Check 'C02 permdel.status 能拿到真实状态' $false 'skipped'
+    Check 'C02 按钮解析出隔壁的 exe' $false 'skipped'
+    Check 'C03 隔壁 exe 的 status 能跑' $false 'skipped'
 } else {
     Check 'C01 找到 PermanentDeleteSetup.exe' $true $permdel
-    $st = Invoke-Exe 'run permdel.status'
-    Check 'C02 permdel.status 退出码 0' ($st.Code -eq 0) ('exit=' + $st.Code)
-    Check 'C03 输出里有引擎的真实字段（installed=）' ($st.Out -match '(?m)^installed=') (($st.Out -split "`r?`n" | Where-Object { $_ -match '^installed=' }) -join '')
-    $upd = Invoke-Exe 'run permdel.checkupdate'
-    Check 'C04 permdel.checkupdate 退出码 0' ($upd.Code -eq 0) ('exit=' + $upd.Code)
-    Check 'C05 输出里有 update= 状态行' ($upd.Out -match '(?m)^update=') (($upd.Out -split "`r?`n" | Where-Object { $_ -match '^update=' }) -join '')
+    $guiDry = Invoke-Exe 'run permdel.gui --dry'
+    Check 'C02 按钮解析出隔壁的 exe（--dry 不真的启动）' `
+        (($guiDry.Code -eq 0) -and ($guiDry.Out -match '(?m)^kind=exe') -and ((Get-Key $guiDry.Out 'exists') -eq 'yes')) `
+        ((Get-Key $guiDry.Out 'target'))
+    # 直接问隔壁程序：这样"工具箱找得到它、它也真能跑"两件事都被证明了一次
+    $st = Invoke-Exe 'status' 120 $permdel
+    Check 'C03 隔壁 exe 的 status 能跑（read-only）' (($st.Code -eq 0) -and ($st.Out -match '(?m)^installed=')) `
+        (($st.Out -split "`r?`n" | Where-Object { $_ -match '^installed=' }) -join '')
 }
 
-# ---------------------------------------------------------------- D 组：用法与错误
+# ---------------------------------------------------------------- D 组：系统工具
 Write-Host ''
-Write-Host 'D 组 · 错误用法'
+Write-Host 'D 组 · 「系统工具」12 个按钮（Windows 自带组件，--dry 只解析不启动）'
 
-$bad = Invoke-Exe 'run no.such.button'
-Check 'D01 不存在的按钮返回退出码 2' ($bad.Code -eq 2) ('exit=' + $bad.Code)
+Check 'D01 status 报 12 个系统工具、0 个缺失' `
+    (((Get-Key $status.Out 'systemTargets') -eq '12') -and ((Get-Key $status.Out 'systemMissing') -eq '0')) `
+    ('targets=' + (Get-Key $status.Out 'systemTargets') + ' missing=' + (Get-Key $status.Out 'systemMissing'))
+
+$sysList = Invoke-Exe 'list --tab system'
+Check 'D02 系统工具页签 12 个按钮、没有 placeholder' `
+    (((Get-Key $sysList.Out 'shown') -eq '12') -and (-not ($sysList.Out -match 'placeholder'))) ''
+
+$sysIds = @()
+foreach ($line in ($sysList.Out -split "`r?`n")) {
+    if ($line -match "`t") { $sysIds += ($line -split "`t")[0] }
+}
+Check 'D03 读到 12 个系统工具 id' ($sysIds.Count -eq 12) ($sysIds -join ' ')
+
+$bad = @()
+$detail = @()
+foreach ($id in $sysIds) {    $d = Invoke-Exe ('run ' + $id + ' --dry')
+    $exists = Get-Key $d.Out 'exists'
+    $hint = Get-Key $d.Out 'hint'
+    $target = Get-Key $d.Out 'target'
+    if (($d.Code -ne 0) -or ($target.Length -eq 0)) { $bad += ($id + ':解析失败'); continue }
+    # 要么目标在这台机器上存在，要么必须给出一句"为什么没有"的说明 —— 不许静默失灵
+    if ($exists -ne 'yes' -and $hint.Length -eq 0) { $bad += ($id + ':没有解释'); continue }
+    $detail += ($id + '=' + (Get-Key $d.Out 'kind'))
+}
+Check 'D04 12 个系统工具都有目标、且缺了就说明原因' ($bad.Count -eq 0) (($bad -join ' ') + ' ' + ($detail -join ' '))
+
+$dryMissing = Invoke-Exe 'run no.such.button --dry'
+Check 'D05 不存在的按钮 --dry 也是退出码 2' ($dryMissing.Code -eq 2) ('exit=' + $dryMissing.Code)
+
+# ---------------------------------------------------------------- E 组：用法与错误
+Write-Host ''
+Write-Host 'E 组 · 错误用法'
+
+$badRun = Invoke-Exe 'run no.such.button'
+Check 'E01 不存在的按钮返回退出码 2' ($badRun.Code -eq 2) ('exit=' + $badRun.Code)
 $nocommand = Invoke-Exe 'wat'
-Check 'D02 不认识的命令返回退出码 2' ($nocommand.Code -eq 2) ('exit=' + $nocommand.Code)
+Check 'E02 不认识的命令返回退出码 2' ($nocommand.Code -eq 2) ('exit=' + $nocommand.Code)
 $help = Invoke-Exe 'help'
-Check 'D03 help 退出码 0 且有用法' (($help.Code -eq 0) -and ($help.Out -match '用法')) ('exit=' + $help.Code)
+Check 'E03 help 退出码 0 且有用法' (($help.Code -eq 0) -and ($help.Out -match '用法')) ('exit=' + $help.Code)
 $chk = Invoke-Exe 'checkupdate'
-Check 'D04 checkupdate 只读、不下载' (($chk.Code -eq 0) -and ($chk.Out -match 'update=disabled')) (($chk.Out -split "`r?`n" | Where-Object { $_ -match '^update=' }) -join '')
+Check 'E04 checkupdate 只读、不下载' (($chk.Code -eq 0) -and ($chk.Out -match 'update=disabled')) (($chk.Out -split "`r?`n" | Where-Object { $_ -match '^update=' }) -join '')
 
 # ---------------------------------------------------------------- 汇总
 Write-Host ''

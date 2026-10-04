@@ -4,11 +4,11 @@
 <#
     Make-Icons.ps1 -- 给每个按钮画一个 16x16 PNG 图标
 
-    思路：按"页签定底色 + 按钮名里的关键词定图形"批量生成，免得手画 61 张图。
+    思路：按"页签定底色 + 按钮名里的关键词定图形"批量生成，免得手画几十张图。
     图形全部用 GDI+ 基本图元画（方正、白描、无字体依赖），所以不存在"微软雅黑没这个字形"的问题。
     危险按钮一律用红色底 + 感叹号，一眼能认出来。
 
-    产物: assets\icons\<id>.png（61 个）
+    产物: assets\icons\<id>.png（每个按钮一个，清单直接从 exe 的 list 读，所以先 build 再跑）
     用法: powershell -File tools\Make-Icons.ps1
 #>
 [CmdletBinding()]
@@ -58,6 +58,7 @@ function Get-Shape {
         @('power-',         'bolt'),
         @('dns',            'globe'),
         @('hosts',          'globe'),
+        @('permdel',        'trash'),
         @('install',        'plus'),
         @('uninstall',      'minus'),
         @('status',         'info'),

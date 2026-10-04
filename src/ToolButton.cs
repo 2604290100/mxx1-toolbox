@@ -7,7 +7,11 @@ using System.Windows.Forms;
 namespace Mxx1Toolbox
 {
     /// <summary>One compact button of the wall: a 16x15 icon canvas (see IconFactory.Normalize,
-    /// which exists so the icon lands on the label's optical centre) plus a plain text label.</summary>
+    /// which exists so the icon lands on the label's optical centre) plus a plain text label.
+    ///
+    /// A button whose feature is not wired up yet (ToolItem.Placeholder) is drawn in grey --
+    /// grey label, grey border, greyed-out icon -- but stays clickable, because clicking it is
+    /// what tells the user that the feature is still missing.</summary>
     internal sealed class ToolButton : Button
     {
         public readonly ToolItem Tool;
@@ -29,7 +33,7 @@ namespace Mxx1Toolbox
             Font = new Font("Microsoft YaHei", 8.25f, FontStyle.Regular, GraphicsUnit.Point);
             AutoEllipsis = true;
             Text = tool.Name;
-            Image = IconFactory.Get(tool);
+            Image = tool.Placeholder ? IconFactory.GetMuted(tool) : IconFactory.Get(tool);
             TabStop = false;
             AccessibleName = tool.Name;
             AccessibleDescription = tool.Id;
@@ -44,17 +48,40 @@ namespace Mxx1Toolbox
         public void ApplyTheme(Theme theme)
         {
             _theme = theme;
-            BackColor = theme.ButtonBack;
-            ForeColor = Tool.Danger ? theme.Danger : theme.ButtonText;
-            FlatAppearance.BorderColor = theme.ButtonBorder;
-            FlatAppearance.MouseOverBackColor = theme.ButtonHover;
-            FlatAppearance.MouseDownBackColor = theme.ButtonPressed;
-            if (!Enabled) { ForeColor = theme.ButtonDisabledText; }
+            if (Tool.Placeholder)
+            {
+                BackColor = theme.PlaceholderBack;
+                FlatAppearance.BorderColor = theme.PlaceholderBorder;
+                FlatAppearance.MouseOverBackColor = theme.PlaceholderHover;
+                FlatAppearance.MouseDownBackColor = theme.PlaceholderPressed;
+            }
+            else
+            {
+                BackColor = theme.ButtonBack;
+                FlatAppearance.BorderColor = theme.ButtonBorder;
+                FlatAppearance.MouseOverBackColor = theme.ButtonHover;
+                FlatAppearance.MouseDownBackColor = theme.ButtonPressed;
+            }
+            ForeColor = CurrentTextColor();
+            if (!Tool.Placeholder)
+            {
+                Image = IconFactory.Get(Tool);
+            }
             Invalidate();
         }
 
-        /// <summary>Busy = the button is running something. A short flash is used for the
-        /// "feature not wired up yet" feedback so a click is never silent.</summary>
+        /// <summary>Normal label colour, danger colour for a dangerous button and the muted grey
+        /// for a placeholder (or for any button while it is busy / flashing).</summary>
+        private Color CurrentTextColor()
+        {
+            if (_theme == null) { return ForeColor; }
+            if (_busy) { return _theme.ButtonDisabledText; }
+            if (Tool.Placeholder) { return _theme.PlaceholderText; }
+            return Tool.Danger ? _theme.Danger : _theme.ButtonText;
+        }
+
+        /// <summary>Busy = the button is running something. The icon is swapped for a spinner of
+        /// exactly the same canvas size and the text is never touched.</summary>
         public void SetBusy(bool busy, int autoClearMs)
         {
             _busy = busy;
@@ -62,24 +89,48 @@ namespace Mxx1Toolbox
             // Text is deliberately NOT touched. Appending "…" widened the image+text group, and
             // because the group is centred the icon jumped sideways on every click; on the widest
             // labels the text even overflowed the button. The busy state is shown by this icon
-            // (same 16x16 size) plus the disabled colours.
-            Image = busy ? IconFactory.Busy() : IconFactory.Get(Tool);
-            if (_theme != null && !busy) { ForeColor = Tool.Danger ? _theme.Danger : _theme.ButtonText; }
-            if (_theme != null && busy) { ForeColor = _theme.ButtonDisabledText; }
+            // (same 16x15 size, see IconFactory.Normalize) plus the disabled colours.
+            if (busy) { Image = IconFactory.Busy(); }
+            else if (Tool.Placeholder) { Image = IconFactory.GetMuted(Tool); }
+            else { Image = IconFactory.Get(Tool); }
+            ForeColor = CurrentTextColor();
+            ArmFlash(busy ? autoClearMs : 0);
+        }
 
+        /// <summary>Click feedback for a button that has no feature behind it: briefly disabled
+        /// (and therefore grey), but the icon is NOT swapped for the spinner -- nothing is running,
+        /// so showing a spinner would be a lie.</summary>
+        public void Flash(int ms)
+        {
+            if (_busy) { return; }
+            _busy = true;
+            Enabled = false;
+            ForeColor = CurrentTextColor();
+            ArmFlash(ms);
+        }
+
+        private void ArmFlash(int autoClearMs)
+        {
             if (_flash != null) { _flash.Stop(); _flash.Dispose(); _flash = null; }
-            if (busy && autoClearMs > 0)
+            if (autoClearMs <= 0) { return; }
+            _flash = new Timer();
+            _flash.Interval = autoClearMs;
+            _flash.Tick += delegate(object s, EventArgs e)
             {
-                _flash = new Timer();
-                _flash.Interval = autoClearMs;
-                _flash.Tick += delegate(object s, EventArgs e)
-                {
-                    Timer t = (Timer)s;
-                    t.Stop();
-                    SetBusy(false, 0);
-                };
-                _flash.Start();
-            }
+                Timer t = (Timer)s;
+                t.Stop();
+                if (Tool.Placeholder) { SetIdle(); } else { SetBusy(false, 0); }
+            };
+            _flash.Start();
+        }
+
+        /// <summary>Back to the normal (not busy, clickable) look.</summary>
+        private void SetIdle()
+        {
+            _busy = false;
+            Enabled = true;
+            ForeColor = CurrentTextColor();
+            if (_flash != null) { _flash.Stop(); _flash.Dispose(); _flash = null; }
         }
 
         protected override void Dispose(bool disposing)

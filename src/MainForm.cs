@@ -368,6 +368,7 @@ namespace Mxx1Toolbox
                 b.MouseDoubleClick += OnToolDoubleClick;
                 b.ContextMenuStrip = _menu;
                 b.Enter += delegate { UpdateStatusBar(); };
+                _tips.SetToolTip(b, TipFor(t, _settings));
                 _grid.Controls.Add(b, col, row);
                 _gridButtons.Add(b);
                 col++;
@@ -423,6 +424,18 @@ namespace Mxx1Toolbox
                 || t.Id.ToLowerInvariant().IndexOf(n, StringComparison.Ordinal) >= 0
                 || t.Hint.ToLowerInvariant().IndexOf(n, StringComparison.Ordinal) >= 0
                 || Tabs.Display(t.Tab).ToLowerInvariant().IndexOf(n, StringComparison.Ordinal) >= 0;
+        }
+
+        /// <summary>Hover text: the runnable command for a real button, and a plain sentence for a
+        /// button whose feature is not wired up (those are the grey ones).</summary>
+        private static string TipFor(ToolItem t, Settings settings)
+        {
+            if (t.Placeholder)
+            {
+                return t.Name + " · 功能还没接入（" + (t.Hint.Length > 0 ? t.Hint : "P1") + "）· 点击只写日志";
+            }
+            if (t.Danger) { return t.Name + " · 会改动系统，点击先弹确认框"; }
+            return t.Name + " · " + Launcher.DescribeCommand(t, settings, false);
         }
 
         // ---------------------------------------------------------------- theme
@@ -566,14 +579,27 @@ namespace Mxx1Toolbox
             {
                 string hint = t.Hint.Length > 0 ? t.Hint : "P1";
                 SetStatus(t.Name + " · 功能待接入（" + hint + "）");
-                Logger.Write(t.Name, "功能待接入（" + hint + "）");
-                b.SetBusy(true, 600);
+                Logger.Write(t.Name, "功能待接入（" + hint + "）· 这是灰色按钮，说明还没接功能");
+                // Flash instead of SetBusy: nothing is running, so no spinner. The button is grey
+                // by default anyway (ToolButton.ApplyTheme), this only shows "the click landed".
+                b.Flash(600);
                 return;
             }
 
+            // Interface actions (about / log / settings / new button / ...) are answered by this
+            // form directly, so they are checked before the placeholder branch: 「+ 新建按钮」is
+            // grey (its graphical editor is still missing) but clicking it must still explain how
+            // to add a button by hand.
             if (t.Kind == "builtin" && t.Module == Launcher.ModuleApp)
             {
                 HandleUiAction(t);
+                return;
+            }
+            if (t.Kind == "builtin" && t.Module == Launcher.ModuleSystem && t.Action == "links")
+            {
+                OpenLinks();
+                SetStatus(t.Name + " · 已打开常用链接");
+                Logger.Write(t.Name, "打开常用链接窗口");
                 return;
             }
             if (t.Kind == "builtin" && t.Module == Launcher.ModulePermdel && t.Action == "enginelog")
@@ -700,6 +726,12 @@ namespace Mxx1Toolbox
             f.Show(this);
         }
 
+        private void OpenLinks()
+        {
+            LinksForm f = new LinksForm(_theme);
+            f.Show(this);
+        }
+
         private void OpenToolboxLog()
         {
             LogForm f = new LogForm("运行日志（工具箱）", Logger.CurrentFile(),
@@ -813,7 +845,7 @@ namespace Mxx1Toolbox
         {
             string[] lines = Logger.TailNewest(200);
             _logBox.Text = lines.Length == 0
-                ? "（还没有运行记录 —— 点一个按钮试试）"
+                ? "（还没有运行记录 —— 点一个按钮试试；灰色的按钮表示功能还没接入）"
                 : string.Join(Environment.NewLine, lines);
             _logBox.SelectionStart = 0;
             _logBox.SelectionLength = 0;

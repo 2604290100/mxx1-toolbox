@@ -21,12 +21,107 @@ namespace Mxx1Toolbox
         public string UiActionName = "";
     }
 
+    /// <summary>One entry of the「系统工具」page: which Windows component it starts and what to say
+    /// when that component is not installed (Windows Home has no gpedit, for example). No machine
+    /// specific path is stored: %SystemRoot% style placeholders are expanded when it runs, so the
+    /// same exe works on every Windows install and on every drive.</summary>
+    internal sealed class SystemTarget
+    {
+        public string Action = "";
+        public string Name = "";
+        public string Path = "";    // file started through ShellExecute
+        public string Shell = "";   // shell: folder opened through explorer.exe
+        public string Url = "";     // ms-settings: / https: target
+        public string Missing = ""; // sentence shown when Path is not on this machine
+        public bool UiAction;       // handled by MainForm (the 常用链接 window)
+
+        public bool Exists
+        {
+            get
+            {
+                if (UiAction) { return true; }
+                if (Path.Length > 0) { return File.Exists(AppPaths.Expand(Path)); }
+                return true;    // shell: folders and ms-settings: pages always exist
+            }
+        }
+    }
+
     /// <summary>Starts whatever a button points at. Every run is logged; black console windows
     /// are suppressed by default and the child output is captured asynchronously.</summary>
     internal static class Launcher
     {
         public const string ModulePermdel = "permdel";
         public const string ModuleApp = "app";
+        public const string ModuleSystem = "system";
+
+        /// <summary>The「系统工具」page. Every entry is a read-only viewer or a Windows settings
+        /// page: nothing here changes the system, so none of them needs elevation.</summary>
+        private static readonly SystemTarget[] SystemTargets = new SystemTarget[]
+        {
+            FileTarget("devmgmt", "设备管理器", "%SystemRoot%\\System32\\devmgmt.msc",
+                "这台电脑上找不到设备管理器（devmgmt.msc）"),
+            UrlTarget("sound", "声音设置", "ms-settings:sound"),
+            ShellTarget("printers", "设备和打印机", "shell:PrintersFolder"),
+            FileTarget("taskschd", "任务计划程序", "%SystemRoot%\\System32\\taskschd.msc",
+                "这台电脑上找不到任务计划程序（taskschd.msc）"),
+
+            FileTarget("regedit", "注册表编辑器", "%SystemRoot%\\regedit.exe",
+                "这台电脑上找不到注册表编辑器（regedit.exe）"),
+            FileTarget("services", "服务", "%SystemRoot%\\System32\\services.msc",
+                "这台电脑上找不到服务管理器（services.msc）"),
+            FileTarget("gpedit", "本地组策略编辑器", "%SystemRoot%\\System32\\gpedit.msc",
+                "这台电脑是 Windows 家庭版，没有「本地组策略编辑器」（gpedit.msc）"),
+            FileTarget("appwiz", "程序和功能", "%SystemRoot%\\System32\\appwiz.cpl",
+                "这台电脑上找不到「程序和功能」（appwiz.cpl）"),
+
+            FileTarget("taskmgr", "任务管理器", "%SystemRoot%\\System32\\taskmgr.exe",
+                "这台电脑上找不到任务管理器（taskmgr.exe）"),
+            FileTarget("sysinfo", "系统信息", "%SystemRoot%\\System32\\msinfo32.exe",
+                "这台电脑上找不到系统信息（msinfo32.exe）"),
+            WindowTarget("links", "常用链接"),
+            ShellTarget("controlpanel", "控制面板", "shell:ControlPanelFolder")
+        };
+
+        // NOTE: these helpers must not be called File / Shell / Url / Links -- a method named File
+        // hides System.IO.File inside this class and every File.Exists call stops compiling (CS0119).
+        private static SystemTarget FileTarget(string action, string name, string path, string missing)
+        {
+            SystemTarget t = new SystemTarget();
+            t.Action = action; t.Name = name; t.Path = path; t.Missing = missing;
+            return t;
+        }
+
+        private static SystemTarget ShellTarget(string action, string name, string shell)
+        {
+            SystemTarget t = new SystemTarget();
+            t.Action = action; t.Name = name; t.Shell = shell;
+            return t;
+        }
+
+        private static SystemTarget UrlTarget(string action, string name, string url)
+        {
+            SystemTarget t = new SystemTarget();
+            t.Action = action; t.Name = name; t.Url = url;
+            return t;
+        }
+
+        private static SystemTarget WindowTarget(string action, string name)
+        {
+            SystemTarget t = new SystemTarget();
+            t.Action = action; t.Name = name; t.UiAction = true;
+            return t;
+        }
+
+        public static SystemTarget FindSystemTarget(string action)
+        {
+            foreach (SystemTarget t in SystemTargets)
+            {
+                if (string.Equals(t.Action, action, StringComparison.OrdinalIgnoreCase)) { return t; }
+            }
+            return null;
+        }
+
+        public static SystemTarget[] AllSystemTargets() { return SystemTargets; }
 
         public static bool IsAdmin()
         {
@@ -93,7 +188,18 @@ namespace Mxx1Toolbox
                     if (t.Module == ModulePermdel)
                     {
                         string exe = FindPermanentDeleteExe(settings);
-                        return Quote(exe.Length > 0 ? exe : "PermanentDeleteSetup.exe") + " " + PermdelArgs(t);
+                        string args = PermdelArgs(t);
+                        return Quote(exe.Length > 0 ? exe : "PermanentDeleteSetup.exe")
+                            + (args.Length > 0 ? " " + args : "");
+                    }
+                    if (t.Module == ModuleSystem)
+                    {
+                        SystemTarget st = FindSystemTarget(t.Action);
+                        if (st == null) { return "系统工具里没有这个动作：" + t.Action; }
+                        if (st.Path.Length > 0) { return AppPaths.Expand(st.Path); }
+                        if (st.Shell.Length > 0) { return "explorer.exe " + st.Shell; }
+                        if (st.Url.Length > 0) { return st.Url; }
+                        return "本程序内的窗口（" + st.Name + "）";
                     }
                     return "内置动作: " + t.Module + "/" + t.Action;
             }
@@ -102,6 +208,9 @@ namespace Mxx1Toolbox
 
         private static string PermdelArgs(ToolItem t)
         {
+            // "gui" means "just open the installer window": the sibling program shows its own
+            // window when it is started without a command, so no argument is passed at all.
+            if (string.Equals(t.Action, "gui", StringComparison.OrdinalIgnoreCase)) { return ""; }
             string args = t.Action;
             if (!string.IsNullOrEmpty(t.Options)) { args += " " + t.Options; }
             return args.Trim();
@@ -170,6 +279,8 @@ namespace Mxx1Toolbox
                 return r;
             }
 
+            if (t.Module == ModuleSystem) { return RunSystem(t); }
+
             if (t.Module != ModulePermdel)
             {
                 r.Ok = false;
@@ -187,6 +298,12 @@ namespace Mxx1Toolbox
 
             switch (t.Action)
             {
+                case "gui":
+                    {
+                        LaunchResult inner = Exec(exe, "", "", false, false, 0);
+                        if (inner.Ok) { inner.Message = "已打开「永久删除」安装器窗口"; }
+                        return inner;
+                    }
                 case "install":
                 case "uninstall":
                     {
@@ -213,6 +330,74 @@ namespace Mxx1Toolbox
                         return inner;
                     }
             }
+        }
+
+        /// <summary>「系统工具」page: open the Windows component behind the button. Every target is
+        /// reached through ShellExecute so Windows chooses the right host (mmc for a .msc, the
+        /// control panel for a .cpl, Settings for ms-settings:) and no console window appears.
+        /// A component that is not installed on this Windows edition produces a full sentence
+        /// instead of a silent no-op.</summary>
+        private static LaunchResult RunSystem(ToolItem t)
+        {
+            LaunchResult r = new LaunchResult();
+            SystemTarget target = FindSystemTarget(t.Action);
+            if (target == null)
+            {
+                r.Ok = false;
+                r.Message = "系统工具里没有这个动作：" + t.Action;
+                return r;
+            }
+            if (target.UiAction)
+            {
+                r.UiAction = true;
+                r.UiActionName = target.Action;
+                return r;
+            }
+
+            string file = "";
+            string args = "";
+            if (target.Path.Length > 0)
+            {
+                file = AppPaths.Expand(target.Path);
+                if (!File.Exists(file))
+                {
+                    r.Ok = false;
+                    r.Message = target.Missing.Length > 0 ? target.Missing : ("找不到 " + file);
+                    return r;
+                }
+            }
+            else if (target.Shell.Length > 0)
+            {
+                // explorer.exe hands a shell: folder to the running Explorer; starting it directly
+                // would open a console window on some systems.
+                file = "explorer.exe";
+                args = target.Shell;
+            }
+            else if (target.Url.Length > 0)
+            {
+                file = target.Url;
+            }
+            else
+            {
+                r.Ok = false;
+                r.Message = "这个系统工具没有配置目标：" + t.Action;
+                return r;
+            }
+
+            try
+            {
+                ProcessStartInfo psi = new ProcessStartInfo(file, args);
+                psi.UseShellExecute = true;
+                psi.CreateNoWindow = true;
+                Process.Start(psi);
+                r.Message = "已打开" + target.Name;
+            }
+            catch (Exception ex)
+            {
+                r.Ok = false;
+                r.Message = "打开" + target.Name + "失败：" + ex.Message;
+            }
+            return r;
         }
 
         private static LaunchResult Exec(string file, string args, string workDir, bool elevate, bool wait, int timeoutSec)

@@ -6,9 +6,10 @@
 
     做法：起界面 → PrintWindow 抓窗口位图 → 存成 PNG。抓的是窗口自己的绘制结果，
     不要求窗口在最前面，也不会把桌面别的东西拍进去。
+    "系统工具"那张会先按 BM_CLICK 点一下页签按钮，用来对比"真功能按钮"和"灰色占位按钮"。
 
     用法: powershell -File tools\Make-Screenshots.ps1
-    产物: docs\gui-shot.png（浅色）、docs\dark-shot.png（深色）
+    产物: docs\gui-shot.png（浅色）、docs\dark-shot.png（深色）、docs\system-shot.png（系统工具页签）
     注意: 会临时改写 settings.ini 里的 Theme，跑完按原样复原。
 #>
 [CmdletBinding()]
@@ -27,12 +28,34 @@ if (-not [Environment]::UserInteractive) { Write-Host '没有交互式桌面，�
 Add-Type -AssemblyName System.Drawing
 Add-Type -TypeDefinition @'
 using System;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
+using System.Text;
 public class Shot {
     [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
+    private delegate bool EnumProc(IntPtr hWnd, IntPtr lParam);
     [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
     [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr h, IntPtr hdc, uint flags);
     [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
+    [DllImport("user32.dll")] private static extern bool EnumChildWindows(IntPtr parent, EnumProc cb, IntPtr lParam);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern IntPtr SendMessageTimeoutW(IntPtr h, uint msg, IntPtr wp, StringBuilder lp, uint flags, uint timeout, out IntPtr res);
+    [DllImport("user32.dll")] private static extern bool PostMessageW(IntPtr h, uint msg, IntPtr wp, IntPtr lp);
+
+    public static IntPtr[] Children(IntPtr parent) {
+        List<IntPtr> list = new List<IntPtr>();
+        EnumChildWindows(parent, delegate(IntPtr h, IntPtr l) { list.Add(h); return true; }, IntPtr.Zero);
+        return list.ToArray();
+    }
+
+    // WM_GETTEXT across processes (GetWindowText does not work for controls of another process)
+    public static string Text(IntPtr h) {
+        StringBuilder sb = new StringBuilder(1024);
+        IntPtr res;
+        SendMessageTimeoutW(h, 0x000D, (IntPtr)sb.Capacity, sb, 0x0002, 5000, out res);
+        return sb.ToString();
+    }
+
+    public static bool Click(IntPtr h) { return PostMessageW(h, 0x00F5, IntPtr.Zero, IntPtr.Zero); }
 }
 '@
 
@@ -52,6 +75,15 @@ function Save-Shot {
     $bmp.Save($Path, [System.Drawing.Imaging.ImageFormat]::Png)
     $bmp.Dispose()
     Write-Host ('  已保存 ' + $Path + '  (' + $w + 'x' + $h + ')')
+}
+
+# 按文字找一个子按钮并点它（点页签用）
+function Click-ChildButton {
+    param([IntPtr]$Handle, [string]$Text)
+    foreach ($h in [Shot]::Children($Handle)) {
+        if ([Shot]::Text($h) -eq $Text) { [void][Shot]::Click($h); return $true }
+    }
+    return $false
 }
 
 function Start-Shot {
@@ -85,6 +117,15 @@ if (-not $p1.HasExited -and $p1.MainWindowHandle -ne [IntPtr]::Zero) {
     [void][Shot]::SetForegroundWindow($p1.MainWindowHandle)
     Start-Sleep -Milliseconds 500
     Save-Shot -Handle $p1.MainWindowHandle -Path (Join-Path $docs 'gui-shot.png')
+
+    # 再拍一张「系统工具」：那一页全是真功能按钮（彩色图标 + 近黑文字），
+    # 正好和常用设置那一堆灰色占位按钮形成对照。
+    if (Click-ChildButton -Handle $p1.MainWindowHandle -Text '系统工具') {
+        Start-Sleep -Milliseconds 900
+        Save-Shot -Handle $p1.MainWindowHandle -Path (Join-Path $docs 'system-shot.png')
+    } else {
+        Write-Host '  没找到「系统工具」页签按钮，跳过 system-shot.png'
+    }
     try { $p1.Kill() } catch { }
 }
 Start-Sleep -Milliseconds 800

@@ -82,6 +82,7 @@ namespace Mxx1Toolbox
             Console.WriteLine("  Mxx1Toolbox.exe                      打开界面（不带参数时）");
             Console.WriteLine("  Mxx1Toolbox.exe list [--tab <页签>]  列出全部按钮");
             Console.WriteLine("  Mxx1Toolbox.exe run <id> [--admin]   执行一个按钮（和界面同一条路径）");
+            Console.WriteLine("  Mxx1Toolbox.exe run <id> --dry       只解析按钮指向哪里，不真的启动");
             Console.WriteLine("  Mxx1Toolbox.exe status               打印 key=value 状态（脚本用）");
             Console.WriteLine("  Mxx1Toolbox.exe checkupdate          只读版本号，不下载不替换");
             Console.WriteLine("  Mxx1Toolbox.exe help                 这份帮助");
@@ -127,14 +128,16 @@ namespace Mxx1Toolbox
         {
             if (args.Length < 2)
             {
-                Console.Error.WriteLine("用法: Mxx1Toolbox.exe run <id> [--admin]");
+                Console.Error.WriteLine("用法: Mxx1Toolbox.exe run <id> [--admin] [--dry]");
                 return 2;
             }
             string id = args[1];
             bool admin = false;
+            bool dry = false;
             for (int i = 2; i < args.Length; i++)
             {
                 if (args[i] == "--admin") { admin = true; }
+                if (args[i] == "--dry") { dry = true; }
             }
 
             ToolItem target = null;
@@ -151,7 +154,13 @@ namespace Mxx1Toolbox
             Settings settings = Settings.Load();
             string command = Launcher.DescribeCommand(target, settings, admin);
             Console.WriteLine("id=" + target.Id);
+            Console.WriteLine("name=" + target.Name);
             Console.WriteLine("command=" + command);
+
+            // --dry only resolves the target (and says whether it is there) without starting
+            // anything: that is how the test suite checks all twelve 系统工具 buttons without
+            // opening Device Manager twelve times.
+            if (dry) { return DryRun(target, settings); }
 
             if (target.Placeholder)
             {
@@ -176,6 +185,75 @@ namespace Mxx1Toolbox
             return r.Ok ? 0 : 1;
         }
 
+        /// <summary>Resolves where a button points, without running it. Prints
+        /// kind / target / exists and, when something is missing, a sentence explaining what.
+        /// Always exits 0: it answers a question, it does not fail at anything.</summary>
+        private static int DryRun(ToolItem t, Settings settings)
+        {
+            Console.WriteLine("dry=yes");
+            string kind = "unknown";
+            string target = "";
+            bool exists = true;
+            string hint = "";
+
+            if (t.Kind == "builtin" && t.Module == Launcher.ModuleSystem)
+            {
+                SystemTarget st = Launcher.FindSystemTarget(t.Action);
+                if (st == null)
+                {
+                    Console.WriteLine("kind=unknown");
+                    Console.WriteLine("target=");
+                    Console.WriteLine("exists=no");
+                    Console.WriteLine("hint=系统工具里没有这个动作: " + t.Action);
+                    return 0;
+                }
+                if (st.UiAction) { kind = "window"; target = "（本程序内的窗口）"; }
+                else if (st.Path.Length > 0) { kind = "file"; target = AppPaths.Expand(st.Path); }
+                else if (st.Shell.Length > 0) { kind = "shell"; target = st.Shell; }
+                else { kind = "url"; target = st.Url; }
+                exists = st.Exists;
+                hint = st.Missing;
+            }
+            else if (t.Kind == "builtin" && t.Module == Launcher.ModulePermdel)
+            {
+                kind = "exe";
+                string exe = Launcher.FindPermanentDeleteExe(settings);
+                target = exe.Length > 0 ? exe : "(未找到 PermanentDeleteSetup.exe)";
+                exists = exe.Length > 0;
+                hint = "请在「设置」里指定 PermanentDeleteSetup.exe 的路径";
+            }
+            else if (t.Kind == "builtin" && t.Module == Launcher.ModuleApp)
+            {
+                kind = "window";
+                target = "（本程序内的窗口）";
+            }
+            else if (t.Kind == "exe" || t.Kind == "script")
+            {
+                kind = t.Kind;
+                if (t.Kind == "script" && t.Inline.Length > 0) { target = "（内联脚本）"; }
+                else
+                {
+                    target = AppPaths.Expand(t.Path);
+                    exists = File.Exists(target);
+                    hint = "这个文件不在这台电脑上";
+                }
+            }
+            else if (t.Kind == "open")
+            {
+                kind = "open";
+                target = AppPaths.Expand(t.Target);
+                // A URL or a ms-settings:/shell: target cannot be "missing", only a local path can.
+                if (target.IndexOf(':') < 0) { exists = File.Exists(target) || Directory.Exists(target); }
+                hint = "找不到这个路径";
+            }
+
+            Console.WriteLine("kind=" + kind);
+            Console.WriteLine("target=" + target);
+            Console.WriteLine("exists=" + (exists ? "yes" : "no"));
+            if (!exists && hint.Length > 0) { Console.WriteLine("hint=" + hint); }
+            return 0;
+        }
+
         private static int Status()
         {
             List<ToolItem> tools = Load();
@@ -188,12 +266,24 @@ namespace Mxx1Toolbox
                 if (t.Danger) { dangers++; }
             }
             string permdel = Launcher.FindPermanentDeleteExe(settings);
+            int systemTotal = 0;
+            int systemMissing = 0;
+            foreach (ToolItem t in tools)
+            {
+                if (t.Kind != "builtin" || t.Module != Launcher.ModuleSystem) { continue; }
+                SystemTarget st = Launcher.FindSystemTarget(t.Action);
+                if (st == null) { continue; }
+                systemTotal++;
+                if (!st.Exists) { systemMissing++; }
+            }
 
             Console.WriteLine("name=" + AboutForm.ProductTitle);
             Console.WriteLine("version=" + AboutForm.VersionText);
             Console.WriteLine("buttons=" + tools.Count.ToString(CultureInfo.InvariantCulture));
             Console.WriteLine("placeholders=" + placeholders.ToString(CultureInfo.InvariantCulture));
             Console.WriteLine("dangerous=" + dangers.ToString(CultureInfo.InvariantCulture));
+            Console.WriteLine("systemTargets=" + systemTotal.ToString(CultureInfo.InvariantCulture));
+            Console.WriteLine("systemMissing=" + systemMissing.ToString(CultureInfo.InvariantCulture));
             Console.WriteLine("theme=" + settings.Theme);
             Console.WriteLine("themeResolved=" + Settings.ResolveTheme(settings.Theme));
             Console.WriteLine("clickMode=" + settings.ClickMode);

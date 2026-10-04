@@ -10,7 +10,7 @@ using System.Threading;
 
 namespace Mxx1Toolbox
 {
-    /// <summary>一条"某个进程手里攥着这个文件 / 文件夹的句柄"的记录。</summary>
+    /// <summary>一条"某个进程手里有这个文件 / 文件夹的句柄"的记录。</summary>
     internal sealed class HandleHit
     {
         public int Pid;
@@ -69,7 +69,7 @@ namespace Mxx1Toolbox
 
         // ------------------------------------------------------------------ 只查
 
-        /// <summary>谁手里攥着这些路径的句柄（只读，不关任何东西）。
+        /// <summary>谁手里有这些路径的句柄（只读，不关任何东西）。
         /// note 里带回这次扫的规模 / 有没有被上限截断，界面和命令行都会念出来。</summary>
         public static List<HandleHit> Find(string[] paths, out string note)
         {

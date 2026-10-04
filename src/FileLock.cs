@@ -70,7 +70,7 @@ namespace Mxx1Toolbox
         /// 做法：拿 DELETE 权限去开一次（共享模式放开 read|write|delete）：开得成 = 系统允许删除它；
         /// 开不成 = 真被拦着（32 = 有程序开着它且没放开删除共享，5 = 权限）。
         /// 注意：**正在运行的程序**这招测不出来（镜像文件照样能拿 DELETE 权限打开），
-        /// 那种由「它自己在运行」那条线索负责说 —— 见 FinishDeleteNote。</summary>
+        /// 那种由「它自己在运行」那条负责说 —— 见 FinishDeleteNote。</summary>
         public bool DeleteChecked;
         public bool DeleteOk;
         public int DeleteError;
@@ -94,7 +94,7 @@ namespace Mxx1Toolbox
             return OfSource(null);
         }
 
-        /// <summary>只算某一类（传 null = 全部）的程序，按 **PID + 线索种类** 去重。
+        /// <summary>只算某一类（传 null = 全部）的程序，按 **PID + 来源** 去重。
         ///
         /// 为什么要带上种类：同一个进程完全可能既是"真占着它"（Restart Manager 报的）又是
         /// "它自己在运行"（你右键的正好是一个正在跑的 exe）—— 这两句话都得说；按 PID 一去重
@@ -272,7 +272,7 @@ namespace Mxx1Toolbox
                 r.Note = "这个文件夹（连里面几层）一个文件都没有，没东西可查。";
             }
 
-            // 两条便宜又准的线索（2026-10-04 加）。Restart Manager 看不见这两种程序：
+            // 两种便宜又准的查法（2026-10-04 加）。Restart Manager 看不见这两种程序：
             // ① 正在运行的程序 —— 它的镜像是内存映射，**不持有文件句柄**；
             // ② 窗口里开着它的程序 —— 记事本这类"读进来就关句柄"，本来就没锁。
             // 而这两种恰恰是用户最常遇到的（"我明明开着它" / "文件夹说被占着却报不出是谁"）。
@@ -453,7 +453,7 @@ namespace Mxx1Toolbox
             else { r.DeleteNote = "删 / 改名：试不成（错误码 " + code.ToString(CultureInfo.InvariantCulture) + "）。"; }
         }
 
-        /// <summary>把"正在运行"这条线索接到"能不能删"上：可执行文件的镜像是内存映射，
+        /// <summary>把"正在运行"这条接到"能不能删"上：可执行文件的镜像是内存映射，
         /// **拿 DELETE 权限照样开得成**（所以 DeleteCheck 测不出它），但真去删/改名会被系统拒绝。
         /// 有这类程序时以它为准（用户右键一个正在跑的安装包时，这才是他真正需要知道的事）。</summary>
         private static void FinishDeleteNote(List<string> targets, LockReport r)
@@ -536,7 +536,7 @@ namespace Mxx1Toolbox
             try
             {
                 using (FileStream fs = new FileStream(full, FileMode.Open, FileAccess.ReadWrite, FileShare.None)) { }
-                r.Verdict = "我自己能独占打开它 —— 现在真的没有程序占着它";
+                r.Verdict = "工具箱能独占打开它 —— 现在确实没有程序占着它";
             }
             catch (UnauthorizedAccessException)
             {
@@ -565,7 +565,7 @@ namespace Mxx1Toolbox
                 if (code == 32)
                 {
                     r.VerdictLocked = true;
-                    r.Verdict = "确实有程序占着它（我试着自己独占打开，被系统拒绝了），但报不出是哪个程序";
+                    r.Verdict = "确实有程序占着它（工具箱试着独占打开，被系统拒绝了），但报不出是哪个程序";
                 }
                 else if (code == 2) { r.VerdictExists = false; r.Verdict = "这个路径不存在"; }
                 else { r.Verdict = "打开它时报错（错误码 " + code.ToString(CultureInfo.InvariantCulture) + "）"; }
@@ -955,7 +955,7 @@ namespace Mxx1Toolbox
                 + (f.AppName.Length > 0 ? ("\tapp=" + f.AppName) : "");
         }
 
-        // ------------------------------------------------------------------ 两条线索（不是"占用"，但必须说）
+        // ------------------------------------------------------------------ 另外两种（不是"占用"，但必须说）
 
         /// <summary>正在运行的程序：它的 exe 就是你右键的那个文件，或者就在你右键的那个文件夹里。
         ///
@@ -1050,7 +1050,7 @@ namespace Mxx1Toolbox
             }
         }
 
-        /// <summary>把一条线索挂到"哪个文件"上（同一个文件复用同一个 LockHit）。</summary>
+        /// <summary>把一条记录挂到"哪个文件"上（同一个文件复用同一个 LockHit）。</summary>
         private static void AddRow(LockReport r, FileLocker f, string file)
         {
             foreach (LockHit h in r.Hits)

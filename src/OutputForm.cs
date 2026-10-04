@@ -8,7 +8,7 @@ namespace Mxx1Toolbox
 {
     /// <summary>Shows captured command output (status / verify / disclaimer / engine log).
     /// The text keeps the order the command produced it in.</summary>
-    internal sealed class OutputForm : Form
+    internal sealed class OutputForm : Mxx1Form
     {
         private readonly Theme _theme;
         private readonly TableLayoutPanel _root;

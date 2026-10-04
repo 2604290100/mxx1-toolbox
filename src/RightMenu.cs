@@ -547,7 +547,11 @@ namespace Mxx1Toolbox
             e.Id = t.Id;
             e.Name = t.Name;
             e.IconId = t.Id;
-            e.Command = QuoteExe() + " run " + t.Id + (t.Danger ? " --confirm" : "");
+            // `--show` 是给"结果就是一段文字"的按钮用的（激活状态 / 查看设置改动 / 导出系统日志…）：
+            // 工具箱这个 exe 是 winexe、**没有控制台**，不弹窗口的话用户点了等于"没有效果"
+            // （2026-10-04 用户报的就是这两个按钮）。有文字结果或失败时才弹，所以对
+            // "本来就会自己开窗口的程序"（性能监视器 / 服务 / 设备管理器）没有副作用。
+            e.Command = QuoteExe() + " run " + t.Id + (t.Danger ? " --confirm" : "") + " --show";
             return e;
         }
 
@@ -717,15 +721,15 @@ namespace Mxx1Toolbox
                 + " 层、最多 " + FileLock.MaxScanFiles.ToString(CultureInfo.InvariantCulture)
                 + " 个文件（占用的多半是子文件夹里");
             sb.AppendLine("     那个 Office / PDF / 播放器），并且会告出到底是哪一个文件被占着。");
-            sb.AppendLine("     除了「谁占着」，还会列出另外两条线索：「它自己在运行」（正在运行的程序不持有文件句柄，");
-            sb.AppendLine("     句柄类接口查不到它，可它让文件删不掉、文件夹松不开）和「某个窗口里开着它」");
+            sb.AppendLine("     除了「谁占着」，还会列出另外两种情况：「它自己在运行」（正在运行的程序不持有文件句柄，");
+            sb.AppendLine("     句柄类接口查不到它，可它让文件删不掉、文件夹松不开）和「窗口里开着它」");
             sb.AppendLine("     （记事本这类程序读完就关句柄，本来就没锁）。");
             sb.AppendLine("     点「结束选中的进程」会连它启动的子进程一起结束（安装包 / 启动器都是父进程拉个");
             sb.AppendLine("     子进程干活，只结束父进程的话文件锁解开了、窗口还留着）。");
-            sb.AppendLine("     还有个「强制解锁（不关程序）」按钮：跟火绒的「解锁占用」一个路子 —— 遍历全系统");
-            sb.AppendLine("     句柄表（用户态能做的那条路），把对方手里那个句柄直接关掉，**进程不动**。");
-            sb.AppendLine("     风险写在确认框里：句柄被从脚下抽走，那个程序可能报错 / 存不上盘；");
-            sb.AppendLine("     系统进程和内核驱动的句柄抽不动（火绒也抽不动，官方论坛原话）。");
+            sb.AppendLine("     还有个「强制解锁（不关程序）」按钮：遍历全系统句柄表（用户态能做的那条路），");
+            sb.AppendLine("     把对方手里那个句柄直接关掉，**进程不动**（和火绒的「解锁占用」是一个思路）。");
+            sb.AppendLine("     风险写在确认框里：句柄被突然关掉，那个程序可能报错 / 存不上盘；");
+            sb.AppendLine("     系统进程和内核驱动的句柄关不掉（谁做的都一样，得靠内核驱动）。");
             sb.AppendLine("  2. " + CommonTitle + " —— 右键里多一个子菜单，里面是你工具箱「常用」页的东西：");
             sb.AppendLine("     置顶的按钮 + 最近用过的按钮（最多 " + UserTools.RecentLimit.ToString(CultureInfo.InvariantCulture)
                 + " 个）+ 打开工具箱 / 运行日志 / 设置。");

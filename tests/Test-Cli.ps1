@@ -46,16 +46,111 @@ $env:MXX1_NO_RIGHTMENU_SYNC = '1'
 # 所以先把它请到一边，跑完在最后一段复原（用户可能正开着界面在用，别删）。
 $UserToolsJson = Join-Path $env:LOCALAPPDATA 'mxx1-toolbox\tools.json'
 $UserToolsPaused = $UserToolsJson + '.paused-by-test'
-# 自愈：上一次跑测试如果被中断（Ctrl+C / 卡住 / 被沙箱杀掉），用户自己的按钮清单会留在
-# ".paused-by-test" 上回不来 —— 用户会以为"我建的按钮没了"。开工前先把它放回去。
-if ((Test-Path -LiteralPath $UserToolsPaused) -and (-not (Test-Path -LiteralPath $UserToolsJson))) {
-    Move-Item -LiteralPath $UserToolsPaused -Destination $UserToolsJson -Force
-    Write-Host '（上一次测试留下的暂停文件已自动放回 tools.json）'
+
+# ---- 用户层"防串味"三道闸（2026-10-04 真出过事，所以写死在这儿）----------------------------
+# 事故现场：测试中途崩在 F 组（脚本级错误 → 收尾没跑到），把**注入的测试按钮**留在了用户的
+# tools.json 里；下一次跑测试看到"暂停文件在、用户文件也在"，于是删掉暂停文件、把**注入的那份**
+# 当成用户内容挪走 —— 用户自己那个「EcoPaste」按钮就这么没了（后来从 tools.json.broken-bak 里捞回来）。
+# 闸 ①：只有 id 以 test. 开头（那是我们注入的）的文件，才允许被丢；
+# 闸 ②：暂停文件里只要有一个**不是** test.* 的项，它就是用户真实内容，谁都不许删；
+# 闸 ③：开工先把注入按钮从用户文件里清掉 —— 崩在哪儿都别指望"收尾那段"能跑到。
+#
+# 解析前先把"看得懂但不合法"的转义补成合法的（2026-10-04 真踩过：用户 tools.json 的 `_comment`
+# 里写了一个 `\*`，PowerShell 的 ConvertFrom-Json 直接抛错 → 这道闸整段跳过 → 连"把暂停文件放回
+# tools.json"都做不成，用户会以为自己的按钮没了）。只影响解析，不动用户文件。
+function Repair-JsonEscapes([string]$Text) {
+    $sb = New-Object System.Text.StringBuilder
+    $i = 0
+    while ($i -lt $Text.Length) {
+        $ch = $Text[$i]
+        if ($ch -ne '\') { [void]$sb.Append($ch); $i++; continue }
+        $next = ''
+        if (($i + 1) -lt $Text.Length) { $next = [string]$Text[$i + 1] }
+        if (($next.Length -gt 0) -and ('"\bfnrtu/'.IndexOf($next) -ge 0)) {
+            [void]$sb.Append('\'); [void]$sb.Append($next)
+        } else {
+            [void]$sb.Append('\\'); [void]$sb.Append($next)
+        }
+        $i += 2
+    }
+    return $sb.ToString()
 }
+
+function Read-JsonLoose([string]$Path) {
+    $raw = Get-Content -LiteralPath $Path -Raw -Encoding UTF8
+    try { return ($raw | ConvertFrom-Json) } catch { }
+    return ((Repair-JsonEscapes $raw) | ConvertFrom-Json)
+}
+
+function Test-OnlyInjectedFixtures([string]$Path) {
+    try {
+        if (-not (Test-Path -LiteralPath $Path)) { return $false }
+        $obj = Read-JsonLoose $Path
+        $tools = @($obj.tools)
+        if ($tools.Count -eq 0) { return $false }
+        foreach ($t in $tools) { if ("$($t.id)" -notlike 'test.*') { return $false } }
+        return $true
+    } catch { return $false }
+}
+
+function Clear-InjectedFixtures([string]$Path) {
+    if (-not (Test-Path -LiteralPath $Path)) { return }
+    try {
+        $obj = Read-JsonLoose $Path
+        $tools = @($obj.tools)
+        $keep = @($tools | Where-Object { "$($_.id)" -notlike 'test.*' })
+        if ($keep.Count -eq $tools.Count) { return }          # 没有我们注入的东西，什么都不动
+        if ($keep.Count -eq 0) {
+            Remove-Item -LiteralPath $Path -Force
+            Write-Host '（上一次测试没收拾干净：整个 tools.json 都是注入的测试按钮，已删除）'
+        } else {
+            $obj.tools = $keep
+            $json = ($obj | ConvertTo-Json -Depth 8)
+            [System.IO.File]::WriteAllText($Path, $json, (New-Object System.Text.UTF8Encoding($false)))
+            Write-Host ('（上一次测试没收拾干净：从 tools.json 里清掉了 ' + ($tools.Count - $keep.Count) + ' 个注入按钮）')
+        }
+    } catch { Write-Host ('（清理注入按钮时出错，跳过：' + $_.Exception.Message + '）') }
+}
+
+# 闸 ①②：上一次跑测试如果被中断（Ctrl+C / 卡住 / 被沙箱杀掉 / 脚本级错误），用户自己的按钮清单
+# 会留在 ".paused-by-test" 上回不来 —— 用户会以为"我建的按钮没了"。开工前先把它放回去；
+# 但"两个文件都在"时要按内容判断谁是真的（注入的那份全是 test.*，直接丢）。
+if (Test-Path -LiteralPath $UserToolsPaused) {
+    if (Test-OnlyInjectedFixtures $UserToolsPaused) {
+        Remove-Item -LiteralPath $UserToolsPaused -Force
+        Write-Host '（暂停文件里全是注入的测试按钮，已丢弃）'
+    } else {
+        if (Test-Path -LiteralPath $UserToolsJson) {
+            if (Test-OnlyInjectedFixtures $UserToolsJson) { Remove-Item -LiteralPath $UserToolsJson -Force }
+            else { Remove-Item -LiteralPath $UserToolsPaused -Force }   # 两个都像真的：以先在的那个为准
+        }
+        if (Test-Path -LiteralPath $UserToolsPaused) {
+            Move-Item -LiteralPath $UserToolsPaused -Destination $UserToolsJson -Force
+            Write-Host '（上一次测试留下的暂停文件已自动放回 tools.json）'
+        }
+    }
+}
+# 闸 ③：把上次崩掉留下的注入按钮从用户文件里清掉（只删 test.*，用户自己的项一个都不动）
+Clear-InjectedFixtures $UserToolsJson
+
 $script:UserToolsHad = Test-Path -LiteralPath $UserToolsJson
 if ($script:UserToolsHad) {
     if (Test-Path -LiteralPath $UserToolsPaused) { Remove-Item -LiteralPath $UserToolsPaused -Force }
     Move-Item -LiteralPath $UserToolsJson -Destination $UserToolsPaused -Force
+}
+
+# 脚本级兜底（2026-10-04 补：Test-Gui 早就有，这边没有 —— 而这个套件同样会把用户的 tools.json
+# 暂停到一边，脚本级错误一出现，"收尾那段"就永远不执行，用户会以为自己的按钮没了）。
+# 只复原用户层，别的事情什么都不做。
+trap {
+    Write-Host ''
+    Write-Host (' 脚本出错，先把用户的 tools.json 放回去：' + $_.Exception.Message)
+    if ($script:UserToolsHad -and (Test-Path -LiteralPath $UserToolsPaused)) {
+        if (Test-Path -LiteralPath $UserToolsJson) { Remove-Item -LiteralPath $UserToolsJson -Force }
+        Move-Item -LiteralPath $UserToolsPaused -Destination $UserToolsJson -Force
+        Write-Host '（用户自己的 tools.json 已复原）'
+    }
+    exit 1
 }
 
 Write-Host ''
@@ -98,6 +193,18 @@ function Get-Key {
     $m = [regex]::Match($Text, '(?m)^' + [regex]::Escape($Key) + '=([^\r\n]*)')
     if ($m.Success) { return $m.Groups[1].Value.Trim() }
     return ''
+}
+
+# 读文件头几个字节（判 .ico 的 00 00 01 00 用）。
+# PS 5.1 是 `-Encoding Byte`，PowerShell 7 改成了 `-AsByteStream` —— 写成 5.1 那一套在 pwsh 里
+# 会当场抛 'Byte' is not a supported encoding name 并把整个套件打断（2026-10-04 用 pwsh 跑测试时踩到，
+# 那一次用户的 tools.json 就留在暂停状态了）。所以两边都认。
+function Get-FirstBytes {
+    param([string]$Path, [int]$Count = 4)
+    if ($PSVersionTable.PSVersion.Major -ge 6) {
+        return [byte[]](Get-Content -LiteralPath $Path -AsByteStream -TotalCount $Count -ErrorAction SilentlyContinue)
+    }
+    return [byte[]](Get-Content -LiteralPath $Path -Encoding Byte -TotalCount $Count -ErrorAction SilentlyContinue)
 }
 
 # 用户真实右键菜单里那 8 个键的**值**快照（名字 / 图标 / 命令）。只比"键名"是不够的：
@@ -168,6 +275,48 @@ $rmList = Invoke-Exe 'list --tab rightmenu'
 Check 'A11 右键增强 8 个按钮（7 个右键菜单 + 隔壁永久删除工具）' ((Get-Key $rmList.Out 'shown') -eq '8') (Get-Key $rmList.Out 'shown')
 Check 'A12 右键增强里的按钮是"真功能"（不带 placeholder 标记）' (-not ($rmList.Out -match 'placeholder')) ''
 Check 'A13 右键增强那个按钮叫「永久删除工具」' ($rmList.Out -match '永久删除工具') (($rmList.Out -split "`r?`n" | Where-Object { $_ -match "`t" }) -join '')
+
+# ---- A14–A17：exe 自己那张图标（用户 2026-10-04 报「编译好的 Mxx1Toolbox.exe 没有图标」）----
+# 根因：build.ps1 里那行 `/win32icon:assets\app.ico` 要的文件**根本不存在** —— 等于从来没写过。
+# 一条链上三个环节都得盯着：① app.ico 在且是真 ico；② build.ps1 真的把它交给 csc 了；
+# ③ 编出来的 exe 上真能取到那张图（蓝底 + 白方块，和工具箱自己的图标一样 —— .NET 那个默认图标
+# 一点纯白都没有，所以"白色像素 > 0"就是判据）。窗口标题栏 / 任务栏那一份由 Test-Gui 的 A04b 盯。
+$appIcoPath = Join-Path $root 'assets\app.ico'
+Check 'A14 assets\app.ico 在（build.ps1 的 /win32icon 靠它，缺了 exe 就是没图标）' `
+    (Test-Path -LiteralPath $appIcoPath) $appIcoPath
+if (Test-Path -LiteralPath $appIcoPath) {
+    $appIcoBytes = [System.IO.File]::ReadAllBytes($appIcoPath)
+    $icoFrames = [int]$appIcoBytes[4] + ([int]$appIcoBytes[5] * 256)
+    Check 'A15 app.ico 是真 ico 而且尺寸齐（16/20/24/32/48/64/128/256）' `
+        (($appIcoBytes.Length -gt 20000) -and ($appIcoBytes[0] -eq 0) -and ($appIcoBytes[1] -eq 0) -and
+         ($appIcoBytes[2] -eq 1) -and ($appIcoBytes[3] -eq 0) -and ($icoFrames -eq 8)) `
+        ('bytes=' + $appIcoBytes.Length + ' frames=' + $icoFrames)
+} else {
+    Check 'A15 app.ico 是真 ico 而且尺寸齐（16/20/24/32/48/64/128/256）' $false 'skipped'
+}
+$buildSrc = Get-Content -LiteralPath (Join-Path $root 'build.ps1') -Raw -Encoding UTF8
+Check 'A16 build.ps1 确实会把 app.ico 交给 csc（/win32icon 那行还在）' `
+    (($buildSrc -match '/win32icon') -and ($buildSrc -match 'app\.ico')) ''
+Add-Type -AssemblyName System.Drawing -ErrorAction SilentlyContinue
+$iconBmp = $null
+try { $iconBmp = [System.Drawing.Icon]::ExtractAssociatedIcon($Exe).ToBitmap() } catch { $iconBmp = $null }
+$iconBlue = 0; $iconWhite = 0; $iconOpaque = 0
+if ($iconBmp -ne $null) {
+    for ($iy = 0; $iy -lt $iconBmp.Height; $iy++) {
+        for ($ix = 0; $ix -lt $iconBmp.Width; $ix++) {
+            $ic = $iconBmp.GetPixel($ix, $iy)
+            if ($ic.A -gt 200) {
+                $iconOpaque++
+                if (($ic.B -gt 140) -and ($ic.R -lt 110)) { $iconBlue++ }
+                if (($ic.R -gt 220) -and ($ic.G -gt 220) -and ($ic.B -gt 220)) { $iconWhite++ }
+            }
+        }
+    }
+    $iconBmp.Dispose()
+}
+Check 'A17 exe 上真带着工具箱的图标（蓝底 + 白方块，不是 .NET 那个默认的空图标）' `
+    (($iconBlue -gt 40) -and ($iconWhite -gt 40)) `
+    ('opaque=' + $iconOpaque + ' blue=' + $iconBlue + ' white=' + $iconWhite)
 
 # ---------------------------------------------------------------- B 组：灰色占位按钮
 Write-Host ''
@@ -902,7 +1051,7 @@ Set-Content -LiteralPath $rmTreeHelper -Encoding UTF8 -Value `
     ("`$PID | Set-Content -LiteralPath '" + $rmTreePidFile + "'" + "`r`nStart-Sleep 90")
 $rmTreeParent = Start-Process powershell.exe -WindowStyle Hidden -PassThru -ArgumentList @(
     '-NoProfile', '-Command', ("`$fs=[System.IO.File]::Open('" + $rmTreeFile + "','Open','ReadWrite','None'); " +
-        "Start-Process powershell.exe -WindowStyle Hidden -ArgumentList '-NoProfile','-File','" + $rmTreeHelper +
+        "Start-Process powershell.exe -WindowStyle Hidden -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File','" + $rmTreeHelper +
         "'; Start-Sleep 90"))
 $rmTreeChild = 0
 for ($i = 0; $i -lt 30; $i++) {
@@ -1043,7 +1192,7 @@ try {
     foreach ($rmK in $rmIconKeys) {
         $rmIcon = "$((Get-ItemProperty -LiteralPath $rmK -ErrorAction SilentlyContinue).Icon)"
         if (($rmIcon.Length -gt 0) -and (Test-Path -LiteralPath $rmIcon)) {
-            $rmHead = [byte[]](Get-Content -LiteralPath $rmIcon -Encoding Byte -TotalCount 4 -ErrorAction SilentlyContinue)
+            $rmHead = Get-FirstBytes $rmIcon 4
             if (($rmHead.Length -eq 4) -and ($rmHead[0] -eq 0) -and ($rmHead[1] -eq 0) -and ($rmHead[2] -eq 1) -and ($rmHead[3] -eq 0)) {
                 $rmIconOk++
             } else { $rmIconBad += $rmIcon }
@@ -1055,6 +1204,18 @@ try {
     $rmSubIcons = @($rmShared | Where-Object { "$((Get-ItemProperty -LiteralPath $_.PSPath -ErrorAction SilentlyContinue).Icon)".Length -gt 0 })
     Check 'M20b 「常用功能」子菜单每一项也有图标（子项自己带 Icon）' `
         (($rmShared.Count -ge 3) -and ($rmSubIcons.Count -eq $rmShared.Count)) ('带图标=' + $rmSubIcons.Count + '/' + $rmShared.Count)
+
+    # 子项命令必须带 --show：工具箱是 winexe **没有控制台**，"结果就是一段文字"的按钮
+    # （激活状态 / 查看设置改动 / 导出系统日志）不弹窗口的话，用户从右键菜单点等于**没有效果**
+    # （2026-10-04 用户报的正是「激活状态和查看设置改动这种没有效果」）。
+    $rmSubNoShow = @()
+    foreach ($k in $rmShared) {
+        $cmd = "$((Get-ItemProperty -LiteralPath (Join-Path $k.PSPath 'command') -ErrorAction SilentlyContinue).'(default)')"
+        if ($cmd -notmatch '\srun\s') { continue }          # 「打开工具箱」那种不带 run 的固定项不管
+        if ($cmd -notmatch '--show') { $rmSubNoShow += $k.PSChildName }
+    }
+    Check 'M20b3 子菜单里 run 型的命令都带 --show（否则从右键点就是"没有效果"）' `
+        ($rmSubNoShow.Count -eq 0) ('没带 --show 的=' + ($rmSubNoShow -join ' '))
 
     # 测试装的图标必须写在 rightmenu-icons-test 里 —— 否则撤测试项时会把用户真实那份图标目录
     # 一起删掉（2026-10-04 真踩，见 MenuIcons.Dir 的注释）

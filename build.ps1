@@ -97,7 +97,13 @@ $cscArgs = @(
     '/reference:Microsoft.CSharp.dll'
 )
 $icon = Join-Path $root 'assets\app.ico'
-if (Test-Path $icon) { $cscArgs += ('/win32icon:' + $icon) }
+if (Test-Path $icon) {
+    $cscArgs += ('/win32icon:' + $icon)
+    Write-Host ('icon     : ' + $icon + '  (' + (Get-Item $icon).Length + ' bytes)')
+} else {
+    # 2026-10-04 用户报「编译好的 exe 没有图标」：就是这一行在喊，但当时没人看 —— 现在它会响。
+    Write-Warning 'assets\app.ico 不存在：编出来的 exe 没有图标（跑 tools\Make-AppIcon.ps1 生成后重新编译）'
+}
 foreach ($j in $jsonFiles) { $cscArgs += ('/resource:' + $j.FullName + ',tools.' + $j.Name) }
 
 # Button icons (tools\Make-Icons.ps1 output) are embedded too, so the exe stays a single file.

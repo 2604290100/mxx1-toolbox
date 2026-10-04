@@ -15,7 +15,7 @@ namespace Mxx1Toolbox
     /// 只在短到能读的时候才给（长脚本让用户走右键菜单的「查看按钮定义」）。
     ///
     /// 默认按钮是「取消」：Enter 和 Esc 都等于取消，要点「执行」必须真的去点它。</summary>
-    internal sealed class ConfirmForm : Form
+    internal sealed class ConfirmForm : Mxx1Form
     {
         /// <summary>命令超过这个长度就不在这里给全文了（脚本正文属于「查看按钮定义」）。</summary>
         private const int CommandLimit = 240;

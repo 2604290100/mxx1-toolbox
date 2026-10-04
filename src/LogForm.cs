@@ -11,7 +11,7 @@ namespace Mxx1Toolbox
     /// <summary>In-app log viewer. Lines are shown NEWEST FIRST -- opening the newest entry in
     /// Notepad would mean scrolling to the very bottom, which is exactly what users complained
     /// about in the sibling project.</summary>
-    internal sealed class LogForm : Form
+    internal sealed class LogForm : Mxx1Form
     {
         private readonly Theme _theme;
         private readonly TableLayoutPanel _root;

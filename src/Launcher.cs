@@ -320,7 +320,15 @@ namespace Mxx1Toolbox
             return AppPaths.Expand(args);
         }
 
+        /// <summary>showResult：这条命令是**从资源管理器右键菜单**调起来的（`run <id> --show`）——
+        /// 那个 exe 是 winexe、没有控制台，所以需要弹窗口的那条路要一路传下去（提权那一步尤其：
+        /// 真正干活的是提升权限后的子进程，只有让**它**知道 `--show`，结果才弹得出来）。</summary>
         public static LaunchResult Run(ToolItem t, Settings settings, bool asAdmin)
+        {
+            return Run(t, settings, asAdmin, false);
+        }
+
+        public static LaunchResult Run(ToolItem t, Settings settings, bool asAdmin, bool showResult)
         {
             LaunchResult r = new LaunchResult();
             if (t == null) { r.Ok = false; r.Message = "按钮定义为空"; return r; }
@@ -328,7 +336,7 @@ namespace Mxx1Toolbox
             switch (t.Kind)
             {
                 case "builtin":
-                    return RunBuiltin(t, settings, asAdmin);
+                    return RunBuiltin(t, settings, asAdmin, showResult);
                 case "exe":
                     {
                         string file = AppPaths.Resolve(t.Path);
@@ -373,7 +381,7 @@ namespace Mxx1Toolbox
                         // 需要管理员的脚本不走"runas 起 powershell"：那样每次都会弹出一个可见的
                         // PowerShell 控制台窗口（用户 2026-10-04 的反馈）。改成把自己以管理员身份
                         // 再起一遍（本程序是 winexe，没有控制台），由那个进程静默跑、结果写交接文件。
-                        if (asAdmin && !IsAdmin()) { return LaunchElevatedCopy(t); }
+                        if (asAdmin && !IsAdmin()) { return LaunchElevatedCopy(t, showResult); }
                         string shell = (t.Shell == "cmd") ? "cmd.exe" : "powershell.exe";
                         string args = (t.Shell == "cmd")
                             ? "/c " + (t.Inline.Length > 0 ? t.Inline : Quote(file) + " " + ExpandArgs(t.Args))
@@ -402,7 +410,7 @@ namespace Mxx1Toolbox
             return r;
         }
 
-        private static LaunchResult RunBuiltin(ToolItem t, Settings settings, bool asAdmin)
+        private static LaunchResult RunBuiltin(ToolItem t, Settings settings, bool asAdmin, bool showResult)
         {
             LaunchResult r = new LaunchResult();
             if (t.Module == ModuleApp)
@@ -414,9 +422,9 @@ namespace Mxx1Toolbox
 
             if (t.Module == ModuleSystem) { return RunSystem(t); }
 
-            if (t.Module == ModulePrivacy) { return RunPrivacy(t, asAdmin); }
+            if (t.Module == ModulePrivacy) { return RunPrivacy(t, asAdmin, showResult); }
 
-            if (t.Module == ModuleSysreg) { return RunSysreg(t, asAdmin); }
+            if (t.Module == ModuleSysreg) { return RunSysreg(t, asAdmin, showResult); }
 
             if (t.Module == ModuleRightMenu) { return RunRightMenu(t); }
 
@@ -545,12 +553,12 @@ namespace Mxx1Toolbox
         /// console, so its report goes to the log file and to a hand-off file the parent picks up a
         /// few seconds later (MainForm.PickUpElevatedResult) instead of leaving the user with
         /// "已请求管理员权限" and no outcome.</summary>
-        private static LaunchResult RunPrivacy(ToolItem t, bool asAdmin)
+        private static LaunchResult RunPrivacy(ToolItem t, bool asAdmin, bool showResult)
         {
             LaunchResult r = new LaunchResult();
             if (Privacy.NeedsAdmin(t.Options) && asAdmin && !IsAdmin())
             {
-                return LaunchElevatedCopy(t);
+                return LaunchElevatedCopy(t, showResult);
             }
 
             bool ok;
@@ -571,7 +579,7 @@ namespace Mxx1Toolbox
         /// <summary>「常用设置」里写注册表的那批按钮。和隐私开关同一条路：HKLM 的改动没法在
         /// 本进程里自我提权，于是工具箱用 `run &lt;id&gt; --admin` 把自己再起一遍，那个子进程没有
         /// 控制台，报告写进日志和交接文件，父进程过几秒取出来弹窗口。</summary>
-        private static LaunchResult RunSysreg(ToolItem t, bool asAdmin)
+        private static LaunchResult RunSysreg(ToolItem t, bool asAdmin, bool showResult)
         {
             LaunchResult r = new LaunchResult();
             // 「还原设置改动」要把 HKLM 的原值写回去，所以它自己也要管理员；它的 options 是空的，
@@ -580,7 +588,7 @@ namespace Mxx1Toolbox
                 || string.Equals(t.Action, "restore", StringComparison.OrdinalIgnoreCase);
             if (needAdmin && asAdmin && !IsAdmin())
             {
-                return LaunchElevatedCopy(t);
+                return LaunchElevatedCopy(t, showResult);
             }
 
             bool ok;
@@ -627,11 +635,19 @@ namespace Mxx1Toolbox
         /// 只有这一条路能既提权又不闪出控制台窗口：直接 runas 起 powershell / cmd 会开一个真窗口。</summary>
         internal static LaunchResult LaunchElevatedCopy(ToolItem t)
         {
+            return LaunchElevatedCopy(t, false);
+        }
+
+        internal static LaunchResult LaunchElevatedCopy(ToolItem t, bool showResult)
+        {
             LaunchResult r = new LaunchResult();
             try
             {
                 try { File.Delete(AppPaths.ElevatedResultFile); } catch { }
-                ProcessStartInfo psi = new ProcessStartInfo(AppPaths.ExePath, "run " + t.Id + " --admin");
+                // 提权子进程也要知道"--show"：否则从右键菜单点一个需要管理员的按钮，
+                // 结果又消失在那个没有控制台的进程里（结果交接文件那条路只服务主界面）。
+                ProcessStartInfo psi = new ProcessStartInfo(AppPaths.ExePath,
+                    "run " + t.Id + " --admin" + (showResult ? " --show" : ""));
                 psi.UseShellExecute = true;
                 psi.Verb = "runas";
                 Process.Start(psi);

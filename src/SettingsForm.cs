@@ -8,7 +8,7 @@ namespace Mxx1Toolbox
 {
     /// <summary>Settings window. Laid out row by row with TableLayoutPanel -- no manual
     /// coordinates, so nothing overlaps at other DPI settings or font sizes.</summary>
-    internal sealed class SettingsForm : Form
+    internal sealed class SettingsForm : Mxx1Form
     {
         private readonly Settings _settings;
         private readonly TableLayoutPanel _root;

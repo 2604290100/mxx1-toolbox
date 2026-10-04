@@ -12,7 +12,7 @@ namespace Mxx1Toolbox
     /// The toolbox itself never goes online: every row is only handed to Windows when the user
     /// clicks 打开 (ShellExecute), so a web row opens the default browser and a ms-settings: row
     /// opens Settings. Author and repository strings come from AboutForm, the single source.</summary>
-    internal sealed class LinksForm : Form
+    internal sealed class LinksForm : Mxx1Form
     {
         private sealed class Link
         {

@@ -24,7 +24,7 @@ namespace Mxx1Toolbox
     /// ④ **列出来的行不只是"占用"**（2026-10-04 又加）：真占着的（lock）、它自己在运行的（run）、
     ///    窗口里开着它的（open）—— 后两类不是占用，但恰好是用户最想问的两种情况
     ///    （"我明明开着它"、"文件夹说被占着却报不出是谁"）。</summary>
-    internal sealed class UnlockForm : Form
+    internal sealed class UnlockForm : Mxx1Form
     {
         /// <summary>列表里的一行：哪个程序，占着哪个文件。</summary>
         private sealed class Row
@@ -52,6 +52,15 @@ namespace Mxx1Toolbox
         private Label _hint;
         private Button _killBtn;
         private Button _forceBtn;
+        private TableLayoutPanel _root;   // 留着量尺寸（窗口高度按内容自适应时要用）
+        private FlowLayoutPanel _bar;
+
+        /// <summary>文字换行的宽度上限（几个 AutoSize 标签的 MaximumSize 都是它）。
+        /// 量高度时必须用同一个宽度，否则算出来的行数和实际渲染的对不上。</summary>
+        private const int TextWidth = 570;
+
+        /// <summary>窗口最窄多宽（正常是 620；屏幕小到装不下时才收到这个下限）。</summary>
+        private const int MinWidth = 520;
 
         public UnlockForm(string[] paths)
         {
@@ -70,6 +79,7 @@ namespace Mxx1Toolbox
             catch { }
 
             TableLayoutPanel root = new TableLayoutPanel();
+            _root = root;
             root.Dock = DockStyle.Fill;
             root.ColumnCount = 1;
             root.Padding = new Padding(14, 12, 14, 12);
@@ -83,7 +93,7 @@ namespace Mxx1Toolbox
 
             _head = new Label();
             _head.AutoSize = true;
-            _head.MaximumSize = new Size(570, 0);
+            _head.MaximumSize = new Size(TextWidth, 0);
             _head.ForeColor = _theme.InputText;
             _head.Margin = new Padding(2, 0, 2, 8);
             _head.Text = PathsText();
@@ -91,9 +101,11 @@ namespace Mxx1Toolbox
 
             _status = new Label();
             _status.AutoSize = true;
-            _status.MaximumSize = new Size(570, 0);
+            _status.MaximumSize = new Size(TextWidth, 0);
             _status.ForeColor = _theme.BarText;
             _status.Margin = new Padding(2, 0, 2, 8);
+            // 第一次检查要等一会儿（右键文件夹时要一个个文件问系统），先说一句、别让用户看着空白发呆。
+            _status.Text = "正在检查谁占着它……";
             root.Controls.Add(_status, 0, 1);
 
             _list = new ListView();
@@ -107,6 +119,7 @@ namespace Mxx1Toolbox
             _list.BackColor = _theme.InputBack;
             _list.ForeColor = _theme.InputText;
             _list.Margin = new Padding(2, 0, 2, 8);
+            _list.Visible = false;                    // 查完才显示：先露一个空列表框不好看
             _list.Columns.Add("程序", 140, HorizontalAlignment.Left);
             _list.Columns.Add("PID", 55, HorizontalAlignment.Left);
             _list.Columns.Add("占着的文件", 185, HorizontalAlignment.Left);
@@ -115,8 +128,8 @@ namespace Mxx1Toolbox
             root.Controls.Add(_list, 0, 2);
 
             _empty = new Label();
-            _empty.Dock = DockStyle.Fill;
-            _empty.AutoSize = false;
+            _empty.AutoSize = true;                       // 高度也要跟着内容走（长文案不能被切）
+            _empty.MaximumSize = new Size(TextWidth, 0);
             _empty.ForeColor = _theme.BarText;
             _empty.Margin = new Padding(2, 0, 2, 8);
             _empty.Visible = false;
@@ -124,15 +137,16 @@ namespace Mxx1Toolbox
 
             _hint = new Label();
             _hint.AutoSize = true;
-            _hint.MaximumSize = new Size(570, 0);
+            _hint.MaximumSize = new Size(TextWidth, 0);
             _hint.ForeColor = _theme.BarText;
             _hint.Margin = new Padding(2, 0, 2, 10);
-            _hint.Text = "勾上要结束的程序，再点「结束选中的进程」（它启动的子进程会一起结束 —— 安装包、启动器"
-                + "都是父进程拉个子进程干活，只结束父进程的话窗口会留着）。系统关键程序是灰的，勾不动；"
-                + "没锁住它、只是「它自己在运行」或者「窗口里开着它」的也会列出来，那是线索，不一定要结束。";
+            _hint.Text = "勾上要结束的程序，再点「结束选中的进程」—— 它启动的子进程会一起结束（安装包、启动器"
+                + "都是父进程拉个子进程干活，只结束父进程的话窗口会留着）。系统关键程序是灰的，勾不动。"
+                + "列表里还会列出「它自己在运行」和「窗口里开着它」的程序：这两种都没有锁住文件，一般不用结束。";
             root.Controls.Add(_hint, 0, 3);
 
             FlowLayoutPanel bar = new FlowLayoutPanel();
+            _bar = bar;
             bar.Dock = DockStyle.Fill;
             bar.AutoSize = true;
             bar.FlowDirection = FlowDirection.LeftToRight;
@@ -161,6 +175,7 @@ namespace Mxx1Toolbox
             // 结束进程必须真的去点那个按钮（和 ConfirmForm 里"默认按钮是取消"同一个理由）。
             CancelButton = close;
             Native.ApplyDarkTitleBar(Handle, _theme.DarkMode);
+            UpdateSize();                      // 先按"正在检查"这点内容把窗口摆好，查完再长
 
             Shown += delegate
             {
@@ -231,7 +246,7 @@ namespace Mxx1Toolbox
             {
                 foreach (FileLocker f in h.Lockers)
                 {
-                    // 去重键里带"线索种类"：同一个进程既占着它、又是"它自己在运行"时要列两行
+                    // 去重键里带"来源"：同一个进程既占着它、又是"它自己在运行"时要列两行
                     // （后一句才是"为什么删不掉"的答案，不能被前一行吞掉）
                     if (HasRow(f.Pid, h.File, f.Source)) { continue; }
                     _rows.Add(new Row(f, h.File));
@@ -312,11 +327,11 @@ namespace Mxx1Toolbox
                     sb.Append("）");
                 }
                 sb.Append("：");
-                // 有"真占用"的时候也别忘了那两条线索：用户右键的多半就是个正在跑的安装包
+                // 有"真占用"的时候，另外两种也要念一句：用户右键的多半就是个正在跑的安装包
                 // （"删不掉"的真正原因就是它），只写在列表的「说明」列里容易被忽略（2026-10-04 实测）。
                 if (run > 0 || open > 0)
                 {
-                    sb.Append(Environment.NewLine).Append("  另有 ");
+                    sb.Append(Environment.NewLine).Append("  另外还有 ");
                     if (run > 0)
                     {
                         sb.Append(run.ToString(CultureInfo.InvariantCulture)).Append(" 个程序是「它自己在运行」");
@@ -324,9 +339,9 @@ namespace Mxx1Toolbox
                     if (run > 0 && open > 0) { sb.Append("、"); }
                     if (open > 0)
                     {
-                        sb.Append(open.ToString(CultureInfo.InvariantCulture)).Append(" 个窗口里开着它");
+                        sb.Append(open.ToString(CultureInfo.InvariantCulture)).Append(" 个程序是「窗口里开着它」");
                     }
-                    sb.Append("（哪几个看列表「说明」那一列）");
+                    sb.Append("（下面列表里都有）");
                 }
                 if (_report.DeleteNote.Length > 0) { sb.Append(Environment.NewLine).Append("  ").Append(_report.DeleteNote); }
             }
@@ -334,9 +349,9 @@ namespace Mxx1Toolbox
             {
                 // 一条"真占用"都没有，但列出来的每一行都是有用的话 —— 别把用户吓一跳。
                 sb.Append("没有程序锁着它");
-                if (run > 0 && open > 0) { sb.Append("；下面几行是「它自己在运行」和「窗口里开着它」的线索"); }
-                else if (run > 0) { sb.Append("；下面那行是「它自己在运行」的线索"); }
-                else if (open > 0) { sb.Append("；下面那行是「窗口里开着它」，它并没有锁住文件"); }
+                if (run > 0 && open > 0) { sb.Append("；下面几行是「它自己在运行」和「窗口里开着它」的程序"); }
+                else if (run > 0) { sb.Append("；下面那行是「它自己在运行」的那个程序"); }
+                else if (open > 0) { sb.Append("；下面那行是「窗口里开着它」的那个程序，它并没有锁住文件"); }
                 sb.Append("：");
                 if (_report.Verdict.Length > 0) { sb.Append(Environment.NewLine).Append("  ").Append(_report.Verdict); }
                 // 「能不能删 / 改名」直接在结论里说清楚（用户真正要问的就是这句）
@@ -404,8 +419,8 @@ namespace Mxx1Toolbox
             }
             else
             {
-                sb.AppendLine("  这条结论不是猜的：我刚刚自己试着独占打开它，成功了 —— 也就是说现在真的");
-                sb.AppendLine("  没有程序占着它。如果它还是删不掉 / 改不了 / 改名不了，那多半是：");
+                sb.AppendLine("  这一条是当场试出来的：工具箱刚刚用独占方式打开过它，能打开 —— 也就是说");
+                sb.AppendLine("  现在确实没有程序占着它。如果它还是删不掉 / 改不了 / 改名不了，那多半是：");
                 sb.AppendLine("  · 权限（ACL）或只读属性；");
                 sb.AppendLine("  · 占用它的是内核态的东西（杀毒软件实时扫描、驱动），它不属于任何进程；");
                 sb.AppendLine("  · 它自己是个正在运行的程序（可执行文件是内存映射，不算文件锁）；");
@@ -462,13 +477,105 @@ namespace Mxx1Toolbox
             catch { return path; }
         }
 
+        // ------------------------------------------------------------------ 窗口高度自适应
+        //
+        // 用户 2026-10-04 报的「解除文件占用里面的窗口高度没有做自适应」：原来是
+        // `210 + 行数 * 20`（最多 470）—— 那个公式只算了列表，**没算上面那几行文字**：
+        // 路径行、状态行、自查结论（"确实被占着但报不出名字"那一大段有好几行）、
+        // 下面那句常驻提示，全都会换行；行数少的时候窗口偏高、行数多或文案长的时候
+        // 下面被切掉（尤其"没查到人"那种情况，正文是整屏的字）。
+        //
+        // 现在的算法：**逐块量出来相加**（文字用 TextRenderer 按同一个换行宽度量、列表按
+        // 实际行高量），再把总高夹进屏幕工作区。量完顺便把窗口重新摆正 —— 不然它只会
+        // 往下长，看着就不在屏幕中间了。
+
+        /// <summary>这块标签要占多高（含上下 Margin）。空文字 = 0。
+        ///
+        /// 换行宽度取标签自己的 MaximumSize —— 高 DPI 下 WinForms 会把它一起放大，
+        /// 用常量量出来的行数会比实际渲染的多（窗口白白高一截）。</summary>
+        private int BlockHeight(Label label, string text)
+        {
+            if (label == null) { return 0; }
+            if (text == null || text.Length == 0) { return label.Margin.Vertical; }
+            int width = label.MaximumSize.Width;
+            if (width <= 0) { width = TextWidth; }
+            int lines = TextRenderer.MeasureText(text, label.Font, new Size(width, 0),
+                TextFormatFlags.WordBreak | TextFormatFlags.NoPadding | TextFormatFlags.TextBoxControl).Height;
+            return lines + 2 + label.Margin.Vertical;   // +2：最后一行别贴着下一块
+        }
+
+        /// <summary>列表要多高：列头 + 每一行，按**实际行高**量（别拿字号去猜）。</summary>
+        private int ListHeight(int max)
+        {
+            int n = _list.Items.Count;
+            if (n == 0) { return 0; }
+            int head = 0;
+            int row = 0;
+            try
+            {
+                Rectangle first = _list.Items[0].Bounds;   // Details 视图里第一行的 Y 就是列头高度
+                head = first.Top;
+                row = first.Height;
+            }
+            catch { }
+            if (row <= 0) { row = Font.Height + 6; }
+            if (head <= 0) { head = Font.Height + 8; }
+            int want = head + row * n + 4;
+            return (want > max) ? max : want;
+        }
+
+        /// <summary>窗口客户区最多多高（屏幕工作区留一点边，别顶到任务栏上去）。</summary>
+        private int MaxClientHeight()
+        {
+            int h = 600;
+            try { h = Screen.FromControl(this).WorkingArea.Height - 120; }
+            catch { }
+            return (h < 320) ? 320 : h;
+        }
+
         private void UpdateSize()
         {
-            int rows = _rows.Count;
-            if (rows > 8) { rows = 8; }
-            int h = 210 + rows * 20;
-            if (h > 470) { h = 470; }
-            ClientSize = new Size(620, h);
+            int width = ClientSize.Width;
+            if (width < MinWidth) { width = MinWidth; }
+
+            // 固定部分：内边距 + 路径行 + 状态行（+ 列表自己的 Margin）+ 常驻提示 + 按钮行
+            int fixedH = _root.Padding.Vertical;
+            fixedH += BlockHeight(_head, _head.Text);
+            fixedH += BlockHeight(_status, _status.Text);
+            fixedH += BlockHeight(_hint, _hint.Text);
+            fixedH += _list.Margin.Vertical;
+            fixedH += (_bar == null ? 0 : (_bar.PreferredSize.Height + _bar.Margin.Vertical));
+
+            // 中间那块：有列表就按行数量、没有列表就按正文（"没查到"那段话可能很长）
+            int bodyWant = _list.Visible ? ListHeight(int.MaxValue) : BlockHeight(_empty, _empty.Text);
+            int bodyMax = MaxClientHeight() - fixedH;
+            if (bodyMax < 60) { bodyMax = 60; }
+            int body = (bodyWant > bodyMax) ? bodyMax : bodyWant;
+
+            Size want = new Size(width, fixedH + body);
+            if (ClientSize == want) { return; }
+
+            // 高度变了就按"原来的中心点"重新摆一次：只管往下长的话，窗口看着就不居中了。
+            Rectangle work = Screen.FromControl(this).WorkingArea;
+            Point center = new Point(Left + Width / 2, Top + Height / 2);
+            ClientSize = want;
+            if (Visible)
+            {
+                int x = center.X - Width / 2;
+                int y = center.Y - Height / 2;
+                if (x < work.Left) { x = work.Left; }
+                if (y < work.Top) { y = work.Top; }
+                if (x + Width > work.Right) { x = work.Right - Width; }
+                if (y + Height > work.Bottom) { y = work.Bottom - Height; }
+                Location = new Point(x, y);
+            }
+        }
+
+        /// <summary>状态那一行统一从这里改 —— 它一长（结束 / 强制解锁的结果是好几个换行）窗口也要跟着长。</summary>
+        private void SetStatus(string text)
+        {
+            _status.Text = text;
+            UpdateSize();
         }
 
         private void CopyPaths()
@@ -476,11 +583,11 @@ namespace Mxx1Toolbox
             try
             {
                 Clipboard.SetText(string.Join(Environment.NewLine, _paths));
-                _status.Text = "路径已经复制到剪贴板。";
+                SetStatus("路径已经复制到剪贴板。");
             }
             catch (Exception ex)
             {
-                _status.Text = "复制不了：" + ex.Message;
+                SetStatus("复制不了：" + ex.Message);
             }
         }
 
@@ -494,7 +601,7 @@ namespace Mxx1Toolbox
             _busy = true;
             _killBtn.Enabled = false;
             _forceBtn.Enabled = false;
-            _status.Text = "正在扫全系统句柄（像火绒那样，几秒钟）…… 这不是卡死，是在干活。";
+            SetStatus("正在检查全系统的句柄，大约几秒 —— 这一步走完会弹确认框。");
 
             List<string> targets = new List<string>();
             foreach (string p in _paths) { if (!Contains(targets, p)) { targets.Add(p); } }
@@ -529,9 +636,9 @@ namespace Mxx1Toolbox
             if (hits == null) { hits = new List<HandleHit>(); }
             if (hits.Count == 0)
             {
-                _status.Text = "没找到攥着它的句柄。" + Environment.NewLine + "  " + note
-                    + Environment.NewLine + "  （Windows 里「谁开着它」有时就是查不出来：内核驱动、杀软实时扫描"
-                    + "这类不属于任何进程；那种只能注销一次。）";
+                SetStatus("没找到打开它的句柄。" + Environment.NewLine + "  " + note
+                    + Environment.NewLine + "  （Windows 里有时就是查不出来：内核驱动、杀毒软件的实时扫描"
+                    + "这类不属于任何进程；那种只能注销一次。）");
                 return;
             }
 
@@ -548,10 +655,10 @@ namespace Mxx1Toolbox
             item.Name = "强制解锁（抽掉句柄）";
             item.Id = "rightmenu.unlock.force";
             item.Danger = true;
-            item.Hint = "会从下面这些程序手里把它「抢」过来：" + who.ToString()
+            item.Hint = "会从这些程序手里关掉它打开这个文件的句柄：" + who.ToString()
                 + Environment.NewLine + note
-                + Environment.NewLine + "做法跟火绒的「解锁占用」一样：不结束进程，只把那几个句柄关掉。"
-                + Environment.NewLine + "风险：程序手里的句柄被突然抽走，它可能报错 / 存不上盘。"
+                + Environment.NewLine + "和「结束选中的进程」的区别：进程不动，只关掉这几个句柄。"
+                + Environment.NewLine + "风险：程序手里的句柄被突然关掉，它可能报错 / 存不上盘。"
                 + Environment.NewLine + "没保存的东西先存一下；能接受再点「执行」。"
                 + ((protectedCount > 0)
                     ? (Environment.NewLine + "（其中有 " + protectedCount.ToString(CultureInfo.InvariantCulture)
@@ -565,14 +672,14 @@ namespace Mxx1Toolbox
             }
             if (answer != DialogResult.OK)
             {
-                _status.Text = "已取消（一个句柄都没动）。找到的这些句柄：" + who.ToString();
+                SetStatus("已取消（一个句柄都没动）。找到的这些句柄：" + who.ToString());
                 return;
             }
 
             string report = HandleUnlock.Release(hits);
-            Logger.Write("解除文件占用", "强制解锁（抽句柄）：" + who.ToString() + Environment.NewLine + report);
+            Logger.Write("解除文件占用", "强制解锁（关句柄）：" + who.ToString() + Environment.NewLine + report);
             RefreshLockers();
-            _status.Text = "强制解锁的结果：" + Environment.NewLine + report;
+            SetStatus("强制解锁的结果：" + Environment.NewLine + report);
         }
 
         private static bool Contains(List<string> list, string s)
@@ -590,7 +697,7 @@ namespace Mxx1Toolbox
             }
             if (chosen.Count == 0)
             {
-                _status.Text = "没勾选任何程序 —— 在上面的列表里勾一个再点这个按钮。";
+                SetStatus("没勾选任何程序 —— 在上面的列表里勾一个再点这个按钮。");
                 return;
             }
 
@@ -630,14 +737,14 @@ namespace Mxx1Toolbox
             }
             if (answer != DialogResult.OK)
             {
-                _status.Text = "已取消（没有结束任何程序）。";
+                SetStatus("已取消（没有结束任何程序）。");
                 return;
             }
 
             string report = FileLock.Kill(chosen);
             Logger.Write("解除文件占用", "结束进程：" + names.ToString() + Environment.NewLine + report);
             RefreshLockers();
-            _status.Text = "结束的结果：" + Environment.NewLine + report;
+            SetStatus("结束的结果：" + Environment.NewLine + report);
         }
     }
 }

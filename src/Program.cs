@@ -394,7 +394,7 @@ namespace Mxx1Toolbox
             return 2;
         }
 
-        /// <summary>只读：谁手里攥着这个文件 / 文件夹的**句柄**（全系统句柄表，像火绒那样）。
+        /// <summary>只读：谁手里有这个文件 / 文件夹的**句柄**（全系统句柄表，像火绒那样）。
         /// 命令行只提供"查"，**不提供"关"** —— 抽句柄是危险动作，只能从界面点（还要过确认框）。
         /// 测试用它：共享打开（FileShare.ReadWrite）的文件 Restart Manager 看不见，句柄表看得见。</summary>
         private static int HandlesQuery(string[] args)
@@ -451,7 +451,7 @@ namespace Mxx1Toolbox
             Console.WriteLine("truncated=" + (report.Truncated ? "yes" : "no"));
             Console.WriteLine("hits=" + lockHits.ToString(CultureInfo.InvariantCulture));
             Console.WriteLine("lockers=" + found.Count.ToString(CultureInfo.InvariantCulture));
-            // 后两类不是"占用"，是线索：它自己在运行 / 某个窗口里开着它（见 FileLock 里的说明）
+            // 后两类不是"占用"，是另外两种情况：它自己在运行 / 某个窗口里开着它（见 FileLock 里的说明）
             Console.WriteLine("run=" + report.RunCount.ToString(CultureInfo.InvariantCulture));
             Console.WriteLine("open=" + report.OpenCount.ToString(CultureInfo.InvariantCulture));
             Console.WriteLine("badfiles=" + report.BadFiles.ToString(CultureInfo.InvariantCulture));
@@ -534,11 +534,13 @@ namespace Mxx1Toolbox
             bool admin = false;
             bool dry = false;
             bool confirm = false;
+            bool show = false;
             for (int i = 2; i < args.Length; i++)
             {
                 if (args[i] == "--admin") { admin = true; }
                 if (args[i] == "--dry") { dry = true; }
                 if (args[i] == "--confirm") { confirm = true; }
+                if (args[i] == "--show") { show = true; }
             }
 
             ToolItem target = null;
@@ -596,7 +598,7 @@ namespace Mxx1Toolbox
                 return 0;
             }
 
-            LaunchResult r = Launcher.Run(target, settings, admin);
+            LaunchResult r = Launcher.Run(target, settings, admin, show);
             // 需要管理员的动作是"提升权限后另起一个自己"去做的，而那个子进程是 winexe、没有控制台：
             // 它把报告写在这个交接文件里，没提升权限的父进程几秒后读出来弹给用户看。
             if (admin && r.Output != null && r.Output.Trim().Length > 0)
@@ -613,6 +615,32 @@ namespace Mxx1Toolbox
             Console.WriteLine("message=" + r.Message);
             Console.WriteLine("exit=" + r.ExitCode.ToString(CultureInfo.InvariantCulture));
             Logger.Write(target.Name, (r.Ok ? "完成" : "失败") + " · 命令行 · " + r.Message);
+
+            // --show：右键菜单那条路（资源管理器右键「常用功能」里的按钮）专用。
+            //
+            // 为什么必须有：这个 exe 是 **winexe，没有控制台** —— 上面那些 Console.WriteLine 写进去
+            // 根本没人看得见，工具跑完就静悄悄地退出了。于是「激活状态」「查看设置改动」这种
+            // **结果就是一段文字**的按钮，从右键菜单点等于"没有效果"（用户 2026-10-04 报的）。
+            // 所以这里把结果弹成一个小窗口（复用主界面那个 OutputForm：复制全文 / 用记事本打开 / 关闭）。
+            // 只在这两种情况下弹，免得给"本来就会自己开窗口的程序"添乱：
+            // ① 有文字结果（脚本 / 内置报告）；② 失败了（如实把原因给用户看）。
+            if (show && !r.Deferred)
+            {
+                bool hasText = (r.Output != null && r.Output.Trim().Length > 0);
+                if (hasText || !r.Ok)
+                {
+                    StringBuilder body = new StringBuilder();
+                    if (hasText) { body.Append(r.Output.TrimEnd()).AppendLine().AppendLine(); }
+                    body.Append(r.Ok ? "（完成）" : "（失败）").Append(r.Message);
+                    if (!r.Ok && r.ExitCode != 0)
+                    {
+                        body.Append("　退出码 ").Append(r.ExitCode.ToString(CultureInfo.InvariantCulture));
+                    }
+                    string headline = (r.Ok ? "「" : "「") + target.Name + (r.Ok ? "」跑完了：" : "」没成功：");
+                    Application.Run(new OutputForm(target.Name + " · 结果", headline, body.ToString(),
+                        Theme.Resolve(settings.Theme)));
+                }
+            }
             return r.Ok ? 0 : 1;
         }
 

@@ -12,7 +12,7 @@ namespace Mxx1Toolbox
     /// Four button types are offered, all of which the launcher already understands:
     ///   启动程序 (exe) / 打开文件夹·网址·系统页面 (open) / 运行脚本文件 (script + path) /
     ///   运行命令 (script + inline). Everything is laid out with TableLayoutPanel rows.</summary>
-    internal sealed class NewToolForm : Form
+    internal sealed class NewToolForm : Mxx1Form
     {
         private const string KindExe = "exe";
         private const string KindOpen = "open";

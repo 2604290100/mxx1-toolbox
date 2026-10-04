@@ -13,7 +13,7 @@ namespace Mxx1Toolbox
     /// <summary>The button wall: tabs on top, a four column grid of compact buttons in the
     /// middle, a collapsible run log and a thin status bar at the bottom.
     /// Every control is placed by a TableLayoutPanel -- no coordinates are written by hand.</summary>
-    internal sealed class MainForm : Form
+    internal sealed class MainForm : Mxx1Form
     {
         private const int TabBarHeight = 30;
         // The status bar height is computed from the font (see the constructor): with a fixed
@@ -1341,7 +1341,7 @@ namespace Mxx1Toolbox
             ThreadPool.QueueUserWorkItem(delegate
             {
                 LaunchResult result;
-                try { result = Launcher.Run(item, _settings, asAdmin); }
+                try { result = Launcher.Run(item, _settings, asAdmin, false); }
                 catch (Exception ex)
                 {
                     result = new LaunchResult();

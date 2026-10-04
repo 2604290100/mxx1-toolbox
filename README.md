@@ -12,13 +12,15 @@
 
 ![系统工具](docs/system-shot.png)
 
-- 单文件 `Mxx1Toolbox.exe`（约 344 KB，含 112 个内嵌图标），不需要 .NET SDK、不加开机启动
+- 单文件 `Mxx1Toolbox.exe`（约 713 KB，含 112 个内嵌图标 + 自己的程序图标），不需要 .NET SDK、不加开机启动
   （**只有你自己点的隐私/系统按钮才会写注册表，而且写之前会先把原值记下来、可以一键还原**）
 - 八个页签：**常用 / 常用设置 / 我的工具 / 系统工具 / 清理优化 / 隐私设置 / 应用管理 / 右键增强**，
   一共 112 个内置按钮 —— **全部是真功能，没有点不动的灰按钮**
 - 按钮全部由 `tools\*.json` 定义 —— **加按钮不用重新编译**
 - 图标：112 个 16×16 PNG（按页签配色 + 按名字选图形，`tools\Make-Icons.ps1` 一键重生成），
   编译时内嵌进 exe；`assets\icons\<id>.png` 或清单里的 `icon` 字段可以覆盖
+- **程序自己也有图标**：`assets\app.ico`（`tools\Make-AppIcon.ps1` 生成，8 个尺寸）编进 exe 资源，
+  资源管理器 / 桌面快捷方式 / 任务栏 / 窗口标题栏看到的都是它（窗口那份由 `src\AppIcon.cs` 按 DPI 取）
 - 浅色 / 深色 / 跟随系统三种主题，标题栏也跟着变
 - **窗口默认固定尺寸**（宽度不跟着内容变，名字太长就出省略号、悬停看全名）；想让高度跟着当前页签
   的按钮变，去「设置」里勾一下就行
@@ -34,11 +36,12 @@
   **不装 handle.exe、不要管理员**；
   右键**文件夹**时会往下扫 4 层、最多 400 个文件，并告诉你**是哪个文件**被占着；没查到占用时它自己
   会试着独占打开一次，明确区分「真没人在用」/「有人占着但报不出名字」/「其实是权限问题」；
-  还会补上三条线索：**「它自己在运行」**（正在运行的程序不持有文件句柄，RM 看不见它）、
-  **「窗口里开着它」**（记事本这类程序读完就关句柄，本来就没锁）、**「能不能删 / 能不能改名」**
+  还会顺带列两件事：**「它自己在运行」**（正在运行的程序不持有文件句柄，RM 看不见它）、
+  **「窗口里开着它」**（记事本这类程序读完就关句柄，本来就没锁）；再加上**「能不能删 / 能不能改名」**
   （拿 DELETE 权限试一次 —— "被打开着"和"删不掉"不是一回事）；
-  另外有 **「强制解锁（不关程序）」**：跟火绒的「解锁占用」一个路子，遍历全系统句柄表把对方手里那个
-  句柄直接关掉，**进程不动**（风险写在确认框里：句柄被抽走，那个程序可能报错 / 存不上盘））
+  另外有 **「强制解锁（不关程序）」**：遍历全系统句柄表，把对方手里那个句柄直接关掉，**进程不动**
+  （和火绒的「解锁占用」是一个思路；风险写在确认框里：句柄被关掉，那个程序可能报错 / 存不上盘）。
+  那个小窗口的高度按内容自适应：查出几个程序、正文有几行，窗口就多高，不长也不切）
   和 **「常用功能」级联子菜单**（右键里多一个子菜单，放工具箱「常用」页的东西）。
   两项都只写 `HKCU\Software\Classes`，删掉键就干净；再加上**「永久删除工具」**：打开隔壁的
   [永久删除（不进回收站）](../permanent-delete-menu) 安装器窗口，零改动集成
@@ -130,12 +133,17 @@ bin\Mxx1Toolbox.exe help
 
 ```powershell
 powershell -File tools\Test-Encoding.ps1     # 编码红线体检（BOM / 纯 ASCII / 硬编码本机路径）
-powershell -File tests\Test-All.ps1          # 全部（无桌面时加 -SkipGui）
-powershell -File tests\Test-Cli.ps1          # 命令行回归 137 项
-powershell -File tests\Test-Gui.ps1          # 界面回归 106 项（要交互式桌面，无桌面返回 3 = 跳过）
+powershell -ExecutionPolicy Bypass -File tests\Test-All.ps1   # 全部（无桌面时加 -SkipGui）
+powershell -ExecutionPolicy Bypass -File tests\Test-Cli.ps1   # 命令行回归 142 项
+powershell -ExecutionPolicy Bypass -File tests\Test-Gui.ps1   # 界面回归 115 项（要交互式桌面，无桌面返回 3 = 跳过）
 powershell -File tools\Make-Screenshots.ps1  # 重新拍 docs 里的截图（浅色 / 深色 / 系统工具页签）
 powershell -File tools\Make-Icons.ps1        # 重新生成 16x16 PNG 图标（先 build 再跑，改完还要再 build）
+powershell -File tools\Make-AppIcon.ps1      # 重新生成 assets\app.ico（程序自己的图标，改完还要再 build）
 ```
+
+> 测试**必须用 Windows PowerShell 5.1 跑**（`powershell`，不是 `pwsh`），而且带上 `-ExecutionPolicy Bypass`：
+> 套件里有 `-Encoding Byte`（PS 7 换成了 `-AsByteStream`，跑一半会中断），而 `Bypass` 会让子进程继承
+> 同一个执行策略（有的测试项要拉子进程）。理由见 `docs\DESIGN.md` §15。
 
 界面回归不看截图：用 Win32 枚举子窗口矩形判"按钮/标签有没有压在一起"、读 `GWL_STYLE` 判标题栏、
 `PostMessage(BM_CLICK)` 真点按钮、`WM_GETTEXT` 跨进程读文字；按钮清单从 `list` 里读，两边必须一致。

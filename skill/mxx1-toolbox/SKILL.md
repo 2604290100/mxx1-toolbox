@@ -8,7 +8,7 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
 **主界面 = 多行多列的小按钮墙**，点一下按钮就启动一个已经做好的程序 / 脚本 / 功能。
 加按钮只是往 `tools\*.json` 丢配置，**不需要重新编译主程序**。
 
-- 程序名 **萌新工具箱**，标题栏 `萌新工具箱 v1.5.1`；署名 `mxx1` / `mxx1.cn`；GPL-3.0-or-later
+- 程序名 **萌新工具箱**，标题栏 `萌新工具箱 v1.5.2`；署名 `mxx1` / `mxx1.cn`；GPL-3.0-or-later
 - 工程目录 **`D:\萌新工具开发\toolbox\`**，与隔壁 `permanent-delete-menu` **互不修改**（只调它的 exe）
 - 外观参考：`C:\Users\Administrator\Pictures\Snipaste_2026-10-04_10-29-34.png`（那种紧凑按钮墙）
 
@@ -17,11 +17,21 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
 
 ## 当前状态（2026-10-04，v1.5.2）
 
-- ✅ **测试 227 项全绿**：命令行回归 **129**（M 组 **29 项**盯「右键增强」）+ 界面回归 **98**
-  （N 组 **6 项**盯「解除文件占用」那个小窗口）（外加编码体检 170 个文件、内联脚本与清单体检
-  34 个脚本 / 7 个清单）。产物 `bin\Mxx1Toolbox.exe`（327,168 字节单文件），
-  七个 `tools.*.json` + 112 个 `icons.*.png` 已内嵌。
-- ⚠️ **v1.5.1 修的是用户当天报的两个问题**（装完 v1.5.0 之后）：
+- ✅ **测试 257 项全绿**：命令行回归 **142**（M 组盯「右键增强」、A14–A17 盯 **exe 自己的图标**）
+  + 界面回归 **115**（N 组 **19 项**盯「解除文件占用」那个小窗口）（外加编码体检 174 个文件、
+  内联脚本与清单体检 34 个脚本 / 7 个清单）。产物 `bin\Mxx1Toolbox.exe`（730,112 字节单文件），
+  七个 `tools.*.json` + 112 个 `icons.*.png` + `assets\app.ico` 那份程序图标 已内嵌。
+  **跑法固定：`powershell -ExecutionPolicy Bypass -File tests\Test-All.ps1`**（必须 Windows PowerShell
+  5.1 —— 套件里有 `-Encoding Byte`，pwsh 7 改叫 `-AsByteStream`，跑到 M20 会当场中断；`Bypass`
+  还会让子进程继承执行策略，M14f 那个"父进程拉子进程"的现场靠它。见 `docs\DESIGN.md` §15）。
+- ⚠️ **v1.5.2 收尾修的三件事**（用户当天第三轮反馈）：① **编出来的 exe 没有图标** ——
+  `build.ps1` 里 `/win32icon:assets\app.ico` 要的文件**从来不存在**（那行等于没写），
+  现在有了 `assets\app.ico`（`tools\Make-AppIcon.ps1` 生成，八尺寸）+ `src\AppIcon.cs`
+  （WinForms 窗口的标题栏 / 任务栏图标是**另一回事**，不设 `Form.Icon` 就是它自带的空白窗体图标）；
+  ② **「解除文件占用」小窗口高度不跟着内容变**（原来是 `210 + 行数 × 20`，上面几行文字换行没算，
+  正文长时被切）→ 现在逐块量出来相加；③ **界面文案不许写成"推理"**（用户原话
+  「那些提示不要做得太像AI了，明明都是固定的功能，非要说什么线索」）—— 详见"界面硬规则"里那条"用户可见文案一律直白"。
+- ✅ **v1.5.1 修的是用户当天报的两个问题**（装完 v1.5.0 之后）：
   ① **「解除文件占用」右键文件夹扫不到占用** —— 原来只枚举文件夹**第一层**的文件，第一层全是
   子文件夹时直接放弃，而"占用它的是子文件夹里的 Word / PDF"正是最常用的场景；
   ② **右键菜单项没有图标** —— 注册表 `Icon` 指的 exe 从来没有 `/win32icon`（`assets\app.ico`
@@ -65,6 +75,12 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
   用户自建按钮的图标**不**生成，免得把别人机器上的东西提交进仓库），
   全部经 `IconFactory.Normalize()` 归一化成 16×15 画布（见"界面硬规则"里那条）。
   优先级：清单里的 `icon` > `assets\icons\<id>.png` > 内嵌 > 程序内实时画的占位图标。
+- ✅ **程序自己的图标**（v1.5.2 收尾）：`assets\app.ico` = `tools\Make-AppIcon.ps1` 生成的
+  圆角蓝底 + 2×2 白色方块（"一墙按钮"），**16/20/24/32/48/64/128/256 八个尺寸各画一遍**、
+  32 位 DIB 拼 ICO（不写 PNG 帧），374 KB；`build.ps1` 交给 csc 的 `/win32icon`，
+  缺文件时会 `Write-Warning` 喊一声。**窗口那一份另外算**：`src\AppIcon.cs` 里的
+  `LoadImage(hInstance, "#32512", IMAGE_ICON, cx, cy)` 按窗口要的尺寸取（标题栏 ICON_SMALL 16/20/24、
+  任务栏 ICON_BIG 32），全部 9 个窗口都从 `Mxx1Form` 派生（在 `AppIcon.cs` 里），句柄建好 + Shown 各装一次。
 - ✅ **外部工具目录 `bin-tools\` 已实现**（用户定的名字）：查找顺序里加一档、`build.ps1 -Package` 自动拷入、
   设置 / 关于窗口有「打开工具目录」、`kind: exe` 的相对路径按「工具箱目录 → `bin-tools\`」解析。
   ⬜ 还没做：把工具内嵌进 exe 当兜底、`bin-tools\<工具>\tool.json` 自动扫按钮（`docs\DESIGN.md` §13 的 ② ③）。
@@ -95,7 +111,9 @@ D:\萌新工具开发\toolbox\
                                    文件夹往下扫 4 层 / 整批失败二分劈开重查 / 命中后定位到具体文件 +
                                    SelfCheck（自己独占打开一次，给"真没人在用 / 有人占着但报不出名字 /
                                    其实是权限"三种确定结论）+ 系统关键进程禁止结束
-  src\UnlockForm.cs                「解除文件占用」的结果窗口（`rightmenu unlock` 起来的独立进程，不开主界面）
+  src\UnlockForm.cs                「解除文件占用」的结果窗口（`rightmenu unlock` 起来的独立进程，不开主界面；
+                                   **高度按内容自适应**，见"界面硬规则"里那条）
+  src\AppIcon.cs                   窗口图标（按 DPI 取 exe 资源里的那一档）+ `Mxx1Form` 基类（9 个窗口都从它派生）
   src\ConfirmForm.cs               自家的确认窗口「请确认」（不再用 MessageBox 甩命令，见 §"运行反馈"）
   src\UserTools.cs                 用户层 tools.json 的读写（最小 JSON writer，写入前备份 .bak）
   src\NewToolForm.cs               图形化「新建按钮 / 编辑按钮」窗口（4 种类型）
@@ -111,14 +129,18 @@ D:\萌新工具开发\toolbox\
   tools\Test-Encoding.ps1          编码红线体检（-Fix 修 BOM）
   tools\Make-Screenshots.ps1       拍 docs\gui-shot.png / dark-shot.png / system-shot.png（PrintWindow）
   tools\Make-Icons.ps1             批量画图标（先从 exe 的 list 读清单，所以**先 build 再跑它**）
-  assets\icons\*.png               112 个图标（编译时内嵌成 icons.<id>.png）
+  tools\Make-AppIcon.ps1           画 assets\app.ico（程序自己的图标，八尺寸；改完要重新 build）
+  assets\icons\*.png               112 个按钮图标（编译时内嵌成 icons.<id>.png）
+  assets\app.ico                   程序图标（`/win32icon` 用的就是它）
   tests\Test-All.ps1               一条命令跑完全部
   tools\Test-InlineSyntax.ps1      内联脚本语法 + 清单 JSON 体检（34 个脚本 / 7 个清单）
-  tests\Test-Cli.ps1               命令行回归 129 项（L 组 12 项盯 sysreg、J09–J11 盯卸载窗口的列表、
-                                   M 组 29 项盯右键增强：查占用认出 PID / 文件夹往下扫 / 自查结论 /
-                                   图标指向真实 .ico / 自动修补 / 隔离根里装卸 / 不碰真实右键菜单）
-  tests\Test-Gui.ps1               界面回归 98 项（要交互式桌面，无桌面返回 3 = 跳过；H 组盯固定尺寸、
-                                   E04b 盯窗口位置、A09 盯 bin-tools 说明、N 组 6 项盯解除占用小窗口）
+  tests\Test-Cli.ps1               命令行回归 142 项（A14–A17 盯 exe 图标、L 组 12 项盯 sysreg、
+                                   J09–J11 盯卸载窗口的列表、M 组盯右键增强：查占用认出 PID /
+                                   文件夹往下扫 / 自查结论 / 图标指向真实 .ico / 自动修补 /
+                                   隔离根里装卸 / 不碰真实右键菜单）
+  tests\Test-Gui.ps1               界面回归 115 项（要交互式桌面，无桌面返回 3 = 跳过；A04b 盯窗口图标、
+                                   H 组盯固定尺寸、E04b 盯窗口位置、A09 盯 bin-tools 说明、
+                                   N 组 19 项盯解除占用小窗口，含 N14/N15/N17/N18 的高度自适应）
   docs\DESIGN.md                   设计正本（含"踩过的坑"清单 + §13 打包方案）
   docs\gui-shot.png / dark-shot.png / system-shot.png  界面截图
 ```
@@ -129,11 +151,12 @@ D:\萌新工具开发\toolbox\
 powershell -File build.ps1                    # 编译 → bin\Mxx1Toolbox.exe
 powershell -File build.ps1 -Package            # 额外打 zip，并把隔壁 exe 拷进 bin-tools\
 powershell -File tools\Test-Encoding.ps1      # 编码体检（改完文件必跑；-Fix 修 BOM）
-powershell -File tests\Test-All.ps1           # 全套（无桌面加 -SkipGui）
-powershell -File tests\Test-Cli.ps1           # 命令行回归
-powershell -File tests\Test-Gui.ps1           # 界面回归（要交互式桌面）
+powershell -ExecutionPolicy Bypass -File tests\Test-All.ps1   # 全套（无桌面加 -SkipGui）
+powershell -ExecutionPolicy Bypass -File tests\Test-Cli.ps1   # 命令行回归
+powershell -ExecutionPolicy Bypass -File tests\Test-Gui.ps1   # 界面回归（要交互式桌面）
 powershell -File tools\Make-Screenshots.ps1   # 重拍文档截图（浅色 / 深色 / 系统工具页签）
-powershell -File tools\Make-Icons.ps1         # 重生成 PNG 图标（先 build 再跑，改完还要再 build）
+powershell -File tools\Make-Icons.ps1         # 重生成 PNG 按钮图标（先 build 再跑，改完还要再 build）
+powershell -File tools\Make-AppIcon.ps1       # 重生成 assets\app.ico（改完还要再 build）
 
 & bin\Mxx1Toolbox.exe list [--tab system]     # 列按钮（tab 分隔：id / 页签 / 名称 / 类型）
 & bin\Mxx1Toolbox.exe run devmgmt --dry       # 只解析按钮指向哪里，不真的启动（灰按钮回 kind=none）
@@ -183,6 +206,32 @@ powershell -File tools\Make-Icons.ps1         # 重生成 PNG 图标（先 build
 - 入口：设置窗口 + 关于窗口的「打开工具目录」（没有就自动建）；找不到工具时的提示里直接写出这个路径。
 - 打包：`build.ps1 -Package` 会把隔壁的 `PermanentDeleteSetup.exe` 拷进发布目录的 `bin-tools\`
   （找不到就留空并打印一行说明，不报错）。
+
+### 放一个自己的工具进去（正确流程 + "谁会不会清掉它"）
+
+2026-10-04 用户要把 Mem Reduct 便携版放进去时问的就是这两件事，答案固定：
+
+1. **拷到 exe 旁边**：`D:\萌新工具开发\toolbox\bin\bin-tools\<工具名>\`，**整个文件夹拷**、别只拷 exe ——
+   便携版一般还带语言文件 / 便携标记（Mem Reduct = `memreduct.lng` + `portable.dat`，缺了会变英文、
+   或者改去写注册表）。按架构挑子目录（这台是 AMD64 → `memreduct\64\` 那三个文件）。
+2. **按钮写相对路径**：`"kind": "exe"`, `"path": "<工具名>\\<exe>"`, `"workdir": "<工具名>"` ——
+   `AppPaths.Resolve` 会按「工具箱目录 → `bin-tools\`」解析；**别写绝对路径**（工具箱一搬就断）。
+   按钮放**用户层** `%LOCALAPPDATA%\mxx1-toolbox\tools.json`（不用重编译、仓库里也不会有它；
+   想让所有人都有才写进 `tools\*.json` + 重编译）。
+3. **图标**：用户层按钮不生成 PNG（`Make-Icons.ps1` 只画内置按钮），默认是"实时画的占位图标"。
+   想要真图标就把 exe 的图标导出来放进同一个文件夹：`ExtractIconEx` 的 **small（16×16）** 那一张最清楚
+   （`Normalize()` 只把它放进 16×16 画布、不缩放），按钮里写 `"icon": "<工具名>\\<图标>.png"`。
+4. **验证**（不用点按钮）：`bin\Mxx1Toolbox.exe run <id> --dry` → `target=` 必须指到
+   `...\bin-tools\<工具名>\...` 且 `exists=yes`；`status` 的 `buttons=` 会 +1。
+5. **谁会不会清掉它**：`build.ps1`、`build.ps1 -Package`（只往**发布包**里拷隔壁安装器）、
+   `Make-Icons.ps1` / `Make-AppIcon.ps1`（只写 `assets\`）、启动时的 `EnsurePayloadDir()`（只在缺
+   `说明.txt` 时写它）**都不碰**；`tests\Test-Cli.ps1` 的 F02/F03 只碰它自己拷的那份
+   `PermanentDeleteSetup.exe`（本来就有就跳过拷贝，**也绝不在收尾删别人的文件**），
+   只有 `bin-tools` 目录**不存在**时才会建了又删。
+   ⚠️ 唯一真风险：**`bin/` 整个目录不入 Git**（`.gitignore` 里一行 `bin/`）—— 手删 `bin\`、
+   换机器 / 重新 clone、把 exe 挪走（`bin-tools` 跟着 exe 走）都会没。所以**原始安装包 / 压缩包留着
+   别删**，或者再放一份到 `%LOCALAPPDATA%\mxx1-toolbox\bin-tools\`（备用工具目录，查找顺序里排后面）。
+
 ## 界面硬规则（违反就是"看着像 bug"那类问题）
 
 | 规则 | 违反后的症状 |
@@ -208,6 +257,9 @@ powershell -File tools\Make-Icons.ps1         # 重生成 PNG 图标（先 build
 | 日志显示**最新在最上面**，不给正序开关 | 想看刚点的那次结果得滚到底 |
 | DPI：清单里 `dpiAware=true`（System aware）+ `AutoScaleMode.Font` | 不要用 PerMonitorV2：它需要 app.config，而 exe.config 会破坏单文件 |
 | **非模态窗口（结果 / 日志 / 常用链接）必须手工居中**：`StartPosition = CenterParent` **只对 `ShowDialog()` 的模态窗口有效**，`Show()` 出来的窗口 Windows 会放在屏幕左上角 → 用 `WindowPlacement.ShowCentered(f, owner)`（对 owner 居中 + 夹进工作区 + 多开时错开 28px） | 用户报的「点击激活状态为什么会弹到左上角窗口」。判据：Test-Gui 的 E04b，比的是结果窗口与主窗口的**重叠比例**（要 ≥ 50%，居中时实测 99%） |
+| **窗口高度按内容量出来，别按"行数"拍公式**：`UnlockForm.UpdateSize()` —— 文字块用 `TextRenderer.MeasureText(text, font, new Size(标签自己的 MaximumSize.Width, 0), WordBreak)`，列表用 `ListViewItem.Bounds`（Details 视图第一行的 `Top` = 列头高、`Height` = 行高），相加后夹进屏幕工作区；高度变了**按原中心点重新摆一次** | 原来写的是 `210 + 行数 × 20`（最多 470）——上面那几行文字（路径 / 状态 / 自查结论 / 常驻提示）全都会换行，它一行都没算：行数少时偏高，**"没查到占用"**时正文八九行被切掉一半（用户报「窗口高度没有做自适应高度」）。判据：Test-Gui 的 N14/N15/N17/N18（每个可见控件完整落在客户区 + 底部空白 ≤ 40px，用屏幕坐标判所以 DPI 无关） |
+| **窗口图标 = 两部分**：exe 的资源（`assets\app.ico` + `build.ps1` 的 `/win32icon`）**和** `Form.Icon`（`src\AppIcon.cs`：`LoadImage(hInstance, "#32512", IMAGE_ICON, cx, cy)` 按 DPI 取那一档，`Form.Icon` 给大图、随后补一次 `ICON_SMALL`；窗口都从 `Mxx1Form` 派生） | 只做前面半截 = 资源管理器里有图标、**标题栏和任务栏还是 .NET 那个空白窗体图标**（用户报「编译好的 exe 没有图标」）。判据：Test-Cli A14–A17 + Test-Gui A04b/N16，都按像素认"蓝底 + 纯白方块"（.NET 默认图标一点纯白都没有） |
+| **用户可见文案一律直白**：写"是什么 / 会怎样 / 怎么办"，不写"我发现了一条线索""这不是猜的"这种叙述；和别家软件的比较（比如火绒）只留在代码注释和文档里 | 用户原话「那些提示不要做得太像AI了，明明都是固定的功能，非要说什么线索」。改文案时**别把这些功能说明词删掉**：「它自己在运行」「窗口里开着它」「查到 N 个程序占着它」「独占打开」都是测试断言和用户理解情况用的锚点（M14b / N03 / N07 盯着） |
 
 深色不需要自绘控件：`FlatStyle=Flat` + `FlatAppearance.BorderColor / MouseOverBackColor / MouseDownBackColor`
 + `BackColor` / `ForeColor` 逐主题赋值即可；标题栏 `DwmSetWindowAttribute(hwnd, 20 → 19, dark)`，
@@ -315,7 +367,7 @@ powershell -File tools\Make-Icons.ps1         # 重生成 PNG 图标（先 build
   - 还有两个反直觉的坑：**绝不能把目录路径登记给 RM**（回 `ERROR_ACCESS_DENIED(5)` 而且污染整批）；
     `strAppName` 是**友好显示名**不是路径，`svchost` 里几个服务会返回**同一个 PID 好几行** → 按 PID 去重。
 
-- **v1.5.2 补的三条线索**（用户报「右键文件夹说有程序占用着但找不到进程」「右键 sitemap.txt 说没找到」
+- **v1.5.2 补的另外两种情况**（用户报「右键文件夹说有程序占用着但找不到进程」「右键 sitemap.txt 说没找到」
   之后加的，都在 `FileLock.cs`，CLI 上分别是 `run=` / `open=` / `candelete=`）：
   - **「它自己在运行」**（`ProbeRunners`）：**正在运行的程序不持有文件句柄**（exe 是内存映射，
     加载器读完就关句柄）—— RM 和"独占打开试试"**都看不见它**，可它让文件删不掉、文件夹松不开。
@@ -333,7 +385,7 @@ powershell -File tools\Make-Icons.ps1         # 重生成 PNG 图标（先 build
     但 DELETE 权限 `ok`（能删能改名）；桌面反而真被拦。
     **正在运行的 exe 这招测不出来**（镜像文件照样能拿 DELETE 权限开），所以那种一律由
     `FinishDeleteNote` 用"它自己在运行"覆盖掉结论。
-  - **去重键必须是 PID + 线索种类**（`OfSource` / `UnlockForm.HasRow`）：同一个进程可能既是
+  - **去重键必须是 PID + 来源**（`OfSource` / `UnlockForm.HasRow`）：同一个进程可能既是
     RM 报的"占着它"又是"它自己在运行"（你右键的正好是个在跑的 exe）—— 按 PID 一去重就会把
     "删不掉是因为它自己在运行"这条**最有用的**信息吞掉（实测踩过：`run=1` 却找不到 `run\tpid=` 行）。
 
@@ -376,6 +428,8 @@ powershell -File tools\Make-Icons.ps1         # 重生成 PNG 图标（先 build
 - **菜单图标（v1.5.1，`src\MenuIcons.cs`）**：注册表的 `Icon` **只认"带图标资源的 exe/dll"或 `.ico`
   文件，指 `.png` 是无效的**；而工具箱那个 exe 自己也没有 `/win32icon`（`assets\app.ico` 不存在，
   `build.ps1` 那行等于没生效）—— 所以 v1.5.0 写 `Icon=<exe>` 的结果是**菜单里一片空白**（用户报的）。
+  v1.5.2 收尾把 exe 自己的图标补上了（`tools\Make-AppIcon.ps1` → `assets\app.ico` → `/win32icon`，
+  另外窗口那一份走 `src\AppIcon.cs`），但菜单图标**还是**用生成的 `.ico`（它才是按 DPI 精确的那一档）。
   现在装菜单时把内嵌的按钮 PNG 拼成 32 位 DIB 的 `.ico`（16/20/24/32 四个尺寸，文件名带源图指纹），
   写到 `%LOCALAPPDATA%\mxx1-toolbox\rightmenu-icons\`，**两个父项 + 子菜单每一项**都写 `Icon`
   并读回核对（指不到文件就不写这个值，不留空白图标位）；撤掉两项时把生成的 .ico 一起清掉。
@@ -454,6 +508,13 @@ powershell -File tools\Make-Icons.ps1         # 重生成 PNG 图标（先 build
 
 ## 测试怎么用
 
+- **一律 `powershell -ExecutionPolicy Bypass -File tests\Test-All.ps1`**（Windows PowerShell **5.1**，
+  **不是 pwsh**）。两个坑都是 2026-10-04 用 pwsh 跑时踩的：① 套件里有 `Get-Content -Encoding Byte`
+  （PS 7 改成了 `-AsByteStream`）→ 跑到 M20 当场抛 `'Byte' is not a supported encoding name`
+  并**中断整个套件**（那一次用户的 `tools.json` 就留在暂停状态了，见 §12 坑 12）；
+  ② `-ExecutionPolicy Bypass` 会设 `PSExecutionPolicyPreference` 环境变量、**子进程继承** ——
+  M14f 那个"父进程拉个子进程"的现场靠它（这台机器策略是 Restricted，不走 Bypass 时子进程
+  `-File child.ps1` 直接被拒 → `child=0` 假红）。
 - `tests\Test-Gui.ps1` 用 Win32 探针，不看截图：`EnumChildWindows` + `GetWindowRect` 判重叠
   （先排除"完整包住别人"的容器）、`GetWindowLong(GWL_STYLE)` 判标题栏、
   `PostMessage(BM_CLICK)` 真点按钮、`WM_GETTEXT` 跨进程读文字。
@@ -492,6 +553,12 @@ powershell -File tools\Make-Icons.ps1         # 重生成 PNG 图标（先 build
       中途被 Ctrl+C / 卡死，这个"放回来"就永远不执行 → 用户看到"我建的按钮没了"。
       所以**开工先自愈**（发现 `.paused-by-*` 在而正式文件不在，先搬回去），
       `settings.ini` 另留一份 `.before-test` 备份，收尾成功才删。
+      **两道防线缺一不可**（2026-10-04 又踩了一次）：① **两个套件都要挂脚本级 `trap`**
+      （Test-Gui 早就有，Test-Cli 原来是裸的 —— 它一样会暂停用户文件，脚本级错误一来收尾就没了）；
+      ② **"把暂停文件放回去"这件事不许依赖 JSON 解析成功**：用户 `tools.json` 的 `_comment` 里
+      有不合法转义（`\*`，JSON 里 `\` 后面只允许 `" \ / b f n r t u`）时 `ConvertFrom-Json` 直接抛错，
+      三道闸整段被跳过 → 连搬回文件都做不成。现在解析前先跑 `Repair-JsonEscapes`（把这类转义补成
+      合法的，只影响解析、不动用户文件），`_comment` 里写的也是合法的 `tools\\*.json`。
   13. **函数定义必须放在第一次调用之前**：PowerShell 边解析边执行，`Switch-Tab` 定义在第 735 行、
       第 566 行就调用 → `CommandNotFoundException` 当场终止脚本，**收尾那段"把用户 tools.json 放回来"
       根本没跑**（2026-10-04 真发生：用户的按钮文件被留在 `.paused-by-gui-test` 状态）。

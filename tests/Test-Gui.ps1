@@ -80,6 +80,9 @@ public class TBGui
 
     [DllImport("user32.dll")] private static extern bool EnumWindows(EnumProc cb, IntPtr lParam);
     [DllImport("user32.dll")] private static extern bool EnumChildWindows(IntPtr parent, EnumProc cb, IntPtr lParam);
+    [DllImport("user32.dll")] private static extern bool GetClientRect(IntPtr hWnd, out RECT r);
+    [DllImport("user32.dll")] private static extern bool ClientToScreen(IntPtr hWnd, ref POINT p);
+    [DllImport("user32.dll")] private static extern IntPtr SendMessageW(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetWindowTextW(IntPtr hWnd, StringBuilder s, int max);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetClassNameW(IntPtr hWnd, StringBuilder s, int max);
     [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr hWnd, out RECT r);
@@ -131,6 +134,23 @@ public class TBGui
         StringBuilder sb = new StringBuilder(256);
         GetClassNameW(h, sb, sb.Capacity);
         return sb.ToString();
+    }
+
+    // Client area in SCREEN coordinates (left, top, right, bottom). Children report screen
+    // rects, so this is what "is the child inside the window" has to be compared against.
+    public static int[] ClientRect(IntPtr h)
+    {
+        RECT r;
+        GetClientRect(h, out r);
+        POINT p; p.X = 0; p.Y = 0;
+        ClientToScreen(h, ref p);
+        return new int[] { p.X, p.Y, p.X + r.Right, p.Y + r.Bottom };
+    }
+
+    // WM_GETICON (0x007F): 0 = ICON_SMALL (title bar), 1 = ICON_BIG (taskbar / Alt+Tab).
+    public static IntPtr IconHandle(IntPtr h, int which)
+    {
+        return SendMessageW(h, 0x007F, new IntPtr(which), IntPtr.Zero);
     }
 
     public static int[] Rect(IntPtr h)
@@ -411,6 +431,57 @@ function Test-ContainsRect {
             ($Outer.Width -gt $Inner.Width -or $Outer.Height -gt $Inner.Height))
 }
 
+# 「内容多高，窗口就多高」的判据（用户 2026-10-04 报「窗口高度没有做自适应」）：
+#   ① 每个可见控件都完整落在**客户区**里（被切掉 = 少算了高度）；
+#   ② 客户区底边到最下面那个控件的距离不许太大（留一大截空白 = 多算了高度）。
+# 用屏幕坐标比，所以无论 100% 还是 150% DPI 都成立。
+function Get-FitReport {
+    param([IntPtr]$Hwnd)
+    $client = [TBGui]::ClientRect($Hwnd)
+    $clipped = 0; $widgets = 0; $maxBottom = $client[1]; $worst = ''
+    foreach ($k in @(Get-ChildControls -RootHandle $Hwnd)) {
+        if (-not $k.Visible) { continue }
+        if (-not (($k.Class -like '*BUTTON*') -or ($k.Class -like '*STATIC*') -or ($k.Class -like '*SysListView*'))) { continue }
+        if (($k.Width -le 0) -and ($k.Height -le 0)) { continue }
+        $widgets++
+        if (($k.Bottom -gt $client[3]) -or ($k.Right -gt $client[2])) {
+            $clipped++
+            $worst = ([TBGui]::Class($k.H) + ' ' + $k.Text)
+        }
+        if ($k.Bottom -gt $maxBottom) { $maxBottom = $k.Bottom }
+    }
+    return [pscustomobject]@{
+        ClientH = $client[3] - $client[1]
+        Widgets = $widgets
+        Clipped = $clipped
+        Gap     = $client[3] - $maxBottom
+        Worst   = $worst
+    }
+}
+
+# 窗口自己那张图标（0 = 标题栏小图 / 1 = 任务栏大图）：数一下蓝色底和白色方块。
+# .NET 那个默认的"空白窗体"图标一点白都没有，所以 white>0 就能把它和工具箱自己的图标分开。
+function Get-IconInk {
+    param([IntPtr]$Hwnd, [int]$Which = 0)
+    $h = [TBGui]::IconHandle($Hwnd, $Which)
+    if ($h -eq [IntPtr]::Zero) { return $null }
+    $bmp = [System.Drawing.Icon]::FromHandle($h).ToBitmap()
+    $blue = 0; $white = 0; $opaque = 0
+    for ($iy = 0; $iy -lt $bmp.Height; $iy++) {
+        for ($ix = 0; $ix -lt $bmp.Width; $ix++) {
+            $c = $bmp.GetPixel($ix, $iy)
+            if ($c.A -gt 200) {
+                $opaque++
+                if (($c.B -gt 140) -and ($c.R -lt 110)) { $blue++ }
+                if (($c.R -gt 220) -and ($c.G -gt 220) -and ($c.B -gt 220)) { $white++ }
+            }
+        }
+    }
+    $w = $bmp.Width; $ht = $bmp.Height
+    $bmp.Dispose()
+    return [pscustomobject]@{ W = $w; H = $ht; Opaque = $opaque; Blue = $blue; White = $white }
+}
+
 function Invoke-Exe {
     param([string]$ArgLine, [int]$TimeoutSec = 120)
     $si = New-Object System.Diagnostics.ProcessStartInfo
@@ -600,12 +671,87 @@ try {
 # 用户自己加的按钮会让"这一页有几个按钮"变得不确定：先请到一边，跑完在"现场复原"里放回去。
 $UserToolsJson = Join-Path $env:LOCALAPPDATA 'mxx1-toolbox\tools.json'
 $UserToolsPaused = $UserToolsJson + '.paused-by-gui-test'
-# 自愈：上一次跑测试如果被中断（Ctrl+C / 卡在模态窗口上 / 被沙箱杀掉），用户自己的按钮清单
-# 和小工具设置都会留在"暂停"状态回不来 —— 用户会以为"我建的按钮没了"（2026-10-04 真卡过一次）。
-if ((Test-Path -LiteralPath $UserToolsPaused) -and (-not (Test-Path -LiteralPath $UserToolsJson))) {
-    Move-Item -LiteralPath $UserToolsPaused -Destination $UserToolsJson -Force
-    Write-Host '（上一次测试留下的暂停文件已自动放回 tools.json）'
+
+# ---- 用户层"防串味"三道闸（和 Test-Cli.ps1 里同一套，见那边的长注释）：
+# 事故：测试脚本级错误 → 收尾没跑到 → 注入的测试按钮留在用户 tools.json 里；下一次跑测试时
+# "暂停文件在、用户文件也在"的分支把暂停文件删了，用户自己那个按钮就没了（后来从
+# tools.json.broken-bak 里捞回来的）。所以：只有 id 以 test. 开头的才许丢、暂停文件里有真项就不许删、
+# 开工前先把注入按钮清掉（别指望收尾那段能跑到）。
+# 解析前先把"看得懂但不合法"的转义补成合法的（2026-10-04 真踩过：用户 tools.json 的 `_comment`
+# 里写了一个 `\*`，PowerShell 的 ConvertFrom-Json 抛错 → 这三道闸整段跳过 → 连"把暂停文件放回
+# tools.json"都做不成）。只影响解析，不动用户文件。和 Test-Cli.ps1 里那份是同一套。
+function Repair-JsonEscapes([string]$Text) {
+    $sb = New-Object System.Text.StringBuilder
+    $i = 0
+    while ($i -lt $Text.Length) {
+        $ch = $Text[$i]
+        if ($ch -ne '\') { [void]$sb.Append($ch); $i++; continue }
+        $next = ''
+        if (($i + 1) -lt $Text.Length) { $next = [string]$Text[$i + 1] }
+        if (($next.Length -gt 0) -and ('"\bfnrtu/'.IndexOf($next) -ge 0)) {
+            [void]$sb.Append('\'); [void]$sb.Append($next)
+        } else {
+            [void]$sb.Append('\\'); [void]$sb.Append($next)
+        }
+        $i += 2
+    }
+    return $sb.ToString()
 }
+
+function Read-JsonLoose([string]$Path) {
+    $raw = Get-Content -LiteralPath $Path -Raw -Encoding UTF8
+    try { return ($raw | ConvertFrom-Json) } catch { }
+    return ((Repair-JsonEscapes $raw) | ConvertFrom-Json)
+}
+
+function Test-OnlyInjectedFixtures([string]$Path) {
+    try {
+        if (-not (Test-Path -LiteralPath $Path)) { return $false }
+        $obj = Read-JsonLoose $Path
+        $tools = @($obj.tools)
+        if ($tools.Count -eq 0) { return $false }
+        foreach ($t in $tools) { if ("$($t.id)" -notlike 'test.*') { return $false } }
+        return $true
+    } catch { return $false }
+}
+
+function Clear-InjectedFixtures([string]$Path) {
+    if (-not (Test-Path -LiteralPath $Path)) { return }
+    try {
+        $obj = Read-JsonLoose $Path
+        $tools = @($obj.tools)
+        $keep = @($tools | Where-Object { "$($_.id)" -notlike 'test.*' })
+        if ($keep.Count -eq $tools.Count) { return }
+        if ($keep.Count -eq 0) {
+            Remove-Item -LiteralPath $Path -Force
+            Write-Host '（上一次测试没收拾干净：整个 tools.json 都是注入的测试按钮，已删除）'
+        } else {
+            $obj.tools = $keep
+            [System.IO.File]::WriteAllText($Path, ($obj | ConvertTo-Json -Depth 8), (New-Object System.Text.UTF8Encoding($false)))
+            Write-Host ('（上一次测试没收拾干净：从 tools.json 里清掉了 ' + ($tools.Count - $keep.Count) + ' 个注入按钮）')
+        }
+    } catch { Write-Host ('（清理注入按钮时出错，跳过：' + $_.Exception.Message + '）') }
+}
+
+# 自愈：上一次跑测试如果被中断（Ctrl+C / 卡在模态窗口上 / 被沙箱杀掉 / 脚本级错误），
+# 用户自己的按钮清单会留在"暂停"状态回不来（2026-10-04 真卡过一次）。
+if (Test-Path -LiteralPath $UserToolsPaused) {
+    if (Test-OnlyInjectedFixtures $UserToolsPaused) {
+        Remove-Item -LiteralPath $UserToolsPaused -Force
+        Write-Host '（暂停文件里全是注入的测试按钮，已丢弃）'
+    } else {
+        if (Test-Path -LiteralPath $UserToolsJson) {
+            if (Test-OnlyInjectedFixtures $UserToolsJson) { Remove-Item -LiteralPath $UserToolsJson -Force }
+            else { Remove-Item -LiteralPath $UserToolsPaused -Force }
+        }
+        if (Test-Path -LiteralPath $UserToolsPaused) {
+            Move-Item -LiteralPath $UserToolsPaused -Destination $UserToolsJson -Force
+            Write-Host '（上一次测试留下的暂停文件已自动放回 tools.json）'
+        }
+    }
+}
+Clear-InjectedFixtures $UserToolsJson
+
 $UserToolsHad = Test-Path -LiteralPath $UserToolsJson
 if ($UserToolsHad) {
     if (Test-Path -LiteralPath $UserToolsPaused) { Remove-Item -LiteralPath $UserToolsPaused -Force }
@@ -658,6 +804,19 @@ Check 'A02 标题栏写着「萌新工具箱 v<版本号>」' ($title -match '�
 $style = [TBGui]::Styles($main)
 Check 'A03 标题栏没有最小化方框' (($style -band 0x00020000) -eq 0) ('style=0x{0:X}' -f $style)
 Check 'A04 标题栏没有最大化方框' (($style -band 0x00010000) -eq 0) ('style=0x{0:X}' -f $style)
+
+# 窗口自己那张图标（用户 2026-10-04 报「编译好的 exe 没有图标」）：.NET 编译出来的 exe 资源里有图标
+# 不等于窗口标题栏/任务栏有 —— WinForms 不设 Form.Icon 时画的是它自带的"空白窗体"图标（一点白都没有）。
+# 所以这里按像素判：工具箱的图标是蓝底 + 四个白色方块。
+$mainInkSmall = Get-IconInk -Hwnd $main -Which 0
+$mainInkBig = Get-IconInk -Hwnd $main -Which 1
+$mainInkOk = (($mainInkSmall -ne $null) -and ($mainInkBig -ne $null) -and
+              ($mainInkSmall.White -gt 10) -and ($mainInkSmall.Blue -gt 20) -and
+              ($mainInkBig.White -gt 40) -and ($mainInkBig.Blue -gt 40))
+$mainInkDetail = ''
+if ($mainInkSmall -ne $null) { $mainInkDetail += ('small {0}x{1} blue={2} white={3} ' -f $mainInkSmall.W, $mainInkSmall.H, $mainInkSmall.Blue, $mainInkSmall.White) }
+if ($mainInkBig -ne $null) { $mainInkDetail += ('big {0}x{1} blue={2} white={3}' -f $mainInkBig.W, $mainInkBig.H, $mainInkBig.Blue, $mainInkBig.White) }
+Check 'A04b 主窗口的标题栏和任务栏图标是工具箱自己那张（不是 .NET 默认图标）' $mainInkOk $mainInkDetail
 
 # 页签条：加了「常用」（置顶 + 最近使用）之后是 8 个，而且顺序按使用频率排过一遍 ——
 # 原来只有 1 个按钮的「右键增强」排第 2 位，主力页「系统工具」「隐私设置」被挤到第 4、5。
@@ -1504,6 +1663,22 @@ try {
         }
         Check 'N04 按钮和文字互不重叠（这个窗口也守那条硬规矩）' ($overlap.Count -eq 0) ($overlap -join ' ')
 
+        # N14 / N15：窗口高度按内容自适应（用户 2026-10-04 报的「窗口高度没有做自适应」）。
+        # 原来是 `210 + 行数 * 20`（最多 470）：上面几行字（路径 / 状态 / 自查结论 / 常驻提示）
+        # 换行它根本没算，行数少时偏高、文案长时下面被切掉。判据用屏幕坐标，DPI 变了也成立。
+        $fit = Get-FitReport -Hwnd $uh
+        Check 'N14 内容多高窗口就多高：控件一个都没被切掉（高度不是按行数拍出来的）' `
+            (($fit.Widgets -ge 8) -and ($fit.Clipped -eq 0)) `
+            ('控件=' + $fit.Widgets + ' 被切=' + $fit.Clipped + ' 客户区高=' + $fit.ClientH + ' ' + $fit.Worst)
+        Check 'N15 窗口下面没留一大截空白（高度贴着内容）' `
+            (($fit.Gap -ge 0) -and ($fit.Gap -le 40)) ('底部空白=' + $fit.Gap)
+
+        # N16：小窗口自己也有图标（它是个独立进程，单独显示在任务栏上）
+        $unlockInk = Get-IconInk -Hwnd $uh -Which 1
+        Check 'N16 解除占用小窗口的任务栏图标也是工具箱那张' `
+            (($unlockInk -ne $null) -and ($unlockInk.White -gt 10) -and ($unlockInk.Blue -gt 20)) `
+            $(if ($unlockInk) { ('{0}x{1} blue={2} white={3}' -f $unlockInk.W, $unlockInk.H, $unlockInk.Blue, $unlockInk.White) } else { '没有图标句柄' })
+
         [void][TBGui]::CloseWindow($uh)
         Start-Sleep -Milliseconds 900
         $unlockProc.Refresh()
@@ -1512,6 +1687,9 @@ try {
         Check 'N02 五个按钮都在（结束选中的进程 / 强制解锁 / 重新检查 / 复制路径 / 关闭）' $false 'skipped'
         Check 'N03 窗口里念出了「查到 N 个程序占着它」（真查到了那个锁）' $false 'skipped'
         Check 'N04 按钮和文字互不重叠（这个窗口也守那条硬规矩）' $false 'skipped'
+        Check 'N14 内容多高窗口就多高：控件一个都没被切掉（高度不是按行数拍出来的）' $false 'skipped'
+        Check 'N15 窗口下面没留一大截空白（高度贴着内容）' $false 'skipped'
+        Check 'N16 解除占用小窗口的任务栏图标也是工具箱那张' $false 'skipped'
         Check 'N05 关掉小窗口之后那个进程自己退出了（不留后台进程）' $false 'skipped'
     }
 
@@ -1723,6 +1901,88 @@ try {
         if ($forceHolder -and -not $forceHolder.HasExited) { Stop-Process -Id $forceHolder.Id -Force -ErrorAction SilentlyContinue }
         if ($forceGui -and -not $forceGui.HasExited) { try { $forceGui.Kill() } catch { } }
         if (Test-Path -LiteralPath $forceRoot) { Remove-Item -LiteralPath $forceRoot -Recurse -Force -ErrorAction SilentlyContinue }
+    }
+
+    # ---- N17 / N18：用户 2026-10-04 报的「窗口高度没有做自适应」最容易看出来的那种情况 ——
+    #      **没查到占用**（比如右键记事本里开着的那份 txt）：窗口里那段正文有八九行
+    #      （自查结论 + 能不能删 + 为什么 + 四条可能原因），原来 300px 高的固定窗口会把它切掉一半。
+    #      这里右键一个**谁都没占**的文件，断言：正文完整（窗口跟着长高）而且没有控件被切。
+    $freeRoot = Join-Path $env:TEMP 'mxx1-unlock-free-gui'
+    if (Test-Path -LiteralPath $freeRoot) { Remove-Item -LiteralPath $freeRoot -Recurse -Force }
+    New-Item -ItemType Directory -Path $freeRoot | Out-Null
+    $freeFile = Join-Path $freeRoot 'nothing-holds-me.txt'
+    Set-Content -LiteralPath $freeFile -Value 'x' -Encoding UTF8
+    $freeProc = $null
+    try {
+        $freeProc = Start-Process -FilePath $Exe -PassThru -ArgumentList @('rightmenu', 'unlock', $freeFile)
+        [void]$script:Procs.Add($freeProc)
+        $freeWin = @()
+        for ($i = 0; $i -lt 40; $i++) {
+            Start-Sleep -Milliseconds 250
+            $freeWin = @((Get-TopWindows -ProcessId $freeProc.Id) | Where-Object { $_.Visible -and $_.Text -eq '解除文件占用' })
+            if ($freeWin.Count -gt 0) { break }
+        }
+        if ($freeWin.Count -gt 0) {
+            $fbodies = @()
+            for ($i = 0; $i -lt 30; $i++) {
+                $fbodies = @(Get-ChildControls -RootHandle $freeWin[0].H | Where-Object { $_.Class -like '*STATIC*' -and $_.Text -match '独占打开' })
+                if ($fbodies.Count -gt 0) { break }
+                Start-Sleep -Milliseconds 250
+            }
+            $ffit = Get-FitReport -Hwnd $freeWin[0].H
+            # 正文那一块本身就是"高"的（八九行）；窗口高度必须跟着它长，而且底部不留大空白
+            $bodyH = 0
+            if ($fbodies.Count -gt 0) { $bodyH = $fbodies[0].Height }
+            Check 'N17 没查到占用时长正文（自查结论 + 原因那几行）完整显示，窗口跟着长高' `
+                (($fbodies.Count -ge 1) -and ($bodyH -gt 80) -and ($ffit.Clipped -eq 0)) `
+                ('正文块高=' + $bodyH + ' 被切=' + $ffit.Clipped + ' 客户区高=' + $ffit.ClientH)
+            Check 'N18 窗口高度贴着内容（下面没留一大截空白，上面也没被顶掉）' `
+                (($ffit.Gap -ge 0) -and ($ffit.Gap -le 40) -and ($ffit.Widgets -ge 8)) `
+                ('底部空白=' + $ffit.Gap + ' 控件=' + $ffit.Widgets)
+            [void][TBGui]::CloseWindow($freeWin[0].H)
+            Start-Sleep -Milliseconds 700
+        } else {
+            Check 'N17 没查到占用时长正文（自查结论 + 原因那几行）完整显示，窗口跟着长高' $false 'skipped（窗口没起来）'
+            Check 'N18 窗口高度贴着内容（下面没留一大截空白，上面也没被顶掉）' $false 'skipped'
+        }
+    } finally {
+        if ($freeProc -and -not $freeProc.HasExited) { try { $freeProc.Kill() } catch { } }
+        if (Test-Path -LiteralPath $freeRoot) { Remove-Item -LiteralPath $freeRoot -Recurse -Force -ErrorAction SilentlyContinue }
+    }
+
+    # ---- N10：从右键菜单点「激活状态」「查看设置改动」这种**结果就是一段文字**的按钮，必须弹出
+    #      结果窗口。原因：工具箱是 winexe、**没有控制台**，`run <id>` 把报告写进一个不存在的
+    #      控制台 —— 用户看到的就是"点了没有效果"（2026-10-04 报的原话）。右键菜单里的命令
+    #      因此带 `--show`（M20b3 盯注册表那条），这里盯它真的弹得出来、关掉就退出。
+    $resProc = $null
+    try {
+        $resProc = Start-Process -FilePath $Exe -PassThru -ArgumentList @('run', 'activate-status', '--show')
+        [void]$script:Procs.Add($resProc)
+        $resWin = @()
+        for ($i = 0; $i -lt 60; $i++) {          # 那个脚本要查 WMI，给它 18 秒
+            Start-Sleep -Milliseconds 300
+            $resWin = @((Get-TopWindows -ProcessId $resProc.Id) | Where-Object { $_.Visible -and $_.Text -match '激活状态' })
+            if ($resWin.Count -gt 0) { break }
+        }
+        Check 'N10a 「激活状态」从右键菜单调起来会弹结果窗口（不然就是"没有效果"）' `
+            ($resWin.Count -eq 1) ('窗口=' + (@((Get-TopWindows -ProcessId $resProc.Id) | Where-Object { $_.Visible } | ForEach-Object { $_.Text }) -join ' / '))
+        if ($resWin.Count -gt 0) {
+            $rkids = @(Get-ChildControls -RootHandle $resWin[0].H)
+            $rbox = @($rkids | Where-Object { $_.Class -like '*EDIT*' -and $_.Text.Trim().Length -gt 0 })
+            $rbtns = @($rkids | Where-Object { $_.Class -like '*BUTTON*' } | ForEach-Object { $_.Text })
+            Check 'N10b 结果窗口里真的有那段文字（激活状态报告），并且有复制 / 关闭按钮' `
+                (($rbox.Count -ge 1) -and ($rbtns -contains '关闭')) `
+                ('文本框=' + $rbox.Count + ' 按钮=' + ($rbtns -join ' '))
+            [void][TBGui]::CloseWindow($resWin[0].H)
+            Start-Sleep -Milliseconds 900
+            $resProc.Refresh()
+            Check 'N10c 关掉结果窗口之后那个进程自己退出了（不留后台进程）' ($resProc.HasExited) ''
+        } else {
+            Check 'N10b 结果窗口里真的有那段文字（激活状态报告），并且有复制 / 关闭按钮' $false 'skipped（窗口没起来）'
+            Check 'N10c 关掉结果窗口之后那个进程自己退出了（不留后台进程）' $false 'skipped'
+        }
+    } finally {
+        if ($resProc -and -not $resProc.HasExited) { try { $resProc.Kill() } catch { } }
     }
 } finally {
     if ($unlockChild -and -not $unlockChild.HasExited) { Stop-Process -Id $unlockChild.Id -Force -ErrorAction SilentlyContinue }

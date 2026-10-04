@@ -9,7 +9,7 @@ namespace Mxx1Toolbox
 {
     /// <summary>About window. This class is the ONLY place that defines the author name,
     /// the site, the repository and the licence -- nothing else may hard code them.</summary>
-    internal sealed class AboutForm : Form
+    internal sealed class AboutForm : Mxx1Form
     {
         public const string AuthorName = "mxx1";
         public const string AuthorSite = "mxx1.cn";

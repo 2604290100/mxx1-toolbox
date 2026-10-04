@@ -794,6 +794,19 @@ namespace Mxx1Toolbox
         protected override void OnLoad(EventArgs e)
         {
             base.OnLoad(e);
+            // 《免责声明与服务条款》的首次运行确认门：没勾选同意就不写注册表、不做任何改动，
+            // 点「不同意，退出」直接关掉程序（口径与窗口原文见 docs/DISCLAIMER.md 5.1）。
+            // 命令行（list / run / status…）不拦 —— 那是脚本场景，可以用 consent --accept 先记录同意。
+            if (!Consent.IsAccepted())
+            {
+                Logger.Write("启动", "还没有同意当前这版条款，先弹确认窗口");
+                if (!Consent.EnsureAccepted(this, _theme, "首次运行界面"))
+                {
+                    // 窗口还没显示出来就退：先让消息循环转起来再关，别在 OnLoad 里硬关。
+                    BeginInvoke((MethodInvoker)delegate { Close(); });
+                    return;
+                }
+            }
             if (_settings.WindowX >= 0 && _settings.WindowY >= 0 && IsOnScreen(_settings.WindowX, _settings.WindowY))
             {
                 StartPosition = FormStartPosition.Manual;
@@ -815,6 +828,18 @@ namespace Mxx1Toolbox
             {
                 BeginInvoke((MethodInvoker)delegate { RightMenu.SyncIfInstalled(); });
             }
+            // 界面起来之后查一次更新（只读版本号；MXX1_NO_UPDATE=1 时一个字节都不发；失败静默）。
+            BeginInvoke((MethodInvoker)delegate { StartUpdateCheck(); });
+        }
+
+        /// <summary>这个按钮会不会改动系统（写注册表、装右键菜单）？「隐私设置」「常用设置」
+        /// 「右键增强」这三页都会 —— 所以它们按下去之前要再过一次条款同意状态（见 RunTool）。</summary>
+        private static bool WritesSystem(ToolItem t)
+        {
+            if (t.Kind != "builtin") { return false; }
+            return t.Module == Launcher.ModulePrivacy
+                || t.Module == Launcher.ModuleSysreg
+                || t.Module == Launcher.ModuleRightMenu;
         }
 
         /// <summary>`ui &lt;动作&gt;` 进来的：窗口已经显示出来了，再做那件事
@@ -1271,6 +1296,19 @@ namespace Mxx1Toolbox
             bool shift = (ModifierKeys & Keys.Shift) == Keys.Shift;
             bool asAdmin = forceAdmin || shift || t.RunAsAdmin;
 
+            // 会改动系统的入口（写注册表的隐私设置 / 常用设置、装或卸右键菜单）再检查一次条款同意状态：
+            // 首次运行的确认门在 OnLoad 里，这里只是"万一"的兜底 —— 用户拒绝就拦下这一个动作，
+            // 不退出程序（口径见 docs/DISCLAIMER.md 5.1：命令行不拦，界面里的写动作要拦）。
+            if (WritesSystem(t) && !Consent.IsAccepted())
+            {
+                if (!Consent.EnsureAccepted(this, _theme, "要改动系统的按钮「" + t.Name + "」"))
+                {
+                    SetStatus(t.Name + " · 没同意《免责声明与服务条款》，已拦下");
+                    Logger.Write(t.Name, "用户没同意条款，动作被拦下");
+                    return;
+                }
+            }
+
             if (_settings.ConfirmDangerous && (t.Danger || t.Confirm))
             {
                 // 专用确认窗口，不是 MessageBox：MessageBox 里只能塞一段不能换行排版、不能滚动的
@@ -1485,13 +1523,109 @@ namespace Mxx1Toolbox
 
         private void ShowUpdateNotice()
         {
-            SetStatus("检查更新 · P2 接入（当前 v" + AboutForm.VersionText + "）");
-            Logger.Write("检查更新", "工具箱自身的更新检查还没接入（P2）");
-            MessageBox.Show(this,
-                "工具箱自身的更新检查将在 P2 接入。" + Environment.NewLine + Environment.NewLine
-                + "当前版本 v" + AboutForm.VersionText + "。" + Environment.NewLine
-                + "「永久删除」的更新检查在「右键增强」页签里（调它自己的 checkupdate）。",
+            if (UpdateCheck.Disabled)
+            {
+                SetStatus("检查更新 · 已关闭（MXX1_NO_UPDATE=1）");
+                Logger.Write("检查更新", "已关闭（MXX1_NO_UPDATE），没有联网");
+                MessageBox.Show(this,
+                    "更新检查已经关掉了（环境变量 MXX1_NO_UPDATE=1）。" + Environment.NewLine + Environment.NewLine
+                    + "当前版本 v" + AboutForm.VersionText + "。" + Environment.NewLine
+                    + "想恢复检查就把那个环境变量删掉或改成 0，再打开工具箱。",
+                    "检查更新", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            // 已经有结论（启动时查过）就直接用它，不再打第二次网络请求。
+            UpdateResult r = UpdateCheck.Last;
+            if (r.State != UpdateState.Unknown && r.State != UpdateState.Checking)
+            {
+                ReportUpdate(r);
+                return;
+            }
+
+            SetStatus("检查更新 · 正在查…");
+            Logger.Write("检查更新", "手动检查一次（只读版本号，不下载）");
+            _btnUpdate.Enabled = false;
+            UpdateCheck.CheckAsync(delegate(UpdateResult result)
+            {
+                try { BeginInvoke((MethodInvoker)delegate { _btnUpdate.Enabled = true; ReportUpdate(result); }); }
+                catch { }
+            });
+        }
+
+        /// <summary>把检查结果讲清楚：有新版本就把下载页打开（不自动下载、不替换文件）。</summary>
+        private void ReportUpdate(UpdateResult r)
+        {
+            SetStatus("检查更新 · " + r.UiText);
+            Logger.Write("检查更新", r.UiText + "（detail=" + r.Detail + "）");
+            if (r.State == UpdateState.Available)
+            {
+                using (ConfirmForm f = new ConfirmForm(
+                    "发现新版本", r.UiText + Environment.NewLine + Environment.NewLine
+                    + "本工具不会自己下载、也不会替换文件 —— 要看这一版就打开发布页，"
+                    + "下载和替换都由你自己决定。",
+                    "打开发布页", _theme))
+                {
+                    if (f.ShowDialog(this) == DialogResult.OK) { OpenUrl(r.Url); }
+                }
+                MarkUpdateAvailable(r.Latest);
+                return;
+            }
+            MessageBox.Show(this, r.UiText + Environment.NewLine + Environment.NewLine
+                + "当前版本 v" + AboutForm.VersionText + "（只读版本号，不下载、不替换任何文件）。",
                 "检查更新", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+
+        /// <summary>底栏那个按钮改成「发现新版本 vX」：一直挂在那儿，用户不用再点一次。
+        /// 宽度按新文字重新量（底栏那一列是 AutoSize，标签列是 100%，所以只会挤标签、不会撑窗口）。</summary>
+        private void MarkUpdateAvailable(string latest)
+        {
+            try
+            {
+                if (_btnUpdate == null || _btnUpdate.IsDisposed) { return; }
+                _btnUpdate.Text = "发现新版本 v" + latest;
+                _btnUpdate.Width = TextRenderer.MeasureText(_btnUpdate.Text, _btnUpdate.Font).Width + 12;
+                _tips.SetToolTip(_btnUpdate, "有新版本 v" + latest + "（当前 v" + AboutForm.VersionText
+                    + "）· 点一下打开发布页；本工具不自动下载、不替换文件");
+            }
+            catch { }
+        }
+
+        /// <summary>界面起来之后查一次（后台线程，失败静默；MXX1_NO_UPDATE=1 时一个字节都不发）。</summary>
+        private void StartUpdateCheck()
+        {
+            if (UpdateCheck.Disabled) { return; }
+            UpdateResult cached = UpdateCheck.Last;
+            if (cached.State != UpdateState.Unknown && cached.State != UpdateState.Checking)
+            {
+                if (cached.State == UpdateState.Available) { MarkUpdateAvailable(cached.Latest); }
+                return;
+            }
+            UpdateCheck.CheckAsync(delegate(UpdateResult r)
+            {
+                try
+                {
+                    BeginInvoke((MethodInvoker)delegate
+                    {
+                        if (r.State == UpdateState.Available) { MarkUpdateAvailable(r.Latest); }
+                        SetStatus("就绪 · " + r.UiText);
+                    });
+                }
+                catch { }
+            });
+        }
+
+        private static void OpenUrl(string url)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(url)) { return; }
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url)
+                {
+                    UseShellExecute = true
+                });
+            }
+            catch { }
         }
 
         /// <summary>About window: version, author, licence and the way into the tool folder.</summary>
@@ -1630,6 +1764,14 @@ namespace Mxx1Toolbox
                 return ToolRegistry.Compare(a, b);
             });
             foreach (string w in _warnings) { Logger.Write("按钮定义", w); }
+            // bin-tools 里的工具会自动长出按钮（v1.5.3）：说清楚是谁加的，用户才知道按钮为什么冒出来。
+            int auto = 0;
+            foreach (ToolItem t in _tools) { if (t.AutoLayer) { auto++; } }
+            if (auto > 0)
+            {
+                Logger.Write("工具目录", AppPaths.PayloadDirName + " 里自动加载了 " + auto + " 个按钮（文件夹里的 "
+                    + ToolFolders.ManifestName + " 或单个 exe）");
+            }
         }
 
         /// <summary>右键菜单里的「置顶 / 取消置顶」：置顶的按钮排在这一页最前面。</summary>

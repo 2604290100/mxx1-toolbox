@@ -125,6 +125,9 @@ namespace Mxx1Toolbox
                     case "export": return ExportCommand(args);
                     case "import": return ImportCommand(args);
                     case "checkupdate": return CheckUpdate();
+                    case "check-update": return CheckUpdate();
+                    case "disclaimer": return Disclaimer();
+                    case "consent": return ConsentCommand(args);
                     case "help":
                     case "h":
                     case "?":
@@ -249,10 +252,18 @@ namespace Mxx1Toolbox
             Console.WriteLine("  Mxx1Toolbox.exe pin <id> / unpin <id>  把按钮置顶 / 取消置顶（排在这一页最前面）");
             Console.WriteLine("  Mxx1Toolbox.exe export <文件>        把「我的工具」导出成一个文件");
             Console.WriteLine("  Mxx1Toolbox.exe import <文件>        把导出文件里的按钮并进来（同 id 覆盖）");
-            Console.WriteLine("  Mxx1Toolbox.exe checkupdate          只读版本号，不下载不替换");
+            Console.WriteLine("  Mxx1Toolbox.exe checkupdate          只读版本号：查 GitHub 上有没有新版本，不下载不替换");
+            Console.WriteLine("  Mxx1Toolbox.exe disclaimer           打印《免责声明与服务条款》全文（窗口显示的就是它）");
+            Console.WriteLine("  Mxx1Toolbox.exe consent [--accept|--reset]  查看 / 记录 / 清除使用条款的同意状态");
             Console.WriteLine("  Mxx1Toolbox.exe help                 这份帮助");
             Console.WriteLine();
             Console.WriteLine("页签 id: " + string.Join(" / ", Tabs.Ids));
+            Console.WriteLine();
+            Console.WriteLine("* 界面首次运行会要求勾选同意《免责声明与服务条款》（同意记录写在 settings.ini，记的是正文指纹，");
+            Console.WriteLine("  条款一改就会重新要求确认）；命令行是非交互场景，不拦，脚本可以先用 consent --accept 记录同意；");
+            Console.WriteLine("* 想彻底关掉联网检查：设置环境变量 MXX1_NO_UPDATE=1（关掉后一个字节都不发）；");
+            Console.WriteLine("* 加按钮：写 tools\\*.json 要重新编译；把工具文件夹放进 bin-tools\\ 则不用 —— 会按");
+            Console.WriteLine("  bin-tools\\<工具>\\tool.json 自动长出按钮（没有 tool.json、只有一个 exe 也会建一个）。");
         }
 
         /// <summary>Prints the hover text of every button (or of one id). It is the very same string
@@ -748,7 +759,10 @@ namespace Mxx1Toolbox
                 else if (st.Shell.Length > 0) { kind = "shell"; target = st.Shell; }
                 else { kind = "url"; target = st.Url; }
                 exists = st.Exists;
-                hint = st.Missing;
+                // 缺组件时要给一句解释：程序文件找不到说 Missing 那句，Win7 上没有
+                // ms-settings: 这个入口说"去控制面板哪儿找"那句（见 SystemTarget.UnavailableMessage）。
+                hint = st.Path.Length > 0 ? st.Missing
+                    : (st.IsSettingsUrl ? st.UnavailableMessage : "这个入口在这台系统上打不开");
             }
             else if (t.Kind == "builtin" && t.Module == Launcher.ModulePermdel)
             {
@@ -788,6 +802,16 @@ namespace Mxx1Toolbox
             Console.WriteLine("kind=" + kind);
             Console.WriteLine("target=" + target);
             Console.WriteLine("exists=" + (exists ? "yes" : "no"));
+            // 图标也报出来：外挂工具（bin-tools）的图标是按文件夹里的 PNG 猜出来的，用户看不到
+            // 按钮上那张图到底取自哪，就只能靠猜（R 组的自动按钮测试也靠这一行）。
+            try
+            {
+                string ip = t.IconPath;
+                // 只报**真在磁盘上**的那一份：内置按钮的图标是编译时内嵌进 exe 的，磁盘上没有文件，
+                // 把那个路径打出来只会让人以为"图标文件丢了"。
+                if (!string.IsNullOrEmpty(ip) && File.Exists(ip)) { Console.WriteLine("icon=" + ip); }
+            }
+            catch { }
             if (!exists && hint.Length > 0) { Console.WriteLine("hint=" + hint); }
             return 0;
         }
@@ -820,12 +844,28 @@ namespace Mxx1Toolbox
             Console.WriteLine("pinned=" + string.Join(",", UserTools.LoadPinned().ToArray()));
             Console.WriteLine("version=" + AboutForm.VersionText);
             Console.WriteLine("buttons=" + tools.Count.ToString(CultureInfo.InvariantCulture));
+            int autoButtons = 0;
+            foreach (ToolItem t in tools) { if (t.AutoLayer) { autoButtons++; } }
+            Console.WriteLine("autoButtons=" + autoButtons.ToString(CultureInfo.InvariantCulture));
+            foreach (ToolItem t in tools)
+            {
+                if (!t.AutoLayer) { continue; }
+                Console.WriteLine("autoButton=" + t.Tab + "\t" + t.Id + "\t" + t.Source);
+            }
             Console.WriteLine("placeholders=" + placeholders.ToString(CultureInfo.InvariantCulture));
             Console.WriteLine("dangerous=" + dangers.ToString(CultureInfo.InvariantCulture));
             Console.WriteLine("systemTargets=" + systemTotal.ToString(CultureInfo.InvariantCulture));
             Console.WriteLine("systemMissing=" + systemMissing.ToString(CultureInfo.InvariantCulture));
+            // 兼容性现场：这台系统是哪一版、有没有 Windows 10/11 那个「设置」应用
+            // （系统工具页里 7 个 ms-settings: 按钮在 Win7 上打不开，会改成一句"去控制面板哪儿找"）。
+            Console.WriteLine("windows=" + Launcher.WindowsName());
+            Console.WriteLine("settingsApp=" + (SystemTarget.HasSettingsApp ? "yes" : "no"));
             Console.WriteLine("theme=" + settings.Theme);
             Console.WriteLine("themeResolved=" + Settings.ResolveTheme(settings.Theme));
+            // 使用条款的同意状态（首次运行的确认门 + consent 命令都读这一份）
+            Console.WriteLine("consent=" + Consent.StateId());
+            Console.WriteLine("consentAgreed=" + (Consent.IsAccepted() ? "yes" : "no"));
+            Console.WriteLine("updateCheck=" + (UpdateCheck.Disabled ? "disabled" : "enabled"));
             Console.WriteLine("clickMode=" + settings.ClickMode);
             Console.WriteLine("admin=" + (Launcher.IsAdmin() ? "yes" : "no"));
             Console.WriteLine("log=" + Logger.CurrentFile());
@@ -845,13 +885,56 @@ namespace Mxx1Toolbox
             return 0;
         }
 
+        /// <summary>只读版本号：查 GitHub 上有没有新版本。**不下载、不替换、失败静默**
+        /// （三条底线见 docs/DISCLAIMER.md 第 4 节）；MXX1_NO_UPDATE=1 时一个字节都不发。</summary>
         private static int CheckUpdate()
         {
-            // Bottom line of the sibling project, kept here as well: read only, never download.
-            Console.WriteLine("update=disabled");
-            Console.WriteLine("reason=工具箱自身的更新检查将在 P2 接入");
+            UpdateResult r = UpdateCheck.Run(UpdateCheck.CurrentVersion);
+            foreach (string line in r.Lines()) { Console.WriteLine(line); }
             Console.WriteLine("version=" + AboutForm.VersionText);
+            Console.WriteLine("ui=" + r.UiText);
+            // 退出码：0 = 查过了（有新版本也是 0），1 = 没查成 / 关掉了（脚本据此判断"这次没结论"）
+            if (r.State == UpdateState.Failed || r.State == UpdateState.Disabled) { return 1; }
             return 0;
+        }
+
+        /// <summary>把条款正文打出来（命令行场景的非交互路径，见 docs/DISCLAIMER.md 5.1）。</summary>
+        private static int Disclaimer()
+        {
+            Console.Write(DisclaimerForm.LoadText());
+            Console.WriteLine();
+            Console.WriteLine("source=" + DisclaimerForm.SourceHint);
+            Console.WriteLine("hash=" + Consent.CurrentHash());
+            Console.WriteLine("consent=" + Consent.StateId());
+            return 0;
+        }
+
+        /// <summary>
+        ///   consent            打印状态（key=value）
+        ///   consent --accept   记录"已同意当前这版条款"（脚本 / 无人值守用）
+        ///   consent --reset    清除记录（下次打开界面会重新要求确认）
+        /// </summary>
+        private static int ConsentCommand(string[] args)
+        {
+            bool accept = false;
+            bool reset = false;
+            for (int i = 1; i < args.Length; i++)
+            {
+                string a = args[i].Trim().ToLowerInvariant();
+                if (a == "--accept" || a == "accept") { accept = true; }
+                else if (a == "--reset" || a == "reset") { reset = true; }
+            }
+            if (reset) { Consent.Reset(); }
+            if (accept) { Consent.Accept(); }
+
+            Console.WriteLine("action=consent");
+            Console.WriteLine("consent=" + Consent.StateId());
+            Console.WriteLine("consentAgreed=" + (Consent.IsAccepted() ? "yes" : "no"));
+            Console.WriteLine("consentHash=" + Consent.StoredHash());
+            Console.WriteLine("currentHash=" + Consent.CurrentHash());
+            Console.WriteLine("agreedAt=" + Consent.AgreedAt());
+            Console.WriteLine("settings=" + AppPaths.SettingsIni);
+            return Consent.IsAccepted() ? 0 : 1;
         }
     }
 }

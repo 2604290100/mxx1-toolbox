@@ -12,8 +12,9 @@
 
 ![系统工具](docs/system-shot.png)
 
-- 单文件 `Mxx1Toolbox.exe`（约 713 KB，含 112 个内嵌图标 + 自己的程序图标），不需要 .NET SDK、不加开机启动
+- 单文件 `Mxx1Toolbox.exe`（约 750 KB，含 112 个内嵌图标 + 免责声明正文 + 自己的程序图标），不需要 .NET SDK、不加开机启动
   （**只有你自己点的隐私/系统按钮才会写注册表，而且写之前会先把原值记下来、可以一键还原**）
+- **支持 Windows 7 SP1 / 10 / 11**（32 位与 64 位都能跑）—— 运行环境与逐项兼容结论见下面「系统要求 / 兼容性」
 - 八个页签：**常用 / 常用设置 / 我的工具 / 系统工具 / 清理优化 / 隐私设置 / 应用管理 / 右键增强**，
   一共 112 个内置按钮 —— **全部是真功能，没有点不动的灰按钮**
 - 按钮全部由 `tools\*.json` 定义 —— **加按钮不用重新编译**
@@ -46,7 +47,15 @@
   两项都只写 `HKCU\Software\Classes`，删掉键就干净；再加上**「永久删除工具」**：打开隔壁的
   [永久删除（不进回收站）](../permanent-delete-menu) 安装器窗口，零改动集成
 - 「系统工具」12 个按钮**都是真功能**：设备管理器 / 声音设置 / 设备和打印机 / 计划任务 / 注册表 / 服务 /
-- **外部工具统一放 `bin-tools\`**：隔壁的 `PermanentDeleteSetup.exe` 丢进去就能用，以后加 exe 工具也是同一套（设置 / 关于里都有「打开工具目录」）
+  （Win7 上没有 Windows 10 那个「设置」应用，走 `ms-settings:` 的 7 个按钮会直接告诉你**该去控制面板哪一项**）
+- **首次打开要勾一次同意**：界面第一次运行会弹《使用条款确认》（正文就是
+  [`docs/DISCLAIMER.md`](docs/DISCLAIMER.md)，编译时内嵌进 exe），勾选「我已阅读并同意」之后
+  「同意并继续」才可点，点「不同意，退出」程序直接关闭、**不写注册表不联网**；
+  记的是**条款正文的指纹** —— 正文改了就要重新确认（命令行不被拦，脚本照旧能用）
+- **更新检查**：关于窗口一行「更新」状态 + 「检查更新」按钮，底栏发现新版本会提示一句；
+  **只读版本号，不下载不替换**，失败只写日志，`MXX1_NO_UPDATE=1` 能彻底关掉
+- **外部工具统一放 `bin-tools\`**：隔壁的 `PermanentDeleteSetup.exe` 丢进去就能用（设置 / 关于里都有「打开工具目录」）；
+  **丢进去的工具文件夹会自动长出一个按钮**（见下面「加一个按钮」第 3 条）
 - **「我的工具」能自己长按钮**：图形化「+ 新建按钮」（`Ctrl+N`）、把 exe / 脚本 / 文件夹拖进窗口、右键用户按钮可编辑 / 删除
 
 ## 快速开始
@@ -55,6 +64,31 @@
 powershell -ExecutionPolicy Bypass -File build.ps1     # 编译，产物 bin\Mxx1Toolbox.exe
 .\bin\Mxx1Toolbox.exe                                   # 不带参数 = 打开界面
 ```
+
+## 系统要求 / 兼容性
+
+支持范围是 **Windows 7 SP1 / Windows 10 / Windows 11**（32 位与 64 位都能跑）。
+
+| 系统 | 先决条件 | 说明 |
+| --- | --- | --- |
+| **Windows 10 / 11** | 无 | 系统自带 .NET Framework 4.8，拷过去双击就能跑 |
+| **Windows 7** | **SP1 + 自己装一遍 .NET Framework 4.x** | 本程序用系统自带的 `csc`（v4.0.30319）编译 → 它是 .NET 4.x 程序；Win7 只自带 3.5，**没装 4.x 时双击 exe 会看到系统那句"需要 .NET Framework"的提示**（不是程序崩了） |
+
+已经为这三版做过的事：
+
+- **清单里写齐了 `supportedOS`**（Win7 / 8 / 8.1 / 10）—— 漏掉老系统那条时，老系统会按"兼容模式"
+  对待程序，而且程序拿到的版本号会是假的（Win8.1 以上一律报 6.2）。`status` 里的 `windows=`
+  报的就是真实版本（`Windows 7` / `Windows 10` / `Windows 11`）。
+- **Win11 的右键菜单是折叠的**：「右键增强」装上的项要先点**「显示更多选项」**才看得到
+  （或者用「常用设置」里的「经典右键菜单」换回 Win10 那套）。
+- **Win7 上没有 `ms-settings:` 这个入口**（那是 Win10 起的「设置」应用）：系统工具页那 7 个按钮
+  会直接说"去控制面板的哪一项"，不会点了没反应；`status` 里能用 `settingsApp=yes|no` 查到。
+- **深浅主题**：深色标题栏需要 Win10 1809 以上；Win7 上标题栏保持系统的浅色，界面其余部分照常。
+- **「解除文件占用」的「强制解锁」在 32 位系统上也正确**：句柄表条目的步长/偏移随指针宽度变
+  （x64 = 40 字节 / x86 = 28 字节），现在按运行时的 `IntPtr.Size` 现算。
+- **不保证**：Windows 8 / 8.1、Windows Server、ARM64 仿真、XP / Vista —— 没测过就不写进支持范围。
+- 测试是**按"这台机器是哪一版"分叉断言**的（`A03b` / `A03c` / `A03d` / `D01`），
+  同一套测试拿到 Win7 上跑就应该全绿。逐项结论见 [`docs/DESIGN.md`](docs/DESIGN.md) §16。
 
 ## 界面怎么用
 
@@ -88,10 +122,17 @@ powershell -ExecutionPolicy Bypass -File build.ps1     # 编译，产物 bin\Mxx
 
 ## 加一个按钮
 
-1. 编辑 `%LOCALAPPDATA%\mxx1-toolbox\tools.json`（用户层，升级不冲掉；同 `id` 覆盖内置），
+三种办法，按省事程度排：
+
+1. **把工具文件夹丢进 `bin-tools\`** —— 按钮**自己长出来**（`auto.<文件夹名>`，落在「我的工具」页签
+   「bin-tools 里的工具（自动加载）」那一段）：文件夹里只有一个 exe 就用它；想指定名字 / 图标 / 参数，
+   在文件夹里放一个 `tool.json`。按 `F5` 或重启工具箱就生效，**不用改任何配置、不用重新编译**。
+   这套自动按钮**只读**（右键里不能编辑 / 删除），也**绝不覆盖**你自己写的同 id 按钮。
+2. 编辑 `%LOCALAPPDATA%\mxx1-toolbox\tools.json`（用户层，升级不冲掉；同 `id` 覆盖内置），
    或者往仓库的 `tools\*.json` 里加（内置按钮，要重新编译才会内嵌进 exe）；
-2. 编码必须是 **UTF-8 无 BOM**；
-3. 五种按钮类型：
+3. 界面里点「+ 新建按钮」/ 把 exe 拖进窗口（图形化，写的就是第 2 条那个文件）。
+
+编码必须是 **UTF-8 无 BOM**。五种按钮类型：
 
 ```json
 {
@@ -118,24 +159,36 @@ powershell -ExecutionPolicy Bypass -File build.ps1     # 编译，产物 bin\Mxx
 小标题写在**这一段第一个按钮**的 `segmentName` 里）；`order` 是段内顺序；
 `danger: true` 让文字变深红并强制二次确认。
 
+`bin-tools\<工具>\tool.json` 用的是**同一套字段**（`id` 默认 `auto.<文件夹名>`，`tab` 默认 `mine`，
+`segment` 默认 2），所以把上面那段 JSON 放进工具文件夹里就能用 —— 详细规则见
+[`docs/DESIGN.md`](docs/DESIGN.md) §13.7。
+
 ## 命令行
 
 ```powershell
 bin\Mxx1Toolbox.exe list [--tab system]      # 列出按钮（tab 分隔：id / 页签 / 名称 / 类型）
 bin\Mxx1Toolbox.exe run permdel.gui          # 执行一个按钮（和界面同一条路径）
-bin\Mxx1Toolbox.exe run devmgmt --dry        # 只解析按钮指向哪里，不真的启动
-bin\Mxx1Toolbox.exe status                   # key=value 状态（版本 / 按钮数 / 主题 / 日志路径 / 隔壁 exe 路径）
-bin\Mxx1Toolbox.exe checkupdate              # 只读版本号，不下载不替换
+bin\Mxx1Toolbox.exe run devmgmt --dry        # 只解析按钮指向哪里，不真的启动（看 kind/target/exists/hint/icon）
+bin\Mxx1Toolbox.exe status                   # key=value 状态（版本 / 按钮数 / 自动按钮 / 系统版本 / 条款状态 / 主题 / 日志路径…）
+bin\Mxx1Toolbox.exe checkupdate              # 只读版本号，不下载不替换（0 = 查过了，1 = 关掉了 / 查不成）
+bin\Mxx1Toolbox.exe disclaimer               # 打印免责声明与服务条款正文（和窗口显示的一致）
+bin\Mxx1Toolbox.exe consent [--accept|--reset]  # 看 / 记下 / 清掉首次运行的条款确认状态
 bin\Mxx1Toolbox.exe help
 ```
+
+`status` 里几个和排障有关的键：`windows=`（真实系统版本）、`settingsApp=yes|no`
+（有没有 Win10 那个「设置」应用）、`autoButtons=N` 与 `autoButton=<页签>\t<id>\t<来源>`
+（`bin-tools\` 里自动长出来的按钮）、`systemMissing=N`、`consent=` / `consentAgreed=`、
+`updateCheck=enabled|disabled`。
+**命令行从不查条款同意状态**（只在日志里留痕），脚本可以放心调；想免打扰地记一次同意用 `consent --accept`。
 
 ## 测试
 
 ```powershell
 powershell -File tools\Test-Encoding.ps1     # 编码红线体检（BOM / 纯 ASCII / 硬编码本机路径）
 powershell -ExecutionPolicy Bypass -File tests\Test-All.ps1   # 全部（无桌面时加 -SkipGui）
-powershell -ExecutionPolicy Bypass -File tests\Test-Cli.ps1   # 命令行回归 142 项
-powershell -ExecutionPolicy Bypass -File tests\Test-Gui.ps1   # 界面回归 115 项（要交互式桌面，无桌面返回 3 = 跳过）
+powershell -ExecutionPolicy Bypass -File tests\Test-Cli.ps1   # 命令行回归 186 项（本机 185 通过 + 1 跳过）
+powershell -ExecutionPolicy Bypass -File tests\Test-Gui.ps1   # 界面回归 140 项（要交互式桌面，无桌面返回 3 = 跳过）
 powershell -File tools\Make-Screenshots.ps1  # 重新拍 docs 里的截图（浅色 / 深色 / 系统工具页签）
 powershell -File tools\Make-Icons.ps1        # 重新生成 16x16 PNG 图标（先 build 再跑，改完还要再 build）
 powershell -File tools\Make-AppIcon.ps1      # 重新生成 assets\app.ico（程序自己的图标，改完还要再 build）
@@ -151,19 +204,26 @@ powershell -File tools\Make-AppIcon.ps1      # 重新生成 assets\app.ico（程
 用 `PrintWindow` 抓像素判定（底栏文字 10 行不能少；真按钮图标中心与按钮中心之差 ≤ 1px；
 真按钮最暗墨迹 ≤ 80、灰按钮 ≥ 60、两者至少差 30）。
 
+命令行回归里的 `R` 组专测「工具目录自动长按钮」（`tool.json` / 光一个 exe / 多个 exe 说不清 /
+id 撞车 / 坏 JSON / 图标 / 用户层覆盖 / 收尾清理），`S` 组专测条款确认门与更新检查
+（**用本机假接口，不碰外网**），界面回归的 `I` 组把条款确认窗口真的开起来点一遍。
+涉及系统版本的几项（`A03b` / `A03c` / `A03d` / `D01`）**按这台机器是哪一版分叉断言**。
+
 ## 文件位置
 
 | 位置 | 内容 |
 | --- | --- |
-| `%LOCALAPPDATA%\mxx1-toolbox\settings.ini` | 主题 / 启动方式 / 日志保留 / 二次确认 / 永久删除安装器路径 / 窗口位置与大小 / 上次停留的页签 |
+| `%LOCALAPPDATA%\mxx1-toolbox\settings.ini` | 主题 / 启动方式 / 日志保留 / 二次确认 / 永久删除安装器路径 / 窗口位置与大小 / 上次停留的页签 / **条款同意的指纹与时间**（`AgreedDisclaimer` / `AgreedAt`） |
 | `%LOCALAPPDATA%\mxx1-toolbox\tools.json` | 你自己加的按钮（图形化新建 / 拖拽 / 编辑 / 删除写的都是它，写入前备份 .bak） |
 | `%LOCALAPPDATA%\mxx1-toolbox\pinned.txt` `recent.txt` | 「常用」页签的两份数据：置顶的按钮 / 最近用过的按钮 |
 | `%LOCALAPPDATA%\mxx1-toolbox\sysreg-original.tsv` `privacy-original.tsv` | **改动前的原值**（「还原设置改动」/「隐私一键还原」按它写回去；删掉文件就等于放弃还原） |
-| `工具箱目录\bin-tools\` | **外部工具**都放这里（丢进去就能被按钮找到）；第一次打开界面时会自动建好并放一份 `说明.txt`（空着也不影响用） |
+| `工具箱目录\bin-tools\` | **外部工具**都放这里（丢进去就能被按钮找到，**每个工具文件夹自动长一个按钮**，想指定名字 / 图标 / 参数就在文件夹里放 `tool.json`）；第一次打开界面时会自动建好并放一份 `说明.txt`（空着也不影响用） |
 | `%LOCALAPPDATA%\mxx1-toolbox\logs\toolbox-YYYY-MM-DD.log` | 运行日志 |
 
 ## 作者与许可
 
 作者 **mxx1** · [mxx1.cn](https://mxx1.cn)　许可证 **GPL-3.0-or-later**（见 [`LICENSE`](LICENSE)）。
+仓库：<https://github.com/2604290100/mxx1-toolbox>
 按钮配置格式与界面规格见 [`docs/DESIGN.md`](docs/DESIGN.md)，改动记录见 [`CHANGELOG.md`](CHANGELOG.md)。
+免责声明与服务条款正本是 [`docs/DISCLAIMER.md`](docs/DISCLAIMER.md)（编译时内嵌进 exe，窗口显示的就是它）。
 给 AI 助手看的开发约定在 [`skill/mxx1-toolbox/SKILL.md`](skill/mxx1-toolbox/SKILL.md)。

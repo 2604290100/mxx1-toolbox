@@ -31,6 +31,13 @@ $script:SyncHad = Test-Path Env:MXX1_NO_RIGHTMENU_SYNC
 $script:SyncOld = $env:MXX1_NO_RIGHTMENU_SYNC
 $env:MXX1_NO_RIGHTMENU_SYNC = '1'
 
+# 更新检查同理：界面一起来就会查一次 GitHub（只读版本号）。测试不该谈外网，也不该因为
+# "仓库里真有新版本"把底栏按钮文字改掉（D01 盯的就是底栏那 5 个按钮的文字）。
+# I 组要验那条链路时，会用 Start-Gui -Env 把 MXX1_NO_UPDATE 置空、再把 URL 指到本机假接口。
+$script:UpdateHad = Test-Path Env:MXX1_NO_UPDATE
+$script:UpdateOld = $env:MXX1_NO_UPDATE
+$env:MXX1_NO_UPDATE = '1'
+
 # 量文字宽度要用同一套渲染器，才能判断"文字装不装得下"
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
@@ -512,9 +519,12 @@ function Get-ToolNames {
 }
 
 function Start-Gui {
+    param([hashtable]$Env = $null)
     $si = New-Object System.Diagnostics.ProcessStartInfo
     $si.FileName = $Exe
     $si.UseShellExecute = $false
+    # 更新检查那类"要问网络"的检查靠环境变量指到本机假接口（不碰外网，见 I 组）
+    if ($Env) { foreach ($k in $Env.Keys) { $si.EnvironmentVariables[$k] = [string]$Env[$k] } }
     $p = New-Object System.Diagnostics.Process
     $p.StartInfo = $si
     [void]$p.Start()
@@ -526,6 +536,25 @@ function Start-Gui {
         if ($p.MainWindowHandle -ne [IntPtr]::Zero) { break }
     }
     return $p
+}
+
+# 找一个本进程里的顶层窗口（按标题前缀）。I 组用它找《使用条款确认》。
+function Find-TopWindow {
+    param([int]$ProcessId, [string]$TextPrefix)
+    foreach ($w in (Get-TopWindows -ProcessId $ProcessId)) {
+        if ($w.Visible -and $w.Text.StartsWith($TextPrefix)) { return $w }
+    }
+    return $null
+}
+
+# 等一个顶层窗口消失（点完「同意并继续」之后用）。
+function Wait-WindowGone {
+    param([IntPtr]$Hwnd, [int]$Tries = 40)
+    for ($i = 0; $i -lt $Tries; $i++) {
+        if (-not [TBGui]::Alive($Hwnd)) { return $true }
+        Start-Sleep -Milliseconds 150
+    }
+    return (-not [TBGui]::Alive($Hwnd))
 }
 
 function Wait-Buttons {
@@ -661,10 +690,26 @@ if (Test-Path -LiteralPath $settingsBackup) {
 # 这一套按「常用设置」写的检查会全部对不上（页面高度也会跟着内容变）。
 # WindowAutoSize=1 是为了让 A07/A08「窗口高度跟着内容走」可判定。
 # 跑完在最后按原样写回去（见文件末尾"现场复原"）。
+#
+# ⚠ 使用条款：这一套必须**处于"已同意"状态**，否则主界面一起来就弹《使用条款确认》，
+# 主窗口被模态窗口压着 → 后面每一组"点主窗口"的检查全部连带失败。而上面这几处写 settings.ini
+# 会把 AgreedDisclaimer 抹掉，所以每份测试设置后面都要把同意行带上（$script:ConsentIni）。
+# 用户原来的状态在收尾时按原样写回；确认门本身由 I 组专门测。
+$consentBefore = 'unknown'
+$consentHash = ''
+$consentProbe = Invoke-Exe 'consent'
+if ($consentProbe -match '(?m)^consent=(\w+)') { $consentBefore = $Matches[1] }
+if ($consentProbe -match '(?m)^currentHash=([0-9a-f]{16})') { $consentHash = $Matches[1] }
+$script:ConsentIni = ''
+if ($consentHash.Length -eq 16) {
+    $script:ConsentIni = 'AgreedDisclaimer=' + $consentHash + "`r`nAgreedAt=" + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss') + "`r`n"
+}
+Write-Host (' 测试前的条款状态: ' + $consentBefore)
+
 try {
     [void][System.IO.Directory]::CreateDirectory((Split-Path -Parent $SettingsIni))
     [System.IO.File]::WriteAllText($SettingsIni,
-        "Theme=light`r`nClickMode=single`r`nConfirmDangerous=1`r`nHideConsole=1`r`nShowLogPanel=0`r`nLogKeepDays=30`r`nPermanentDeleteExe=`r`nLastTab=common`r`nWindowAutoSize=1`r`nWindowX=" + $script:TestWinX + "`r`nWindowY=" + $script:TestWinY + "`r`n",
+        "Theme=light`r`nClickMode=single`r`nConfirmDangerous=1`r`nHideConsole=1`r`nShowLogPanel=0`r`nLogKeepDays=30`r`nPermanentDeleteExe=`r`nLastTab=common`r`nWindowAutoSize=1`r`nWindowX=" + $script:TestWinX + "`r`nWindowY=" + $script:TestWinY + "`r`n" + $script:ConsentIni,
         (New-Object System.Text.UTF8Encoding($false)))
 } catch { }
 
@@ -1500,7 +1545,7 @@ try {
     try { [void][TBGui]::CloseWindow($main) } catch { }
     Start-Sleep -Milliseconds 900
     [void][System.IO.Directory]::CreateDirectory((Split-Path -Parent $SettingsIni))
-    [System.IO.File]::WriteAllText($SettingsIni, "Theme=dark`r`nClickMode=single`r`nConfirmDangerous=1`r`nShowLogPanel=0`r`nLogKeepDays=30`r`nPermanentDeleteExe=`r`nLastTab=common`r`nWindowAutoSize=1`r`nWindowX=" + $script:TestWinX + "`r`nWindowY=" + $script:TestWinY + "`r`n", (New-Object System.Text.UTF8Encoding($false)))
+    [System.IO.File]::WriteAllText($SettingsIni, "Theme=dark`r`nClickMode=single`r`nConfirmDangerous=1`r`nShowLogPanel=0`r`nLogKeepDays=30`r`nPermanentDeleteExe=`r`nLastTab=common`r`nWindowAutoSize=1`r`nWindowX=" + $script:TestWinX + "`r`nWindowY=" + $script:TestWinY + "`r`n" + $script:ConsentIni, (New-Object System.Text.UTF8Encoding($false)))
 } catch { }
 $darkStatus = Invoke-Exe 'status'
 Check 'G01 设置成深色后 themeResolved=dark' ($darkStatus -match '(?m)^themeResolved=dark') (($darkStatus -split "`r?`n" | Where-Object { $_ -match '^themeResolved=' }) -join '')
@@ -1532,7 +1577,7 @@ Write-Host 'H 组 · 窗口尺寸默认固定（宽度/高度都不跟着内容�
 
 try {
     [void][System.IO.Directory]::CreateDirectory((Split-Path -Parent $SettingsIni))
-    [System.IO.File]::WriteAllText($SettingsIni, "Theme=light`r`nClickMode=single`r`nConfirmDangerous=1`r`nHideConsole=1`r`nShowLogPanel=0`r`nLastTab=common`r`nWindowX=" + $script:TestWinX + "`r`nWindowY=" + $script:TestWinY + "`r`n", (New-Object System.Text.UTF8Encoding($false)))
+    [System.IO.File]::WriteAllText($SettingsIni, "Theme=light`r`nClickMode=single`r`nConfirmDangerous=1`r`nHideConsole=1`r`nShowLogPanel=0`r`nLastTab=common`r`nWindowX=" + $script:TestWinX + "`r`nWindowY=" + $script:TestWinY + "`r`n" + $script:ConsentIni, (New-Object System.Text.UTF8Encoding($false)))
 } catch { }
 
 $procFixed = $null
@@ -1990,12 +2035,255 @@ try {
     if (Test-Path -LiteralPath $unlockDir) { Remove-Item -LiteralPath $unlockDir -Recurse -Force -ErrorAction SilentlyContinue }
 }
 
+# ================================================================ I 组：使用条款确认门 / 更新检查 / 免责窗口
+Write-Host ''
+Write-Host 'I 组：首次运行的使用条款确认门 · 更新检查 · 免责声明窗口'
+# 用户 2026-10-04：「缺少完整的检测更新功能/免责/服务协议，你看下 permanent-delete-menu 是怎么做的？」
+# 命令行那一半（正文字数 / 指纹 / consent 状态机 / checkupdate 三条路径）由 Test-Cli 的 S 组盯；
+# 这一组盯界面这一半：确认门（默认不勾选、不同意就退出、同意后写指纹）、底栏更新提示、条款窗口。
+# 注意 Start-Gui 拉起来的是**新进程**，环境变量继承本脚本（MXX1_NO_UPDATE=1 已在开头设好）。
+
+$null = Invoke-Exe 'consent --reset'
+$cI = Invoke-Exe 'consent'
+Check 'I01 --reset 之后条款状态是"需要确认"' ($cI -match '(?m)^consent=required') ''
+
+$procI = Start-Gui
+$winI = $null
+for ($i = 0; $i -lt 60; $i++) {
+    Start-Sleep -Milliseconds 200
+    $winI = Find-TopWindow -ProcessId $procI.Id -TextPrefix '使用条款确认'
+    if ($winI) { break }
+}
+Check 'I02 没同意过时打开界面会弹《使用条款确认》' ($null -ne $winI) $(if ($winI) { $winI.Text } else { '没出现' })
+
+if ($winI) {
+    $ic = @(Get-ChildControls -RootHandle $winI.H)
+    $agree = @($ic | Where-Object { $_.Text -eq '同意并继续' })
+    $decline = @($ic | Where-Object { $_.Text -eq '不同意，退出' })
+    $chk = @($ic | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -like '我已阅读并同意*' })
+    Check 'I03 两个出口都在（同意并继续 / 不同意，退出）' (($agree.Count -eq 1) -and ($decline.Count -eq 1)) `
+        (($ic | Where-Object { $_.Class -like '*BUTTON*' } | ForEach-Object { $_.Text }) -join ' | ')
+    Check 'I04 没勾选时「同意并继续」是禁用的（不能靠回车蒙过去）' `
+        (($agree.Count -eq 1) -and (-not [TBGui]::Enabled($agree[0].H))) ''
+    Check 'I05 勾选框是没打勾的（默认不同意）' ($chk.Count -eq 1) ('勾选框=' + $chk.Count)
+    $bodyBox = @($ic | Where-Object { $_.Class -like '*EDIT*' -and $_.Height -gt 100 })
+    $bodyLen = 0
+    if ($bodyBox.Count -ge 1) { $bodyLen = $bodyBox[0].Text.Length }
+    Check 'I06 窗口里真显示了条款正文（几 KB 的中文，不是一句"见文档"）' ($bodyLen -gt 2000) ('字数=' + $bodyLen)
+
+    if ($chk.Count -eq 1) { [void][TBGui]::Click($chk[0].H); Start-Sleep -Milliseconds 400 }
+    $agree2 = @(Get-ChildControls -RootHandle $winI.H | Where-Object { $_.Text -eq '同意并继续' })
+    Check 'I07 勾上之后「同意并继续」才可以点' (($agree2.Count -eq 1) -and [TBGui]::Enabled($agree2[0].H)) ''
+    if ($agree2.Count -eq 1 -and [TBGui]::Enabled($agree2[0].H)) {
+        [void][TBGui]::Click($agree2[0].H)
+        Check 'I08 点「同意并继续」之后确认窗口关掉' (Wait-WindowGone -Hwnd $winI.H) ''
+        $agreed = Invoke-Exe 'consent'
+        Check 'I09 同意状态变成 agreed，而且记的是当前正文指纹（不是一句 true）' `
+            (($agreed -match '(?m)^consent=agreed') -and ($agreed -match ('(?m)^consentHash=' + $consentHash))) `
+            (($agreed -split "`r?`n" | Where-Object { $_ -like 'consent*' }) -join ' ')
+        $mainOk = $false
+        for ($i = 0; $i -lt 40; $i++) {
+            Start-Sleep -Milliseconds 200
+            $procI.Refresh()
+            if ($procI.HasExited) { break }
+            if ($procI.MainWindowHandle -ne [IntPtr]::Zero -and [TBGui]::Enabled($procI.MainWindowHandle)) { $mainOk = $true; break }
+        }
+        Check 'I10 同意之后主界面能用了（没有被模态窗口压着）' $mainOk ''
+    } else {
+        Check 'I08 点「同意并继续」之后确认窗口关掉' $false 'skipped（按钮没能点上）'
+        Check 'I09 同意状态变成 agreed，而且记的是当前正文指纹（不是一句 true）' $false 'skipped'
+        Check 'I10 同意之后主界面能用了（没有被模态窗口压着）' $false 'skipped'
+    }
+    try { if (-not $procI.HasExited) { [void][TBGui]::CloseWindow($procI.MainWindowHandle) } } catch { }
+    Start-Sleep -Milliseconds 800
+} else {
+    foreach ($nm in @('I03 两个出口都在（同意并继续 / 不同意，退出）', 'I04 没勾选时「同意并继续」是禁用的（不能靠回车蒙过去）',
+                      'I05 勾选框是没打勾的（默认不同意）', 'I06 窗口里真显示了条款正文（几 KB 的中文，不是一句"见文档"）',
+                      'I07 勾上之后「同意并继续」才可以点', 'I08 点「同意并继续」之后确认窗口关掉',
+                      'I09 同意状态变成 agreed，而且记的是当前正文指纹（不是一句 true）',
+                      'I10 同意之后主界面能用了（没有被模态窗口压着）')) {
+        Check $nm $false 'skipped（确认窗口没出现）'
+    }
+}
+
+# ---- 不同意 = 直接退出程序（不是"取消后继续挂在后台"）
+$null = Invoke-Exe 'consent --reset'
+$procD = Start-Gui
+$winD = $null
+for ($i = 0; $i -lt 60; $i++) {
+    Start-Sleep -Milliseconds 200
+    $winD = Find-TopWindow -ProcessId $procD.Id -TextPrefix '使用条款确认'
+    if ($winD) { break }
+}
+Check 'I11 重置之后又会重新要求确认（改过条款同理）' ($null -ne $winD) $(if ($winD) { $winD.Text } else { '没出现' })
+if ($winD) {
+    $dec = @(Get-ChildControls -RootHandle $winD.H | Where-Object { $_.Text -eq '不同意，退出' })
+    if ($dec.Count -eq 1) { [void][TBGui]::Click($dec[0].H) }
+    $quit = $false
+    for ($i = 0; $i -lt 50; $i++) {
+        Start-Sleep -Milliseconds 200
+        $procD.Refresh()
+        if ($procD.HasExited) { $quit = $true; break }
+    }
+    Check 'I12 点「不同意，退出」之后程序直接退出（不挂在后台、也不继续跑）' $quit ''
+    $stillReq = Invoke-Exe 'consent'
+    Check 'I13 拒绝之后状态仍是"需要确认"' ($stillReq -match '(?m)^consent=required') (($stillReq -split "`r?`n" | Where-Object { $_ -like 'consent*' }) -join ' ')
+} else {
+    Check 'I12 点「不同意，退出」之后程序直接退出（不挂在后台、也不继续跑）' $false 'skipped'
+    Check 'I13 拒绝之后状态仍是"需要确认"' $false 'skipped'
+}
+try { if ($procD -and -not $procD.HasExited) { $procD.Kill() } } catch { }
+
+# ---- 更新检查：本机假接口返回 v9.9.9（不碰外网），底栏那个按钮应该自己变成「发现新版本 v9.9.9」
+$null = Invoke-Exe 'consent --accept'
+$tcpU = New-Object System.Net.Sockets.TcpListener([System.Net.IPAddress]::Loopback, 0)
+$tcpU.Start()
+$portU = $tcpU.LocalEndpoint.Port
+$tcpU.Stop()
+$prefixU = 'http://127.0.0.1:' + $portU + '/'
+$listenerU = $null
+$procU = $null
+try {
+    $listenerU = New-Object System.Net.HttpListener
+    $listenerU.Prefixes.Add($prefixU)
+    $listenerU.Start()
+    $ctxU = $listenerU.GetContextAsync()
+    $bodyU = '{"tag_name":"v9.9.9","html_url":"' + $prefixU + 'fake-release"}'
+    $bytesU = [System.Text.Encoding]::UTF8.GetBytes($bodyU)
+    # 空串 = 把开头设的 MXX1_NO_UPDATE=1 顶掉（空值不算开启），让更新检查真的跑起来
+    $procU = Start-Gui -Env @{
+        MXX1_NO_UPDATE          = ''
+        MXX1_UPDATE_URL         = ($prefixU + 'releases/latest')
+        MXX1_UPDATE_TAGS_URL    = ($prefixU + 'tags')
+    }
+    $mainU = $procU.MainWindowHandle
+    Check 'I14 假接口那一轮界面能起来' (($mainU -ne [IntPtr]::Zero) -and (-not $procU.HasExited)) ('handle=' + $mainU)
+
+    $btnU = @()
+    for ($i = 0; $i -lt 80; $i++) {
+        Start-Sleep -Milliseconds 200
+        if ($ctxU.IsCompleted) {
+            try {
+                $cu = $ctxU.Result
+                $cu.Response.StatusCode = 200
+                $cu.Response.ContentType = 'application/json'
+                $cu.Response.ContentLength64 = $bytesU.Length
+                $cu.Response.OutputStream.Write($bytesU, 0, $bytesU.Length)
+                $cu.Response.OutputStream.Close()
+            } catch { }
+            $ctxU = $listenerU.GetContextAsync()
+        }
+        if ($mainU -eq [IntPtr]::Zero) { break }
+        $btnU = @(Get-ChildControls -RootHandle $mainU | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -like '发现新版本*' })
+        if ($btnU.Count -ge 1) { break }
+    }
+    Check 'I15 有新版时底栏按钮自己变成「发现新版本 v9.9.9」' ($btnU.Count -eq 1) `
+        (($btnU | ForEach-Object { $_.Text }) -join ' | ')
+    if ($btnU.Count -eq 1) {
+        Check 'I16 按钮上写清了新版本号' ($btnU[0].Text -match 'v9\.9\.9') $btnU[0].Text
+        [void][TBGui]::Click($btnU[0].H)
+        $dlgU = @()
+        for ($i = 0; $i -lt 40; $i++) {
+            Start-Sleep -Milliseconds 200
+            $dlgU = @((Get-TopWindows -ProcessId $procU.Id) | Where-Object { $_.H -ne $mainU -and $_.Visible -and $_.Text -eq '请确认' })
+            if ($dlgU.Count -ge 1) { break }
+        }
+        Check 'I17 点它弹出自家确认框（不是 MessageBox 甩一段字）' ($dlgU.Count -eq 1) `
+            ((@((Get-TopWindows -ProcessId $procU.Id) | Where-Object { $_.Visible } | ForEach-Object { $_.Text }) -join ' / '))
+        if ($dlgU.Count -ge 1) {
+            $ut = (@(Get-ChildControls -RootHandle $dlgU[0].H | ForEach-Object { $_.Text }) -join ' ')
+            Check 'I18 确认框里说明了"不自动下载、不替换文件"' (($ut -match '不会自己下载') -and ($ut -match '替换')) ''
+            Check 'I19 确认框的动作按钮是「打开发布页」' ($ut -match '打开发布页') ''
+            [void][TBGui]::CloseWindow($dlgU[0].H)      # 取消：绝不真的去开浏览器
+            Start-Sleep -Milliseconds 500
+        } else {
+            Check 'I18 确认框里说明了"不自动下载、不替换文件"' $false 'skipped'
+            Check 'I19 确认框的动作按钮是「打开发布页」' $false 'skipped'
+        }
+    } else {
+        foreach ($nm in @('I16 按钮上写清了新版本号', 'I17 点它弹出自家确认框（不是 MessageBox 甩一段字）',
+                          'I18 确认框里说明了"不自动下载、不替换文件"', 'I19 确认框的动作按钮是「打开发布页」')) {
+            Check $nm $false 'skipped（按钮没变成"发现新版本"）'
+        }
+    }
+
+    # ---- 免责声明窗口：从「关于」进去；关于窗口里那行更新状态必须是**落定的结论**
+    $aboutBtn = @(Get-ChildControls -RootHandle $mainU | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '关于' })
+    Check 'I20 底栏还有「关于」按钮' ($aboutBtn.Count -eq 1) ''
+    if ($aboutBtn.Count -eq 1) {
+        [void][TBGui]::Click($aboutBtn[0].H)
+        $aboutWin = $null
+        for ($i = 0; $i -lt 40; $i++) {
+            Start-Sleep -Milliseconds 200
+            $aboutWin = Find-TopWindow -ProcessId $procU.Id -TextPrefix '关于'
+            if ($aboutWin) { break }
+        }
+        Check 'I21 「关于」窗口打开了' ($null -ne $aboutWin) ''
+        if ($aboutWin) {
+            $aboutTexts = @(Get-ChildControls -RootHandle $aboutWin.H | ForEach-Object { $_.Text })
+            # 老实现遇到"已经有一次检查在跑"就把回调丢掉 → 这一行永远停在「正在检查…」（隔壁踩过）
+            Check 'I22 关于窗口的更新状态行落到了真实结论（不是永远停在"正在检查…"）' `
+                (((@($aboutTexts | Where-Object { $_ -match '发现新版本 v9\.9\.9' }).Count) -ge 1) -and `
+                 ((@($aboutTexts | Where-Object { $_ -eq '正在检查…' }).Count) -eq 0)) `
+                (($aboutTexts | Where-Object { $_ -match '更新|新版本|检查' }) -join ' | ')
+            $termsBtn = @(Get-ChildControls -RootHandle $aboutWin.H | Where-Object { $_.Text -eq '免责声明' })
+            Check 'I23 关于窗口里有「免责声明」入口' ($termsBtn.Count -eq 1) (($aboutTexts | Where-Object { $_.Length -gt 0 -and $_.Length -lt 12 }) -join ' / ')
+            if ($termsBtn.Count -eq 1) {
+                [void][TBGui]::Click($termsBtn[0].H)
+                $termsWin = $null
+                for ($i = 0; $i -lt 40; $i++) {
+                    Start-Sleep -Milliseconds 200
+                    $termsWin = Find-TopWindow -ProcessId $procU.Id -TextPrefix '免责声明'
+                    if ($termsWin) { break }
+                }
+                Check 'I24 免责声明窗口打开了' ($null -ne $termsWin) ''
+                if ($termsWin) {
+                    $tb = @(Get-ChildControls -RootHandle $termsWin.H | Where-Object { $_.Class -like '*EDIT*' })
+                    $tlen = 0
+                    if ($tb.Count -ge 1) { $tlen = $tb[0].Text.Length }
+                    # 和命令行 `disclaimer` 打出来的是同一份（窗口与文档永远一致）
+                    Check 'I25 窗口里的正文和命令行那份一样（同一个正本，几 KB）' ($tlen -gt 2000) ('字数=' + $tlen)
+                    [void][TBGui]::CloseWindow($termsWin.H)
+                    Start-Sleep -Milliseconds 400
+                } else {
+                    Check 'I25 窗口里的正文和命令行那份一样（同一个正本，几 KB）' $false 'skipped'
+                }
+            } else {
+                Check 'I24 免责声明窗口打开了' $false 'skipped（没有入口按钮）'
+                Check 'I25 窗口里的正文和命令行那份一样（同一个正本，几 KB）' $false 'skipped'
+            }
+            [void][TBGui]::CloseWindow($aboutWin.H)
+            Start-Sleep -Milliseconds 400
+        } else {
+            foreach ($nm in @('I22 关于窗口的更新状态行落到了真实结论（不是永远停在"正在检查…"）',
+                              'I23 关于窗口里有「免责声明」入口', 'I24 免责声明窗口打开了',
+                              'I25 窗口里的正文和命令行那份一样（同一个正本，几 KB）')) {
+                Check $nm $false 'skipped（关于窗口没起来）'
+            }
+        }
+    } else {
+        foreach ($nm in @('I20 底栏还有「关于」按钮', 'I21 「关于」窗口打开了',
+                          'I22 关于窗口的更新状态行落到了真实结论（不是永远停在"正在检查…"）',
+                          'I23 关于窗口里有「免责声明」入口', 'I24 免责声明窗口打开了',
+                          'I25 窗口里的正文和命令行那份一样（同一个正本，几 KB）')) {
+            Check $nm $false 'skipped'
+        }
+    }
+    try { if ($mainU -ne [IntPtr]::Zero) { [void][TBGui]::CloseWindow($mainU) } } catch { }
+    Start-Sleep -Milliseconds 900
+} finally {
+    if ($listenerU -ne $null) { try { $listenerU.Stop(); $listenerU.Close() } catch { } }
+    if ($procU -and -not $procU.HasExited) { try { $procU.Kill() } catch { } }
+}
+
 # ---------------------------------------------------------------- 现场复原
 Restore-UserLayer
 
-# 把 MXX1_NO_RIGHTMENU_SYNC 恢复成测试之前的样子（别给同一个 shell 里后面的命令留下副作用）
+# 把 MXX1_NO_RIGHTMENU_SYNC / MXX1_NO_UPDATE 恢复成测试之前的样子（别给同一个 shell 里后面的命令留下副作用）
 if ($script:SyncHad) { $env:MXX1_NO_RIGHTMENU_SYNC = $script:SyncOld }
 else { Remove-Item Env:MXX1_NO_RIGHTMENU_SYNC -ErrorAction SilentlyContinue }
+if ($script:UpdateHad) { $env:MXX1_NO_UPDATE = $script:UpdateOld }
+else { Remove-Item Env:MXX1_NO_UPDATE -ErrorAction SilentlyContinue }
 
 Write-Host ''
 Write-Host '----------------------------------------------------------'

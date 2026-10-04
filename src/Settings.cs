@@ -37,6 +37,12 @@ namespace Mxx1Toolbox
         /// <summary>上次停留的页签 id（"" = 没记过，按"常用页有没有东西"挑一个默认页）。</summary>
         public string LastTab = "";
 
+        /// <summary>《免责声明与服务条款》的同意记录：存的是**正文指纹**（不是一句 true），
+        /// 条款一改指纹就对不上，下次打开界面会重新要求确认（见 src\Consent.cs）。
+        /// 空 = 还没同意过（首次运行会弹《使用条款确认》）。</summary>
+        public string AgreedDisclaimer = "";
+        public string AgreedAt = "";
+
         public static string ThemeDisplay(string mode)
         {
             switch (mode)
@@ -118,6 +124,8 @@ namespace Mxx1Toolbox
                 case "windowheight": WindowHeight = ToInt(value, 0); break;
                 case "windowautosize": WindowAutoSize = ToBool(value, true); break;
                 case "lasttab": LastTab = value; break;
+                case "agreeddisclaimer": AgreedDisclaimer = value; break;
+                case "agreedat": AgreedAt = value; break;
             }
         }
 
@@ -163,6 +171,9 @@ namespace Mxx1Toolbox
                 sb.AppendLine("WindowHeight=" + WindowHeight.ToString(CultureInfo.InvariantCulture));
                 sb.AppendLine("WindowAutoSize=" + (WindowAutoSize ? "1" : "0"));
                 sb.AppendLine("LastTab=" + LastTab);
+                sb.AppendLine("# 下面是《免责声明与服务条款》的同意记录：正文一变（AgreedDisclaimer 不等于当前正文指纹）就会重新要求确认");
+                sb.AppendLine("AgreedDisclaimer=" + AgreedDisclaimer);
+                sb.AppendLine("AgreedAt=" + AgreedAt);
                 File.WriteAllText(AppPaths.SettingsIni, sb.ToString(), new UTF8Encoding(false));
             }
             catch

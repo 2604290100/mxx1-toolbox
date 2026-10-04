@@ -1,0 +1,47 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 mxx1.cn
+#
+# CI：编码红线体检 + 内联脚本与清单体检 + 编译 + 命令行回归。
+#
+# 界面回归（tests\Test-Gui.ps1）**不在这里跑**：它要交互式桌面（枚举子窗口、真发鼠标消息、
+# PostWindow 抓像素），托管 runner 上没有桌面，脚本自己会返回 3 = 跳过。
+# 命令行回归里少数依赖"隔壁 permanent-delete-menu 工程"的项在没有那个仓库时会打印 [SKIP]，
+# 不算失败（见 tests\Test-Cli.ps1 顶部的说明）。
+
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 环境信息（.NET Framework 版本 / csc 位置）
+        shell: pwsh
+        run: |
+          Get-ChildItem "$env:SystemRoot\Microsoft.NET\Framework64" -Directory |
+            Select-Object -ExpandProperty Name
+          Test-Path "$env:SystemRoot\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
+
+      # 编码体检放在最前面：BOM 丢了会静默毁掉中文（README 里那条红线）
+      - name: 编码红线体检
+        shell: powershell
+        run: powershell -ExecutionPolicy Bypass -File tools\Test-Encoding.ps1
+
+      - name: 内联脚本与清单体检
+        shell: powershell
+        run: powershell -ExecutionPolicy Bypass -File tools\Test-InlineSyntax.ps1
+
+      - name: 编译（build.ps1）
+        shell: powershell
+        run: powershell -ExecutionPolicy Bypass -File build.ps1
+
+      - name: 命令行回归（Test-Cli.ps1）
+        shell: powershell
+        run: powershell -ExecutionPolicy Bypass -File tests\Test-Cli.ps1

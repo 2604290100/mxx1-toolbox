@@ -1,6 +1,6 @@
 ---
 name: mxx1-toolbox
-description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Windows button-wall launcher whose main window is a multi-row, multi-column grid of small buttons that each start another program, script, or feature. Covers its interface rules (four column compact buttons, top tabs, separator segments, light/dark theme, computed column width, grey "not wired up yet" buttons), the tools\*.json button registry, how buttons launch things (exe / script / open / builtin / macro), how the 26 系统工具 buttons open Windows components, how the 常用设置 registry switches record the original value so every change can be undone, how a run reports success or failure, plus build.ps1, screenshot tool and the GUI/CLI test suites.
+description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Windows button-wall launcher whose main window is a multi-row, multi-column grid of small buttons that each start another program, script, or feature. Covers its interface rules (four column compact buttons, top tabs, separator segments, light/dark theme, computed column width, grey "not wired up yet" buttons), the tools\*.json button registry, bin-tools\ auto-loaded tool buttons (tool.json), how buttons launch things (exe / script / open / builtin / macro), how the 26 系统工具 buttons open Windows components, how the 常用设置 registry switches record the original value so every change can be undone, how a run reports success or failure, the first-run consent gate (免责声明与服务条款 fingerprint), the read-only update check, Windows 7/10/11 compatibility, plus build.ps1, screenshot tool and the GUI/CLI test suites.
 ---
 
 # 萌新工具箱（mxx1 Toolbox）
@@ -8,22 +8,34 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
 **主界面 = 多行多列的小按钮墙**，点一下按钮就启动一个已经做好的程序 / 脚本 / 功能。
 加按钮只是往 `tools\*.json` 丢配置，**不需要重新编译主程序**。
 
-- 程序名 **萌新工具箱**，标题栏 `萌新工具箱 v1.5.2`；署名 `mxx1` / `mxx1.cn`；GPL-3.0-or-later
+- 程序名 **萌新工具箱**，标题栏 `萌新工具箱 v1.5.3`；署名 `mxx1` / `mxx1.cn`；GPL-3.0-or-later
 - 工程目录 **`D:\萌新工具开发\toolbox\`**，与隔壁 `permanent-delete-menu` **互不修改**（只调它的 exe）
+- 支持范围 **Windows 7 SP1 / 10 / 11**（用户 2026-10-05 收窄的：**只考虑这三版**）；见「兼容性」一节
 - 外观参考：`C:\Users\Administrator\Pictures\Snipaste_2026-10-04_10-29-34.png`（那种紧凑按钮墙）
 
 > **接手 / 新会话先做两件事**：读 `docs\DESIGN.md`（外观与行为的**唯一正本**）和本文件。
 > 设计一改先改 `DESIGN.md`，再同步本 skill —— 两份分叉就会出现"两套行为"。
 
-## 当前状态（2026-10-04，v1.5.2）
+## 当前状态（2026-10-05，v1.5.3）
 
-- ✅ **测试 257 项全绿**：命令行回归 **142**（M 组盯「右键增强」、A14–A17 盯 **exe 自己的图标**）
-  + 界面回归 **115**（N 组 **19 项**盯「解除文件占用」那个小窗口）（外加编码体检 174 个文件、
-  内联脚本与清单体检 34 个脚本 / 7 个清单）。产物 `bin\Mxx1Toolbox.exe`（730,112 字节单文件），
-  七个 `tools.*.json` + 112 个 `icons.*.png` + `assets\app.ico` 那份程序图标 已内嵌。
+- ✅ **测试 326 项全绿**：命令行回归 **186**（A03b–A03d/D01 盯兼容、R 组 14 项盯 **bin-tools 自动按钮**、
+  S 组 26 项盯**条款确认门 + 更新检查**、M 组盯「右键增强」、A14–A17 盯 **exe 自己的图标**）
+  + 界面回归 **140**（I 组 25 项把**条款确认窗口**真开起来点一遍、N 组 19 项盯「解除文件占用」小窗口）
+  （外加编码体检 181 个文件、内联脚本与清单体检 34 个脚本 / 7 个清单）。
+  产物 `bin\Mxx1Toolbox.exe`（769 KB 单文件），
+  七个 `tools.*.json` + 112 个 `icons.*.png` + **`Disclaimer.md`（9,466 字节）** +
+  `assets\app.ico` 那份程序图标 已内嵌。
   **跑法固定：`powershell -ExecutionPolicy Bypass -File tests\Test-All.ps1`**（必须 Windows PowerShell
   5.1 —— 套件里有 `-Encoding Byte`，pwsh 7 改叫 `-AsByteStream`，跑到 M20 会当场中断；`Bypass`
   还会让子进程继承执行策略，M14f 那个"父进程拉子进程"的现场靠它。见 `docs\DESIGN.md` §15）。
+  **环境不满足的项走 `Skip()`**（打印 `[SKIP]`，不算失败）：原来的写法是 `Check ... $false 'skipped'`，
+  那会把"没测到"记成"失败" —— 克隆仓库的人在 C/F/G/R 组会一片假红。
+- ✅ **v1.5.3（2026-10-05）四件事**：① **`bin-tools\<工具>\` 自动长按钮**（用户问
+  「bin-tools 里面的工具是不是应该自动加载一个按钮？」）；② **完整的更新检查 + 免责声明与服务条款 +
+  首次运行确认门**（用户点名照隔壁 `permanent-delete-menu` 那套做）；
+  ③ **Win7 / Win10 / Win11 兼容**（用户：「兼容只需要考虑 win7 win10 win11 就行了」）；
+  ④ **建 GitHub 仓库并推送**（用户：「你做好以后就上传仓库吧，没有建仓库那就建一个」）。
+  细节见下面各节，设计正本 `docs\DESIGN.md` §13.7 / §16 / §17。
 - ⚠️ **v1.5.2 收尾修的三件事**（用户当天第三轮反馈）：① **编出来的 exe 没有图标** ——
   `build.ps1` 里 `/win32icon:assets\app.ico` 要的文件**从来不存在**（那行等于没写），
   现在有了 `assets\app.ico`（`tools\Make-AppIcon.ps1` 生成，八尺寸）+ `src\AppIcon.cs`
@@ -70,7 +82,9 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
   「永久删除工具」（不带参数启动隔壁 `PermanentDeleteSetup.exe`，开它自己的窗口）。详见下面那一节。
   v1.5.1 把两件事补上了：**右键文件夹会往下扫 4 层**（并指名是哪个文件被占着）、
   **菜单项的图标**（装的时候把内嵌 PNG 转成 `.ico`，两个父项 + 子菜单每一项都有）。
-- ✅ **本地 Git 仓库已建**（提交都在本地）；⬜ **GitHub 远程还没建**，**推送前必须问用户**。
+- ✅ **GitHub 仓库已建**：<https://github.com/2604290100/mxx1-toolbox>（账号 `2604290100`，
+  2026-10-05 由用户拍板"建一个"之后建的）。**推送前依然要先问用户**
+  （原话："推送的时候不要每次都推送，太卡了要问过我才行"）。
 - ✅ 按钮图标：112 个 16×16 PNG 由 `tools\Make-Icons.ps1` 生成并内嵌（`icons.<id>.png`；
   用户自建按钮的图标**不**生成，免得把别人机器上的东西提交进仓库），
   全部经 `IconFactory.Normalize()` 归一化成 16×15 画布（见"界面硬规则"里那条）。
@@ -83,7 +97,8 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
   任务栏 ICON_BIG 32），全部 9 个窗口都从 `Mxx1Form` 派生（在 `AppIcon.cs` 里），句柄建好 + Shown 各装一次。
 - ✅ **外部工具目录 `bin-tools\` 已实现**（用户定的名字）：查找顺序里加一档、`build.ps1 -Package` 自动拷入、
   设置 / 关于窗口有「打开工具目录」、`kind: exe` 的相对路径按「工具箱目录 → `bin-tools\`」解析。
-  ⬜ 还没做：把工具内嵌进 exe 当兜底、`bin-tools\<工具>\tool.json` 自动扫按钮（`docs\DESIGN.md` §13 的 ② ③）。
+- ✅ **工具文件夹自动长按钮（v1.5.3，`src\ToolFolders.cs`）**：见下面「外部工具目录 `bin-tools\`」那节。
+  ⬜ 还没做的只剩「把 `bin-tools\` 里的 exe 内嵌进 exe 当兜底」（`docs\DESIGN.md` §13 方案 ②）。
 - ⬜ P1：剩下的都做完了，只有「Win10 / Win11 资源管理器」两个继续灰着（含义待用户定）、按钮排序 / 隐藏 / 固定到常用、多步 `macro`。
 
 ## 结构
@@ -116,6 +131,11 @@ D:\萌新工具开发\toolbox\
   src\AppIcon.cs                   窗口图标（按 DPI 取 exe 资源里的那一档）+ `Mxx1Form` 基类（9 个窗口都从它派生）
   src\ConfirmForm.cs               自家的确认窗口「请确认」（不再用 MessageBox 甩命令，见 §"运行反馈"）
   src\UserTools.cs                 用户层 tools.json 的读写（最小 JSON writer，写入前备份 .bak）
+  src\ToolFolders.cs               **v1.5.3**：扫 bin-tools\ 的工具文件夹，自动长出按钮（只读，
+                                   撞 id 就让位；`ToolItem.AutoLayer` 标记它不可编辑）
+  src\Consent.cs / ConsentForm.cs   **v1.5.3**：首次运行条款确认门（记条款正文指纹，不是记 true）
+  src\DisclaimerForm.cs            **v1.5.3**：窗口显示 docs\DISCLAIMER.md（编译时内嵌，唯一正本）
+  src\UpdateCheck.cs               **v1.5.3**：只读更新检查（GitHub releases → tags；不下载不替换）
   src\NewToolForm.cs               图形化「新建按钮 / 编辑按钮」窗口（4 种类型）
   src\LinksForm.cs                 「常用链接」窗口（项目主页/仓库/几个 ms-settings 入口）
   src\Json.cs                      自带的小 JSON 解析器（不依赖 Newtonsoft / System.Web）
@@ -134,14 +154,17 @@ D:\萌新工具开发\toolbox\
   assets\app.ico                   程序图标（`/win32icon` 用的就是它）
   tests\Test-All.ps1               一条命令跑完全部
   tools\Test-InlineSyntax.ps1      内联脚本语法 + 清单 JSON 体检（34 个脚本 / 7 个清单）
-  tests\Test-Cli.ps1               命令行回归 142 项（A14–A17 盯 exe 图标、L 组 12 项盯 sysreg、
-                                   J09–J11 盯卸载窗口的列表、M 组盯右键增强：查占用认出 PID /
-                                   文件夹往下扫 / 自查结论 / 图标指向真实 .ico / 自动修补 /
-                                   隔离根里装卸 / 不碰真实右键菜单）
-  tests\Test-Gui.ps1               界面回归 115 项（要交互式桌面，无桌面返回 3 = 跳过；A04b 盯窗口图标、
+  tests\Test-Cli.ps1               命令行回归 186 项（A03b–A03d/D01 盯兼容、A14–A17 盯 exe 图标、
+                                   L 组 12 项盯 sysreg、J09–J11 盯卸载窗口的列表、M 组盯右键增强、
+                                   R 组 14 项盯 bin-tools 自动按钮、S 组 26 项盯条款门 + 更新检查；
+                                   环境不满足的项走 Skip()，打印 [SKIP] 不算失败）
+  tests\Test-Gui.ps1               界面回归 140 项（要交互式桌面，无桌面返回 3 = 跳过；A04b 盯窗口图标、
                                    H 组盯固定尺寸、E04b 盯窗口位置、A09 盯 bin-tools 说明、
-                                   N 组 19 项盯解除占用小窗口，含 N14/N15/N17/N18 的高度自适应）
-  docs\DESIGN.md                   设计正本（含"踩过的坑"清单 + §13 打包方案）
+                                   N 组 19 项盯解除占用小窗口，含 N14/N15/N17/N18 的高度自适应、
+                                   I 组 25 项把条款确认窗口真开起来点一遍）
+  docs\DESIGN.md                   设计正本（含"踩过的坑"清单 + §13.7 自动按钮 + §16 兼容性 + §17 条款门）
+  docs\DISCLAIMER.md               免责声明与服务条款正本（**编译时内嵌进 exe**，窗口显示的就是它）
+  assets\app.manifest              清单：asInvoker + supportedOS（Win7/8/8.1/10）+ System DPI + longPathAware
   docs\gui-shot.png / dark-shot.png / system-shot.png  界面截图
 ```
 
@@ -161,7 +184,11 @@ powershell -File tools\Make-AppIcon.ps1       # 重生成 assets\app.ico（改�
 & bin\Mxx1Toolbox.exe list [--tab system]     # 列按钮（tab 分隔：id / 页签 / 名称 / 类型）
 & bin\Mxx1Toolbox.exe run devmgmt --dry       # 只解析按钮指向哪里，不真的启动（灰按钮回 kind=none）
 & bin\Mxx1Toolbox.exe run permdel.gui         # 跑一个按钮（和界面同一条路径）
-& bin\Mxx1Toolbox.exe status                  # key=value（含 systemTargets / systemMissing / admin / pinned）
+& bin\Mxx1Toolbox.exe status                  # key=value（含 systemTargets / systemMissing / autoButtons /
+                                             #   windows / settingsApp / consent / updateCheck / admin / pinned）
+& bin\Mxx1Toolbox.exe checkupdate             # 只读版本号，不下载不替换（0 = 查过了，1 = 关掉了 / 查不成）
+& bin\Mxx1Toolbox.exe disclaimer              # 打印条款正文（和窗口显示的一致）
+& bin\Mxx1Toolbox.exe consent [--accept|--reset]   # 看 / 记下 / 清掉首次运行的条款确认状态
 & bin\Mxx1Toolbox.exe tip [id]                # 打印按钮的悬停说明（界面交给 ToolTip 的就是这一串）
 & bin\Mxx1Toolbox.exe privacy status          # 只读列隐私开关状态；selftest 自检「原值→写入→还原」
 & bin\Mxx1Toolbox.exe sysreg  status          # 只读列 6 组系统设置开关的现状；items / selftest 同上
@@ -231,6 +258,42 @@ powershell -File tools\Make-AppIcon.ps1       # 重生成 assets\app.ico（改�
    ⚠️ 唯一真风险：**`bin/` 整个目录不入 Git**（`.gitignore` 里一行 `bin/`）—— 手删 `bin\`、
    换机器 / 重新 clone、把 exe 挪走（`bin-tools` 跟着 exe 走）都会没。所以**原始安装包 / 压缩包留着
    别删**，或者再放一份到 `%LOCALAPPDATA%\mxx1-toolbox\bin-tools\`（备用工具目录，查找顺序里排后面）。
+
+### 工具文件夹自动长按钮（v1.5.3，`src\ToolFolders.cs`）
+
+用户 2026-10-04 问「bin-tools 里面的工具是不是应该自动加载一个按钮？」→ **已实现**。规则（设计正本 §13.7）：
+
+| 文件夹里有什么 | 结果 |
+| --- | --- |
+| `tool.json`（字段和 `tools\*.json` 一样） | 按它建按钮（`id` 默认 `auto.<文件夹名>`、`tab` 默认 `mine`、`segment` 默认 2） |
+| 只有一个 exe | 就用它 |
+| 好几个 exe，其中有一个和文件夹同名 | 用同名那个 |
+| 好几个 exe 又对不上名字 / 一个 exe 都没有 | **不猜**：不生成按钮，日志里说明原因 |
+| 里面的 `tool.json` 语法坏了 | **只跳过它自己**，别的按钮照常 |
+
+- 扫的是 **exe 旁边的 `bin-tools\`**（+ `%LOCALAPPDATA%` 那份备用目录）的**一级子文件夹**，
+  `64\` 这种再套一层也认；按 **F5** 重扫，不用重启。
+- 自动按钮**只读**（`ToolItem.AutoLayer=true`，右键菜单里不能编辑 / 删除）、
+  **绝不覆盖**已有 id（撞上就让位并写日志）。
+- `status` 里有 `autoButtons=N` 与每个按钮一行 `autoButton=<页签>\t<id>\t<来源>`；
+  测试（R 组）就是靠这两行、并且**只碰自己建的 `__mxx1-autotest-*` 文件夹**。
+
+## 兼容性（Win7 / Win10 / Win11 —— 用户定的范围）
+
+- **运行环境**：exe 是 .NET Framework 4.x 程序（系统自带 `csc` 编的）→ **Win10/11 自带，Win7 要 SP1 +
+  自己装 4.x**，否则双击只有系统那句"需要 .NET Framework"（拦不住，写进文档说清）。
+  exe 是 anycpu：32 位系统上按 32 位跑。
+- **`assets\app.manifest` 必须写齐 `supportedOS`**（Win7/8/8.1/10）：漏了老系统那条，老系统会按兼容模式
+  对待程序，而且 `GetVersionEx` 在 Win8.1 以上**撒谎**（一律 6.2）。
+- **`ms-settings:` 只有 Win10 起有**：系统工具页 7 个走它的按钮在 Win7 上给一句"去控制面板哪一项"，
+  `status` 里 `settingsApp=yes|no` 可查。判据**先看注册表** `HKCR\ms-settings`（版本号会被骗），
+  读不到才退回版本号。
+- **句柄表布局随指针宽度变**（x64 40 / x86 28 字节）：`src\HandleUnlock.cs` 按 `IntPtr.Size` 现算，
+  别写死 x64 的 40/16/+8/+16/+30（在 32 位 Windows 上会扫出垃圾）。「文件」类型编号是自查的，不写死。
+- **深色标题栏**只有 Win10 1809+ 认（DWM 19/20 号属性），Win7 上安静地不生效。
+- **Win11 右键菜单折叠**：装上的项要先点「显示更多选项」。
+- 测试里 `A03b` / `A03c` / `A03d` / `D01` **按这台机器是哪一版分叉断言**：
+  Win7 上那 7 个必须算"没有"，Win10/11 上一个都不许缺。逐项表见 `docs\DESIGN.md` §16。
 
 ## 界面硬规则（违反就是"看着像 bug"那类问题）
 
@@ -515,6 +578,13 @@ powershell -File tools\Make-AppIcon.ps1       # 重生成 assets\app.ico（改�
   ② `-ExecutionPolicy Bypass` 会设 `PSExecutionPolicyPreference` 环境变量、**子进程继承** ——
   M14f 那个"父进程拉个子进程"的现场靠它（这台机器策略是 Restricted，不走 Bypass 时子进程
   `-File child.ps1` 直接被拒 → `child=0` 假红）。
+- **环境不满足的项写 `Skip '名字' '原因'`，不要写 `Check ... $false 'skipped'`**：后者把"没测到"
+  记成"失败"。克隆仓库的人（没有隔壁 `permanent-delete-menu`、工具目录里已经放了 exe、没装 COM）
+  本来就会遇到 C/F/G/R 组那几项 —— 现在它们打印 `[SKIP]`、计入跳过数，**退出码仍是 0**；
+  同理 `A15`（没生成 `assets\app.ico`）也走 Skip。**但"真的断言失败"绝不许改成 Skip**。
+- **跑界面回归之前，用户不能开着工具箱**：`Test-Gui` 会写 `settings.ini`（主题 / 页签 / 关闭确认），
+  而正在运行的那个实例关闭时会把自己的内存状态写回去 → 一整套假红（2026-10-04 真踩过：
+  6 项红 + 条款确认窗口在测试中途冒出来）。先确认 `Get-Process Mxx1Toolbox` 是空的，**不要杀用户的进程**。
 - `tests\Test-Gui.ps1` 用 Win32 探针，不看截图：`EnumChildWindows` + `GetWindowRect` 判重叠
   （先排除"完整包住别人"的容器）、`GetWindowLong(GWL_STYLE)` 判标题栏、
   `PostMessage(BM_CLICK)` 真点按钮、`WM_GETTEXT` 跨进程读文字。
@@ -602,15 +672,19 @@ powershell -File tools\Make-AppIcon.ps1       # 重生成 assets\app.ico（改�
 
 ## 待办 / 别自己替他决定
 
-1. **Git：本地仓库已经建好**；**GitHub 远程仓库还没建**，推送必须先问用户
-   （用户原话："推送的时候不要每次都推送，太卡了要问过我才行"）。
-   v1.5.0（右键增强）+ v1.5.1（修用户报的两个 bug）是本地的第 6、7 笔提交，和前面几笔一样**没推送**。
-2. **外部工具目录 `bin-tools\`**：用户 2026-10-04 选了这个方案并定了名字，**已经实现**（见 `docs\DESIGN.md` §13）。
-   还没做的只有两层：② 把 `bin-tools\` 里的 exe 内嵌进 exe、首次点击释放到固定目录当兜底；
-   ③ 扫 `bin-tools\<工具>\tool.json` 自动长出按钮。**这两层等用户说要再做，别自己开工。**
-3. P1 的范围（先接哪个页签的真功能）要问用户，别自己挑。
-4. 图标要改样式就动 `tools\Make-Icons.ps1` 的关键词映射 / 配色，然后按
+1. **Git**：本地仓库 + **GitHub 远程 <https://github.com/2604290100/mxx1-toolbox> 都已建**
+   （2026-10-05 用户拍板"建一个"之后建的）。**推送前依然要先问用户**
+   （原话："推送的时候不要每次都推送，太卡了要问过我才行"）。
+2. **外部工具目录 `bin-tools\`**：① 工具目录、③ 扫 `tool.json` 自动长按钮 **都已实现**（见上面那节与
+   `docs\DESIGN.md` §13.7）。还没做的只有 ② 「把 `bin-tools\` 里的 exe 内嵌进 exe、首次点击释放到固定目录」
+   —— **等用户说"我只想拷一个 exe"再做，别自己开工。**
+3. 发版相关（打 tag / 发 Release / 改版本号）**先问用户**：他现在要的是"发布工具"，
+   Release 的说明文字与截图要他点头。
+4. 条款正文（`docs\DISCLAIMER.md`）**改一个字就会让所有人下次打开重新确认一次**（记的是正文指纹）——
+   用户刚点过一次同意，改之前先跟他说一声。
+5. P1 的范围（先接哪个页签的真功能）要问用户，别自己挑。
+6. 图标要改样式就动 `tools\Make-Icons.ps1` 的关键词映射 / 配色，然后按
    `build.ps1 → Make-Icons.ps1 → 删孤儿 → build.ps1` 的顺序跑。
-5. skill 三处同步：`D:\萌新工具开发\.dsh\skills\mxx1-toolbox\SKILL.md`、
-   仓库内 `toolbox\skill\mxx1-toolbox\SKILL.md`（两份必须**字节一致**，用哈希核对）、
-   `%USERPROFILE%\.dsh\skills\mxx1-toolbox\SKILL.md`（**尚未建**）。
+7. skill 三处同步：`D:\萌新工具开发\.dsh\skills\mxx1-toolbox\SKILL.md`、
+   仓库内 `toolbox\skill\mxx1-toolbox\SKILL.md`、`%USERPROFILE%\.dsh\skills\mxx1-toolbox\SKILL.md`
+   （**三份必须字节一致**，用 SHA256 核对）。

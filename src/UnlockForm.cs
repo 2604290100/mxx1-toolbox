@@ -598,6 +598,13 @@ namespace Mxx1Toolbox
         private void ForceUnlock()
         {
             if (_busy) { return; }
+            // 「强制解锁」会从别的程序脚下抽走句柄（那个程序可能出错 / 丢数据）——
+            // 这是会改动系统的动作，先过一遍使用条款的同意状态（命令行不拦，见 DISCLAIMER 5.1）。
+            if (!Consent.EnsureAccepted(this, _theme, "解除文件占用 · 强制解锁"))
+            {
+                SetStatus("没同意《免责声明与服务条款》，这一步没有执行。");
+                return;
+            }
             _busy = true;
             _killBtn.Enabled = false;
             _forceBtn.Enabled = false;
@@ -698,6 +705,12 @@ namespace Mxx1Toolbox
             if (chosen.Count == 0)
             {
                 SetStatus("没勾选任何程序 —— 在上面的列表里勾一个再点这个按钮。");
+                return;
+            }
+            // 结束别人的进程 = 那个程序里没保存的东西会丢：同样先过一遍条款同意状态。
+            if (!Consent.EnsureAccepted(this, _theme, "解除文件占用 · 结束选中的进程"))
+            {
+                SetStatus("没同意《免责声明与服务条款》，这一步没有执行。");
                 return;
             }
 

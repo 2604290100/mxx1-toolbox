@@ -58,8 +58,37 @@ namespace Mxx1Toolbox
         private const int MaxNameQueries = 20000;
 
         private const int SystemExtendedHandleInformation = 64;
-        private const int EntrySize = 40;     // x64 的 SYSTEM_HANDLE_TABLE_ENTRY_INFO_EX
-        private const int HeaderSize = 16;    // NumberOfHandles + Reserved（都是 ULONG_PTR）
+
+        // SYSTEM_HANDLE_TABLE_ENTRY_INFO_EX 的布局**随指针宽度变**，不能写死 40：
+        //   x64（40 字节）：Object +0 / UniqueProcessId +8 / HandleValue +16 /
+        //                   GrantedAccess +24 / CreatorBackTraceIndex +28 / ObjectTypeIndex +30（USHORT）
+        //   x86（28 字节）：Object +0 / UniqueProcessId +4 / HandleValue +8 /
+        //                   GrantedAccess +12 / CreatorBackTraceIndex +16 / ObjectTypeIndex +18（USHORT）
+        // 表头是两个 ULONG_PTR（NumberOfHandles + Reserved）→ x64 16 字节、x86 8 字节。
+        //
+        // 2026-10-04 发布前复核时发现：原来 40 / 16 / +8 / +16 / +30 全是按 x64 写死的。
+        // 这个 exe 是 /platform:anycpu，在 32 位 Windows 上会以 x86 跑起来 —— 那时候步长和偏移
+        // 全错，扫出来的就是垃圾（甚至把别的对象当成文件句柄）。现在按 IntPtr.Size 现算。
+        private static readonly int EntrySize = (IntPtr.Size == 8) ? 40 : 28;
+        private static readonly int HeaderSize = IntPtr.Size * 2;
+        private static readonly int OffPid = (IntPtr.Size == 8) ? 8 : 4;
+        private static readonly int OffHandle = (IntPtr.Size == 8) ? 16 : 8;
+        private static readonly int OffTypeIndex = (IntPtr.Size == 8) ? 30 : 18;
+
+        /// <summary>按指针宽度读一个 ULONG_PTR（x86 上不能读 8 字节）。</summary>
+        private static long ReadPtr(IntPtr buf, int offset)
+        {
+            if (IntPtr.Size == 8) { return Marshal.ReadInt64(buf, offset); }
+            return (uint)Marshal.ReadInt32(buf, offset);
+        }
+
+        /// <summary>句柄值 → IntPtr。**`(IntPtr)long` 在 32 位进程上会抛 OverflowException**
+        /// （句柄值大于 0x7FFFFFFF 时就会，而句柄是内核给的无符号值），所以 32 位下要显式截断。</summary>
+        private static IntPtr HandlePtr(long value)
+        {
+            if (IntPtr.Size == 8) { return new IntPtr(value); }
+            return new IntPtr(unchecked((int)(uint)value));
+        }
 
         private const uint PROCESS_DUP_HANDLE = 0x0040;
         private const uint PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
@@ -108,7 +137,7 @@ namespace Mxx1Toolbox
 
             try
             {
-                long total = Marshal.ReadInt64(buf, 0);
+                long total = ReadPtr(buf, 0);
                 long usable = (used - HeaderSize) / EntrySize;
                 if (total > usable) { total = usable; }
 
@@ -116,10 +145,10 @@ namespace Mxx1Toolbox
                 {
                     if (clock.ElapsedMilliseconds > ScanBudgetMs) { truncated = true; break; }
                     int at = HeaderSize + (int)(i * EntrySize);
-                    int pid = (int)Marshal.ReadInt64(buf, at + 8);
-                    long handle = Marshal.ReadInt64(buf, at + 16);
-                    int typeIndex = Marshal.ReadInt16(buf, at + 30) & 0xFFFF;
-                    long obj = Marshal.ReadInt64(buf, at);
+                    int pid = (int)ReadPtr(buf, at + OffPid);
+                    long handle = ReadPtr(buf, at + OffHandle);
+                    int typeIndex = Marshal.ReadInt16(buf, at + OffTypeIndex) & 0xFFFF;
+                    long obj = ReadPtr(buf, at);
 
                     if (typeIndex != fileType) { continue; }
                     if (pid <= 4 || pid == me || handle == 0 || obj == 0) { continue; }
@@ -214,7 +243,7 @@ namespace Mxx1Toolbox
                 try
                 {
                     IntPtr dup;
-                    if (!DuplicateHandle(ph, (IntPtr)h.HandleValue, me, out dup, 0, false, DUPLICATE_SAME_ACCESS))
+                    if (!DuplicateHandle(ph, HandlePtr(h.HandleValue), me, out dup, 0, false, DUPLICATE_SAME_ACCESS))
                     {
                         skipped++;
                         sb.Append("  · ").Append(who).Append(" 的那个句柄已经不在了（它自己关了）").AppendLine();
@@ -233,7 +262,7 @@ namespace Mxx1Toolbox
                         }
 
                         IntPtr gone;
-                        if (DuplicateHandle(ph, (IntPtr)h.HandleValue, me, out gone, 0, false,
+                        if (DuplicateHandle(ph, HandlePtr(h.HandleValue), me, out gone, 0, false,
                                 DUPLICATE_SAME_ACCESS | DUPLICATE_CLOSE_SOURCE))
                         {
                             CloseHandle(gone);
@@ -346,17 +375,17 @@ namespace Mxx1Toolbox
                 if (buf == IntPtr.Zero) { return -1; }
                 try
                 {
-                    long total = Marshal.ReadInt64(buf, 0);
+                    long total = ReadPtr(buf, 0);
                     long usable = (used - HeaderSize) / EntrySize;
                     if (total > usable) { total = usable; }
                     for (long i = 0; i < total; i++)
                     {
                         int at = HeaderSize + (int)(i * EntrySize);
-                        int pid = (int)Marshal.ReadInt64(buf, at + 8);
-                        long handle = Marshal.ReadInt64(buf, at + 16);
-                        if (pid == me && handle == nul.ToInt64())
+                        int pid = (int)ReadPtr(buf, at + OffPid);
+                        long handle = ReadPtr(buf, at + OffHandle);
+                        if (pid == me && HandlePtr(handle) == nul)
                         {
-                            return Marshal.ReadInt16(buf, at + 30) & 0xFFFF;
+                            return Marshal.ReadInt16(buf, at + OffTypeIndex) & 0xFFFF;
                         }
                     }
                 }
@@ -398,7 +427,7 @@ namespace Mxx1Toolbox
         private static string NameOfHandle(IntPtr proc, long handle, StringBuilder path, ref int timeouts)
         {
             IntPtr dup;
-            if (!DuplicateHandle(proc, (IntPtr)handle, GetCurrentProcess(), out dup, 0, false, DUPLICATE_SAME_ACCESS))
+            if (!DuplicateHandle(proc, HandlePtr(handle), GetCurrentProcess(), out dup, 0, false, DUPLICATE_SAME_ACCESS))
             {
                 return "";
             }

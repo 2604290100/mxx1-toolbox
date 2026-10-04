@@ -45,15 +45,26 @@ namespace Mxx1Toolbox
         }
 
         /// <summary>生成（或复用）某个按钮的 .ico，返回完整路径；取不到源图就返回空
-        /// —— 空的意思就是"这一项不写 Icon 值"，绝不写一个指不到东西的路径进去。</summary>
+        /// —— 空的意思就是"这一项不写 Icon 值"，绝不写一个指不到东西的路径进去。
+        ///
+        /// 源图优先用按钮**自己指定的那个文件**（`icon` 字段，bin-tools 里的工具按钮就是这样：
+        /// PNG 在工具文件夹里，不在 exe 的内嵌资源里）。不传就按 id 找内嵌 PNG。
+        /// 2026-10-04 踩到：以前只按 id 找内嵌的 icons.&lt;id&gt;.png，于是用户层/bin-tools 的按钮
+        /// 进了「常用功能」子菜单却没有图标（测试 M20b 报「带图标=20/21」）。</summary>
         public static string IcoFor(string id)
+        {
+            return IcoFor(id, "");
+        }
+
+        public static string IcoFor(string id, string iconPath)
         {
             if (id == null || id.Trim().Length == 0) { return ""; }
             string safe = SafeName(id.Trim());
             if (safe.Length == 0) { return ""; }
             try
             {
-                byte[] png = SourcePng(safe);
+                byte[] png = SourcePngFrom(iconPath);
+                if (png == null || png.Length == 0) { png = SourcePng(safe); }
                 if (png == null || png.Length == 0) { return ""; }
 
                 string name = safe + "." + Fingerprint(png) + ".ico";
@@ -102,6 +113,18 @@ namespace Mxx1Toolbox
                 if (char.IsLetterOrDigit(c) || c == '.' || c == '-' || c == '_') { sb.Append(c); }
             }
             return sb.ToString();
+        }
+
+        /// <summary>按钮自己指定的图标文件（清单里的 icon，或 bin-tools 文件夹里那张 PNG）。</summary>
+        private static byte[] SourcePngFrom(string iconPath)
+        {
+            if (string.IsNullOrEmpty(iconPath)) { return null; }
+            try
+            {
+                if (File.Exists(iconPath)) { return File.ReadAllBytes(iconPath); }
+            }
+            catch { }
+            return null;
         }
 
         /// <summary>源 PNG：先找内嵌资源（正式路径，exe 单文件自足），再找 exe 旁边的 assets\icons\（开发时）。</summary>

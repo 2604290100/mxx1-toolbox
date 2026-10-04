@@ -45,6 +45,11 @@ namespace Mxx1Toolbox
         public string Source = "";        // manifest the button came from (troubleshooting)
         public bool UserLayer = false;    // came from %LOCALAPPDATA%\mxx1-toolbox\tools.json
 
+        /// <summary>Discovered in a bin-tools\ tool folder (its tool.json, or a folder with a single
+        /// exe). Read only: the right-click menu cannot edit or delete one, because there is nothing
+        /// in the user layer to change -- the folder owns it.</summary>
+        public bool AutoLayer = false;
+
         public string IconPath
         {
             get

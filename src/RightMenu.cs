@@ -16,6 +16,9 @@ namespace Mxx1Toolbox
         public string Name = "";
         public string Command = "";
         public string IconId = "";          // 用哪个按钮的内嵌图标生成 .ico（空 = 这一项不写图标）
+        /// <summary>按钮自己指定的图标文件（bin-tools 里的工具按钮就有：它的 PNG 在工具文件夹里，
+        /// 不在 exe 的内嵌资源里）。非空且真在磁盘上时优先用它，否则退回按 id 找内嵌 PNG。</summary>
+        public string IconPath = "";
         public bool SeparatorBefore = false;
     }
 
@@ -457,7 +460,7 @@ namespace Mxx1Toolbox
             {
                 string key = full + "\\shell\\" + n.ToString("00", CultureInfo.InvariantCulture);
                 if (!WriteValue(key, "MUIVerb", e.Name, out error)) { return ""; }
-                if (WriteIconValue(key, e.IconId)) { icons++; }
+                if (WriteIconValue(key, e.IconId, e.IconPath)) { icons++; }
                 if (e.SeparatorBefore) { WriteDword(key, "CommandFlags", 0x20); }
                 if (!WriteValue(key + "\\command", "", e.Command, out error)) { return ""; }
                 n++;
@@ -547,6 +550,7 @@ namespace Mxx1Toolbox
             e.Id = t.Id;
             e.Name = t.Name;
             e.IconId = t.Id;
+            e.IconPath = t.IconPath;
             // `--show` 是给"结果就是一段文字"的按钮用的（激活状态 / 查看设置改动 / 导出系统日志…）：
             // 工具箱这个 exe 是 winexe、**没有控制台**，不弹窗口的话用户点了等于"没有效果"
             // （2026-10-04 用户报的就是这两个按钮）。有文字结果或失败时才弹，所以对
@@ -1106,7 +1110,12 @@ namespace Mxx1Toolbox
         /// 写入成功返回 true。</summary>
         private static bool WriteIconValue(string fullKey, string iconId)
         {
-            string ico = MenuIcons.IcoFor(iconId);
+            return WriteIconValue(fullKey, iconId, "");
+        }
+
+        private static bool WriteIconValue(string fullKey, string iconId, string iconPath)
+        {
+            string ico = MenuIcons.IcoFor(iconId, iconPath);
             if (ico.Length == 0)
             {
                 DeleteValue(fullKey, "Icon");

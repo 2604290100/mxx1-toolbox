@@ -5,15 +5,19 @@
     Test-Cli.ps1 -- 工具箱命令行回归测试
 
     覆盖：
-      * list / status 的机器可读输出（按钮数、页签分布、灰色占位按钮数）
+      * list / status 的机器可读输出（按钮数、页签分布、灰色占位按钮数、系统版本、条款状态）
       * 占位按钮点击路径（run 一个 placeholder 必须有反应、写日志、退出码 0）
       * 「右键增强」那一个按钮：解析出隔壁 permanent-delete-menu 的 PermanentDeleteSetup.exe
       * 「系统工具」12 个按钮：--dry 必须解析出目标，缺组件必须说明原因（不静默失灵）
+      * 「工具目录自动长按钮」（R 组）：tool.json / 光一个 exe / 多个 exe 说不清 / id 撞车 / 坏 JSON
+      * 条款确认门与更新检查（S 组）：disclaimer / consent / checkupdate，用本机假接口不碰外网
+      * 兼容性（A03b–A03d / D01）：按这台机器是哪一版 Windows 分叉断言（见 docs\DESIGN.md §16）
       * 输出必须是 UTF-8（中文按钮名不能变成乱码）
       * 错误用法返回退出码 2
 
     用法: powershell -File tests\Test-Cli.ps1
-    退出码: 0 = 全绿, 1 = 有失败
+    退出码: 0 = 全绿（含"环境不满足、跳过"）, 1 = 有失败
+    环境不满足的项走 Skip()：打印 [SKIP]、计入跳过数，**不算失败**（在别人的机器上不会假红）。
 #>
 [CmdletBinding()]
 param()
@@ -24,12 +28,22 @@ $Exe = Join-Path $root 'bin\Mxx1Toolbox.exe'
 
 $script:Pass = 0
 $script:Fail = 0
+$script:Skip = 0
 
 function Check {
     param([string]$Name, [bool]$Ok, [string]$Detail = '')
     if ($Ok) { $script:Pass++ } else { $script:Fail++ }
     $flag = 'PASS'; if (-not $Ok) { $flag = 'FAIL' }
     Write-Host ("  [{0}] {1}{2}" -f $flag, $Name, $(if ($Detail) { "   ($Detail)" } else { '' }))
+}
+
+# 环境不满足、或者"再往下做就要动用户文件"的项走这里：**不装作通过，也不误报失败**。
+# 原来这些地方写的是 Check ... $false 'skipped' —— 那是把"没测到"记成"失败"，
+# 在别人机器上（没有隔壁仓库、工具目录里已经放了 exe、没装 .NET 的 COM 等）会一片假红。
+function Skip {
+    param([string]$Name, [string]$Reason = '')
+    $script:Skip++
+    Write-Host ("  [SKIP] {0}{1}" -f $Name, $(if ($Reason) { "   ($Reason)" } else { '' }))
 }
 
 if (-not (Test-Path -LiteralPath $Exe)) { throw ('找不到 exe（先跑 build.ps1）: ' + $Exe) }
@@ -249,8 +263,40 @@ Write-Host 'A 组 · status 与 list'
 $status = Invoke-Exe 'status'
 Check 'A01 status 退出码 0' ($status.Code -eq 0) ('exit=' + $status.Code)
 Check 'A02 中文输出没有乱码（UTF-8）' ($status.Out -match 'name=萌新工具箱') ('name=' + (Get-Key $status.Out 'name'))
-Check 'A03 版本号 1.5.2' ((Get-Key $status.Out 'version') -eq '1.5.2') (Get-Key $status.Out 'version')
-Check 'A04 按钮总数 112（测试期间用户层的按钮会暂停：常用 33 + 系统工具 26 + 隐私 29 + 应用 5 + 清理 8 + 右键 8 + 我的 3）' ((Get-Key $status.Out 'buttons') -eq '112') (Get-Key $status.Out 'buttons')
+Check 'A03 版本号 1.5.3' ((Get-Key $status.Out 'version') -eq '1.5.3') (Get-Key $status.Out 'version')
+
+# 兼容性（v1.5.3）：只保证 Win7 / Win10 / Win11。系统工具页里 7 个按钮走的是 ms-settings:
+# 这个协议 —— 那是 Windows 10 起才有的「设置」应用，Win7 的注册表里根本没有它。
+# 这里按"这台机器是哪一版"分别断言：Win7 上它们必须被算成"这台系统没有"（点下去会得到
+# 一句"去控制面板哪儿找"），Win10/11 上必须是可用。
+$winName = Get-Key $status.Out 'windows'
+$settingsApp = Get-Key $status.Out 'settingsApp'
+$sysMissing = 0
+[void][int]::TryParse((Get-Key $status.Out 'systemMissing'), [ref]$sysMissing)
+Check 'A03b 报得出这台是哪一版 Windows（带清单才拿得到真实版本号）' ($winName -like 'Windows*') ('windows=' + $winName)
+if ($winName -eq 'Windows 7') {
+    Check 'A03c Win7：没有「设置」应用' ($settingsApp -eq 'no') ('settingsApp=' + $settingsApp)
+    Check 'A03d Win7：7 个 ms-settings: 按钮算作这台系统没有（不是静默失败）' ($sysMissing -ge 7) ('systemMissing=' + $sysMissing)
+} else {
+    Check 'A03c Win10/11：有「设置」应用，ms-settings: 按钮可用' ($settingsApp -eq 'yes') ('settingsApp=' + $settingsApp)
+    Check 'A03d 有「设置」应用时它们不算缺组件' ($sysMissing -eq 0) ('systemMissing=' + $sysMissing)
+}
+
+# bin-tools 里的工具文件夹会自动长出按钮（v1.5.3，R 组专门测它）。这台机器的工具目录里可能有
+# 用户自己放的工具，所以数量基准写成「112 + 自动按钮数」——别把用户的东西当成测试失败。
+$autoBase = 0
+$autoByTab = @{}
+foreach ($line in ($status.Out -split "`r?`n")) {
+    if ($line -notmatch '^autoButton=') { continue }
+    $cells = ($line.Substring('autoButton='.Length)) -split "`t"
+    if ($cells.Count -ge 1 -and $cells[0].Length -gt 0) {
+        $autoByTab[$cells[0]] = 1 + [int]$autoByTab[$cells[0]]
+        $autoBase++
+    }
+}
+
+Check ('A04 按钮总数 112 + 工具目录里自动加载的 {0} 个（测试期间用户层的按钮会暂停：常用 33 + 系统工具 26 + 隐私 29 + 应用 5 + 清理 8 + 右键 8 + 我的 3）' -f $autoBase) `
+    ((Get-Key $status.Out 'buttons') -eq [string](112 + $autoBase)) (Get-Key $status.Out 'buttons')
 Check 'A05 内置清单里没有灰色占位按钮了（两个「资源管理器」也接上了真功能；灰规则改由 B 组注入验证）' ((Get-Key $status.Out 'placeholders') -eq '0') (Get-Key $status.Out 'placeholders')
 Check 'A06 危险按钮 3 个' ((Get-Key $status.Out 'dangerous') -eq '3') (Get-Key $status.Out 'dangerous')
 
@@ -261,18 +307,18 @@ $tabDetail = @()
 foreach ($k in $tabExpect.Keys) {
     $v = Get-Key $status.Out ('tab.' + $k)
     $tabDetail += ($k + '=' + $v)
-    if ($v -ne [string]$tabExpect[$k]) { $tabOk = $false }
+    if ($v -ne [string]([int]$tabExpect[$k] + [int]$autoByTab[$k])) { $tabOk = $false }
 }
-Check 'A07 八个页签的按钮数正确（0/33/3/26/8/29/5/8）' $tabOk ($tabDetail -join ' ')
+Check 'A07 八个页签的按钮数正确（0/33/3/26/8/29/5/8，加上自动按钮）' $tabOk ($tabDetail -join ' ')
 
 $list = Invoke-Exe 'list'
 Check 'A08 list 退出码 0' ($list.Code -eq 0) ('exit=' + $list.Code)
-Check 'A09 list 报的按钮数一致' ((Get-Key $list.Out 'buttons') -eq '112') (Get-Key $list.Out 'buttons')
+Check 'A09 list 报的按钮数一致' ((Get-Key $list.Out 'buttons') -eq [string](112 + $autoBase)) (Get-Key $list.Out 'buttons')
 $lines = @($list.Out -split "`r?`n" | Where-Object { $_ -match "`t" })
-Check 'A10 list 打出 112 行按钮' ($lines.Count -eq 112) ('lines=' + $lines.Count)
+Check ('A10 list 打出 {0} 行按钮' -f (112 + $autoBase)) ($lines.Count -eq (112 + $autoBase)) ('lines=' + $lines.Count)
 
 $rmList = Invoke-Exe 'list --tab rightmenu'
-Check 'A11 右键增强 8 个按钮（7 个右键菜单 + 隔壁永久删除工具）' ((Get-Key $rmList.Out 'shown') -eq '8') (Get-Key $rmList.Out 'shown')
+Check 'A11 右键增强 8 个按钮（7 个右键菜单 + 隔壁永久删除工具）' ((Get-Key $rmList.Out 'shown') -eq [string](8 + [int]$autoByTab['rightmenu'])) (Get-Key $rmList.Out 'shown')
 Check 'A12 右键增强里的按钮是"真功能"（不带 placeholder 标记）' (-not ($rmList.Out -match 'placeholder')) ''
 Check 'A13 右键增强那个按钮叫「永久删除工具」' ($rmList.Out -match '永久删除工具') (($rmList.Out -split "`r?`n" | Where-Object { $_ -match "`t" }) -join '')
 
@@ -292,7 +338,7 @@ if (Test-Path -LiteralPath $appIcoPath) {
          ($appIcoBytes[2] -eq 1) -and ($appIcoBytes[3] -eq 0) -and ($icoFrames -eq 8)) `
         ('bytes=' + $appIcoBytes.Length + ' frames=' + $icoFrames)
 } else {
-    Check 'A15 app.ico 是真 ico 而且尺寸齐（16/20/24/32/48/64/128/256）' $false 'skipped'
+    Skip 'A15 app.ico 是真 ico 而且尺寸齐（16/20/24/32/48/64/128/256）' 'assets\app.ico 不在（先跑 tools\Make-AppIcon.ps1）'
 }
 $buildSrc = Get-Content -LiteralPath (Join-Path $root 'build.ps1') -Raw -Encoding UTF8
 Check 'A16 build.ps1 确实会把 app.ico 交给 csc（/win32icon 那行还在）' `
@@ -385,9 +431,10 @@ Write-Host 'C 组 · 「右键增强」那一个按钮（调隔壁 permanent-del
 
 $permdel = Get-Key $status.Out 'permdelExe'
 if ($permdel -eq '(未找到)' -or $permdel.Length -eq 0) {
-    Check 'C01 找到 PermanentDeleteSetup.exe' $false '没找到（自家工程之外运行时会自动跳过）'
-    Check 'C02 按钮解析出隔壁的 exe' $false 'skipped'
-    Check 'C03 隔壁 exe 的 status 能跑' $false 'skipped'
+    # 克隆本仓库的人没有隔壁工程，这三项本来就测不了 —— 记成跳过，不是失败。
+    Skip 'C01 找到 PermanentDeleteSetup.exe' '没找到（不在自家工程里跑就会这样：把 exe 放进 bin-tools\ 或设置里指定路径就能测）'
+    Skip 'C02 按钮解析出隔壁的 exe' '同上'
+    Skip 'C03 隔壁 exe 的 status 能跑' '同上'
 } else {
     Check 'C01 找到 PermanentDeleteSetup.exe' $true $permdel
     $guiDry = Invoke-Exe 'run permdel.gui --dry'
@@ -404,9 +451,12 @@ if ($permdel -eq '(未找到)' -or $permdel.Length -eq 0) {
 Write-Host ''
 Write-Host 'D 组 · 「系统工具」25 个按钮（Windows 自带组件 + 修复/诊断，--dry 只解析不启动）'
 
-Check 'D01 status 报 20 个系统工具动作（12 组件 + 2 诊断 + 4 权限页 + 2 应用页）、0 个缺失' `
-    (((Get-Key $status.Out 'systemTargets') -eq '20') -and ((Get-Key $status.Out 'systemMissing') -eq '0')) `
-    ('targets=' + (Get-Key $status.Out 'systemTargets') + ' missing=' + (Get-Key $status.Out 'systemMissing'))
+# 缺组件的口径按系统版本分叉：Win7 上那 7 个 ms-settings: 按钮天生打不开（算"没有"），
+# Win10/11 上一个都不该缺。这样才能在两种机器上跑同一套测试。
+$missOk = if ($winName -eq 'Windows 7') { $sysMissing -ge 7 } else { $sysMissing -eq 0 }
+$d01detail = 'targets=' + (Get-Key $status.Out 'systemTargets') + ' missing=' + (Get-Key $status.Out 'systemMissing') + ' windows=' + $winName
+Check 'D01 status 报 20 个系统工具动作（12 组件 + 2 诊断 + 4 权限页 + 2 应用页）、该有的都在' `
+    (((Get-Key $status.Out 'systemTargets') -eq '20') -and $missOk) $d01detail
 
 $sysList = Invoke-Exe 'list --tab system'
 Check 'D02 系统工具页签 26 个按钮（25 + 系统体检）、没有 placeholder' `
@@ -485,15 +535,18 @@ if ($permdel -ne '(未找到)' -and $permdel.Length -gt 0 -and $toolDir.Length -
         if ($createdDir) { Remove-Item -LiteralPath $toolDir -Force -ErrorAction SilentlyContinue }
     }
     if ($alreadyThere) {
-        Check 'F03 删掉副本后又回到隔壁仓库那份（查找顺序没写死）' $false 'skipped（工具目录里本来就有那一份，不能删）'
+        # 工具目录里已经有用户自己放的那一份（比如 build.ps1 -Package 拷过、或用户手动放的）：
+        # 这一项要求"把副本删掉再看它退回隔壁那份"，而删别人的文件是绝对不做的（见本文件开头那条约定）。
+        Skip 'F03 删掉副本后又回到隔壁仓库那份（查找顺序没写死）' `
+            '工具目录里本来就有 PermanentDeleteSetup.exe（不是测试拷的），不能删用户的文件；"bin-tools 优先"已由 F02 覆盖'
     } else {
         $d3 = Invoke-Exe 'run permdel.gui --dry'
         Check 'F03 删掉副本后又回到隔壁仓库那份（查找顺序没写死）' `
             ((Get-Key $d3.Out 'target') -notmatch 'bin-tools') (Get-Key $d3.Out 'target')
     }
 } else {
-    Check 'F02 工具目录里的 exe 优先于隔壁仓库那份' $false '没找到隔壁 exe 或工具目录，跳过'
-    Check 'F03 删掉副本后又回到隔壁仓库那份（查找顺序没写死）' $false 'skipped'
+    Skip 'F02 工具目录里的 exe 优先于隔壁仓库那份' '没找到隔壁 exe 或工具目录（克隆仓库的人会这样）'
+    Skip 'F03 删掉副本后又回到隔壁仓库那份（查找顺序没写死）' '同上'
 }
 
 # 相对路径按"工具箱目录 / bin-tools"解析（写一个临时用户层 tools.json，跑完按原样复原）
@@ -522,6 +575,129 @@ if ($userTools.Length -gt 0 -and $toolDir.Length -gt 0) {
     }
 } else {
     Check 'F04 相对路径按工具目录解析（不再是进程当前目录）' $false 'status 没给出 userTools / toolDir'
+}
+
+# ---------------------------------------------------------------- R 组：工具目录里的工具自动长出按钮
+Write-Host ''
+Write-Host 'R 组 · bin-tools 自动按钮（整个文件夹丢进去就有一个按钮，不用自己写清单）'
+# 用户 2026-10-04 问「bin-tools 里面的工具是不是应该自动加载一个按钮？」→ v1.5.3 实现，规则见 src\ToolFolders.cs：
+#   ① 文件夹里有 tool.json 就按它建按钮（字段和 tools\*.json 一样）；
+#   ② 没有 tool.json、但只有一个 exe（或正好有个和文件夹同名的 exe）→ 也建一个；
+#   ③ 好几个 exe 又对不上名字 → **不猜**，只在日志里说一句；
+#   ④ 自动按钮**绝不覆盖**已有按钮（内置清单 / 用户层），重名就跳过并说明；
+#   ⑤ 一个文件夹的清单坏了只跳过它自己，不能连累别的按钮。
+# 测试只建自己那几个 `__mxx1-autotest-*` 文件夹，收尾也只删自己建的那几个。
+
+$fixtureExe = ''
+foreach ($cand in @((Join-Path $env:SystemRoot 'System32\where.exe'), (Join-Path $env:SystemRoot 'System32\cmd.exe'))) {
+    if (Test-Path -LiteralPath $cand) { $fixtureExe = $cand; break }
+}
+
+# 1x1 的透明 PNG —— 只用来证明"文件夹里的 PNG 会被当成按钮图标"，不参与画图
+$png1x1 = [byte[]]@(
+    0x89,0x50,0x4E,0x47,0x0D,0x0A,0x1A,0x0A, 0x00,0x00,0x00,0x0D,0x49,0x48,0x44,0x52,
+    0x00,0x00,0x00,0x01,0x00,0x00,0x00,0x01,0x08,0x06,0x00,0x00,0x00,0x1F,0x15,0xC4,
+    0x89,0x00,0x00,0x00,0x0A,0x49,0x44,0x41,0x54,0x78,0x9C,0x63,0x00,0x01,0x00,0x00,
+    0x05,0x00,0x01,0x0D,0x0A,0x2D,0xB4,0x00,0x00,0x00,0x00,0x49,0x45,0x4E,0x44,0xAE,
+    0x42,0x60,0x82)
+$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+
+$fixtureNames = @('__mxx1-autotest-a__', '__mxx1-autotest-b__', '__mxx1-autotest-c__', '__mxx1-autotest-d__', '__mxx1-autotest-e__')
+$fixtureDirs = @($fixtureNames | ForEach-Object { Join-Path $toolDir $_ })
+$fixturePreexisting = @($fixtureDirs | Where-Object { Test-Path -LiteralPath $_ })
+
+if ($fixtureExe.Length -eq 0) {
+    Skip 'R01 造夹具文件夹（一个真 exe + 几种 tool.json）' '这台机器上找不到可以当夹具的 exe（where.exe / cmd.exe 都没有？）'
+} elseif ($fixturePreexisting.Count -gt 0) {
+    # 只碰自己建的东西：同名文件夹本来就在，就不敢删（可能是用户的），整组跳过
+    Skip 'R01 造夹具文件夹（一个真 exe + 几种 tool.json）' ('这些文件夹本来就在，不敢删：' + ($fixturePreexisting -join ' '))
+} else {
+    $userTools = Get-Key $status.Out 'userTools'
+    $userBackupR = $null
+    $hadUserR = Test-Path -LiteralPath $userTools
+    if ($hadUserR) { $userBackupR = [System.IO.File]::ReadAllText($userTools, [System.Text.Encoding]::UTF8) }
+    $createdRoot = -not (Test-Path -LiteralPath $toolDir)
+    try {
+        [void][System.IO.Directory]::CreateDirectory($toolDir)
+        foreach ($d in $fixtureDirs) { [void][System.IO.Directory]::CreateDirectory($d) }
+
+        # A：完整的 tool.json（自己写 id / 名字 / 相对路径），图标也自己指定
+        $a = $fixtureNames[0]
+        [System.IO.File]::WriteAllText((Join-Path $toolDir ($a + '\tool.json')),
+            '{ "id": "test.auto1", "tab": "mine", "name": "自动按钮A", "kind": "exe", "path": "' + $a + '\\probe.exe", "icon": "' + $a + '\\probe.png", "hint": "R 组夹具" }',
+            $utf8NoBom)
+        Copy-Item -LiteralPath $fixtureExe -Destination (Join-Path $toolDir ($a + '\probe.exe')) -Force
+        [System.IO.File]::WriteAllBytes((Join-Path $toolDir ($a + '\probe.png')), $png1x1)
+
+        # B：没有 tool.json，只有一个和文件夹同名的 exe + 同名 png → 照样长出按钮（id / 名字 / 路径 / 图标全自动）
+        $b = $fixtureNames[1]
+        Copy-Item -LiteralPath $fixtureExe -Destination (Join-Path $toolDir ($b + '\' + $b + '.exe')) -Force
+        [System.IO.File]::WriteAllBytes((Join-Path $toolDir ($b + '\' + $b + '.png')), $png1x1)
+
+        # C：没有 tool.json，两个 exe 又都对不上文件夹名 → 有歧义，**不猜**（不建按钮）
+        $c = $fixtureNames[2]
+        Copy-Item -LiteralPath $fixtureExe -Destination (Join-Path $toolDir ($c + '\alpha.exe')) -Force
+        Copy-Item -LiteralPath $fixtureExe -Destination (Join-Path $toolDir ($c + '\beta.exe')) -Force
+
+        # D：tool.json 想用内置按钮的 id → 必须被拒绝（丢个文件夹进来不能偷偷换掉「+ 新建按钮」）
+        $d = $fixtureNames[3]
+        [System.IO.File]::WriteAllText((Join-Path $toolDir ($d + '\tool.json')),
+            '{ "id": "app.newtool", "name": "偷偷换掉新建按钮" }', $utf8NoBom)
+
+        # E：tool.json 语法坏了 → 只跳过它自己（末尾多一个逗号，严格 JSON 里是错的）
+        $e = $fixtureNames[4]
+        [System.IO.File]::WriteAllText((Join-Path $toolDir ($e + '\tool.json')),
+            '{ "name": "坏清单", }', $utf8NoBom)
+
+        $s2 = Invoke-Exe 'status'
+        $listMineR = Invoke-Exe 'list --tab mine'
+        $auto2 = [int](Get-Key $s2.Out 'autoButtons')
+        Check 'R01 工具目录里的文件夹被自动扫出按钮（A + B 两个，C/D/E 不算）' ($auto2 -eq ($autoBase + 2)) ('auto=' + $auto2 + ' before=' + $autoBase)
+        Check 'R02 自动按钮的来源写清了是哪个文件夹（右键「查看定义」显示的就是它）' `
+            (($s2.Out -match [regex]::Escape($a + '\tool.json')) -and ($s2.Out -match [regex]::Escape($b + '（没有 tool.json'))) `
+            (@(($s2.Out -split "`r?`n") | Where-Object { $_ -match '^autoButton=' }) -join ' | ')
+        Check 'R03 有歧义的文件夹（两个 exe，都对不上名字）不建按钮、也不瞎猜' (-not ($s2.Out -match [regex]::Escape($c))) ''
+        Check 'R04 重名的自动按钮被拒绝（不能覆盖内置按钮的 id）' `
+            ((-not ($s2.Out -match [regex]::Escape($d))) -and (-not ($listMineR.Out -match '偷偷换掉')) -and ($listMineR.Out -match '\+ 新建按钮')) ''
+        Check 'R05 坏清单只跳过它自己，别的按钮照常在' `
+            ((-not ($s2.Out -match [regex]::Escape($e))) -and ([int](Get-Key $s2.Out 'buttons') -ge 112)) (Get-Key $s2.Out 'buttons')
+        Check 'R06 坏清单在日志里有说明（不是悄悄吞掉）' `
+            (($s2.Err -match [regex]::Escape($e)) -or ($s2.Err -match 'tool\.json')) `
+            (($s2.Err -split "`r?`n" | Select-Object -First 3) -join ' | ')
+
+        $dryA = Invoke-Exe 'run test.auto1 --dry'
+        $tA = Get-Key $dryA.Out 'target'
+        Check 'R07 tool.json 里写的按钮真能用（--dry 指到工具目录里的 exe）' `
+            (($dryA.Code -eq 0) -and ($tA -match 'bin-tools') -and ($tA -match 'probe\.exe$') -and ((Get-Key $dryA.Out 'exists') -eq 'yes') -and ((Get-Key $dryA.Out 'name') -eq '自动按钮A')) $tA
+        Check 'R08 图标指向文件夹里那张 PNG（tool.json 自己指定的）' ((Get-Key $dryA.Out 'icon') -match 'probe\.png$') (Get-Key $dryA.Out 'icon')
+
+        $dryB = Invoke-Exe ('run auto.' + $b + ' --dry')
+        $tB = Get-Key $dryB.Out 'target'
+        Check 'R09 没有 tool.json 时 id 自动是 auto.<文件夹名>、名字就是文件夹名' `
+            (($dryB.Code -eq 0) -and ((Get-Key $dryB.Out 'id') -eq ('auto.' + $b)) -and ((Get-Key $dryB.Out 'name') -eq $b)) (Get-Key $dryB.Out 'name')
+        Check 'R10 自动按钮的 exe 路径写的是相对路径又解析对了' `
+            (($tB -match 'bin-tools') -and ($tB -match ([regex]::Escape($b + '\' + $b) + '\.exe$')) -and ((Get-Key $dryB.Out 'exists') -eq 'yes')) $tB
+        Check 'R11 文件夹里同名的 PNG 自动当图标（不用手写 icon）' ((Get-Key $dryB.Out 'icon') -match ([regex]::Escape($b) + '\.png$')) (Get-Key $dryB.Out 'icon')
+
+        # 用户层同 id 覆盖自动按钮：用户自己写的永远赢（和内置按钮同一条规矩）
+        [System.IO.File]::WriteAllText($userTools,
+            '{ "tools": [ { "id": "test.auto1", "tab": "mine", "name": "用户层覆盖", "kind": "exe", "path": "' + $a + '\\probe.exe" } ] }',
+            $utf8NoBom)
+        $s3 = Invoke-Exe 'status'
+        $listMine = Invoke-Exe 'list --tab mine'
+        Check 'R12 用户层写同一个 id 时覆盖自动按钮（用户自己的按钮永远赢）' `
+            (($listMine.Out -match '用户层覆盖') -and (-not ($listMine.Out -match '自动按钮A'))) `
+            (($listMine.Out -split "`r?`n" | Where-Object { $_ -match "`t" }) -join ' | ')
+        Check 'R13 被覆盖的那条不再算自动按钮（不重复计数）' ([int](Get-Key $s3.Out 'autoButtons') -eq ($autoBase + 1)) (Get-Key $s3.Out 'autoButtons')
+    } finally {
+        if ($hadUserR) { [System.IO.File]::WriteAllText($userTools, $userBackupR, $utf8NoBom) }
+        else { Remove-Item -LiteralPath $userTools -Force -ErrorAction SilentlyContinue }
+        foreach ($d in $fixtureDirs) { Remove-Item -LiteralPath $d -Recurse -Force -ErrorAction SilentlyContinue }
+        if ($createdRoot) { Remove-Item -LiteralPath $toolDir -Force -ErrorAction SilentlyContinue }
+    }
+    $s4 = Invoke-Exe 'status'
+    Check 'R14 夹具删干净了，按钮数回到测试前（只删自己建的文件夹）' `
+        ([int](Get-Key $s4.Out 'autoButtons') -eq $autoBase) ('auto=' + (Get-Key $s4.Out 'autoButtons') + ' before=' + $autoBase)
 }
 
 # ---------------------------------------------------------------- G 组：拖进来的东西变成什么按钮
@@ -573,8 +749,8 @@ try {
             ('kind=' + (Get-Key $dLnk.Out 'kind') + ' path=' + $lnkPath)
         Check 'G05 快捷方式上带的参数也带过来' ((Get-Key $dLnk.Out 'args') -eq '--lnk-arg') (Get-Key $dLnk.Out 'args')
     } else {
-        Check 'G04 拖一个快捷方式 → 指向它真正指向的 exe（不是 .lnk 本身）' $false '这台机器上建不出 .lnk（COM 不可用），跳过'
-        Check 'G05 快捷方式上带的参数也带过来' $false '跳过'
+        Skip 'G04 拖一个快捷方式 → 指向它真正指向的 exe（不是 .lnk 本身）' '这台机器上建不出 .lnk（WScript.Shell COM 不可用）'
+        Skip 'G05 快捷方式上带的参数也带过来' '同上'
     }
 
     $dNone = Invoke-Exe 'draft'
@@ -593,8 +769,12 @@ $nocommand = Invoke-Exe 'wat'
 Check 'E02 不认识的命令返回退出码 2' ($nocommand.Code -eq 2) ('exit=' + $nocommand.Code)
 $help = Invoke-Exe 'help'
 Check 'E03 help 退出码 0 且有用法' (($help.Code -eq 0) -and ($help.Out -match '用法')) ('exit=' + $help.Code)
-$chk = Invoke-Exe 'checkupdate'
-Check 'E04 checkupdate 只读、不下载' (($chk.Code -eq 0) -and ($chk.Out -match 'update=disabled')) (($chk.Out -split "`r?`n" | Where-Object { $_ -match '^update=' }) -join '')
+Check 'E03b help 里写明了更新检查的三条底线（只读版本号 / 不下载不替换 / 可关掉）' `
+    (($help.Out -match '不下载不替换') -and ($help.Out -match 'MXX1_NO_UPDATE=1')) ''
+$chk = Invoke-Exe 'checkupdate' 60 $Exe @{ MXX1_NO_UPDATE = '1' }
+Check 'E04 checkupdate 只读、不下载（关掉联网时一个请求都不发）' `
+    (($chk.Code -eq 1) -and ($chk.Out -match 'update=disabled') -and ($chk.Out -match 'MXX1_NO_UPDATE')) `
+    (($chk.Out -split "`r?`n" | Where-Object { $_ -match '^update=' }) -join '')
 
 # ---------------------------------------------------------------- H 组：鼠标悬停说明
 Write-Host ''
@@ -605,7 +785,7 @@ Write-Host 'H 组 · 悬停说明（用户 2026-10-04 报过「鼠标悬停的�
 # tip 命令打印的就是界面塞给 ToolTip 的那个字符串，所以这里能直接断言，不用去动真鼠标。
 $tipsAll = Invoke-Exe 'tip'
 Check 'H01 tip 退出码 0' ($tipsAll.Code -eq 0) ('exit=' + $tipsAll.Code)
-Check 'H02 tip 覆盖了每个按钮（112 个）' ((Get-Key $tipsAll.Out 'tips') -eq '112') (Get-Key $tipsAll.Out 'tips')
+Check ('H02 tip 覆盖了每个按钮（112 + 自动 {0} 个）' -f $autoBase) ((Get-Key $tipsAll.Out 'tips') -eq [string](112 + $autoBase)) (Get-Key $tipsAll.Out 'tips')
 
 $blocks = @{}
 $curId = ''
@@ -1302,6 +1482,145 @@ $rmRealIconAfter = @(Get-ChildItem -LiteralPath $rmRealIconDir -File -ErrorActio
 Check 'M23b 撤掉测试项没动用户真实那份图标目录（文件数不变）' `
     ($rmRealIconAfter -eq $rmRealIconsBefore) ('before=' + $rmRealIconsBefore + ' after=' + $rmRealIconAfter)
 
+# ---------------------------------------------------------------- S 组：使用条款与更新检查
+Write-Host ''
+Write-Host 'S 组 · 使用条款（免责声明 / 服务协议 / 首次运行确认门）与更新检查'
+# 用户 2026-10-04 的要求：「缺少完整的检测更新功能/免责/服务协议，你看下 permanent-delete-menu 是怎么做的？」
+# 正本 docs\DISCLAIMER.md 编译时内嵌进 exe（资源名 Disclaimer.md），窗口显示的就是它；同意记录写在
+# settings.ini，记的是**正文指纹**而不是一句 true —— 条款一改，指纹对不上就重新要求确认。
+# 界面那条确认门（弹窗 / 禁用按钮 / 不同意就退出）由 Test-Gui 的 I 组盯。
+
+$dis = Invoke-Exe 'disclaimer'
+Check 'S01 disclaimer 退出码 0' ($dis.Code -eq 0) ('exit=' + $dis.Code)
+Check 'S02 正文不是空窗口（几 KB 的中文正文）' ($dis.Out.Length -gt 2000) ('字数=' + $dis.Out.Length)
+Check 'S03 写清了许可证' ($dis.Out -match 'GPL-3\.0-or-later') ''
+Check 'S04 写清了会写哪些注册表位置、本身不提权、提权走 UAC' `
+    (($dis.Out -match 'HKEY_CURRENT_USER') -and ($dis.Out -match 'asInvoker') -and ($dis.Out -match 'UAC')) ''
+Check 'S05 写清了唯一的联网动作与关掉它的开关' (($dis.Out -match 'api\.github\.com') -and ($dis.Out -match 'MXX1_NO_UPDATE=1')) ''
+Check 'S06 写清了「解除文件占用」会结束进程 / 关句柄（后果不藏）' `
+    (($dis.Out -match '结束那些进程') -and ($dis.Out -match '句柄')) ''
+Check 'S07 指向仓库里的正本（窗口显示的与文档永远一致）' `
+    (($dis.Out -match 'docs/DISCLAIMER\.md') -and ($dis.Out -match '(?m)^source=docs/DISCLAIMER')) ''
+Check 'S08 命令里带上了正文指纹（同意门用的就是它）' ($dis.Out -match '(?m)^hash=[0-9a-f]{16}') (Get-Key $dis.Out 'hash')
+
+$helpText = Invoke-Exe 'help'
+Check 'S09 help 里能查到 checkupdate / disclaimer / consent 三个命令' `
+    (($helpText.Out -match 'checkupdate') -and ($helpText.Out -match 'disclaimer') -and ($helpText.Out -match 'consent')) ''
+
+# ---- 更新检查：只读版本号，不下载、不替换；三条路径都验（关掉 / 连不上 / 有新版）
+$cuOff = Invoke-Exe 'checkupdate' 60 $Exe @{ MXX1_NO_UPDATE = '1' }
+Check 'S10 MXX1_NO_UPDATE=1 时一个字节都不发（update=disabled，退出码 1 = 这次没结论）' `
+    (($cuOff.Code -eq 1) -and ($cuOff.Out -match '(?m)^update=disabled\r?$')) (Get-Key $cuOff.Out 'update')
+Check 'S11 关掉时也报版本号（脚本据此判断）' ((Get-Key $cuOff.Out 'version') -eq '1.5.3') (Get-Key $cuOff.Out 'version')
+
+$cuBad = Invoke-Exe 'checkupdate' 60 $Exe @{
+    MXX1_UPDATE_URL = 'http://127.0.0.1:9/releases'
+    MXX1_UPDATE_TAGS_URL = 'http://127.0.0.1:9/tags'
+    MXX1_UPDATE_TIMEOUT_MS = '1500'
+}
+Check 'S12 连不上时静默降级成 update=error（不抛异常、不弹窗）' `
+    (($cuBad.Code -eq 1) -and ($cuBad.Out -match '(?m)^update=error\r?$')) (Get-Key $cuBad.Out 'detail')
+
+# 本机假接口（用完就关，不碰外网）：有新版时命令行说得出来，而且只给出"发布页"这个地址
+$cuListener = $null
+try {
+    $tcp2 = New-Object System.Net.Sockets.TcpListener([System.Net.IPAddress]::Loopback, 0)
+    $tcp2.Start()
+    $cuPort = $tcp2.LocalEndpoint.Port
+    $tcp2.Stop()
+    $cuPrefix = 'http://127.0.0.1:' + $cuPort + '/'
+    $cuBody = '{"tag_name":"v9.9.9","html_url":"' + $cuPrefix + 'fake-release"}'
+    $cuBytes = [System.Text.Encoding]::UTF8.GetBytes($cuBody)
+    $cuListener = New-Object System.Net.HttpListener
+    $cuListener.Prefixes.Add($cuPrefix)
+    $cuListener.Start()
+    $cuCtx = $cuListener.GetContextAsync()
+
+    $cuSi = New-Object System.Diagnostics.ProcessStartInfo
+    $cuSi.FileName = $Exe
+    $cuSi.Arguments = 'checkupdate'
+    $cuSi.UseShellExecute = $false
+    $cuSi.RedirectStandardOutput = $true
+    $cuSi.RedirectStandardError = $true
+    $cuSi.CreateNoWindow = $true
+    $cuSi.StandardOutputEncoding = New-Object System.Text.UTF8Encoding($false)
+    $cuSi.EnvironmentVariables['MXX1_UPDATE_URL'] = ($cuPrefix + 'releases/latest')
+    $cuSi.EnvironmentVariables['MXX1_UPDATE_TAGS_URL'] = ($cuPrefix + 'tags')
+    $cuP = New-Object System.Diagnostics.Process
+    $cuP.StartInfo = $cuSi
+    [void]$cuP.Start()
+    $cuTask = $cuP.StandardOutput.ReadToEndAsync()
+    $cuErrTask = $cuP.StandardError.ReadToEndAsync()
+    for ($ci = 0; $ci -lt 60 -and -not $cuP.HasExited; $ci++) {
+        Start-Sleep -Milliseconds 150
+        if ($cuCtx.IsCompleted) {
+            try {
+                $c = $cuCtx.Result
+                $c.Response.StatusCode = 200
+                $c.Response.ContentType = 'application/json'
+                $c.Response.ContentLength64 = $cuBytes.Length
+                $c.Response.OutputStream.Write($cuBytes, 0, $cuBytes.Length)
+                $c.Response.OutputStream.Close()
+            } catch { }
+            $cuCtx = $cuListener.GetContextAsync()
+        }
+    }
+    [void]$cuP.WaitForExit(20000)
+    $cuOut = ''
+    try { $cuOut = $cuTask.Result } catch { }
+    Check 'S13 有新版时命令行说得出来（update=available + latest=9.9.9）' `
+        (($cuP.ExitCode -eq 0) -and ($cuOut -match '(?m)^update=available\r?$') -and ((Get-Key $cuOut 'latest') -eq '9.9.9')) `
+        ('exit=' + $cuP.ExitCode + ' ' + (Get-Key $cuOut 'latest'))
+    Check 'S14 报的是"发布页"地址（只报告，不下载任何文件）' `
+        ((Get-Key $cuOut 'url') -eq ($cuPrefix + 'fake-release')) (Get-Key $cuOut 'url')
+    Check 'S15 界面文案里写清新版本和当前版本' ($cuOut -match '发现新版本 v9\.9\.9') (Get-Key $cuOut 'ui')
+} finally {
+    if ($cuListener -ne $null) { try { $cuListener.Stop(); $cuListener.Close() } catch { } }
+}
+
+# ---- 使用条款的同意状态（consent 命令 / status 字段 / settings.ini 里的记录）
+$consentBefore = 'unknown'
+$probeC = Invoke-Exe 'consent'
+if ($probeC.Out -match '(?m)^consent=(\w+)') { $consentBefore = $Matches[1] }
+$curHash = Get-Key $probeC.Out 'currentHash'
+Check 'S16 当前条款正文的指纹是 16 位十六进制' ($curHash -match '^[0-9a-f]{16}$') $curHash
+
+$cReset = Invoke-Exe 'consent --reset'
+Check 'S17 --reset 之后状态是"需要确认"（退出码 1）' `
+    (($cReset.Code -eq 1) -and ($cReset.Out -match '(?m)^consent=required\r?$')) (Get-Key $cReset.Out 'consent')
+$cAccept = Invoke-Exe 'consent --accept'
+Check 'S18 --accept 之后退出码 0 且 consent=agreed' `
+    (($cAccept.Code -eq 0) -and ($cAccept.Out -match '(?m)^consent=agreed\r?$')) (Get-Key $cAccept.Out 'consent')
+Check 'S19 记下来的是当前正文指纹（不是一句 true）' ((Get-Key $cAccept.Out 'consentHash') -eq $curHash) (Get-Key $cAccept.Out 'consentHash')
+
+$iniPath = Get-Key $cAccept.Out 'settings'
+$iniText = ''
+if ($iniPath.Length -gt 0 -and (Test-Path -LiteralPath $iniPath)) {
+    $iniText = [System.IO.File]::ReadAllText($iniPath, [System.Text.Encoding]::UTF8)
+}
+Check 'S20 同意记录真写进了 settings.ini（AgreedDisclaimer=<指纹>）' `
+    ($iniText -match ('(?m)^AgreedDisclaimer=' + $curHash + '\s*$')) $iniPath
+Check 'S21 记录里带同意时间（事后能追溯）' `
+    ($iniText -match '(?m)^AgreedAt=\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\s*$') ''
+
+$st3 = Invoke-Exe 'status'
+Check 'S22 status 里能查到条款状态（脚本据此判断要不要先同意）' `
+    (($st3.Out -match '(?m)^consent=agreed\r?$') -and ($st3.Out -match '(?m)^consentAgreed=yes\r?$')) (Get-Key $st3.Out 'consent')
+Check 'S23 status 里能查到更新检查是开是关' ($st3.Out -match '(?m)^updateCheck=(enabled|disabled)\r?$') (Get-Key $st3.Out 'updateCheck')
+
+$null = Invoke-Exe 'consent --reset'
+$cliFree = Invoke-Exe 'list --tab mine'
+Check 'S24 命令行不被条款拦（非交互场景：没同意也照常 list）' `
+    (($cliFree.Code -eq 0) -and ($cliFree.Out -match '(?m)^shown=')) ''
+$cliRun = Invoke-Exe 'run devmgmt --dry'
+Check 'S25 命令行 run --dry 也一样不被拦（只解析、不启动）' (($cliRun.Code -eq 0) -and ((Get-Key $cliRun.Out 'dry') -eq 'yes')) (Get-Key $cliRun.Out 'id')
+
+# 复原成测试之前的样子（用户下次打开界面该不该看到确认窗口，由他原来的状态决定）
+if ($consentBefore -eq 'required') { $null = Invoke-Exe 'consent --reset' } else { $null = Invoke-Exe 'consent --accept' }
+$cAfter = Invoke-Exe 'consent'
+Check 'S26 条款状态已按测试前的样子复原' ($cAfter.Out -match ('(?m)^consent=' + $consentBefore)) `
+    ('now=' + (Get-Key $cAfter.Out 'consent') + ' before=' + $consentBefore)
+
 # ---------------------------------------------------------------- 汇总
 Write-Host ''
 Write-Host '----------------------------------------------------------'
@@ -1309,6 +1628,7 @@ Write-Host '----------------------------------------------------------'
 if ($script:SyncHad) { $env:MXX1_NO_RIGHTMENU_SYNC = $script:SyncOld }
 else { Remove-Item Env:MXX1_NO_RIGHTMENU_SYNC -ErrorAction SilentlyContinue }
 Write-Host (" 命令行回归: 通过 {0} 项, 失败 {1} 项" -f $script:Pass, $script:Fail)
+if ($script:Skip -gt 0) { Write-Host (" （另有 {0} 项环境不满足，跳过 —— 不算失败，原因见上面 [SKIP] 那几行）" -f $script:Skip) }
 Write-Host '----------------------------------------------------------'
 if ($script:UserToolsHad -and (Test-Path -LiteralPath $UserToolsPaused)) {
     if (Test-Path -LiteralPath $UserToolsJson) { Remove-Item -LiteralPath $UserToolsJson -Force }

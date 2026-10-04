@@ -53,6 +53,30 @@ namespace Mxx1Toolbox
                 if (warnings != null) { warnings.Add("用户 tools.json: " + ex.Message); }
             }
 
+            // Tool folders last: a button a folder asks for never replaces one that already exists
+            // (embedded manifest or the user layer), so dropping a folder in can only ever *add*
+            // buttons. See ToolFolders for the whole rule set.
+            try
+            {
+                foreach (ToolItem auto in ToolFolders.Scan(warnings))
+                {
+                    if (map.ContainsKey(auto.Id))
+                    {
+                        if (warnings != null)
+                        {
+                            warnings.Add(auto.Source + ": 按钮 id「" + auto.Id
+                                + "」已经存在（内置清单或用户 tools.json），这一条自动按钮被跳过");
+                        }
+                        continue;
+                    }
+                    map[auto.Id] = auto;
+                }
+            }
+            catch (Exception ex)
+            {
+                if (warnings != null) { warnings.Add("bin-tools 自动按钮: " + ex.Message); }
+            }
+
             List<ToolItem> list = new List<ToolItem>(map.Values);
             list.Sort(Compare);
             return list;

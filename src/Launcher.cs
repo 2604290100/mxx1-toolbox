@@ -34,7 +34,32 @@ namespace Mxx1Toolbox
         public string Shell = "";   // shell: folder opened through explorer.exe
         public string Url = "";     // ms-settings: / https: target
         public string Missing = ""; // sentence shown when Path is not on this machine
+        public string Legacy = "";  // sentence for Win7 (no Settings app) -- "" = use NoSettingsApp
         public bool UiAction;       // handled by MainForm (the 常用链接 window)
+
+        /// <summary>Win7 上没有「设置」应用，这个入口会得到 NoSettingsApp / Legacy 那句说明。</summary>
+        public const string NoSettingsApp = "这台系统没有 Windows 10 / 11 那个「设置」应用，这个页面打不开。"
+            + "同样的开关在控制面板里，工具箱的「控制面板」按钮能到那儿。";
+
+        /// <summary>这台系统认不认 ms-settings: 这类入口（「设置」应用是 Windows 10 起才有的）。
+        /// 先看协议在注册表里有没有注册 —— 不看版本号，是因为没带清单的 exe 在 Win8.1 以上拿到的是
+        /// 被"骗"过的版本号；注册表不会骗人。读不到注册表才退回版本号兜底。</summary>
+        public static readonly bool HasSettingsApp = ProbeSettingsApp();
+
+        private static bool ProbeSettingsApp()
+        {
+            try
+            {
+                using (Microsoft.Win32.RegistryKey k =
+                    Microsoft.Win32.Registry.ClassesRoot.OpenSubKey("ms-settings"))
+                {
+                    if (k != null) { return true; }
+                }
+            }
+            catch { }
+            try { return Environment.OSVersion.Version.Major >= 10; }
+            catch { return true; }
+        }
 
         public bool Exists
         {
@@ -42,8 +67,21 @@ namespace Mxx1Toolbox
             {
                 if (UiAction) { return true; }
                 if (Path.Length > 0) { return File.Exists(AppPaths.Expand(Path)); }
-                return true;    // shell: folders and ms-settings: pages always exist
+                if (IsSettingsUrl) { return HasSettingsApp; }
+                return true;    // shell: 文件夹（控制面板、设备和打印机）从 XP 起就有
             }
+        }
+
+        /// <summary>这个目标是 ms-settings: 页面（只有 Windows 10 / 11 有这个「设置」应用）。</summary>
+        public bool IsSettingsUrl
+        {
+            get { return Url.StartsWith("ms-settings:", StringComparison.OrdinalIgnoreCase); }
+        }
+
+        /// <summary>系统上没有这个入口时该说的那句话。有名字的目标说自己那句，其余用通用那句。</summary>
+        public string UnavailableMessage
+        {
+            get { return Legacy.Length > 0 ? Legacy : NoSettingsApp; }
         }
     }
 
@@ -51,6 +89,26 @@ namespace Mxx1Toolbox
     /// are suppressed by default and the child output is captured asynchronously.</summary>
     internal static class Launcher
     {
+        /// <summary>这台机器是哪一版 Windows。清单里声明了 Win7 / 8 / 8.1 / 10，所以
+        /// GetVersionEx（Environment.OSVersion）报的是**真实**版本号，不会像没清单的程序那样
+        /// 在 Win8.1 以上一律报 6.2。只认我们支持的 Win7 / Win10 / Win11，别的一律如实报数字。</summary>
+        public static string WindowsName()
+        {
+            try
+            {
+                Version v = Environment.OSVersion.Version;
+                if (v.Major == 6 && v.Minor == 1) { return "Windows 7"; }
+                if (v.Major == 6 && v.Minor == 2) { return "Windows 8"; }
+                if (v.Major == 6 && v.Minor == 3) { return "Windows 8.1"; }
+                if (v.Major == 10)
+                {
+                    return (v.Build >= 22000) ? "Windows 11" : "Windows 10";
+                }
+                return "Windows " + v.Major.ToString(CultureInfo.InvariantCulture)
+                    + "." + v.Minor.ToString(CultureInfo.InvariantCulture);
+            }
+            catch { return "Windows（版本号读不出来）"; }
+        }
         public const string ModulePermdel = "permdel";
         public const string ModuleApp = "app";
         public const string ModuleSystem = "system";
@@ -71,7 +129,8 @@ namespace Mxx1Toolbox
         {
             FileTarget("devmgmt", "设备管理器", "%SystemRoot%\\System32\\devmgmt.msc",
                 "这台电脑上找不到设备管理器（devmgmt.msc）"),
-            UrlTarget("sound", "声音设置", "ms-settings:sound"),
+            UrlTarget("sound", "声音设置", "ms-settings:sound",
+                "Win7 上没有「设置」应用。声音请到控制面板的「硬件和声音 - 声音」里调。"),
             ShellTarget("printers", "设备和打印机", "shell:PrintersFolder"),
             FileTarget("taskschd", "任务计划程序", "%SystemRoot%\\System32\\taskschd.msc",
                 "这台电脑上找不到任务计划程序（taskschd.msc）"),
@@ -100,15 +159,23 @@ namespace Mxx1Toolbox
 
             // 隐私设置页签上那 4 个"权限"按钮：权限逐个应用的开关只能在官方页面里点，
             // 但页面本身可以直达（工具箱不代改权限，也不假装能改）。
-            UrlTarget("privacy-camera", "相机权限", "ms-settings:privacy-webcam"),
-            UrlTarget("privacy-microphone", "麦克风权限", "ms-settings:privacy-microphone"),
-            UrlTarget("privacy-location", "位置权限", "ms-settings:privacy-location"),
-            UrlTarget("privacy-background", "后台应用", "ms-settings:privacy-backgroundapps"),
+            UrlTarget("privacy-camera", "相机权限", "ms-settings:privacy-webcam",
+                "Win7 上没有「设置」应用，也没有这套「按应用开关权限」的页面。相机在设备管理器里管（「图像设备」），"
+                + "软件的相机权限由软件自己问。"),
+            UrlTarget("privacy-microphone", "麦克风权限", "ms-settings:privacy-microphone",
+                "Win7 上没有「设置」应用，也没有这套「按应用开关权限」的页面。麦克风在「声音 - 录制」里管，"
+                + "软件的麦克风权限由软件自己问。"),
+            UrlTarget("privacy-location", "位置权限", "ms-settings:privacy-location",
+                "Win7 上没有「设置」应用。位置功能在控制面板的「位置和其他传感器」里，Win7 默认是关的。"),
+            UrlTarget("privacy-background", "后台应用", "ms-settings:privacy-backgroundapps",
+                "Win7 上没有「设置」应用，也没有「后台应用」这个概念（那是 Windows 10 的应用商店应用才有的）。"),
 
             // 应用管理页签上那两个"打开官方页面"的按钮。默认程序 / 应用和功能都在这些页面里改，
             // 工具箱不代改（改默认程序要按文件类型逐个设，代改只会把关联搞乱）。
-            UrlTarget("defaultapps", "默认应用", "ms-settings:defaultapps"),
-            UrlTarget("appfeatures", "应用和功能", "ms-settings:appsfeatures")
+            UrlTarget("defaultapps", "默认应用", "ms-settings:defaultapps",
+                "Win7 上没有「设置」应用。默认程序请到控制面板的「默认程序」里改。"),
+            UrlTarget("appfeatures", "应用和功能", "ms-settings:appsfeatures",
+                "Win7 上没有「设置」应用。卸载程序请到控制面板的「程序和功能」里（工具箱的「程序和功能」按钮就是它）。")
         };
 
         // NOTE: these helpers must not be called File / Shell / Url / Links -- a method named File
@@ -129,8 +196,14 @@ namespace Mxx1Toolbox
 
         private static SystemTarget UrlTarget(string action, string name, string url)
         {
+            return UrlTarget(action, name, url, "");
+        }
+
+        /// <summary>legacy = Win7 上（没有「设置」应用）改说哪句话：直接告诉他去控制面板的哪儿。</summary>
+        private static SystemTarget UrlTarget(string action, string name, string url, string legacy)
+        {
             SystemTarget t = new SystemTarget();
-            t.Action = action; t.Name = name; t.Url = url;
+            t.Action = action; t.Name = name; t.Url = url; t.Legacy = legacy;
             return t;
         }
 
@@ -501,17 +574,22 @@ namespace Mxx1Toolbox
                 return r;
             }
 
+            // 两条不同的"打不开"：① 组件被精简掉 / 版本里没有 → Missing 那句；
+            // ② 这台系统没有这个入口（Win7 没有 ms-settings: 的「设置」应用）→ UnavailableMessage。
+            if (!target.Exists)
+            {
+                r.Ok = false;
+                r.Message = target.Path.Length > 0
+                    ? (target.Missing.Length > 0 ? target.Missing : ("找不到 " + AppPaths.Expand(target.Path)))
+                    : target.UnavailableMessage;
+                return r;
+            }
+
             string file = "";
             string args = "";
             if (target.Path.Length > 0)
             {
                 file = AppPaths.Expand(target.Path);
-                if (!File.Exists(file))
-                {
-                    r.Ok = false;
-                    r.Message = target.Missing.Length > 0 ? target.Missing : ("找不到 " + file);
-                    return r;
-                }
             }
             else if (target.Shell.Length > 0)
             {

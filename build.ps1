@@ -106,6 +106,13 @@ if (Test-Path $icon) {
 }
 foreach ($j in $jsonFiles) { $cscArgs += ('/resource:' + $j.FullName + ',tools.' + $j.Name) }
 
+# The terms of service ship INSIDE the exe: the window that shows them and the fingerprint the
+# consent gate stores must come from one and the same file (docs\DISCLAIMER.md). Editing that
+# file therefore changes the fingerprint and everybody is asked to agree again -- by design.
+$disclaimer = Join-Path $root 'docs\DISCLAIMER.md'
+if (-not (Test-Path $disclaimer)) { throw ('missing ' + $disclaimer + ' (the terms window reads it from the exe)') }
+$cscArgs += ('/resource:' + $disclaimer + ',Disclaimer.md')
+
 # Button icons (tools\Make-Icons.ps1 output) are embedded too, so the exe stays a single file.
 $iconFiles = @(Get-ChildItem (Join-Path $root 'assets\icons\*.png') -ErrorAction SilentlyContinue)
 foreach ($i in $iconFiles) { $cscArgs += ('/resource:' + $i.FullName + ',icons.' + $i.Name) }
@@ -132,6 +139,11 @@ if ($iconFiles.Count -gt 0 -and $embeddedIcons.Count -ne $iconFiles.Count) {
     throw ('embedded icons: ' + $embeddedIcons.Count + ' of ' + $iconFiles.Count + ' -- run tools\Make-Icons.ps1 again')
 }
 if ($embeddedIcons.Count -gt 0) { Write-Host ('icons    : ' + $embeddedIcons.Count + ' embedded') }
+
+# The terms window reads Disclaimer.md out of these resources. If the name ever drifts the window
+# would silently fall back to its short built-in text, so fail the build instead.
+if (-not ($names -contains 'Disclaimer.md')) { throw 'embedded resource missing: Disclaimer.md' }
+Write-Host ('terms    : docs\DISCLAIMER.md embedded (' + (Get-Item $disclaimer).Length + ' bytes)')
 
 # ---- companion skill (kept in the repo under skill\, synced to the workspace .dsh copy) ----
 $skillName = 'mxx1-toolbox'

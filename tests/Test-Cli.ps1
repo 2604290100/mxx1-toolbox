@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 mxx1.cn
 <#

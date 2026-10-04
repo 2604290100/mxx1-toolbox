@@ -17,7 +17,7 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
 
 ## 当前状态（2026-10-04，v1.2.0）
 
-- ✅ **测试 99 项全绿**：命令行回归 35 + 界面回归 64（外加编码体检 98 个文件）。
+- ✅ **测试 101 项全绿**：命令行回归 37 + 界面回归 64（外加编码体检 98 个文件）。
   产物 `bin\Mxx1Toolbox.exe`（约 136 KB 单文件），五个 `tools.*.json` + 53 个 `icons.*.png` 已内嵌。
 - ✅ **53 个按钮 = 35 个真功能 + 18 个灰色占位**：`常用设置` 31（13 真 / 18 灰）/
   `右键增强` **1**（真）/ `清理优化` **8**（全真）/ `系统工具` **12**（全真）/
@@ -66,7 +66,7 @@ D:\萌新工具开发\toolbox\
   tools\Make-Icons.ps1             批量画图标（先从 exe 的 list 读清单，所以**先 build 再跑它**）
   assets\icons\*.png               53 个图标（编译时内嵌成 icons.<id>.png）
   tests\Test-All.ps1               一条命令跑完全部
-  tests\Test-Cli.ps1               命令行回归 35 项
+  tests\Test-Cli.ps1               命令行回归 37 项
   tests\Test-Gui.ps1               界面回归 64 项（要交互式桌面，无桌面返回 3 = 跳过）
   docs\DESIGN.md                   设计正本（含"踩过的坑"清单 + §13 打包方案）
   docs\gui-shot.png / dark-shot.png / system-shot.png  界面截图

@@ -192,10 +192,18 @@ namespace Mxx1Toolbox
             switch (t.Kind)
             {
                 case "exe":
-                    return Quote(AppPaths.Resolve(t.Path)) + (t.Args.Length > 0 ? " " + t.Args : "");
+                    return Quote(AppPaths.Resolve(t.Path)) + (t.Args.Length > 0 ? " " + ExpandArgs(t.Args) : "");
                 case "script":
-                    if (t.Inline.Length > 0) { return t.Shell + " -Command \"" + t.Inline + "\""; }
-                    return t.Shell + " -File " + Quote(AppPaths.Resolve(t.Path)) + (t.Args.Length > 0 ? " " + t.Args : "");
+                    if (t.Inline.Length > 0)
+                    {
+                        // cmd has no -Command switch (it takes /c), so do not render a cmd script as
+                        // "cmd -Command ..." -- that display cost a debugging round when read in the log.
+                        return (t.Shell == "cmd")
+                            ? "cmd /c \"" + t.Inline + "\""
+                            : "powershell -Command \"" + t.Inline + "\"";
+                    }
+                    return t.Shell + " -File " + Quote(AppPaths.Resolve(t.Path))
+                        + (t.Args.Length > 0 ? " " + ExpandArgs(t.Args) : "");
                 case "open":
                     return "start \"\" " + AppPaths.Resolve(t.Target);
                 case "builtin":
@@ -230,6 +238,18 @@ namespace Mxx1Toolbox
             return args.Trim();
         }
 
+        /// <summary>Expands %SystemRoot% / %USERPROFILE% placeholders inside an argument list.
+        /// The path field was always expanded but the arguments were passed verbatim, so
+        /// 「hosts 修改」 handed Notepad the literal text "%SystemRoot%\System32\drivers\etc\hosts"
+        /// and Notepad answered "找不到文件" instead of opening the hosts file (a live report from
+        /// the user, 2026-10-04). Only %VAR% is touched: switches, quotes and several arguments
+        /// stay exactly as the manifest wrote them.</summary>
+        private static string ExpandArgs(string args)
+        {
+            if (string.IsNullOrEmpty(args)) { return ""; }
+            return AppPaths.Expand(args);
+        }
+
         public static LaunchResult Run(ToolItem t, Settings settings, bool asAdmin)
         {
             LaunchResult r = new LaunchResult();
@@ -246,7 +266,7 @@ namespace Mxx1Toolbox
                         {
                             r.Ok = false; r.Message = "找不到程序：" + file; return r;
                         }
-                        return Exec(file, t.Args, AppPaths.Resolve(t.WorkDir), asAdmin, t.Wait, t.TimeoutSec);
+                        return Exec(file, ExpandArgs(t.Args), AppPaths.Resolve(t.WorkDir), asAdmin, t.Wait, t.TimeoutSec);
                     }
                 case "script":
                     {
@@ -257,9 +277,9 @@ namespace Mxx1Toolbox
                         }
                         string shell = (t.Shell == "cmd") ? "cmd.exe" : "powershell.exe";
                         string args = (t.Shell == "cmd")
-                            ? "/c " + (t.Inline.Length > 0 ? t.Inline : Quote(file) + " " + t.Args)
+                            ? "/c " + (t.Inline.Length > 0 ? t.Inline : Quote(file) + " " + ExpandArgs(t.Args))
                             : "-NoProfile -ExecutionPolicy Bypass " +
-                              (t.Inline.Length > 0 ? "-EncodedCommand " + ToBase64(t.Inline) : "-File " + Quote(file) + " " + t.Args);
+                              (t.Inline.Length > 0 ? "-EncodedCommand " + ToBase64(t.Inline) : "-File " + Quote(file) + " " + ExpandArgs(t.Args));
                         return Exec(shell, args, AppPaths.Resolve(t.WorkDir), asAdmin, true, t.TimeoutSec);
                     }
                 case "open":

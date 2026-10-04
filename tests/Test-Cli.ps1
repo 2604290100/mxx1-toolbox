@@ -205,6 +205,29 @@ Check 'D04 12 个系统工具都有目标、且缺了就说明原因' ($bad.Coun
 $dryMissing = Invoke-Exe 'run no.such.button --dry'
 Check 'D05 不存在的按钮 --dry 也是退出码 2' ($dryMissing.Code -eq 2) ('exit=' + $dryMissing.Code)
 
+# 参数里的 %变量% 必须展开。path 一直是展开的，args 曾经原样传给程序 ——
+# 「hosts 修改」于是让记事本去开一个字面量路径 "%SystemRoot%\System32\drivers\etc\hosts"，
+# 用户看到的是"hosts 修改没有正常打开"（2026-10-04 实测报的）。
+# 只查 kind=exe：脚本的 inline 交给 cmd 执行时，%VAR% 本来就该由 cmd 自己展开。
+$allList = Invoke-Exe 'list'
+$realIds = @()
+foreach ($line in ($allList.Out -split "`r?`n")) {
+    if (($line -match "`t") -and ($line -notmatch 'placeholder')) { $realIds += ($line -split "`t")[0] }
+}
+$leftover = @()
+foreach ($id in $realIds) {
+    $d = Invoke-Exe ('run ' + $id + ' --dry')
+    if ((Get-Key $d.Out 'kind') -ne 'exe') { continue }
+    $cmd = Get-Key $d.Out 'command'
+    if ($cmd -match '%[A-Za-z_][A-Za-z0-9_]*%') { $leftover += ($id + ' -> ' + $cmd) }
+}
+Check ('D06 真按钮的参数里不残留 %变量%（查了 {0} 个真按钮）' -f $realIds.Count) ($leftover.Count -eq 0) ($leftover -join ' / ')
+
+$hostsDry = Invoke-Exe 'run hosts-edit --dry'
+Check 'D07 hosts 修改的参数展开成真的 hosts 路径' `
+    (((Get-Key $hostsDry.Out 'command') -match 'drivers\\etc\\hosts$') -and ((Get-Key $hostsDry.Out 'command') -notmatch '%')) `
+    (Get-Key $hostsDry.Out 'command')
+
 # ---------------------------------------------------------------- F 组：工具目录（bin-tools）
 Write-Host ''
 Write-Host 'F 组 · 外部工具目录 bin-tools（外部工具丢进去就能用）'

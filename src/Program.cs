@@ -386,8 +386,38 @@ namespace Mxx1Toolbox
             {
                 return UnlockQuery(args);
             }
-            Console.Error.WriteLine("用法: rightmenu status | items | help | unlock [--query-only] <文件或文件夹路径>");
+            if (what == "handles")
+            {
+                return HandlesQuery(args);
+            }
+            Console.Error.WriteLine("用法: rightmenu status | items | help | unlock [--query-only] <路径> | handles <路径>");
             return 2;
+        }
+
+        /// <summary>只读：谁手里攥着这个文件 / 文件夹的**句柄**（全系统句柄表，像火绒那样）。
+        /// 命令行只提供"查"，**不提供"关"** —— 抽句柄是危险动作，只能从界面点（还要过确认框）。
+        /// 测试用它：共享打开（FileShare.ReadWrite）的文件 Restart Manager 看不见，句柄表看得见。</summary>
+        private static int HandlesQuery(string[] args)
+        {
+            string path = "";
+            for (int i = 2; i < args.Length; i++)
+            {
+                if (args[i].StartsWith("--")) { continue; }
+                path = args[i];
+                break;
+            }
+            if (path.Trim().Length == 0)
+            {
+                Console.Error.WriteLine("用法: rightmenu handles <文件或文件夹路径>");
+                return 2;
+            }
+            string note;
+            List<HandleHit> hits = HandleUnlock.Find(new string[] { path }, out note);
+            Console.WriteLine("path=" + path);
+            Console.WriteLine("hits=" + hits.Count.ToString(CultureInfo.InvariantCulture));
+            foreach (HandleHit h in hits) { Console.WriteLine("handle\t" + HandleUnlock.DescribeLine(h)); }
+            Console.WriteLine("note=" + note);
+            return 0;
         }
 
         /// <summary>只查不改：谁占着这个文件。测试用它（自己锁一个文件 → 断言能查到自己的 PID）。</summary>
@@ -410,20 +440,48 @@ namespace Mxx1Toolbox
             bool exists = false;
             try { exists = File.Exists(path) || Directory.Exists(path); }
             catch { }
+            int lockHits = 0;
+            foreach (LockHit h in report.Hits)
+            {
+                foreach (FileLocker f in h.Lockers) { if (f.IsLock) { lockHits++; break; } }
+            }
             Console.WriteLine("path=" + path);
             Console.WriteLine("exists=" + (exists ? "yes" : "no"));
             Console.WriteLine("scanned=" + report.Scanned.ToString(CultureInfo.InvariantCulture));
             Console.WriteLine("truncated=" + (report.Truncated ? "yes" : "no"));
-            Console.WriteLine("hits=" + report.Hits.Count.ToString(CultureInfo.InvariantCulture));
+            Console.WriteLine("hits=" + lockHits.ToString(CultureInfo.InvariantCulture));
             Console.WriteLine("lockers=" + found.Count.ToString(CultureInfo.InvariantCulture));
+            // 后两类不是"占用"，是线索：它自己在运行 / 某个窗口里开着它（见 FileLock 里的说明）
+            Console.WriteLine("run=" + report.RunCount.ToString(CultureInfo.InvariantCulture));
+            Console.WriteLine("open=" + report.OpenCount.ToString(CultureInfo.InvariantCulture));
             Console.WriteLine("badfiles=" + report.BadFiles.ToString(CultureInfo.InvariantCulture));
             // 哪个文件被占着（文件夹扫描时这是最有用的那一行）
             foreach (LockHit h in report.Hits)
             {
-                if (h.File.Length > 0) { Console.WriteLine("file=" + h.File + "\tlockers=" + h.Lockers.Count.ToString(CultureInfo.InvariantCulture)); }
+                if (h.File.Length == 0) { continue; }
+                int n = 0;
+                foreach (FileLocker f in h.Lockers) { if (f.IsLock) { n++; } }
+                if (n == 0) { continue; }
+                Console.WriteLine("file=" + h.File + "\tlockers=" + n.ToString(CultureInfo.InvariantCulture));
             }
-            foreach (FileLocker f in found) { Console.WriteLine(FileLock.DescribeLine(f)); }
+            foreach (FileLocker f in report.AllRows())
+            {
+                Console.WriteLine(f.Source + "\t" + FileLock.DescribeLine(f)
+                    + (f.Extra.Length > 0 ? ("\textra=" + f.Extra) : ""));
+            }
+            // 结束进程会连带结束的子进程（只读预览）
+            foreach (FileLocker f in FileLock.ChildrenOf(found))
+            {
+                Console.WriteLine("child\tpid=" + f.Pid.ToString(CultureInfo.InvariantCulture) + "\texe=" + f.Exe);
+            }
             Console.WriteLine("verdict=" + report.Verdict);
+            // 「能不能删 / 改名」：用户真正要问的那句（拿 DELETE 权限试一次，只试不改）
+            if (report.DeleteChecked)
+            {
+                Console.WriteLine("candelete=" + (report.DeleteOk ? "yes" : "no"));
+                Console.WriteLine("deleteerror=" + report.DeleteError.ToString(CultureInfo.InvariantCulture));
+                if (report.DeleteNote.Length > 0) { Console.WriteLine("deletenote=" + report.DeleteNote); }
+            }
             Console.WriteLine("verdictlocked=" + (report.VerdictLocked ? "yes" : "no"));
             Console.WriteLine("verdictdenied=" + (report.VerdictDenied ? "yes" : "no"));
             if (report.Note.Length > 0) { Console.WriteLine("note=" + report.Note); }

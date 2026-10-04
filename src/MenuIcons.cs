@@ -29,10 +29,19 @@ namespace Mxx1Toolbox
     /// 不会留着旧图不放。</summary>
     internal static class MenuIcons
     {
-        /// <summary>生成的 .ico 放哪。放在用户目录下：工具箱所在目录可能是只读的（Program Files / U 盘）。</summary>
+        /// <summary>生成的 .ico 放哪。放在用户目录下：工具箱所在目录可能是只读的（Program Files / U 盘）。
+        ///
+        /// **按注册表根分开**（2026-10-04 实测踩到）：回归测试装到 `MXX1_RIGHTMENU_ROOT` 指的隔离根里，
+        /// 撤掉时会调 `RemoveAll()` —— 如果两边共用同一个目录，**测试的卸载会把用户真实那份菜单还在
+        /// 引用的 .ico 一起删掉**（菜单图标变空白）。所以测试根用 `rightmenu-icons-test`。</summary>
         public static string Dir
         {
-            get { return Path.Combine(AppPaths.BaseDir, "rightmenu-icons"); }
+            get
+            {
+                string env = Environment.GetEnvironmentVariable("MXX1_RIGHTMENU_ROOT");
+                bool test = (env != null && env.Trim().Length > 0);
+                return Path.Combine(AppPaths.BaseDir, test ? "rightmenu-icons-test" : "rightmenu-icons");
+            }
         }
 
         /// <summary>生成（或复用）某个按钮的 .ico，返回完整路径；取不到源图就返回空

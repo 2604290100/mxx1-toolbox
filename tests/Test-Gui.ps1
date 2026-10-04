@@ -1476,9 +1476,9 @@ try {
         $uh = $unlockWin[0].H
         $ukids = @(Get-ChildControls -RootHandle $uh)
         $ubtns = @($ukids | Where-Object { $_.Class -like '*BUTTON*' } | ForEach-Object { $_.Text })
-        $want = @('结束选中的进程', '重新检查', '复制路径', '关闭')
+        $want = @('结束选中的进程', '强制解锁（不关程序）', '重新检查', '复制路径', '关闭')
         $missBtn = @($want | Where-Object { $ubtns -notcontains $_ })
-        Check 'N02 四个按钮都在（结束选中的进程 / 重新检查 / 复制路径 / 关闭）' `
+        Check 'N02 五个按钮都在（结束选中的进程 / 强制解锁 / 重新检查 / 复制路径 / 关闭）' `
             ($missBtn.Count -eq 0) ('缺=' + ($missBtn -join ' ') + ' 实际=' + ($ubtns -join ' '))
 
         $utexts = @($ukids | Where-Object { $_.Class -like '*STATIC*' } | ForEach-Object { $_.Text })
@@ -1509,7 +1509,7 @@ try {
         $unlockProc.Refresh()
         Check 'N05 关掉小窗口之后那个进程自己退出了（不留后台进程）' ($unlockProc.HasExited) ''
     } else {
-        Check 'N02 四个按钮都在（结束选中的进程 / 重新检查 / 复制路径 / 关闭）' $false 'skipped'
+        Check 'N02 五个按钮都在（结束选中的进程 / 强制解锁 / 重新检查 / 复制路径 / 关闭）' $false 'skipped'
         Check 'N03 窗口里念出了「查到 N 个程序占着它」（真查到了那个锁）' $false 'skipped'
         Check 'N04 按钮和文字互不重叠（这个窗口也守那条硬规矩）' $false 'skipped'
         Check 'N05 关掉小窗口之后那个进程自己退出了（不留后台进程）' $false 'skipped'
@@ -1557,6 +1557,172 @@ try {
         if ($deepChild -and -not $deepChild.HasExited) { Stop-Process -Id $deepChild.Id -Force -ErrorAction SilentlyContinue }
         if ($deepProc -and -not $deepProc.HasExited) { try { $deepProc.Kill() } catch { } }
         if (Test-Path -LiteralPath $deepRoot) { Remove-Item -LiteralPath $deepRoot -Recurse -Force -ErrorAction SilentlyContinue }
+    }
+
+    # ---- N07 / N08：用户 2026-10-04 报的第二种情况 —— 文件夹里的程序**正在运行**。它不持有文件
+    #      句柄（镜像是内存映射），Restart Manager 报不出来，原来窗口只会说"报不出是哪个程序"；
+    #      现在要把「它自己在运行」这条线索点出来。N08 顺带验：点「结束选中的进程」时确认框里
+    #      写明了"会连带结束子进程"，而**点取消之后一个进程都不能少**（用户报的就是只结束父进程）。
+    $runRoot = Join-Path $env:TEMP 'mxx1-unlock-run-gui'
+    if (Test-Path -LiteralPath $runRoot) { Remove-Item -LiteralPath $runRoot -Recurse -Force }
+    New-Item -ItemType Directory -Path $runRoot | Out-Null
+    Set-Content -LiteralPath (Join-Path $runRoot 'doc.txt') -Value 'x' -Encoding UTF8
+    $runHolder = Join-Path $runRoot 'holder.exe'
+    $runSrc = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+    try { New-Item -ItemType HardLink -Path $runHolder -Target $runSrc -ErrorAction Stop | Out-Null }
+    catch { Copy-Item -LiteralPath $runSrc -Destination $runHolder -Force }
+    $runProc = $null
+    $runGui = $null
+    try {
+        $runProc = Start-Process -FilePath $runHolder -WindowStyle Hidden -PassThru -ArgumentList @(
+            '-NoProfile', '-Command', 'Start-Sleep 90')
+        Start-Sleep -Seconds 2
+        $runGui = Start-Process -FilePath $Exe -PassThru -ArgumentList @('rightmenu', 'unlock', $runRoot)
+        [void]$script:Procs.Add($runGui)
+        $runWin = @()
+        for ($i = 0; $i -lt 40; $i++) {
+            Start-Sleep -Milliseconds 250
+            $runWin = @((Get-TopWindows -ProcessId $runGui.Id) | Where-Object { $_.Visible -and $_.Text -eq '解除文件占用' })
+            if ($runWin.Count -gt 0) { break }
+        }
+        if ($runWin.Count -gt 0) {
+            $rtexts = @()
+            for ($i = 0; $i -lt 30; $i++) {
+                $rtexts = @(Get-ChildControls -RootHandle $runWin[0].H | Where-Object { $_.Class -like '*STATIC*' } | ForEach-Object { $_.Text })
+                if (@($rtexts | Where-Object { $_ -match '没有程序锁着它|个程序占着它' }).Count -gt 0) { break }
+                Start-Sleep -Milliseconds 250
+            }
+            # 状态那句本身就要点出「它自己在运行」这条线索。
+            # 注意别用"整个窗口里有几处提到"来断言：下面那条常驻提示里也写着「它自己在运行」。
+            $rHead = @($rtexts | Where-Object { $_ -match '没有程序锁着它|个程序占着它' })
+            $rClue = @($rHead | Where-Object { $_ -match '它自己在运行' })
+            Check 'N07 文件夹里的程序正在运行时，窗口点出「它自己在运行」这条线索（不再只说报不出名字）' `
+                (($rHead.Count -eq 1) -and ($rClue.Count -eq 1)) ($rtexts -join ' | ')
+
+            # N08：确认框要写明"会连带结束子进程"（安装包/启动器都是父进程拉个子进程干活）
+            $runBtn = @(Get-ChildControls -RootHandle $runWin[0].H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '结束选中的进程' })
+            if ($runBtn.Count -eq 1) {
+                [void][TBGui]::Click($runBtn[0].H)
+                $runDlg = @()
+                for ($i = 0; $i -lt 25; $i++) {
+                    Start-Sleep -Milliseconds 200
+                    $runDlg = @(Get-Dialogs -ProcessId $runGui.Id -Main $runWin[0].H)
+                    if ($runDlg.Count -gt 0) { break }
+                }
+                if ($runDlg.Count -gt 0) {
+                    $rdlg = @(Get-ChildControls -RootHandle $runDlg[0].H | Where-Object { $_.Class -like '*STATIC*' } | ForEach-Object { $_.Text })
+                    Check 'N08 结束前的确认框写明会连带结束子进程（用户报的"窗口还在"就是子进程撑着）' `
+                        (($rdlg -join ' ') -match '子进程') (($rdlg | Where-Object { $_.Length -gt 0 }) -join ' | ')
+                    [void][TBGui]::CloseWindow($runDlg[0].H)   # 点取消
+                    Start-Sleep -Milliseconds 700
+                    $runProc.Refresh()
+                    Check 'N08b 点「取消」之后一个进程都没被结束（危险动作要真的去点执行）' `
+                        (-not $runProc.HasExited) ('holder 还在=' + (-not $runProc.HasExited))
+                } else {
+                    Check 'N08 结束前的确认框写明会连带结束子进程（用户报的"窗口还在"就是子进程撑着）' $false '没弹出确认框'
+                    Check 'N08b 点「取消」之后一个进程都没被结束（危险动作要真的去点执行）' $false 'skipped'
+                }
+            } else {
+                Check 'N08 结束前的确认框写明会连带结束子进程（用户报的"窗口还在"就是子进程撑着）' $false '按钮不在'
+                Check 'N08b 点「取消」之后一个进程都没被结束（危险动作要真的去点执行）' $false 'skipped'
+            }
+            [void][TBGui]::CloseWindow($runWin[0].H)
+            Start-Sleep -Milliseconds 700
+        } else {
+            Check 'N07 文件夹里的程序正在运行时，窗口点出「它自己在运行」这条线索（不再只说报不出名字）' $false 'skipped（窗口没起来）'
+            Check 'N08 结束前的确认框写明会连带结束子进程（用户报的"窗口还在"就是子进程撑着）' $false 'skipped'
+            Check 'N08b 点「取消」之后一个进程都没被结束（危险动作要真的去点执行）' $false 'skipped'
+        }
+    } finally {
+        if ($runProc -and -not $runProc.HasExited) { Stop-Process -Id $runProc.Id -Force -ErrorAction SilentlyContinue }
+        if ($runGui -and -not $runGui.HasExited) { try { $runGui.Kill() } catch { } }
+        if (Test-Path -LiteralPath $runRoot) { Remove-Item -LiteralPath $runRoot -Recurse -Force -ErrorAction SilentlyContinue }
+    }
+
+    # ---- N09：「强制解锁（不关程序）」——用户要求照火绒那套做（2026-10-04 问完"火绒是怎么做的"之后定的）。
+    #      全端到端：另一个进程把文件**独占**打开 → 点按钮（会先扫全系统句柄）→ 确认框 → 点「执行」→
+    #      断言三件事：① 那个进程**还活着**（这是和「结束进程」的根本区别）；
+    #      ② 文件真的自由了（我自己能独占打开它了）；③ 窗口里念了结果。
+    $forceRoot = Join-Path $env:TEMP 'mxx1-unlock-force-gui'
+    if (Test-Path -LiteralPath $forceRoot) { Remove-Item -LiteralPath $forceRoot -Recurse -Force }
+    New-Item -ItemType Directory -Path $forceRoot | Out-Null
+    $forceFile = Join-Path $forceRoot 'locked.txt'
+    Set-Content -LiteralPath $forceFile -Value 'x' -Encoding UTF8
+    $forceHolder = $null
+    $forceGui = $null
+    try {
+        $forceHolder = Start-Process powershell.exe -WindowStyle Hidden -PassThru -ArgumentList @(
+            '-NoProfile', '-Command', ("`$fs=[System.IO.File]::Open('" + $forceFile + "','Open','ReadWrite','None'); Start-Sleep 120"))
+        Start-Sleep -Seconds 2
+        $forceGui = Start-Process -FilePath $Exe -PassThru -ArgumentList @('rightmenu', 'unlock', $forceFile)
+        [void]$script:Procs.Add($forceGui)
+        $forceWin = @()
+        for ($i = 0; $i -lt 40; $i++) {
+            Start-Sleep -Milliseconds 250
+            $forceWin = @((Get-TopWindows -ProcessId $forceGui.Id) | Where-Object { $_.Visible -and $_.Text -eq '解除文件占用' })
+            if ($forceWin.Count -gt 0) { break }
+        }
+        if ($forceWin.Count -gt 0) {
+            $fbtn = @()
+            for ($i = 0; $i -lt 20; $i++) {
+                $fbtn = @(Get-ChildControls -RootHandle $forceWin[0].H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '强制解锁（不关程序）' })
+                if ($fbtn.Count -eq 1) { break }
+                Start-Sleep -Milliseconds 250
+            }
+            Check 'N09a 窗口里有「强制解锁（不关程序）」按钮（照火绒那套：不结束进程，只抽句柄）' `
+                ($fbtn.Count -eq 1) ('按钮数=' + $fbtn.Count)
+            if ($fbtn.Count -eq 1) {
+                [void][TBGui]::Click($fbtn[0].H)
+                $fdlg = @()
+                for ($i = 0; $i -lt 80; $i++) {       # 全系统扫句柄要一两秒，给它 20 秒
+                    Start-Sleep -Milliseconds 250
+                    $fdlg = @(Get-Dialogs -ProcessId $forceGui.Id -Main $forceWin[0].H)
+                    if ($fdlg.Count -gt 0) { break }
+                }
+                if ($fdlg.Count -gt 0) {
+                    $ftexts = @(Get-ChildControls -RootHandle $fdlg[0].H | Where-Object { $_.Class -like '*STATIC*' } | ForEach-Object { $_.Text })
+                    Check 'N09b 确认框把风险说清楚了（抽句柄可能让那个程序出错 / 丢数据）' `
+                        ((($ftexts -join ' ') -match '句柄') -and (($ftexts -join ' ') -match '风险|存')) `
+                        (($ftexts | Where-Object { $_.Length -gt 0 }) -join ' | ')
+                    $exec = @(Get-ChildControls -RootHandle $fdlg[0].H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '执行' })
+                    if ($exec.Count -eq 1) { [void][TBGui]::Click($exec[0].H) } else { Check 'N09c 确认框里有「执行」按钮' $false '找不到执行按钮' }
+                    Start-Sleep -Seconds 3
+                    $forceHolder.Refresh()
+                    Check 'N09c 抽句柄之后那个程序**还活着**（跟「结束进程」的根本区别）' `
+                        (-not $forceHolder.HasExited) ('holder 还在=' + (-not $forceHolder.HasExited))
+
+                    $free = $false
+                    try { $fs = [System.IO.File]::Open($forceFile, 'Open', 'ReadWrite', 'None'); $free = $true; $fs.Close() } catch { $free = $false }
+                    Check 'N09d 文件真的自由了（我自己能独占打开它）' $free ''
+
+                    $fstatus = @(Get-ChildControls -RootHandle $forceWin[0].H | Where-Object { $_.Class -like '*STATIC*' } | ForEach-Object { $_.Text })
+                    Check 'N09e 窗口里念了抽句柄的结果' `
+                        ((@($fstatus | Where-Object { $_ -match '抽掉了|句柄' }).Count -ge 1) -or $free) (($fstatus | Where-Object { $_.Length -gt 0 }) -join ' | ')
+                } else {
+                    Check 'N09b 确认框把风险说清楚了（抽句柄可能让那个程序出错 / 丢数据）' $false '没弹出确认框'
+                    Check 'N09c 抽句柄之后那个程序**还活着**（跟「结束进程」的根本区别）' $false 'skipped'
+                    Check 'N09d 文件真的自由了（我自己能独占打开它）' $false 'skipped'
+                    Check 'N09e 窗口里念了抽句柄的结果' $false 'skipped'
+                }
+            } else {
+                Check 'N09b 确认框把风险说清楚了（抽句柄可能让那个程序出错 / 丢数据）' $false 'skipped'
+                Check 'N09c 抽句柄之后那个程序**还活着**（跟「结束进程」的根本区别）' $false 'skipped'
+                Check 'N09d 文件真的自由了（我自己能独占打开它）' $false 'skipped'
+                Check 'N09e 窗口里念了抽句柄的结果' $false 'skipped'
+            }
+            [void][TBGui]::CloseWindow($forceWin[0].H)
+            Start-Sleep -Milliseconds 700
+        } else {
+            Check 'N09a 窗口里有「强制解锁（不关程序）」按钮（照火绒那套：不结束进程，只抽句柄）' $false 'skipped（窗口没起来）'
+            Check 'N09b 确认框把风险说清楚了（抽句柄可能让那个程序出错 / 丢数据）' $false 'skipped'
+            Check 'N09c 抽句柄之后那个程序**还活着**（跟「结束进程」的根本区别）' $false 'skipped'
+            Check 'N09d 文件真的自由了（我自己能独占打开它）' $false 'skipped'
+            Check 'N09e 窗口里念了抽句柄的结果' $false 'skipped'
+        }
+    } finally {
+        if ($forceHolder -and -not $forceHolder.HasExited) { Stop-Process -Id $forceHolder.Id -Force -ErrorAction SilentlyContinue }
+        if ($forceGui -and -not $forceGui.HasExited) { try { $forceGui.Kill() } catch { } }
+        if (Test-Path -LiteralPath $forceRoot) { Remove-Item -LiteralPath $forceRoot -Recurse -Force -ErrorAction SilentlyContinue }
     }
 } finally {
     if ($unlockChild -and -not $unlockChild.HasExited) { Stop-Process -Id $unlockChild.Id -Force -ErrorAction SilentlyContinue }

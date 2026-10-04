@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Globalization;
 using System.Text;
+using System.Threading;
 using System.Windows.Forms;
 
 namespace Mxx1Toolbox
@@ -16,10 +17,13 @@ namespace Mxx1Toolbox
     ///
     /// 界面上只做一件事：把"谁占着它"列清楚，让你勾要结束的程序。所以
     /// ① 系统关键进程列出来但**勾不动**（灰的 + 写明原因），explorer.exe 默认不勾；
-    /// ② 结束前过一遍自家的确认窗口（右键菜单是误点高发区）；
+    /// ② 结束前过一遍自家的确认窗口（右键菜单是误点高发区），并且把"会连带结束哪些子进程"写在确认框里；
     /// ③ **查不到就分三种情况说清楚**（这是 2026-10-04 用户报「右键文件夹没扫描到占用」之后改的）：
     ///    真的没人在用 / 确实被占着但名字报不出来 / 拦住你的是权限不是占用 —— 绝不混成一句
-    ///    「没查到」让用户以为工具坏了。</summary>
+    ///    「没查到」让用户以为工具坏了；
+    /// ④ **列出来的行不只是"占用"**（2026-10-04 又加）：真占着的（lock）、它自己在运行的（run）、
+    ///    窗口里开着它的（open）—— 后两类不是占用，但恰好是用户最想问的两种情况
+    ///    （"我明明开着它"、"文件夹说被占着却报不出是谁"）。</summary>
     internal sealed class UnlockForm : Form
     {
         /// <summary>列表里的一行：哪个程序，占着哪个文件。</summary>
@@ -39,6 +43,7 @@ namespace Mxx1Toolbox
         private readonly Theme _theme;
         private readonly List<Row> _rows = new List<Row>();
         private LockReport _report;
+        private bool _busy;              // 正在后台扫句柄（这时别让按钮重复触发）
 
         private ListView _list;
         private Label _head;
@@ -46,6 +51,7 @@ namespace Mxx1Toolbox
         private Label _empty;
         private Label _hint;
         private Button _killBtn;
+        private Button _forceBtn;
 
         public UnlockForm(string[] paths)
         {
@@ -121,8 +127,9 @@ namespace Mxx1Toolbox
             _hint.MaximumSize = new Size(570, 0);
             _hint.ForeColor = _theme.BarText;
             _hint.Margin = new Padding(2, 0, 2, 10);
-            _hint.Text = "勾上要结束的程序，再点「结束选中的进程」。系统关键程序是灰的，勾不动；"
-                + "「占着的文件」那一列说明它占着文件夹里的哪一个文件。";
+            _hint.Text = "勾上要结束的程序，再点「结束选中的进程」（它启动的子进程会一起结束 —— 安装包、启动器"
+                + "都是父进程拉个子进程干活，只结束父进程的话窗口会留着）。系统关键程序是灰的，勾不动；"
+                + "没锁住它、只是「它自己在运行」或者「窗口里开着它」的也会列出来，那是线索，不一定要结束。";
             root.Controls.Add(_hint, 0, 3);
 
             FlowLayoutPanel bar = new FlowLayoutPanel();
@@ -135,6 +142,9 @@ namespace Mxx1Toolbox
             _killBtn = MakeButton("结束选中的进程");
             _killBtn.Click += delegate { KillChecked(); };
             bar.Controls.Add(_killBtn);
+            _forceBtn = MakeButton("强制解锁（不关程序）");
+            _forceBtn.Click += delegate { ForceUnlock(); };
+            bar.Controls.Add(_forceBtn);
             Button refresh = MakeButton("重新检查");
             refresh.Click += delegate { RefreshLockers(); };
             bar.Controls.Add(refresh);
@@ -203,11 +213,12 @@ namespace Mxx1Toolbox
             }
         }
 
-        private bool HasRow(int pid, string file)
+        private bool HasRow(int pid, string file, string source)
         {
             foreach (Row r in _rows)
             {
-                if (r.Locker.Pid == pid && string.Equals(r.File, file, StringComparison.OrdinalIgnoreCase)) { return true; }
+                if (r.Locker.Pid == pid && r.Locker.Source == source
+                    && string.Equals(r.File, file, StringComparison.OrdinalIgnoreCase)) { return true; }
             }
             return false;
         }
@@ -220,7 +231,9 @@ namespace Mxx1Toolbox
             {
                 foreach (FileLocker f in h.Lockers)
                 {
-                    if (HasRow(f.Pid, h.File)) { continue; }
+                    // 去重键里带"线索种类"：同一个进程既占着它、又是"它自己在运行"时要列两行
+                    // （后一句才是"为什么删不掉"的答案，不能被前一行吞掉）
+                    if (HasRow(f.Pid, h.File, f.Source)) { continue; }
                     _rows.Add(new Row(f, h.File));
                 }
             }
@@ -256,6 +269,20 @@ namespace Mxx1Toolbox
             UpdateSize();
         }
 
+        /// <summary>这一批行里"真占着"的有几个（run / open 两类不是占用）。</summary>
+        private int LockRowCount()
+        {
+            int n = 0;
+            List<int> seen = new List<int>();
+            foreach (Row r in _rows)
+            {
+                if (!r.Locker.IsLock || seen.Contains(r.Locker.Pid)) { continue; }
+                seen.Add(r.Locker.Pid);
+                n++;
+            }
+            return n;
+        }
+
         private static string FileText(string file)
         {
             if (file.Length == 0) { return "（没定位到具体文件）"; }
@@ -270,17 +297,51 @@ namespace Mxx1Toolbox
         private string FoundHeadline()
         {
             StringBuilder sb = new StringBuilder();
-            int progs = _report.LockerCount;
-            sb.Append("查到 ").Append(progs.ToString(CultureInfo.InvariantCulture)).Append(" 个程序占着它");
-            if (_report.FolderScanned)
+            int locks = LockRowCount();
+            int run = _report.RunCount;
+            int open = _report.OpenCount;
+
+            if (locks > 0)
             {
-                sb.Append("（文件夹里扫了 ").Append(_report.Scanned.ToString(CultureInfo.InvariantCulture)).Append(" 个文件");
-                int files = 0;
-                foreach (LockHit h in _report.Hits) { if (h.File.Length > 0) { files++; } }
-                if (files > 1) { sb.Append("，命中在 ").Append(files.ToString(CultureInfo.InvariantCulture)).Append(" 个文件上"); }
-                sb.Append("）");
+                sb.Append("查到 ").Append(locks.ToString(CultureInfo.InvariantCulture)).Append(" 个程序占着它");
+                if (_report.FolderScanned)
+                {
+                    sb.Append("（文件夹里扫了 ").Append(_report.Scanned.ToString(CultureInfo.InvariantCulture)).Append(" 个文件");
+                    int files = _report.LockedFiles().Count;
+                    if (files > 1) { sb.Append("，命中在 ").Append(files.ToString(CultureInfo.InvariantCulture)).Append(" 个文件上"); }
+                    sb.Append("）");
+                }
+                sb.Append("：");
+                // 有"真占用"的时候也别忘了那两条线索：用户右键的多半就是个正在跑的安装包
+                // （"删不掉"的真正原因就是它），只写在列表的「说明」列里容易被忽略（2026-10-04 实测）。
+                if (run > 0 || open > 0)
+                {
+                    sb.Append(Environment.NewLine).Append("  另有 ");
+                    if (run > 0)
+                    {
+                        sb.Append(run.ToString(CultureInfo.InvariantCulture)).Append(" 个程序是「它自己在运行」");
+                    }
+                    if (run > 0 && open > 0) { sb.Append("、"); }
+                    if (open > 0)
+                    {
+                        sb.Append(open.ToString(CultureInfo.InvariantCulture)).Append(" 个窗口里开着它");
+                    }
+                    sb.Append("（哪几个看列表「说明」那一列）");
+                }
+                if (_report.DeleteNote.Length > 0) { sb.Append(Environment.NewLine).Append("  ").Append(_report.DeleteNote); }
             }
-            sb.Append("：");
+            else
+            {
+                // 一条"真占用"都没有，但列出来的每一行都是有用的话 —— 别把用户吓一跳。
+                sb.Append("没有程序锁着它");
+                if (run > 0 && open > 0) { sb.Append("；下面几行是「它自己在运行」和「窗口里开着它」的线索"); }
+                else if (run > 0) { sb.Append("；下面那行是「它自己在运行」的线索"); }
+                else if (open > 0) { sb.Append("；下面那行是「窗口里开着它」，它并没有锁住文件"); }
+                sb.Append("：");
+                if (_report.Verdict.Length > 0) { sb.Append(Environment.NewLine).Append("  ").Append(_report.Verdict); }
+                // 「能不能删 / 改名」直接在结论里说清楚（用户真正要问的就是这句）
+                if (_report.DeleteNote.Length > 0) { sb.Append(Environment.NewLine).Append("  ").Append(_report.DeleteNote); }
+            }
             AppendNotes(sb);
             return sb.ToString();
         }
@@ -302,6 +363,7 @@ namespace Mxx1Toolbox
 
             if (_report.Error.Length > 0) { sb.Append("  ").Append(_report.Error).AppendLine().AppendLine(); }
             if (_report.Verdict.Length > 0) { sb.Append("  ").Append(_report.Verdict).AppendLine(); }
+            if (_report.DeleteNote.Length > 0) { sb.Append("  ").Append(_report.DeleteNote).AppendLine(); }
             if (_report.FolderScanned)
             {
                 sb.Append("  文件夹里扫了 ").Append(_report.Scanned.ToString(CultureInfo.InvariantCulture))
@@ -324,9 +386,11 @@ namespace Mxx1Toolbox
 
             if (_report.VerdictLocked)
             {
-                sb.AppendLine("  为什么会报不出名字：Windows 这个接口只报当前用户看得见的进程。可以试");
+                sb.AppendLine("  为什么会报不出名字：Windows 这个接口只报当前用户看得见的进程；而且文件正被「运行中的程序」");
+                sb.AppendLine("  用着的时候（.exe 自己、正在播放的媒体），那个程序压根不持有文件句柄，谁问都问不出来。可以试：");
+                sb.AppendLine("  · 看看这个文件夹里有没有程序正开着（任务栏 / 任务管理器里的活动程序），先把它关掉再点「重新检查」；");
                 sb.AppendLine("  · 关掉最近动过它的程序（Office / PDF 阅读器 / 播放器 / 压缩软件）再点「重新检查」；");
-                sb.AppendLine("  · 用管理员身份打开工具箱（右键 exe → 以管理员身份运行），再从资源管理器右键一次；");
+                sb.AppendLine("  · 用管理员身份打开工具箱（右键 exe，选「以管理员身份运行」），再从资源管理器右键一次；");
                 sb.AppendLine("  · 实在找不到：注销一次（占用它的进程会跟着退出）。");
             }
             else if (_report.VerdictDenied)
@@ -344,7 +408,8 @@ namespace Mxx1Toolbox
                 sb.AppendLine("  没有程序占着它。如果它还是删不掉 / 改不了 / 改名不了，那多半是：");
                 sb.AppendLine("  · 权限（ACL）或只读属性；");
                 sb.AppendLine("  · 占用它的是内核态的东西（杀毒软件实时扫描、驱动），它不属于任何进程；");
-                sb.AppendLine("  · 你删的是文件夹，而拦住你的是它**里面**更深的文件（上面写了扫了几层）。");
+                sb.AppendLine("  · 它自己是个正在运行的程序（可执行文件是内存映射，不算文件锁）；");
+                sb.AppendLine("  · 你删的是文件夹，而拦住你的是它「里面」更深的文件（上面写了扫了几层）。");
             }
             return sb.ToString().TrimEnd();
         }
@@ -373,7 +438,28 @@ namespace Mxx1Toolbox
             if (f.AppName.Length > 0 && !dup) { parts.Add(f.AppName); }
             if (f.Kind.Length > 0) { parts.Add(f.Kind); }
             if (f.Why.Length > 0) { parts.Add(f.Why); }
+            if (f.Extra.Length > 0)
+            {
+                // run 带的是镜像路径（太长了，只留文件名）；open 带的是那个窗口的标题。
+                parts.Add((f.Source == FileLocker.SourceOpen) ? ("窗口：" + Clip(f.Extra, 40)) : FileName(f.Extra));
+            }
             return string.Join(" · ", parts.ToArray());
+        }
+
+        private static string Clip(string s, int max)
+        {
+            if (s == null) { return ""; }
+            return (s.Length <= max) ? s : (s.Substring(0, max) + "…");
+        }
+
+        private static string FileName(string path)
+        {
+            try
+            {
+                string n = System.IO.Path.GetFileName(path);
+                return (n == null) ? path : n;
+            }
+            catch { return path; }
         }
 
         private void UpdateSize()
@@ -396,6 +482,103 @@ namespace Mxx1Toolbox
             {
                 _status.Text = "复制不了：" + ex.Message;
             }
+        }
+
+        /// <summary>强制解锁：像火绒那样**不结束进程**，把对方手里的文件句柄直接抽掉。
+        ///
+        /// 两步：① 全系统扫句柄（几秒，放后台线程，别把窗口冻住）；② 结果拿去过一遍确认框
+        /// （这是危险动作：从别人脚下抽走句柄，那个程序可能出错 / 丢数据），确认了才真动手。</summary>
+        private void ForceUnlock()
+        {
+            if (_busy) { return; }
+            _busy = true;
+            _killBtn.Enabled = false;
+            _forceBtn.Enabled = false;
+            _status.Text = "正在扫全系统句柄（像火绒那样，几秒钟）…… 这不是卡死，是在干活。";
+
+            List<string> targets = new List<string>();
+            foreach (string p in _paths) { if (!Contains(targets, p)) { targets.Add(p); } }
+            if (_report != null)
+            {
+                foreach (string f in _report.LockedFiles())
+                {
+                    if (!Contains(targets, f)) { targets.Add(f); }
+                }
+            }
+
+            Thread t = new Thread(delegate()
+            {
+                List<HandleHit> hits = null;
+                string note = "";
+                try { hits = HandleUnlock.Find(targets.ToArray(), out note); }
+                catch (Exception ex) { note = "扫句柄出错：" + ex.Message; hits = new List<HandleHit>(); }
+                try { BeginInvoke((MethodInvoker)delegate { ForceUnlockReady(hits, note); }); }
+                catch { }
+            });
+            t.IsBackground = true;
+            t.Start();
+        }
+
+        private void ForceUnlockReady(List<HandleHit> hits, string note)
+        {
+            _busy = false;
+            _killBtn.Enabled = true;
+            _forceBtn.Enabled = true;
+            if (IsDisposed) { return; }
+
+            if (hits == null) { hits = new List<HandleHit>(); }
+            if (hits.Count == 0)
+            {
+                _status.Text = "没找到攥着它的句柄。" + Environment.NewLine + "  " + note
+                    + Environment.NewLine + "  （Windows 里「谁开着它」有时就是查不出来：内核驱动、杀软实时扫描"
+                    + "这类不属于任何进程；那种只能注销一次。）";
+                return;
+            }
+
+            StringBuilder who = new StringBuilder();
+            int protectedCount = 0;
+            foreach (HandleHit h in hits)
+            {
+                if (h.Protected) { protectedCount++; }
+                if (who.Length > 0) { who.Append("、"); }
+                who.Append(h.Exe).Append("（PID ").Append(h.Pid.ToString(CultureInfo.InvariantCulture)).Append("）");
+            }
+
+            ToolItem item = new ToolItem();
+            item.Name = "强制解锁（抽掉句柄）";
+            item.Id = "rightmenu.unlock.force";
+            item.Danger = true;
+            item.Hint = "会从下面这些程序手里把它「抢」过来：" + who.ToString()
+                + Environment.NewLine + note
+                + Environment.NewLine + "做法跟火绒的「解锁占用」一样：不结束进程，只把那几个句柄关掉。"
+                + Environment.NewLine + "风险：程序手里的句柄被突然抽走，它可能报错 / 存不上盘。"
+                + Environment.NewLine + "没保存的东西先存一下；能接受再点「执行」。"
+                + ((protectedCount > 0)
+                    ? (Environment.NewLine + "（其中有 " + protectedCount.ToString(CultureInfo.InvariantCulture)
+                        + " 个是系统关键进程，不会动它们。）")
+                    : "");
+
+            DialogResult answer;
+            using (ConfirmForm f = new ConfirmForm(item, "", false, false, _theme))
+            {
+                answer = f.ShowDialog(this);
+            }
+            if (answer != DialogResult.OK)
+            {
+                _status.Text = "已取消（一个句柄都没动）。找到的这些句柄：" + who.ToString();
+                return;
+            }
+
+            string report = HandleUnlock.Release(hits);
+            Logger.Write("解除文件占用", "强制解锁（抽句柄）：" + who.ToString() + Environment.NewLine + report);
+            RefreshLockers();
+            _status.Text = "强制解锁的结果：" + Environment.NewLine + report;
+        }
+
+        private static bool Contains(List<string> list, string s)
+        {
+            foreach (string x in list) { if (string.Equals(x, s, StringComparison.OrdinalIgnoreCase)) { return true; } }
+            return false;
         }
 
         private void KillChecked()
@@ -421,12 +604,25 @@ namespace Mxx1Toolbox
                 names.Append(f.Exe).Append("（PID ").Append(f.Pid.ToString(CultureInfo.InvariantCulture)).Append("）");
             }
 
+            // 会连带结束的子进程先说清楚（用户 2026-10-04 报的"文件占用解除了、窗口还在"就是它）
+            List<FileLocker> kids = FileLock.ChildrenOf(chosen);
+            StringBuilder kidText = new StringBuilder();
+            foreach (FileLocker k in kids)
+            {
+                if (kidText.Length > 0) { kidText.Append("、"); }
+                kidText.Append(k.Exe).Append("（PID ").Append(k.Pid.ToString(CultureInfo.InvariantCulture)).Append("）");
+            }
+
             ToolItem t = new ToolItem();
             t.Name = "结束选中的进程";
             t.Id = "rightmenu.unlock.kill";
             t.Danger = true;
             t.Hint = "结束 " + names.ToString() + " 之后，文件就不再被它们占着了。"
-                + Environment.NewLine + "没保存的东西会丢 —— 结束之前先回那个程序里存一下。";
+                + Environment.NewLine + "没保存的东西会丢 —— 结束之前先回那个程序里存一下。"
+                + ((kids.Count > 0)
+                    ? (Environment.NewLine + "会连带结束它启动的 " + kids.Count.ToString(CultureInfo.InvariantCulture)
+                        + " 个子进程：" + kidText.ToString())
+                    : "");
             DialogResult answer;
             using (ConfirmForm f = new ConfirmForm(t, "", false, false, _theme))
             {

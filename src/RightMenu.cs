@@ -631,6 +631,36 @@ namespace Mxx1Toolbox
             sb.Append("  ").Append(RegEngine.PadCjk("菜单里的 exe", 16)).Append(exe);
             sb.Append(File.Exists(exe) ? "（在）" : "（不在了！菜单点了会报错，重装一次就好）").AppendLine();
 
+            // 菜单图标：Icon 指的是生成出来的 .ico 文件。那批文件被清理软件 / 测试的卸载删掉之后，
+            // 菜单项就变成空白图标（用户 2026-10-04 报过一次），所以这里念一句。
+            int iconOk = 0;
+            int iconBad = 0;
+            foreach (RightMenuLocation loc in Table)
+            {
+                foreach (string verb in new string[] { UnlockVerb, CommonVerb })
+                {
+                    string key = RootKey + "\\" + loc.Key + "\\" + verb;
+                    if (!KeyExists(key)) { continue; }
+                    string icon = ReadText(key, "Icon");
+                    bool ok = false;
+                    try { ok = (icon.Length > 0) && File.Exists(icon); }
+                    catch { }
+                    if (ok) { iconOk++; } else { iconBad++; }
+                }
+            }
+            sb.Append("  ").Append(RegEngine.PadCjk("菜单图标", 16));
+            if (iconOk + iconBad == 0) { sb.AppendLine("还没装，没什么可看的"); }
+            else if (iconBad == 0)
+            {
+                sb.Append(iconOk.ToString(CultureInfo.InvariantCulture)).Append(" 个都在（")
+                  .Append(MenuIcons.Dir).Append("）").AppendLine();
+            }
+            else
+            {
+                sb.Append("有 ").Append(iconBad.ToString(CultureInfo.InvariantCulture))
+                  .Append(" 个不见了（文件被删了？）—— 点一次「装上…」会重新生成").AppendLine();
+            }
+
             sb.Append(CcmpNote());
 
             // 记录 / 残留
@@ -687,6 +717,15 @@ namespace Mxx1Toolbox
                 + " 层、最多 " + FileLock.MaxScanFiles.ToString(CultureInfo.InvariantCulture)
                 + " 个文件（占用的多半是子文件夹里");
             sb.AppendLine("     那个 Office / PDF / 播放器），并且会告出到底是哪一个文件被占着。");
+            sb.AppendLine("     除了「谁占着」，还会列出另外两条线索：「它自己在运行」（正在运行的程序不持有文件句柄，");
+            sb.AppendLine("     句柄类接口查不到它，可它让文件删不掉、文件夹松不开）和「某个窗口里开着它」");
+            sb.AppendLine("     （记事本这类程序读完就关句柄，本来就没锁）。");
+            sb.AppendLine("     点「结束选中的进程」会连它启动的子进程一起结束（安装包 / 启动器都是父进程拉个");
+            sb.AppendLine("     子进程干活，只结束父进程的话文件锁解开了、窗口还留着）。");
+            sb.AppendLine("     还有个「强制解锁（不关程序）」按钮：跟火绒的「解锁占用」一个路子 —— 遍历全系统");
+            sb.AppendLine("     句柄表（用户态能做的那条路），把对方手里那个句柄直接关掉，**进程不动**。");
+            sb.AppendLine("     风险写在确认框里：句柄被从脚下抽走，那个程序可能报错 / 存不上盘；");
+            sb.AppendLine("     系统进程和内核驱动的句柄抽不动（火绒也抽不动，官方论坛原话）。");
             sb.AppendLine("  2. " + CommonTitle + " —— 右键里多一个子菜单，里面是你工具箱「常用」页的东西：");
             sb.AppendLine("     置顶的按钮 + 最近用过的按钮（最多 " + UserTools.RecentLimit.ToString(CultureInfo.InvariantCulture)
                 + " 个）+ 打开工具箱 / 运行日志 / 设置。");
@@ -719,7 +758,7 @@ namespace Mxx1Toolbox
             sb.AppendLine("底线（代码里写死的）");
             sb.AppendLine();
             sb.AppendLine("  · 只写 Mxx1* 这几个自己写的键；同名键不是工具箱写的就不覆盖、不删除；");
-            sb.AppendLine("  · 结束进程只结束你勾选的；explorer.exe 默认不勾（结束它 = 桌面重启一次）；");
+            sb.AppendLine("  · 结束进程只结束你勾选的（连带它们启动的子进程）；explorer.exe 默认不勾（结束它 = 桌面重启一次）；");
             sb.AppendLine("  · 系统关键进程（System / csrss / winlogon / lsass …）列出来但禁止勾选；");
             sb.AppendLine("  · 不做句柄级强杀（那种内核动作有蓝屏风险，不做）；");
             sb.AppendLine("  · 查不到占用它的程序就如实说查不到，不谎报「已解除」。");

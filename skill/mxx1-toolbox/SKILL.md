@@ -15,7 +15,7 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
 > **接手 / 新会话先做两件事**：读 `docs\DESIGN.md`（外观与行为的**唯一正本**）和本文件。
 > 设计一改先改 `DESIGN.md`，再同步本 skill —— 两份分叉就会出现"两套行为"。
 
-## 当前状态（2026-10-04，v1.5.1）
+## 当前状态（2026-10-04，v1.5.2）
 
 - ✅ **测试 227 项全绿**：命令行回归 **129**（M 组 **29 项**盯「右键增强」）+ 界面回归 **98**
   （N 组 **6 项**盯「解除文件占用」那个小窗口）（外加编码体检 170 个文件、内联脚本与清单体检
@@ -314,11 +314,60 @@ powershell -File tools\Make-Icons.ps1         # 重生成 PNG 图标（先 build
     `FILE_FLAG_BACKUP_SEMANTICS`，被占用回 `err=32`）—— 这一条原来根本查不到。
   - 还有两个反直觉的坑：**绝不能把目录路径登记给 RM**（回 `ERROR_ACCESS_DENIED(5)` 而且污染整批）；
     `strAppName` 是**友好显示名**不是路径，`svchost` 里几个服务会返回**同一个 PID 好几行** → 按 PID 去重。
+
+- **v1.5.2 补的三条线索**（用户报「右键文件夹说有程序占用着但找不到进程」「右键 sitemap.txt 说没找到」
+  之后加的，都在 `FileLock.cs`，CLI 上分别是 `run=` / `open=` / `candelete=`）：
+  - **「它自己在运行」**（`ProbeRunners`）：**正在运行的程序不持有文件句柄**（exe 是内存映射，
+    加载器读完就关句柄）—— RM 和"独占打开试试"**都看不见它**，可它让文件删不掉、文件夹松不开。
+    查法：Toolhelp 拿全进程 → `OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION)` +
+    `QueryFullProcessImageName` 拿镜像路径 → 等于目标文件 / 在目标文件夹里（任意一层）就点名。
+    **别用 `Process.MainModule`**（那要 `PROCESS_VM_READ`，别的用户/更高权限的进程会抛）；也别指望
+    `lockers=0`：实测 RM **有时也能**把"正在运行的 exe 自己的镜像文件"报成占用。
+  - **「窗口里开着它」**（`ProbeWindows`）：记事本这类程序**读完就关句柄**，本来就没锁
+    （实测用户开着的 `sitemap.txt` 谁都锁不住）—— 所以"没查到"是**对的**，但用户会觉得工具坏了。
+    查法：`EnumWindows` 取可见窗口标题 + 类名（文件名出现在标题里；文件夹则要求是资源管理器窗口
+    `CabinetWClass` / `ExploreWClass` 且标题正好等于文件夹名，避免误报），默认**不勾**、说明写"没锁住文件"。
+  - **「能不能删 / 能不能改名」**（`DeleteCheck`）：拿 `DELETE` 权限开一次（共享模式放开
+    `read|write|delete`，目录带 `FILE_FLAG_BACKUP_SEMANTICS`）：开得成 = 系统允许删除；`err=32` =
+    有程序拦着；`err=5` = 权限。**实测"被打开着" ≠ "删不掉"**：用户那个文件夹独占探测 `err=32`
+    但 DELETE 权限 `ok`（能删能改名）；桌面反而真被拦。
+    **正在运行的 exe 这招测不出来**（镜像文件照样能拿 DELETE 权限开），所以那种一律由
+    `FinishDeleteNote` 用"它自己在运行"覆盖掉结论。
+  - **去重键必须是 PID + 线索种类**（`OfSource` / `UnlockForm.HasRow`）：同一个进程可能既是
+    RM 报的"占着它"又是"它自己在运行"（你右键的正好是个在跑的 exe）—— 按 PID 一去重就会把
+    "删不掉是因为它自己在运行"这条**最有用的**信息吞掉（实测踩过：`run=1` 却找不到 `run\tpid=` 行）。
+
+- **结束进程要连子进程一起**（`FileLock.Kill`，v1.5.2 修；用户报「结束进程后窗口还在」）：
+  安装包 / 启动器都是"父进程拉个子进程干活"（Inno Setup 还会把自己解到 `%TEMP%\is-*.tmp` 再跑），
+  只杀父进程 = 锁解开了、窗口还留着（实测现场：`qingjian-server.exe` 的父进程已死、窗口还在）。
+  修法：Toolhelp（`CreateToolhelp32Snapshot` + `Process32First/Next` 的 `th32ParentProcessID`）算出
+  目标 + 所有后代 → **按层数深的先杀**（先子后父，顺手断掉"父进程被杀了又被守护子进程拉起来"）→
+  子进程也要过一遍系统关键进程 / 工具箱自己的底线 → 确认框里写出"会连带结束哪几个子进程"。
+  .NET Framework 4.8 的 `Process.Kill()` **没有整棵树的重载**，得自己按父子关系来。
+
 - **底线（代码里写死 + M/N 组盯着）**：只结束用户勾选的进程；`explorer.exe` 默认不勾（结束它 = 桌面
   重启一次）；系统关键进程（System / csrss / winlogon / lsass / services…）**列出来但禁止勾选**；
-  **不做句柄级强杀**（那种内核动作有蓝屏风险）；查不到就如实说查不到并列出可能原因，**不谎报「已解除」**。
+  查不到就如实说查不到并列出可能原因，**不谎报「已解除」**。
   结果窗口是 `src\UnlockForm.cs`，**独立进程、不开主界面**（`Program.Main` 里 `rightmenu unlock` 走
   `Application.Run(new UnlockForm(paths))`）。
+- **句柄级「强制解锁（不关程序）」**（`src\HandleUnlock.cs`，v1.5.2 新增）：用户问「**火绒的解除文件
+  占用是怎么做的**」之后定的 —— 火绒靠**内核驱动 + SYSTEM 服务**遍历句柄表直接关掉对方的句柄，
+  所以"全部解锁"而**不用关程序**。我们不用驱动、不提权，走**用户态那条路**：
+  ① `NtQuerySystemInformation(SystemExtendedHandleInformation=64)` 一次拿全表
+  （x64 每条 40 字节、表头 16 字节：`NumberOfHandles` + `Reserved`，别用老结构体的 24 字节版）；
+  ② 只留"文件"类型句柄 —— **类型编号每个系统版本都不一样**（Win11=40 / Win10=37 / Win7=28），
+  所以先开一个 `NUL` 句柄、回表里查它自己的 `ObjectTypeIndex`（**不写死版本号**）；
+  ③ 先 `GetFileType` 过滤掉非磁盘文件（管道 / 设备）—— **管道句柄上查名字会阻塞**
+  （社区文章原话；实测 `GetFinalPathNameByHandle` 把整个进程卡死过一次），这一步把会卡住的对象挡在门外；
+  ④ 名字查询再套"**开线程 + 250ms 超时**"的保险，连着卡 5 条就收工并如实说"结果可能不全"；
+  ⑤ `DuplicateHandle(..., DUPLICATE_SAME_ACCESS | DUPLICATE_CLOSE_SOURCE)` —— **这一句就是"解锁"**：
+  把句柄复制过来的同时把**源进程里的那个关掉**；⑥ 关之前**再核对一遍路径**
+  （句柄值会被系统回收再分配，绝不能拿旧值去关别人的别的东西）。
+  实测：全表约 4000 条文件句柄、**700–950 ms** 扫完、零卡死；`FileShare.ReadWrite` 共享打开的文件
+  （RM 看不见）和**目录句柄**都查得到。风险：句柄被从脚下抽走，那个程序可能报错 / 存不上盘 ——
+  所以过确认框、默认不勾；**命令行故意只给只读入口**（`rightmenu handles <路径>`，`unlock --query-only`
+  里也给 `child=` 预览），关句柄只能从界面点。系统进程 / 别的用户抽不动（要管理员）；
+  **内核驱动自己持有的句柄谁都抽不掉**（火绒官方论坛原话「火绒剑无法摘除驱动句柄的」「暂不支持」）。
 - **装 / 卸 / 状态**（`src\RightMenu.cs`）：写之前记原值（`rightmenu-installed.tsv`，和
   `sysreg-original.tsv` 同一套路）、写完读回核对、撤掉时**只删自己那几个 `Mxx1*` 键** ——
   同名键不是工具箱写的就跳过并在报告里说明（不覆盖、不删别人的东西）。
@@ -330,6 +379,17 @@ powershell -File tools\Make-Icons.ps1         # 重生成 PNG 图标（先 build
   现在装菜单时把内嵌的按钮 PNG 拼成 32 位 DIB 的 `.ico`（16/20/24/32 四个尺寸，文件名带源图指纹），
   写到 `%LOCALAPPDATA%\mxx1-toolbox\rightmenu-icons\`，**两个父项 + 子菜单每一项**都写 `Icon`
   并读回核对（指不到文件就不写这个值，不留空白图标位）；撤掉两项时把生成的 .ico 一起清掉。
+- **图标"看起来没生效"的正确验法和两个坑**（v1.5.2 踩完记下来的）：
+  - **别用 `new Icon(stream, w, h)` 验图标**：那个 GDI+ 重载对**任何** `.ico` 都会抛
+    「Argument 'picture' must be a picture that can be used as a Icon」，拿它当判据会把好图标
+    误判成坏的（我上一轮就这么误判过一次）。要验就用**系统自己的装载器**：
+    `SHDefExtractIcon`（返回 `hr=0` 且 HICON 非空）或 `PrivateExtractIcons`（能按 16/20/24/32 取），
+    再 `Icon.FromHandle(...).ToBitmap()` 数一下不透明像素（正常一张 16×16 按钮图约 **219 个**）。
+  - **图标目录被删过一次 = 用户菜单一片空白**：测试项和用户真实那份菜单**曾经共用一个目录**
+    （`rightmenu-icons`），测试卸载时 `MenuIcons.RemoveAll()` 把整个目录删了 → 用户菜单指向的 `.ico`
+    全没了。现在**按注册表根分开**：测试根用 `rightmenu-icons-test`（`MenuIcons.Dir` 看
+    `MXX1_RIGHTMENU_ROOT`）。**恢复办法就是让工具箱跑一次**：启动时 `SyncIfInstalled` 会补齐缺失的
+    `.ico` 并重写键（实测用户 22:10 打开一次工具箱，图标就回来了；状态行还会念"菜单图标 8 个都在"）。
 - **占位符按位置写（v1.5.1 修的）**：文件 / 文件夹是 `%1`，但**「文件夹里的空白处」和「桌面空白处」
   必须用 `%V`** —— 那两个位置资源管理器**不替换 `%1`**，会把字面量 `%1` 当路径传进来
   （`RightMenuLocation.Placeholder`；`SelfCheck` 见到"路径不存在"时会提示这一点）。

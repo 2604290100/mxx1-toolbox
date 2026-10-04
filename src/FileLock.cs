@@ -13,6 +13,17 @@ namespace Mxx1Toolbox
     /// <summary>一个占着文件的程序。</summary>
     internal sealed class FileLocker
     {
+        /// <summary>真占着（Restart Manager 报出来的）。</summary>
+        public const string SourceLock = "lock";
+
+        /// <summary>它自己正在运行，而它的 exe 就是你右键的那个文件、或者就在你右键的那个文件夹里。
+        /// 这类程序**不持有文件句柄**（镜像是内存映射），句柄类接口查不到它。</summary>
+        public const string SourceRun = "run";
+
+        /// <summary>某个窗口里开着它（记事本 / 看图 / 播放器这类"读进来就关句柄"的程序）。
+        /// 它**没有锁住文件**，只是让用户觉得"我明明开着它"。</summary>
+        public const string SourceOpen = "open";
+
         public int Pid;
         public string Exe = "";        // WINWORD.EXE（拿不到就用系统报的名字）
         public string AppName = "";    // 系统报的友好名（Windows Explorer / Microsoft Word）
@@ -20,6 +31,14 @@ namespace Mxx1Toolbox
         public bool Protected;         // 禁止结束
         public string Why = "";        // 为什么禁止 / 该注意什么
         public bool Checked = true;    // 默认勾不勾
+
+        /// <summary>这条是怎么查出来的：lock / run / open（见上面的常量）。</summary>
+        public string Source = SourceLock;
+
+        /// <summary>附带信息：run 是镜像路径，open 是那个窗口的标题。</summary>
+        public string Extra = "";
+
+        public bool IsLock { get { return Source == SourceLock; } }
     }
 
     /// <summary>哪个文件被占着 + 占着它的那几个程序。</summary>
@@ -47,27 +66,87 @@ namespace Mxx1Toolbox
         public string Error = "";      // 查询本身失败
         public string Note = "";       // 补一句说明（比如"命中在文件夹里但没定位到具体文件"）
 
+        /// <summary>「删 / 改名会不会被拒绝」—— 这是用户真正要问的事（2026-10-04 加）。
+        /// 做法：拿 DELETE 权限去开一次（共享模式放开 read|write|delete）：开得成 = 系统允许删除它；
+        /// 开不成 = 真被拦着（32 = 有程序开着它且没放开删除共享，5 = 权限）。
+        /// 注意：**正在运行的程序**这招测不出来（镜像文件照样能拿 DELETE 权限打开），
+        /// 那种由「它自己在运行」那条线索负责说 —— 见 FinishDeleteNote。</summary>
+        public bool DeleteChecked;
+        public bool DeleteOk;
+        public int DeleteError;
+        public string DeleteNote = "";
+
         public string Verdict = "";    // 自查结论（人话）
         public bool VerdictLocked;     // 自查：确实被占着，但名字报不出来
         public bool VerdictDenied;     // 自查：是权限 / 只读，不是占用
         public bool VerdictExists = true;
 
-        /// <summary>所有占着东西的程序，按 PID 去重（同一个程序占着两个文件只算一个）。</summary>
+        /// <summary>所有**真占着**东西的程序，按 PID 去重（同一个程序占着两个文件只算一个）。</summary>
         public List<FileLocker> AllLockers()
+        {
+            return OfSource(FileLocker.SourceLock);
+        }
+
+        /// <summary>界面上要列出来的所有行：真占着的 + 正在运行的 + 窗口里开着它的（按 PID 去重）。
+        /// 后两类不是"占用"，但都是回答"为什么它删不掉 / 谁在用它"必须说的话。</summary>
+        public List<FileLocker> AllRows()
+        {
+            return OfSource(null);
+        }
+
+        /// <summary>只算某一类（传 null = 全部）的程序，按 **PID + 线索种类** 去重。
+        ///
+        /// 为什么要带上种类：同一个进程完全可能既是"真占着它"（Restart Manager 报的）又是
+        /// "它自己在运行"（你右键的正好是一个正在跑的 exe）—— 这两句话都得说；按 PID 一去重
+        /// 就会把"它自己在运行（所以删不掉）"那条**最有用的**信息吞掉（实测踩过）。</summary>
+        public List<FileLocker> OfSource(string source)
         {
             List<FileLocker> list = new List<FileLocker>();
             foreach (LockHit h in Hits)
             {
                 foreach (FileLocker f in h.Lockers)
                 {
-                    if (HasPid(list, f.Pid)) { continue; }
+                    if (source != null && f.Source != source) { continue; }
+                    if (HasRow(list, f.Pid, f.Source)) { continue; }
                     list.Add(f);
                 }
             }
             return list;
         }
 
+        private static bool HasRow(List<FileLocker> list, int pid, string source)
+        {
+            foreach (FileLocker f in list)
+            {
+                if (f.Pid == pid && f.Source == source) { return true; }
+            }
+            return false;
+        }
+
         public int LockerCount { get { return AllLockers().Count; } }
+
+        /// <summary>「正在运行」那一类有几个（界面 / 命令行都要念）。</summary>
+        public int RunCount { get { return OfSource(FileLocker.SourceRun).Count; } }
+
+        /// <summary>「窗口里开着它」那一类有几个。</summary>
+        public int OpenCount { get { return OfSource(FileLocker.SourceOpen).Count; } }
+
+        /// <summary>真被占着的那些文件（命中在谁身上）。</summary>
+        public List<string> LockedFiles()
+        {
+            List<string> list = new List<string>();
+            foreach (LockHit h in Hits)
+            {
+                if (h.File.Length == 0) { continue; }
+                foreach (FileLocker f in h.Lockers)
+                {
+                    if (!f.IsLock) { continue; }
+                    if (!ContainsText(list, h.File)) { list.Add(h.File); }
+                    break;
+                }
+            }
+            return list;
+        }
 
         /// <summary>这个程序占着的那几个文件（用来在界面上写"占着哪些文件"）。</summary>
         public List<string> FilesOf(int pid)
@@ -156,18 +235,18 @@ namespace Mxx1Toolbox
         {
             LockReport r = new LockReport();
             List<string> resources = new List<string>();
+            List<string> targets = new List<string>();
             Stopwatch clock = Stopwatch.StartNew();
-            string first = "";
 
             if (paths != null)
             {
                 foreach (string p in paths)
                 {
                     if (p == null || p.Trim().Length == 0) { continue; }
-                    if (first.Length == 0) { first = p.Trim(); }
                     string full;
                     try { full = Path.GetFullPath(p.Trim()); }
                     catch { full = p.Trim(); }
+                    AddResource(targets, full);
 
                     bool isDir = false;
                     try { isDir = Directory.Exists(full); }
@@ -177,24 +256,29 @@ namespace Mxx1Toolbox
                 }
             }
 
-            if (first.Length > 0) { SelfCheck(first, r); }
-            if (resources.Count == 0)
+            if (targets.Count > 0) { SelfCheck(targets[0], r); }
+
+            if (resources.Count > 0)
+            {
+                r.Scanned = resources.Count;
+                List<FileLocker> who = new List<FileLocker>();
+                QueryResilient(resources.ToArray(), who, r, 0, clock);
+                if (who.Count > 0) { Attribute(resources, who, r); }
+            }
+            else if (r.Error.Length == 0 && r.FolderScanned)
             {
                 // 文件夹里一个文件都没有（或者压根没传路径）：说不出"谁占着它"，
                 // 但要老实说清楚，不能让用户以为"查过了，没人占"。
-                if (r.Error.Length == 0 && r.FolderScanned)
-                {
-                    r.Note = "这个文件夹（连里面几层）一个文件都没有，没东西可查。";
-                }
-                return r;
+                r.Note = "这个文件夹（连里面几层）一个文件都没有，没东西可查。";
             }
 
-            r.Scanned = resources.Count;
-            List<FileLocker> who = new List<FileLocker>();
-            QueryResilient(resources.ToArray(), who, r, 0, clock);
-            if (who.Count == 0) { return r; }   // 真的没人占着 —— 交给 Verdict 说话
-
-            Attribute(resources, who, r);
+            // 两条便宜又准的线索（2026-10-04 加）。Restart Manager 看不见这两种程序：
+            // ① 正在运行的程序 —— 它的镜像是内存映射，**不持有文件句柄**；
+            // ② 窗口里开着它的程序 —— 记事本这类"读进来就关句柄"，本来就没锁。
+            // 而这两种恰恰是用户最常遇到的（"我明明开着它" / "文件夹说被占着却报不出是谁"）。
+            ProbeRunners(targets, r);
+            ProbeWindows(targets, r);
+            FinishDeleteNote(targets, r);
             return r;
         }
 
@@ -348,6 +432,50 @@ namespace Mxx1Toolbox
             }
         }
 
+        /// <summary>「删 / 改名会不会被拒绝」—— 用户真正要问的那句。拿 DELETE 权限开一次就知道：
+        /// 开得成 = 系统允许删除它（别人开着它也无所谓）；开不成 = 真被拦着。
+        /// 传目录要带 FILE_FLAG_BACKUP_SEMANTICS，共享模式放开 read|write|delete（不然任何
+        /// 一个开着它的程序都会被我自己的共享模式误判成"拦着"。</summary>
+        private static void DeleteCheck(string path, LockReport r)
+        {
+            r.DeleteChecked = true;
+            int code = 0;
+            IntPtr h = CreateFile(path, DELETE_ACCESS, FILE_SHARE_ALL, IntPtr.Zero, OPEN_EXISTING,
+                FILE_FLAG_BACKUP_SEMANTICS, IntPtr.Zero);
+            if (h == new IntPtr(-1)) { code = Marshal.GetLastWin32Error(); }
+            else { CloseHandle(h); }
+            r.DeleteError = code;
+            r.DeleteOk = (code == 0);
+
+            if (code == 0) { r.DeleteNote = "删 / 改名：系统允许（没人拦着）。"; }
+            else if (code == 32) { r.DeleteNote = "删 / 改名：会被系统拒绝 —— 有程序开着它、没放开删除共享。"; }
+            else if (code == 5) { r.DeleteNote = "删 / 改名：会被拒绝 —— 不是占用，是权限（ACL）不允许。"; }
+            else { r.DeleteNote = "删 / 改名：试不成（错误码 " + code.ToString(CultureInfo.InvariantCulture) + "）。"; }
+        }
+
+        /// <summary>把"正在运行"这条线索接到"能不能删"上：可执行文件的镜像是内存映射，
+        /// **拿 DELETE 权限照样开得成**（所以 DeleteCheck 测不出它），但真去删/改名会被系统拒绝。
+        /// 有这类程序时以它为准（用户右键一个正在跑的安装包时，这才是他真正需要知道的事）。</summary>
+        private static void FinishDeleteNote(List<string> targets, LockReport r)
+        {
+            if (!r.DeleteChecked) { return; }
+            List<FileLocker> runs = r.OfSource(FileLocker.SourceRun);
+            if (runs.Count == 0) { return; }
+
+            StringBuilder sb = new StringBuilder();
+            sb.Append("删 / 改名：会被系统拒绝 —— ");
+            int shown = 0;
+            foreach (FileLocker f in runs)
+            {
+                if (shown >= 3) { sb.Append(" 等"); break; }
+                if (shown > 0) { sb.Append("、"); }
+                sb.Append(f.Exe).Append("（PID ").Append(f.Pid.ToString(CultureInfo.InvariantCulture)).Append("）");
+                shown++;
+            }
+            sb.Append(" 正在运行，先结束它（它自己就是那个 .exe）。");
+            r.DeleteNote = sb.ToString();
+        }
+
         /// <summary>自查：这个路径现在到底能不能独占打开。
         /// 这是"没查到人"时唯一能给出的**确定**结论 —— 而不是让用户对着"查不到"发懵。</summary>
         public static void SelfCheck(string path, LockReport r)
@@ -376,11 +504,23 @@ namespace Mxx1Toolbox
             if (isDir)
             {
                 int code = DirExclusiveError(full);
+                DeleteCheck(full, r);
                 if (code == 0) { r.Verdict = "文件夹本身没被任何程序独占着"; }
                 else if (code == 32)
                 {
-                    r.VerdictLocked = true;
-                    r.Verdict = "文件夹本身正被某个程序打开着（多半是某个程序把它当成了「当前目录」）";
+                    // "被打开着"不等于"你删不掉"：实测用户桌面上那个文件夹被打开着，
+                    // 但系统照样允许删除它（对方放开了删除共享）。所以这里再拿 DELETE 权限试一次，
+                    // 能删就明说能删 —— 别让用户以为"有人占着"就一定动不了。
+                    if (r.DeleteOk)
+                    {
+                        r.Verdict = "文件夹被某个程序打开着，但这不挡你删它 / 给它改名（系统允许删除）";
+                    }
+                    else
+                    {
+                        r.VerdictLocked = true;
+                        r.Verdict = "有程序拦着它：删 / 改名会被系统拒绝（文件夹正被某个程序开着，"
+                            + "而句柄类接口报不出是哪个 —— 多半是它自己里面有程序在跑，或者资源管理器开着它）";
+                    }
                 }
                 else if (code == 5)
                 {
@@ -390,6 +530,8 @@ namespace Mxx1Toolbox
                 else { r.Verdict = "检查这个文件夹时系统返回错误码 " + code.ToString(CultureInfo.InvariantCulture); }
                 return;
             }
+
+            DeleteCheck(full, r);
 
             try
             {
@@ -567,6 +709,15 @@ namespace Mxx1Toolbox
             return false;
         }
 
+        /// <summary>这个名字是不是"系统关键进程"（句柄级强制解锁那边也要用同一份名单，别两边各写一套）。</summary>
+        public static bool IsProtectedName(string exe)
+        {
+            if (exe == null || exe.Trim().Length == 0) { return false; }
+            string bare = exe.Trim().ToLowerInvariant();
+            if (bare.EndsWith(".exe", StringComparison.Ordinal)) { bare = bare.Substring(0, bare.Length - 4); }
+            return NameIn(CriticalNames, bare);
+        }
+
         private static string ExeNameOf(int pid)
         {
             try
@@ -580,61 +731,215 @@ namespace Mxx1Toolbox
             catch { return ""; }
         }
 
+        /// <summary>根 PID（含）和它们所有后代的层数：根 = 0、子 = 1 ……（只读，不改任何东西）。
+        /// names 里带回每个 PID 的进程名，省得再抓一次进程表。</summary>
+        private static Dictionary<int, int> TreeDepth(List<int> roots, out Dictionary<int, string> names)
+        {
+            Dictionary<int, int> depth = new Dictionary<int, int>();
+            names = new Dictionary<int, string>();
+            try
+            {
+                List<ProcNode> all = Processes();
+                List<List<int>> kids = new List<List<int>>();
+                Dictionary<int, int> indexOf = new Dictionary<int, int>();
+                for (int i = 0; i < all.Count; i++)
+                {
+                    names[all[i].Pid] = all[i].Name;
+                    if (!indexOf.ContainsKey(all[i].Pid)) { indexOf[all[i].Pid] = i; }
+                    kids.Add(new List<int>());
+                }
+                for (int i = 0; i < all.Count; i++)
+                {
+                    int parent = all[i].Parent;
+                    int at;
+                    if (parent > 0 && indexOf.TryGetValue(parent, out at) && at != i) { kids[at].Add(i); }
+                }
+
+                Queue<int> queue = new Queue<int>();
+                foreach (int pid in roots)
+                {
+                    if (depth.ContainsKey(pid)) { continue; }
+                    depth[pid] = 0;
+                    queue.Enqueue(pid);
+                }
+                while (queue.Count > 0)
+                {
+                    int pid = queue.Dequeue();
+                    int at;
+                    if (!indexOf.TryGetValue(pid, out at)) { continue; }
+                    foreach (int child in kids[at])
+                    {
+                        int cpid = all[child].Pid;
+                        if (depth.ContainsKey(cpid)) { continue; }
+                        depth[cpid] = depth[pid] + 1;
+                        queue.Enqueue(cpid);
+                    }
+                }
+            }
+            catch { }
+            return depth;
+        }
+
+        /// <summary>这些程序启动的子进程（只读预览：界面上说清"会连带结束哪些"，命令行也念一遍）。</summary>
+        public static List<FileLocker> ChildrenOf(List<FileLocker> chosen)
+        {
+            List<FileLocker> list = new List<FileLocker>();
+            if (chosen == null || chosen.Count == 0) { return list; }
+            List<int> roots = new List<int>();
+            foreach (FileLocker f in chosen)
+            {
+                if (!ContainsPid(roots, f.Pid)) { roots.Add(f.Pid); }
+            }
+            Dictionary<int, string> names;
+            Dictionary<int, int> depth = TreeDepth(roots, out names);
+            List<int> kids = new List<int>();
+            foreach (int pid in depth.Keys)
+            {
+                if (depth[pid] <= 0 || ContainsPid(roots, pid)) { continue; }
+                kids.Add(pid);
+            }
+            // 按层数排（浅的在前），读起来跟"谁拉起来的"顺序一致
+            kids.Sort(delegate(int a, int b) { return depth[a].CompareTo(depth[b]); });
+            foreach (int pid in kids)
+            {
+                FileLocker f = new FileLocker();
+                f.Pid = pid;
+                f.Exe = names.ContainsKey(pid) ? names[pid] : "";
+                if (f.Exe.Length == 0) { f.Exe = "PID " + pid.ToString(CultureInfo.InvariantCulture); }
+                f.Source = FileLocker.SourceRun;
+                f.Kind = (depth[pid] > 1) ? "子进程（隔了一层）" : "子进程";
+                f.Checked = true;
+                list.Add(f);
+            }
+            return list;
+        }
+
+        /// <summary>结束进程整段的时间上限：过了就不再等剩下的（窗口不能被它挂住）。</summary>
+        private const int KillBudgetMs = 15000;
+
         /// <summary>结束选中的进程，逐个报结果（成功的、没权限的、已经退出的都分开说）。
-        /// 同一个 PID 只结束一次（界面上它可能占着好几个文件、出现好几行）。</summary>
+        /// 同一个 PID 只结束一次（界面上它可能占着好几个文件、出现好几行）。
+        ///
+        /// **连带它启动的子进程一起结束，而且先子后父**（2026-10-04 用户实测踩到的）：
+        /// 安装包 / 启动器都是"父进程拉一个子进程干活"——用户跑 qingjian 安装包，右键结束进程后
+        /// **文件锁松开了（父进程死了）、窗口却还留着**（窗口是那个子进程的）。只结束父进程
+        /// 等于"解了锁、留了个窗"，用户会以为没生效。先杀子再杀父，还顺手断了"父进程被杀了
+        /// 又被守护子进程拉起来"这种回魂。</summary>
         public static string Kill(List<FileLocker> chosen)
         {
             StringBuilder sb = new StringBuilder();
-            List<int> done = new List<int>();
-            int killed = 0;
-            int failed = 0;
+            if (chosen == null || chosen.Count == 0) { return "  没有选中任何程序。"; }
+
+            // 目标（去重）+ 它们的后代（BFS 记层数，深的先杀）
+            Dictionary<int, FileLocker> target = new Dictionary<int, FileLocker>();
+            List<int> targetPids = new List<int>();
             foreach (FileLocker f in chosen)
             {
-                if (ContainsPid(done, f.Pid)) { continue; }
-                done.Add(f.Pid);
-                if (f.Protected)
+                if (target.ContainsKey(f.Pid)) { continue; }
+                target[f.Pid] = f;
+                targetPids.Add(f.Pid);
+            }
+
+            Dictionary<int, string> nameOf;
+            Dictionary<int, int> depth = TreeDepth(targetPids, out nameOf);
+
+            List<int> order = new List<int>(depth.Keys);
+            order.Sort(delegate(int a, int b) { return depth[b].CompareTo(depth[a]); });
+            Stopwatch clock = Stopwatch.StartNew();
+            int killed = 0;
+            int failed = 0;
+            int childKilled = 0;
+            int skipped = 0;
+            foreach (int pid in order)
+            {
+                bool isTarget = target.ContainsKey(pid);
+                if (isTarget && target[pid].Protected)
                 {
                     failed++;
-                    sb.Append("  × ").Append(f.Exe).Append("（PID ").Append(f.Pid.ToString(CultureInfo.InvariantCulture))
-                      .Append("）").Append(f.Why.Length > 0 ? f.Why : "这个不能结束").AppendLine();
+                    FileLocker pf = target[pid];
+                    sb.Append("  × ").Append(pf.Exe).Append("（PID ").Append(pid.ToString(CultureInfo.InvariantCulture))
+                      .Append("）").Append(pf.Why.Length > 0 ? pf.Why : "这个不能结束").AppendLine();
                     continue;
                 }
+
+                string exe = isTarget ? target[pid].Exe : (nameOf.ContainsKey(pid) ? nameOf[pid] : "");
+                if (exe.Length == 0) { exe = "PID " + pid.ToString(CultureInfo.InvariantCulture); }
+                string tag = isTarget ? "" : "子进程 ";
+
+                if (!isTarget)
+                {
+                    // 子进程也要过一遍底线：系统关键进程、工具箱自己，一个都不许顺手带走。
+                    string bare = exe.ToLowerInvariant();
+                    if (bare.EndsWith(".exe")) { bare = bare.Substring(0, bare.Length - 4); }
+                    if (pid <= 4 || IsSelf(pid) || NameIn(CriticalNames, bare))
+                    {
+                        skipped++;
+                        sb.Append("  · ").Append(tag).Append(exe).Append("（PID ").Append(pid.ToString(CultureInfo.InvariantCulture))
+                          .Append("）没结束（系统关键程序 / 工具箱自己）").AppendLine();
+                        continue;
+                    }
+                }
+
+                if (clock.ElapsedMilliseconds > KillBudgetMs)
+                {
+                    skipped++;
+                    sb.Append("  · ").Append(tag).Append(exe).Append("（PID ").Append(pid.ToString(CultureInfo.InvariantCulture))
+                      .Append("）没结束（已经花了不少时间，剩下的没再等）").AppendLine();
+                    continue;
+                }
+
                 try
                 {
-                    Process p = Process.GetProcessById(f.Pid);
+                    Process p = Process.GetProcessById(pid);
                     p.Kill();
                     // 给它一点时间真的走掉：Kill 返回不代表进程已经退出。
-                    if (!p.WaitForExit(4000))
+                    if (!p.WaitForExit(isTarget ? 4000 : 2000))
                     {
                         failed++;
-                        sb.Append("  × ").Append(f.Exe).Append("（PID ").Append(f.Pid.ToString(CultureInfo.InvariantCulture))
-                          .Append("）让它结束但 4 秒还没退出").AppendLine();
+                        sb.Append("  × ").Append(tag).Append(exe).Append("（PID ").Append(pid.ToString(CultureInfo.InvariantCulture))
+                          .Append("）让它结束但还没退出").AppendLine();
                         continue;
                     }
                     killed++;
-                    sb.Append("  √ ").Append(f.Exe).Append("（PID ").Append(f.Pid.ToString(CultureInfo.InvariantCulture))
+                    if (!isTarget) { childKilled++; }
+                    sb.Append("  √ ").Append(tag).Append(exe).Append("（PID ").Append(pid.ToString(CultureInfo.InvariantCulture))
                       .Append("）已结束").AppendLine();
                 }
                 catch (ArgumentException)
                 {
                     killed++;
-                    sb.Append("  · ").Append(f.Exe).Append("（PID ").Append(f.Pid.ToString(CultureInfo.InvariantCulture))
+                    if (!isTarget) { childKilled++; }
+                    sb.Append("  · ").Append(tag).Append(exe).Append("（PID ").Append(pid.ToString(CultureInfo.InvariantCulture))
                       .Append("）已经不在了").AppendLine();
                 }
                 catch (Exception ex)
                 {
                     failed++;
-                    sb.Append("  × ").Append(f.Exe).Append("（PID ").Append(f.Pid.ToString(CultureInfo.InvariantCulture))
+                    sb.Append("  × ").Append(tag).Append(exe).Append("（PID ").Append(pid.ToString(CultureInfo.InvariantCulture))
                       .Append("）结束不了：").Append(ex.Message).AppendLine();
                 }
             }
+
             sb.AppendLine();
-            if (failed == 0) { sb.Append("  ").Append(killed.ToString(CultureInfo.InvariantCulture)).Append(" 个都结束了。"); }
+            if (failed == 0)
+            {
+                sb.Append("  ").Append(killed.ToString(CultureInfo.InvariantCulture)).Append(" 个都结束了");
+                if (childKilled > 0)
+                {
+                    sb.Append("（其中 ").Append(childKilled.ToString(CultureInfo.InvariantCulture))
+                      .Append(" 个是它启动的子进程 —— 窗口没关掉就是它们在撑着）");
+                }
+                sb.Append("。");
+            }
             else
             {
                 sb.Append("  结束了 ").Append(killed.ToString(CultureInfo.InvariantCulture)).Append(" 个，")
                   .Append(failed.ToString(CultureInfo.InvariantCulture))
                   .Append(" 个没成功（没权限结束别的用户 / 更高权限的进程，那种要用管理员身份再试）。");
+            }
+            if (skipped > 0)
+            {
+                sb.Append(" 另有 ").Append(skipped.ToString(CultureInfo.InvariantCulture)).Append(" 个没动。");
             }
             return sb.ToString();
         }
@@ -648,6 +953,279 @@ namespace Mxx1Toolbox
                 + "\tprotected=" + (f.Protected ? "yes" : "no")
                 + "\tchecked=" + (f.Checked ? "yes" : "no")
                 + (f.AppName.Length > 0 ? ("\tapp=" + f.AppName) : "");
+        }
+
+        // ------------------------------------------------------------------ 两条线索（不是"占用"，但必须说）
+
+        /// <summary>正在运行的程序：它的 exe 就是你右键的那个文件，或者就在你右键的那个文件夹里。
+        ///
+        /// 为什么要单独查（2026-10-04 用户报「右键文件夹说有程序占用着但找不到进程」，根因就是这个）：
+        /// 正在运行的程序**不持有文件句柄**（可执行文件是内存映射，加载器读完就把句柄关了），
+        /// 所以 Restart Manager 报不出来、"我自己独占打开试试"也照样能成功 —— 可它让文件删不掉、
+        /// 让文件夹松不开。用户那个文件夹里正好放着一个正在跑的安装包。</summary>
+        private static void ProbeRunners(List<string> targets, LockReport r)
+        {
+            if (targets.Count == 0) { return; }
+            List<ProcNode> all = Processes();
+            if (all.Count == 0) { return; }
+
+            foreach (ProcNode n in all)
+            {
+                string img = ImagePathOf(n.Pid);
+                if (img.Length == 0) { continue; }
+                foreach (string t in targets)
+                {
+                    bool isDir = IsDirectory(t);
+                    // 文件：exe 就是它自己；文件夹：exe 在它里面（任意一层）
+                    bool hit = isDir ? IsUnder(img, t) : string.Equals(img, t, StringComparison.OrdinalIgnoreCase);
+                    if (!hit) { continue; }
+                    if (HasRow(r, n.Pid, FileLocker.SourceRun)) { continue; }
+
+                    FileLocker f = new FileLocker();
+                    f.Pid = n.Pid;
+                    f.Source = FileLocker.SourceRun;
+                    f.Extra = img;
+                    f.Exe = FileNameOf(img);
+                    if (f.Exe.Length == 0) { f.Exe = n.Name; }
+                    f.Kind = "正在运行";
+                    f.Why = isDir
+                        ? "它就是装在这个文件夹里的程序，现在正跑着 —— 占着文件夹的就是它"
+                        : "它自己正在运行 —— 删除 / 改名会被系统拒绝（跟文件锁无关）";
+                    if (IsSelf(n.Pid))
+                    {
+                        f.Protected = true;
+                        f.Checked = false;
+                        f.Why = "是工具箱自己（就装在这个文件夹里），不用结束";
+                    }
+                    else { Guard(f); }
+                    AddRow(r, f, isDir ? img : t);
+                }
+            }
+        }
+
+        /// <summary>窗口里开着它：某个可见窗口的标题里带着这个文件的名字（记事本 / 看图 / VS Code /
+        /// 播放器 / Office），或者某个资源管理器窗口正开着这个文件夹。
+        ///
+        /// 为什么要查：记事本这类程序是"读进来就关句柄"，**根本没锁文件** —— 所以"没查到占用"其实
+        /// 是对的，但用户会觉得"我明明开着它，怎么说没找到"（2026-10-04 报的就是这条）。把它列出来、
+        /// 并写明"只是打开着，没锁住文件，一般不用结束"，比一句"没找到"有用得多。</summary>
+        private static void ProbeWindows(List<string> targets, LockReport r)
+        {
+            if (targets.Count == 0) { return; }
+            List<WinInfo> wins = WindowList();
+            if (wins.Count == 0) { return; }
+
+            foreach (WinInfo w in wins)
+            {
+                if (w.Title.Length == 0) { continue; }
+                foreach (string t in targets)
+                {
+                    bool isDir = IsDirectory(t);
+                    string name = FileNameOf(t);
+                    if (name.Length == 0) { continue; }
+
+                    bool hit;
+                    if (isDir)
+                    {
+                        // 文件夹只认"资源管理器窗口的标题正好是这个文件夹名"，避免误报
+                        hit = w.IsExplorer && string.Equals(w.Title, name, StringComparison.OrdinalIgnoreCase);
+                    }
+                    else
+                    {
+                        hit = w.Title.IndexOf(name, StringComparison.OrdinalIgnoreCase) >= 0;
+                    }
+                    if (!hit) { continue; }
+                    if (HasRow(r, w.Pid, FileLocker.SourceOpen)) { continue; }
+
+                    FileLocker f = new FileLocker();
+                    f.Pid = w.Pid;
+                    f.Source = FileLocker.SourceOpen;
+                    f.Extra = w.Title;
+                    f.Exe = ExeNameOf(w.Pid);
+                    f.Kind = "窗口里开着";
+                    f.Why = "只是开着它，并没有锁住文件（这类程序读完就关句柄）—— 一般不用结束";
+                    f.Checked = false;
+                    AddRow(r, f, t);
+                }
+            }
+        }
+
+        /// <summary>把一条线索挂到"哪个文件"上（同一个文件复用同一个 LockHit）。</summary>
+        private static void AddRow(LockReport r, FileLocker f, string file)
+        {
+            foreach (LockHit h in r.Hits)
+            {
+                if (string.Equals(h.File, file, StringComparison.OrdinalIgnoreCase))
+                {
+                    h.Lockers.Add(f);
+                    return;
+                }
+            }
+            LockHit hit = new LockHit();
+            hit.File = file;
+            hit.Lockers.Add(f);
+            r.Hits.Add(hit);
+        }
+
+        private static bool HasRow(LockReport r, int pid, string source)
+        {
+            foreach (LockHit h in r.Hits)
+            {
+                foreach (FileLocker f in h.Lockers)
+                {
+                    if (f.Pid == pid && f.Source == source) { return true; }
+                }
+            }
+            return false;
+        }
+
+        /// <summary>系统关键进程 / explorer / 装箱自己：列出来但不许随便结束（和 RM 那批一个规矩）。</summary>
+        private static void Guard(FileLocker f)
+        {
+            string bare = f.Exe.ToLowerInvariant();
+            if (bare.EndsWith(".exe")) { bare = bare.Substring(0, bare.Length - 4); }
+
+            if (f.Pid <= 4) { f.Protected = true; f.Checked = false; f.Why = "系统进程，不能结束"; }
+            else if (NameIn(CriticalNames, bare)) { f.Protected = true; f.Checked = false; f.Why = "系统关键程序，不能结束"; }
+            else if (string.Equals(bare, "explorer", StringComparison.OrdinalIgnoreCase))
+            {
+                f.Checked = false;
+                f.Why = "结束它 = 桌面重启一次（图标和任务栏会闪一下，不影响文件）";
+            }
+        }
+
+        private static bool IsSelf(int pid)
+        {
+            try { return pid == Process.GetCurrentProcess().Id; }
+            catch { return false; }
+        }
+
+        private static bool IsDirectory(string path)
+        {
+            try { return Directory.Exists(path); }
+            catch { return false; }
+        }
+
+        /// <summary>img 在 dir 里面（任意一层），而不是"文件名前缀撞上"。</summary>
+        private static bool IsUnder(string img, string dir)
+        {
+            string d = dir;
+            if (!d.EndsWith("\\", StringComparison.Ordinal)) { d = d + "\\"; }
+            if (img.Length <= d.Length) { return false; }
+            return img.StartsWith(d, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string FileNameOf(string path)
+        {
+            if (path == null || path.Length == 0) { return ""; }
+            try
+            {
+                string n = Path.GetFileName(path);
+                return (n == null) ? "" : n;
+            }
+            catch { return ""; }
+        }
+
+        /// <summary>进程表（Toolhelp）：PID + 父 PID + 进程名。结束进程要连子进程一起，靠的就是父子关系。</summary>
+        private static List<ProcNode> Processes()
+        {
+            List<ProcNode> list = new List<ProcNode>();
+            IntPtr snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+            if (snap == new IntPtr(-1)) { return list; }
+            try
+            {
+                PROCESSENTRY32 pe = new PROCESSENTRY32();
+                pe.dwSize = (uint)Marshal.SizeOf(typeof(PROCESSENTRY32));
+                if (!Process32First(snap, ref pe)) { return list; }
+                while (true)
+                {
+                    ProcNode n = new ProcNode();
+                    n.Pid = (int)pe.th32ProcessID;
+                    n.Parent = (int)pe.th32ParentProcessID;
+                    n.Name = (pe.szExeFile == null) ? "" : pe.szExeFile;
+                    if (n.Pid > 0) { list.Add(n); }
+                    pe.dwSize = (uint)Marshal.SizeOf(typeof(PROCESSENTRY32));
+                    if (!Process32Next(snap, ref pe)) { break; }
+                }
+            }
+            catch { }
+            finally { CloseHandle(snap); }
+            return list;
+        }
+
+        /// <summary>某个进程的镜像全路径（QueryFullProcessImageName + 最低查询权限：
+        /// 不用 PROCESS_VM_READ，别的用户 / 更高权限的进程拿不到就返回空，不抛）。</summary>
+        private static string ImagePathOf(int pid)
+        {
+            IntPtr h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
+            if (h == IntPtr.Zero) { return ""; }
+            try
+            {
+                StringBuilder sb = new StringBuilder(1024);
+                uint len = (uint)sb.Capacity;
+                if (!QueryFullProcessImageName(h, 0, sb, ref len)) { return ""; }
+                return sb.ToString();
+            }
+            catch { return ""; }
+            finally { CloseHandle(h); }
+        }
+
+        /// <summary>可见、有标题的顶层窗口。</summary>
+        private static List<WinInfo> WindowList()
+        {
+            List<WinInfo> list = new List<WinInfo>();
+            try
+            {
+                EnumWindowsProc cb = delegate(IntPtr hwnd, IntPtr param)
+                {
+                    try
+                    {
+                        if (!IsWindowVisible(hwnd)) { return true; }
+                        int len = GetWindowTextLength(hwnd);
+                        if (len <= 0) { return true; }
+                        StringBuilder title = new StringBuilder(len + 2);
+                        GetWindowText(hwnd, title, title.Capacity);
+
+                        StringBuilder cls = new StringBuilder(64);
+                        GetClassName(hwnd, cls, cls.Capacity);
+
+                        uint pid = 0;
+                        GetWindowThreadProcessId(hwnd, out pid);
+
+                        WinInfo w = new WinInfo();
+                        w.Pid = (int)pid;
+                        w.Title = title.ToString();
+                        w.Class = cls.ToString();
+                        list.Add(w);
+                    }
+                    catch { }
+                    return true;
+                };
+                EnumWindows(cb, IntPtr.Zero);
+                GC.KeepAlive(cb);
+            }
+            catch { }
+            return list;
+        }
+
+        private sealed class ProcNode
+        {
+            public int Pid;
+            public int Parent;
+            public string Name = "";
+        }
+
+        private sealed class WinInfo
+        {
+            public int Pid;
+            public string Title = "";
+            public string Class = "";
+
+            /// <summary>资源管理器窗口：Win10/11 的文件窗口类名就这两个。</summary>
+            public bool IsExplorer
+            {
+                get { return Class == "CabinetWClass" || Class == "ExploreWClass"; }
+            }
         }
 
         // ------------------------------------------------------------------ P/Invoke
@@ -704,6 +1282,8 @@ namespace Mxx1Toolbox
             ref uint pnProcInfo, [In, Out] RM_PROCESS_INFO[] rgAffectedApps, ref uint lpdwRebootReasons);
 
         private const uint GENERIC_READ = 0x80000000;
+        private const uint DELETE_ACCESS = 0x00010000;
+        private const uint FILE_SHARE_ALL = 0x00000007;
         private const uint OPEN_EXISTING = 3;
         private const uint FILE_FLAG_BACKUP_SEMANTICS = 0x02000000;
 
@@ -723,5 +1303,62 @@ namespace Mxx1Toolbox
 
         [DllImport("kernel32.dll", SetLastError = true)]
         private static extern bool CloseHandle(IntPtr hObject);
+
+        // ---- 进程表（父子关系）/ 镜像路径 / 顶层窗口
+
+        private const uint TH32CS_SNAPPROCESS = 0x00000002;
+        private const uint PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
+
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        private struct PROCESSENTRY32
+        {
+            public uint dwSize;
+            public uint cntUsage;
+            public uint th32ProcessID;
+            public IntPtr th32DefaultHeapID;
+            public uint th32ModuleID;
+            public uint cntThreads;
+            public uint th32ParentProcessID;
+            public int pcPriClassBase;
+            public uint dwFlags;
+
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)]
+            public string szExeFile;
+        }
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern IntPtr CreateToolhelp32Snapshot(uint dwFlags, uint th32ProcessID);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern bool Process32First(IntPtr hSnapshot, ref PROCESSENTRY32 lppe);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern bool Process32Next(IntPtr hSnapshot, ref PROCESSENTRY32 lppe);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern IntPtr OpenProcess(uint dwDesiredAccess, bool bInheritHandle, int dwProcessId);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern bool QueryFullProcessImageName(IntPtr hProcess, uint dwFlags, StringBuilder lpExeName, ref uint lpdwSize);
+
+        private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
+
+        [DllImport("user32.dll")]
+        private static extern bool IsWindowVisible(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        private static extern int GetWindowTextLength(IntPtr hWnd);
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern int GetClassName(IntPtr hWnd, StringBuilder lpClassName, int nMaxCount);
+
+        [DllImport("user32.dll")]
+        private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
     }
 }

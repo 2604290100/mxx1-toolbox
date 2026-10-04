@@ -34,6 +34,14 @@ function Check {
 
 if (-not (Test-Path -LiteralPath $Exe)) { throw ('找不到 exe（先跑 build.ps1）: ' + $Exe) }
 
+# 命令行套件里**任何**调用工具箱的路径都不许去修补用户真实的右键菜单：pin / unpin 会走
+# RightMenu.SyncIfInstalled()，那条路 2026-10-04 真的把用户真实菜单的 Icon 和占位符改掉了
+# ——当时的 M22 只比"键名"，所以没拦住（现在 M22c 连键值一起比）。
+# M20c 专门测那条修补路径，它在隔离根里自己把开关打开（MXX1_NO_RIGHTMENU_SYNC=0）。
+$script:SyncHad = Test-Path Env:MXX1_NO_RIGHTMENU_SYNC
+$script:SyncOld = $env:MXX1_NO_RIGHTMENU_SYNC
+$env:MXX1_NO_RIGHTMENU_SYNC = '1'
+
 # 用户自己加的按钮（%LOCALAPPDATA%\mxx1-toolbox\tools.json）会让按钮数变得不确定，
 # 所以先把它请到一边，跑完在最后一段复原（用户可能正开着界面在用，别删）。
 $UserToolsJson = Join-Path $env:LOCALAPPDATA 'mxx1-toolbox\tools.json'
@@ -92,6 +100,27 @@ function Get-Key {
     return ''
 }
 
+# 用户真实右键菜单里那 8 个键的**值**快照（名字 / 图标 / 命令）。只比"键名"是不够的：
+# 2026-10-04 就是这样漏掉了一次 —— 测试里 K 组的 pin 走了 SyncIfInstalled，把用户真实菜单的
+# Icon 和占位符改掉了，而当时的 M22 只比键名，全绿。
+function Get-RightMenuSnapshot {
+    $snap = New-Object System.Collections.ArrayList
+    foreach ($r in @('*', 'Directory', 'Directory\Background', 'DesktopBackground')) {
+        foreach ($v in @('Mxx1Unlock', 'Mxx1Common')) {
+            $p = "HKCU:\Software\Classes\$r\shell\$v"
+            if (Test-Path -LiteralPath $p) {
+                $it = Get-Item -LiteralPath $p
+                $c = ''
+                if (Test-Path -LiteralPath (Join-Path $p 'command')) { $c = [string](Get-Item -LiteralPath (Join-Path $p 'command')).GetValue('') }
+                [void]$snap.Add(($r + '\' + $v + '|' + [string]$it.GetValue('MUIVerb') + '|' + [string]$it.GetValue('Icon') + '|' + $c))
+            } else {
+                [void]$snap.Add($r + '\' + $v + '|（不存在）')
+            }
+        }
+    }
+    return ($snap -join "`n")
+}
+
 # 「改动前的原值」两个文件的指纹。自检会临时把它们挪走再放回来，所以比对指纹才知道有没有动过
 # 用户的记录 —— 用户自己用过隐私开关 / 系统设置按钮时这两个文件本来就该存在。
 function Get-BackupHash {
@@ -113,7 +142,7 @@ Write-Host 'A 组 · status 与 list'
 $status = Invoke-Exe 'status'
 Check 'A01 status 退出码 0' ($status.Code -eq 0) ('exit=' + $status.Code)
 Check 'A02 中文输出没有乱码（UTF-8）' ($status.Out -match 'name=萌新工具箱') ('name=' + (Get-Key $status.Out 'name'))
-Check 'A03 版本号 1.5.1' ((Get-Key $status.Out 'version') -eq '1.5.1') (Get-Key $status.Out 'version')
+Check 'A03 版本号 1.5.2' ((Get-Key $status.Out 'version') -eq '1.5.2') (Get-Key $status.Out 'version')
 Check 'A04 按钮总数 112（测试期间用户层的按钮会暂停：常用 33 + 系统工具 26 + 隐私 29 + 应用 5 + 清理 8 + 右键 8 + 我的 3）' ((Get-Key $status.Out 'buttons') -eq '112') (Get-Key $status.Out 'buttons')
 Check 'A05 内置清单里没有灰色占位按钮了（两个「资源管理器」也接上了真功能；灰规则改由 B 组注入验证）' ((Get-Key $status.Out 'placeholders') -eq '0') (Get-Key $status.Out 'placeholders')
 Check 'A06 危险按钮 3 个' ((Get-Key $status.Out 'dangerous') -eq '3') (Get-Key $status.Out 'dangerous')
@@ -293,19 +322,26 @@ Check 'F01 status 报出工具目录，名字是 bin-tools' `
 if ($permdel -ne '(未找到)' -and $permdel.Length -gt 0 -and $toolDir.Length -gt 0) {
     $probeCopy = Join-Path $toolDir 'PermanentDeleteSetup.exe'
     $createdDir = -not (Test-Path -LiteralPath $toolDir)
+    # 工具目录里**本来就有**这一份（用户自己拷进去的）：那就别"拷贝"（源和目标是同一个文件，
+    # Copy-Item 会报错），更不许在收尾时把它删掉 —— 那是用户的文件，不是测试的副本。
+    $alreadyThere = (($permdel -eq $probeCopy) -or (Test-Path -LiteralPath $probeCopy))
     try {
         [void][System.IO.Directory]::CreateDirectory($toolDir)
-        Copy-Item -LiteralPath $permdel -Destination $probeCopy -Force
+        if (-not $alreadyThere) { Copy-Item -LiteralPath $permdel -Destination $probeCopy -Force }
         $d2 = Invoke-Exe 'run permdel.gui --dry'
         $t2 = Get-Key $d2.Out 'target'
         Check 'F02 工具目录里的 exe 优先于隔壁仓库那份' ($t2 -match 'bin-tools') $t2
     } finally {
-        Remove-Item -LiteralPath $probeCopy -Force -ErrorAction SilentlyContinue
+        if (-not $alreadyThere) { Remove-Item -LiteralPath $probeCopy -Force -ErrorAction SilentlyContinue }
         if ($createdDir) { Remove-Item -LiteralPath $toolDir -Force -ErrorAction SilentlyContinue }
     }
-    $d3 = Invoke-Exe 'run permdel.gui --dry'
-    Check 'F03 删掉副本后又回到隔壁仓库那份（查找顺序没写死）' `
-        ((Get-Key $d3.Out 'target') -notmatch 'bin-tools') (Get-Key $d3.Out 'target')
+    if ($alreadyThere) {
+        Check 'F03 删掉副本后又回到隔壁仓库那份（查找顺序没写死）' $false 'skipped（工具目录里本来就有那一份，不能删）'
+    } else {
+        $d3 = Invoke-Exe 'run permdel.gui --dry'
+        Check 'F03 删掉副本后又回到隔壁仓库那份（查找顺序没写死）' `
+            ((Get-Key $d3.Out 'target') -notmatch 'bin-tools') (Get-Key $d3.Out 'target')
+    }
 } else {
     Check 'F02 工具目录里的 exe 优先于隔壁仓库那份' $false '没找到隔壁 exe 或工具目录，跳过'
     Check 'F03 删掉副本后又回到隔壁仓库那份（查找顺序没写死）' $false 'skipped'
@@ -824,6 +860,116 @@ try {
     if (Test-Path -LiteralPath $rmDeep) { Remove-Item -LiteralPath $rmDeep -Recurse -Force -ErrorAction SilentlyContinue }
 }
 
+# ---- 「它自己在运行」这条线索（2026-10-04 加）：正在运行的程序**不持有文件句柄**（可执行文件是
+#      内存映射，加载器读完就把句柄关了），所以 Restart Manager 报不出来、"我自己独占打开试试"
+#      也照样成功 —— 可它让文件删不掉、让文件夹松不开。用户报的「右键文件夹说有程序占用着但
+#      找不到进程」就是这种：那个文件夹里放着一个正在跑的安装包。
+$rmRun = Join-Path $env:TEMP 'mxx1-rightmenu-run'
+if (Test-Path -LiteralPath $rmRun) { Remove-Item -LiteralPath $rmRun -Recurse -Force }
+New-Item -ItemType Directory -Path $rmRun | Out-Null
+Set-Content -LiteralPath (Join-Path $rmRun 'doc.txt') -Value 'x' -Encoding UTF8
+$rmRunHolder = Join-Path $rmRun 'holder.exe'
+$rmRunSrc = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+try { New-Item -ItemType HardLink -Path $rmRunHolder -Target $rmRunSrc -ErrorAction Stop | Out-Null }
+catch { Copy-Item -LiteralPath $rmRunSrc -Destination $rmRunHolder -Force }
+$rmRunProc = Start-Process -FilePath $rmRunHolder -WindowStyle Hidden -PassThru -ArgumentList @(
+    '-NoProfile', '-Command', 'Start-Sleep 90')
+Start-Sleep -Seconds 2
+try {
+    $rmRunQ = Invoke-Exe ('rightmenu unlock --query-only "' + $rmRun + '"')
+    # 注意：RM 有时**也能**把"正在运行的 exe 自己的镜像文件"报成占用（这台机器上实测会），
+    # 所以这里不断言 lockers=0，只断言我们这条新线索确实点名了那个进程。
+    Check 'M14e 文件夹里有正在运行的程序：单独点出「它自己在运行」（句柄类接口看不见它）' `
+        (([int](Get-Key $rmRunQ.Out 'run') -ge 1) -and ($rmRunQ.Out -match ('run\tpid=' + $rmRunProc.Id + '\b'))) `
+        ('run=' + (Get-Key $rmRunQ.Out 'run') + ' lockers=' + (Get-Key $rmRunQ.Out 'lockers') + ' 期望 pid=' + $rmRunProc.Id)
+} finally {
+    if ($rmRunProc -and -not $rmRunProc.HasExited) { Stop-Process -Id $rmRunProc.Id -Force -ErrorAction SilentlyContinue }
+    Start-Sleep -Milliseconds 400
+    if (Test-Path -LiteralPath $rmRun) { Remove-Item -LiteralPath $rmRun -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
+# ---- 结束进程要**连它启动的子进程一起**（用户 2026-10-04 实测：跑 qingjian 安装包，右键结束进程后
+#      文件锁松开了（父进程死了）、窗口却还在（窗口是父进程拉起来的那个子进程的））。命令行这边
+#      只做**只读预览**（child= 行），真正动手的是界面上那个按钮（GUI 套件 N08 盯着确认框和"取消"）。
+$rmTree = Join-Path $env:TEMP 'mxx1-rightmenu-tree'
+if (Test-Path -LiteralPath $rmTree) { Remove-Item -LiteralPath $rmTree -Recurse -Force }
+New-Item -ItemType Directory -Path $rmTree | Out-Null
+$rmTreeFile = Join-Path $rmTree 'locked.txt'
+Set-Content -LiteralPath $rmTreeFile -Value 'x' -Encoding UTF8
+$rmTreePidFile = Join-Path $rmTree 'child-pid.txt'
+$rmTreeHelper = Join-Path $rmTree 'child.ps1'
+Set-Content -LiteralPath $rmTreeHelper -Encoding UTF8 -Value `
+    ("`$PID | Set-Content -LiteralPath '" + $rmTreePidFile + "'" + "`r`nStart-Sleep 90")
+$rmTreeParent = Start-Process powershell.exe -WindowStyle Hidden -PassThru -ArgumentList @(
+    '-NoProfile', '-Command', ("`$fs=[System.IO.File]::Open('" + $rmTreeFile + "','Open','ReadWrite','None'); " +
+        "Start-Process powershell.exe -WindowStyle Hidden -ArgumentList '-NoProfile','-File','" + $rmTreeHelper +
+        "'; Start-Sleep 90"))
+$rmTreeChild = 0
+for ($i = 0; $i -lt 30; $i++) {
+    Start-Sleep -Milliseconds 400
+    if (Test-Path -LiteralPath $rmTreePidFile) {
+        $raw = (Get-Content -LiteralPath $rmTreePidFile -ErrorAction SilentlyContinue | Select-Object -First 1)
+        if ($raw -match '(\d+)') { $rmTreeChild = [int]$Matches[1]; break }
+    }
+}
+try {
+    $rmTreeQ = Invoke-Exe ('rightmenu unlock --query-only "' + $rmTreeFile + '"')
+    Check 'M14f 结束前列出「会连带结束的子进程」（用户报的"锁解开了、窗口还在"就是它）' `
+        (($rmTreeChild -gt 0) -and ($rmTreeQ.Out -match ('child\tpid=' + $rmTreeChild + '\b')) -and `
+         ([int](Get-Key $rmTreeQ.Out 'lockers') -ge 1)) `
+        ('child=' + $rmTreeChild + ' lockers=' + (Get-Key $rmTreeQ.Out 'lockers'))
+} finally {
+    if ($rmTreeChild -gt 0) { Stop-Process -Id $rmTreeChild -Force -ErrorAction SilentlyContinue }
+    if ($rmTreeParent -and -not $rmTreeParent.HasExited) { Stop-Process -Id $rmTreeParent.Id -Force -ErrorAction SilentlyContinue }
+    Start-Sleep -Milliseconds 400
+    if (Test-Path -LiteralPath $rmTree) { Remove-Item -LiteralPath $rmTree -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
+# ---- 句柄表那条线索（rightmenu handles，只读）：用户问「火绒的解除占用是怎么做的」——
+#      它遍历**全系统句柄表**，能看见 Restart Manager 看不见的东西：**共享打开**的文件
+#      （记事本、IDE、看图这类程序用 FileShare.ReadWrite 打开，RM 一句"没人占"就完了），
+#      以及"某个程序把文件夹当成了当前目录"这种目录句柄。这里只验"查得到"，不验"关得掉"
+#      （关句柄是危险动作，命令行故意不提供入口，只能从界面点、还要过确认框 —— 见 GUI 套件 N09）。
+Add-Type -TypeDefinition @'
+using System;using System.Runtime.InteropServices;
+public class Mxx1HandleFixture{
+ [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)] static extern IntPtr CreateFileW(string n,uint acc,uint share,IntPtr sa,uint disp,uint flags,IntPtr t);
+ [DllImport("kernel32.dll",SetLastError=true)] static extern bool CloseHandle(IntPtr h);
+ public static IntPtr HoldDir(string p,uint share){return CreateFileW(p,0x80000000,share,IntPtr.Zero,3,0x02000000,IntPtr.Zero);}
+ public static void Release(IntPtr h){CloseHandle(h);}
+ public static string ExclusiveProbe(string p){IntPtr h=CreateFileW(p,0x80000000,0,IntPtr.Zero,3,0x02000000,IntPtr.Zero);if(h==(IntPtr)(-1))return "err="+Marshal.GetLastWin32Error();CloseHandle(h);return "free";}
+}
+'@
+$rmH = Join-Path $env:TEMP 'mxx1-handles'
+if (Test-Path -LiteralPath $rmH) { Remove-Item -LiteralPath $rmH -Recurse -Force }
+New-Item -ItemType Directory -Path $rmH | Out-Null
+$rmHFile = Join-Path $rmH 'shared.txt'
+Set-Content -LiteralPath $rmHFile -Value 'x' -Encoding UTF8
+$rmHSub = Join-Path $rmH 'subdir'
+New-Item -ItemType Directory -Path $rmHSub | Out-Null
+$rmHShared = Start-Process powershell.exe -WindowStyle Hidden -PassThru -ArgumentList @(
+    '-NoProfile', '-Command', ("`$fs=[System.IO.File]::Open('" + $rmHFile + "','Open','Read','ReadWrite'); Start-Sleep 90"))
+$rmHDirHandle = [IntPtr]::Zero
+Start-Sleep -Seconds 2
+try {
+    $rmHQ = Invoke-Exe ('rightmenu handles "' + $rmHFile + '"')
+    Check 'M14g 句柄表查得到「共享打开」它的进程（Restart Manager 看不见的那种）' `
+        (([int](Get-Key $rmHQ.Out 'hits') -ge 1) -and ($rmHQ.Out -match ('pid=' + $rmHShared.Id + '\b'))) `
+        ('hits=' + (Get-Key $rmHQ.Out 'hits') + ' 期望 pid=' + $rmHShared.Id)
+
+    # 目录句柄：用户右键的就是文件夹，而"某个程序把文件夹当当前目录"只有句柄表看得见
+    $rmHDirHandle = [Mxx1HandleFixture]::HoldDir($rmHSub, 7)
+    $rmHDQ = Invoke-Exe ('rightmenu handles "' + $rmHSub + '"')
+    Check 'M14h 句柄表查得到「文件夹被人打开着」（目录句柄，RM 登记目录直接报错）' `
+        ($rmHDQ.Out -match ('pid=' + $PID + '\b')) `
+        ('hits=' + (Get-Key $rmHDQ.Out 'hits') + ' 期望 pid=' + $PID)
+} finally {
+    if ($rmHDirHandle -ne [IntPtr]::Zero) { [Mxx1HandleFixture]::Release($rmHDirHandle) }
+    if ($rmHShared -and -not $rmHShared.HasExited) { Stop-Process -Id $rmHShared.Id -Force -ErrorAction SilentlyContinue }
+    Start-Sleep -Milliseconds 400
+    if (Test-Path -LiteralPath $rmH) { Remove-Item -LiteralPath $rmH -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
 # ---- 装 / 卸：整段都在**隔离的根**里做（MXX1_RIGHTMENU_ROOT），绝不碰用户真实的右键菜单
 $rmTestRoot = 'HKCU:\Software\mxx1-toolbox\rightmenu-test'
 $rmRealShell = 'HKCU:\Software\Classes\*\shell'
@@ -832,7 +978,13 @@ $rmRecordHad = Test-Path -LiteralPath $rmRecord
 $rmRecordOld = ''
 if ($rmRecordHad) { $rmRecordOld = [System.IO.File]::ReadAllText($rmRecord) }
 $rmRealBefore = @(Get-ChildItem -LiteralPath $rmRealShell -ErrorAction SilentlyContinue | Select-Object -ExpandProperty PSChildName)
+$rmRealValuesBefore = Get-RightMenuSnapshot
+$rmRealIconDir = Join-Path (Split-Path -Parent $rmRecord) 'rightmenu-icons'
+$rmTestIconDir = Join-Path (Split-Path -Parent $rmRecord) 'rightmenu-icons-test'
+$rmRealIconsBefore = @(Get-ChildItem -LiteralPath $rmRealIconDir -File -ErrorAction SilentlyContinue).Count
 $rmEnv = @{ MXX1_RIGHTMENU_ROOT = 'HKCU\Software\mxx1-toolbox\rightmenu-test' }
+# 只有 M20c 要测"修补"这条路，它自己把开关打开（全局默认是关的，见文件开头）
+$rmEnvSync = @{ MXX1_RIGHTMENU_ROOT = 'HKCU\Software\mxx1-toolbox\rightmenu-test'; MXX1_NO_RIGHTMENU_SYNC = '0' }
 $rmRealAfter = $rmRealBefore
 try {
     $rmIns = Invoke-Exe 'run rightmenu.unlock.on' 60 $Exe $rmEnv
@@ -904,6 +1056,18 @@ try {
     Check 'M20b 「常用功能」子菜单每一项也有图标（子项自己带 Icon）' `
         (($rmShared.Count -ge 3) -and ($rmSubIcons.Count -eq $rmShared.Count)) ('带图标=' + $rmSubIcons.Count + '/' + $rmShared.Count)
 
+    # 测试装的图标必须写在 rightmenu-icons-test 里 —— 否则撤测试项时会把用户真实那份图标目录
+    # 一起删掉（2026-10-04 真踩，见 MenuIcons.Dir 的注释）
+    $rmInTestDir = @($rmIconKeys | Where-Object { "$((Get-ItemProperty -LiteralPath $_ -ErrorAction SilentlyContinue).Icon)" -like ($rmTestIconDir + '\*') })
+    Check 'M20b2 测试装的图标写在 rightmenu-icons-test 里（和用户真实那份分开）' `
+        ($rmInTestDir.Count -eq 8) ('在 test 目录里的=' + $rmInTestDir.Count)
+
+    # 状态里要能念出"图标在不在"（文件被清理软件删掉时，用户能从状态里看出来要点一次装上）
+    $rmStat = Invoke-Exe 'rightmenu status' 60 $Exe $rmEnv
+    Check 'M20d 状态里念得出菜单图标都在（8 个）' `
+        (($rmStat.Code -eq 0) -and ($rmStat.Out -match '菜单图标\s*8 个都在')) `
+        ('exit=' + $rmStat.Code + ' ' + (@($rmStat.Out -split "`r?`n" | Where-Object { $_ -match '菜单图标' }) -join ' '))
+
     # ---- 自动修补：旧版装出来的键（背景位置写 %1、Icon 指着一个没有图标资源的 exe）应该在
     #      "用一次工具箱"时就被修好，而不是等着用户去点「装上…」。这里把键写坏，然后走 pin 这条路
     #      （pin 之后会调 RightMenu.SyncIfInstalled），看它有没有修回来。
@@ -916,7 +1080,7 @@ try {
     $rmPinOld = ''
     if ($rmPinHad) { $rmPinOld = [System.IO.File]::ReadAllText($rmPinFile, [System.Text.Encoding]::UTF8) }
     try {
-        $rmPin = Invoke-Exe 'pin devmgmt' 60 $Exe $rmEnv
+        $rmPin = Invoke-Exe 'pin devmgmt' 60 $Exe $rmEnvSync
         $rmFixCmd = "$((Get-ItemProperty -LiteralPath (Join-Path $rmFixKey 'command') -ErrorAction SilentlyContinue).'(default)')"
         $rmFixIcon = "$((Get-ItemProperty -LiteralPath $rmFixKey -ErrorAction SilentlyContinue).Icon)"
         Check 'M20c 自动修补：用一次工具箱就把旧版写坏的占位符 / 丢掉的图标修回来' `
@@ -946,6 +1110,21 @@ try {
          '（用户自己装的：' + $(if ($rmRealMine.Count -gt 0) { $rmRealMine -join ',' } else { '无' }) + '）')
     Check 'M22b 用户自己装过的话，测试认得出来那本来就在（不当成"测试装上去的"）' `
         ($rmUserInstalled.Count -eq $rmRealMine.Count) ('测试前就有=' + ($rmUserInstalled -join ','))
+
+    # 只比键名不够：整个套件跑下来，用户真实菜单里那 8 个键的**值**（名字 / 图标 / 命令）也要
+    # 一模一样 —— pin / unpin 那条路会调 SyncIfInstalled，2026-10-04 就是这样把用户真实的
+    # Icon 和占位符悄悄改掉的（当时 M22 只比键名，全绿放过去了）。
+    $rmRealValuesAfter = Get-RightMenuSnapshot
+    if ($rmRealValuesBefore -eq $rmRealValuesAfter) {
+        Check 'M22c 用户真实菜单的键值也没被动过（MUIVerb / Icon / 命令逐项一致）' $true ('键=' + $rmRealMine.Count + ' 个')
+    } else {
+        $diff = @()
+        $b = @($rmRealValuesBefore -split "`n"); $a = @($rmRealValuesAfter -split "`n")
+        for ($i = 0; $i -lt [Math]::Max($b.Count, $a.Count); $i++) {
+            if ("$($b[$i])" -ne "$($a[$i])") { $diff += ("before=" + $b[$i] + ' → after=' + $a[$i]) }
+        }
+        Check 'M22c 用户真实菜单的键值也没被动过（MUIVerb / Icon / 命令逐项一致）' $false ($diff -join ' ; ')
+    }
 }
 finally {
     Remove-Item -LiteralPath 'HKCU:\Software\mxx1-toolbox' -Recurse -Force -ErrorAction SilentlyContinue
@@ -956,10 +1135,18 @@ finally {
 Check 'M23 收尾干净：测试根删掉了、用户的原值记录按原样放回' `
     (((Test-Path -LiteralPath 'HKCU:\Software\mxx1-toolbox') -eq $false) -and `
      ((Test-Path -LiteralPath $rmRecord) -eq $rmRecordHad)) ('记录文件=' + (Test-Path -LiteralPath $rmRecord))
+# 撤掉**测试根**里的两项时，不许动用户真实那份菜单在用的图标（2026-10-04 踩过：两边共用
+# 一个图标目录，测试的卸载把整个目录删了 → 用户菜单里的图标当场变空白）。
+$rmRealIconAfter = @(Get-ChildItem -LiteralPath $rmRealIconDir -File -ErrorAction SilentlyContinue).Count
+Check 'M23b 撤掉测试项没动用户真实那份图标目录（文件数不变）' `
+    ($rmRealIconAfter -eq $rmRealIconsBefore) ('before=' + $rmRealIconsBefore + ' after=' + $rmRealIconAfter)
 
 # ---------------------------------------------------------------- 汇总
 Write-Host ''
 Write-Host '----------------------------------------------------------'
+# 把 MXX1_NO_RIGHTMENU_SYNC 恢复成测试之前的样子（别给同一个 shell 里后面的命令留副作用）
+if ($script:SyncHad) { $env:MXX1_NO_RIGHTMENU_SYNC = $script:SyncOld }
+else { Remove-Item Env:MXX1_NO_RIGHTMENU_SYNC -ErrorAction SilentlyContinue }
 Write-Host (" 命令行回归: 通过 {0} 项, 失败 {1} 项" -f $script:Pass, $script:Fail)
 Write-Host '----------------------------------------------------------'
 if ($script:UserToolsHad -and (Test-Path -LiteralPath $UserToolsPaused)) {

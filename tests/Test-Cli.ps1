@@ -1,4 +1,4 @@
-﻿#Requires -Version 5.1
+#Requires -Version 5.1
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 mxx1.cn
 <#
@@ -1214,21 +1214,37 @@ $rmRunProc = Start-Process -FilePath $rmRunHolder -WindowStyle Hidden -PassThru 
     '-NoProfile', '-Command', 'Start-Sleep 90')
 Start-Sleep -Seconds 2
 try {
-    # 等那个进程真的起来再断言：慢机器（CI 的 runner）上 PowerShell 冷启动可能超过 2 秒，
-    # 这时候"查不到"是**还没起来**，不是功能坏了 —— 所以轮询到看见它为止（最多约 12 秒）。
-    $rmRunQ = $null
-    for ($ri = 0; $ri -lt 16; $ri++) {
-        $rmRunQ = Invoke-Exe ('rightmenu unlock --query-only "' + $rmRun + '"')
-        if ([int](Get-Key $rmRunQ.Out 'run') -ge 1) { break }
-        Start-Sleep -Milliseconds 750
+    # 先做**夹具自检**：那个进程的镜像必须真在我们要查的文件夹里，否则这一项测的就不是
+    # 「它自己在运行」了。CI 的 runner 上临时目录跟系统盘**不同卷** —— `New-Item -ItemType HardLink`
+    # 会失败并退回复制，万一启动方式被解析到别处（比如镜像路径报的是原始 powershell.exe），
+    # 断言失败就成了"环境不一样"，不是功能坏了（2026-10-05 CI 上遇到过）。
+    $rmRunImg = ''
+    for ($wi = 0; $wi -lt 15; $wi++) {
+        try { $rmRunImg = [string](Get-Process -Id $rmRunProc.Id -ErrorAction Stop).Path } catch { $rmRunImg = '' }
+        if ($rmRunImg.Length -gt 0) { break }
+        Start-Sleep -Milliseconds 400
     }
-    # 注意：RM 有时**也能**把"正在运行的 exe 自己的镜像文件"报成占用（这台机器上实测会），
-    # 所以这里不断言 lockers=0，只断言我们这条新线索确实点名了那个进程。
-    Check 'M14e 文件夹里有正在运行的程序：单独点出「它自己在运行」（句柄类接口看不见它）' `
-        (([int](Get-Key $rmRunQ.Out 'run') -ge 1) -and ($rmRunQ.Out -match ('run\tpid=' + $rmRunProc.Id + '\b'))) `
-        ('run=' + (Get-Key $rmRunQ.Out 'run') + ' lockers=' + (Get-Key $rmRunQ.Out 'lockers') + ' 期望 pid=' + $rmRunProc.Id + `
-         ' 进程还活着=' + $(if ($rmRunProc -and -not $rmRunProc.HasExited) { 'yes' } else { 'no' }) + `
-         ' scanned=' + (Get-Key $rmRunQ.Out 'scanned') + ' truncated=' + (Get-Key $rmRunQ.Out 'truncated') + ' note=' + (Get-Key $rmRunQ.Out 'note'))
+    $imgUnder = ($rmRunImg.Length -gt 0) -and
+                ($rmRunImg.StartsWith($rmRun + '\', [System.StringComparison]::OrdinalIgnoreCase))
+    if (-not $imgUnder) {
+        Skip 'M14e 文件夹里有正在运行的程序：单独点出「它自己在运行」（句柄类接口看不见它）' `
+            ('夹具没准备好：起起来的那个进程镜像是「' + $rmRunImg + '」，不在 ' + $rmRun + ' 里（这台机器上 hardlink / 启动方式跟本机不一样）')
+    } else {
+        # 等那个进程真的起来再断言：慢机器（CI 的 runner）上 PowerShell 冷启动可能超过 2 秒，
+        # 这时候"查不到"是**还没起来**，不是功能坏了 —— 所以轮询到看见它为止（最多约 12 秒）。
+        $rmRunQ = $null
+        for ($ri = 0; $ri -lt 16; $ri++) {
+            $rmRunQ = Invoke-Exe ('rightmenu unlock --query-only "' + $rmRun + '"')
+            if ([int](Get-Key $rmRunQ.Out 'run') -ge 1) { break }
+            Start-Sleep -Milliseconds 750
+        }
+        # 注意：RM 有时**也能**把"正在运行的 exe 自己的镜像文件"报成占用（这台机器上实测会），
+        # 所以这里不断言 lockers=0，只断言我们这条新线索确实点名了那个进程。
+        Check 'M14e 文件夹里有正在运行的程序：单独点出「它自己在运行」（句柄类接口看不见它）' `
+            (([int](Get-Key $rmRunQ.Out 'run') -ge 1) -and ($rmRunQ.Out -match ('run\tpid=' + $rmRunProc.Id + '\b'))) `
+            ('run=' + (Get-Key $rmRunQ.Out 'run') + ' lockers=' + (Get-Key $rmRunQ.Out 'lockers') + ' 期望 pid=' + $rmRunProc.Id + `
+             ' 镜像=' + $rmRunImg + ' scanned=' + (Get-Key $rmRunQ.Out 'scanned') + ' truncated=' + (Get-Key $rmRunQ.Out 'truncated') + ' note=' + (Get-Key $rmRunQ.Out 'note'))
+    }
 } finally {
     if ($rmRunProc -and -not $rmRunProc.HasExited) { Stop-Process -Id $rmRunProc.Id -Force -ErrorAction SilentlyContinue }
     Start-Sleep -Milliseconds 400

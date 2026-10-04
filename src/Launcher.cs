@@ -56,6 +56,11 @@ namespace Mxx1Toolbox
         public const string ModuleSystem = "system";
         public const string ModulePrivacy = "privacy";
 
+        /// <summary>「常用设置」里那批直接写注册表的按钮（任务栏合并方式 / 开始菜单对齐 / 驱动自动
+        /// 安装 / 内核隔离 / 资源管理器与右键菜单的 CLSID 覆盖）。和隐私开关共用同一套
+        /// 记原值 + 读回核对 + 一键还原的机制（见 RegEngine）。</summary>
+        public const string ModuleSysreg = "sysreg";
+
         /// <summary>The「系统工具」page. Every entry is a read-only viewer or a Windows settings
         /// page: nothing here changes the system, so none of them needs elevation.</summary>
         private static readonly SystemTarget[] SystemTargets = new SystemTarget[]
@@ -249,9 +254,21 @@ namespace Mxx1Toolbox
                         if (string.Equals(t.Action, "optimize", StringComparison.OrdinalIgnoreCase)) { return "把这一页的开关全部关掉（可一键还原）"; }
                         if (string.Equals(t.Action, "restore", StringComparison.OrdinalIgnoreCase)) { return "按改动前的原值写回去（可重复还原）"; }
                         if (string.Equals(t.Action, "status", StringComparison.OrdinalIgnoreCase)) { return "只读：列出每个开关现在的状态"; }
-                        PrivacyItem pi = Privacy.Find(t.Options);
+                        RegItemSpec pi = Privacy.Find(t.Options);
                         if (pi == null) { return "隐私设置里没有这个开关：" + t.Options; }
                         return (string.Equals(t.Action, "on", StringComparison.OrdinalIgnoreCase) ? "开启「" : "关闭「") + pi.Name + "」（写注册表，可一键还原）";
+                    }
+                    if (t.Module == ModuleSysreg)
+                    {
+                        // 同样写成一句人话：悬停说明里附的就是这一行
+                        if (string.Equals(t.Action, "restore", StringComparison.OrdinalIgnoreCase)) { return "按改动前的原值写回去（可重复还原）"; }
+                        if (string.Equals(t.Action, "status", StringComparison.OrdinalIgnoreCase)) { return "只读：列出每个系统设置开关现在的状态和记下的原值"; }
+                        bool on = string.Equals(t.Action, "on", StringComparison.OrdinalIgnoreCase);
+                        if (string.Equals(t.Action, "off", StringComparison.OrdinalIgnoreCase) || on)
+                        {
+                            return SysReg.Describe(t.Options, on);
+                        }
+                        return "内置动作: " + t.Module + "/" + t.Action;
                     }
                     return "内置动作: " + t.Module + "/" + t.Action;
             }
@@ -336,12 +353,16 @@ namespace Mxx1Toolbox
                         {
                             r.Ok = false; r.Message = "找不到脚本：" + file; return r;
                         }
+                        // 需要管理员的脚本不走"runas 起 powershell"：那样每次都会弹出一个可见的
+                        // PowerShell 控制台窗口（用户 2026-10-04 的反馈）。改成把自己以管理员身份
+                        // 再起一遍（本程序是 winexe，没有控制台），由那个进程静默跑、结果写交接文件。
+                        if (asAdmin && !IsAdmin()) { return LaunchElevatedCopy(t); }
                         string shell = (t.Shell == "cmd") ? "cmd.exe" : "powershell.exe";
                         string args = (t.Shell == "cmd")
                             ? "/c " + (t.Inline.Length > 0 ? t.Inline : Quote(file) + " " + ExpandArgs(t.Args))
                             : "-NoProfile -ExecutionPolicy Bypass " +
                               (t.Inline.Length > 0 ? "-EncodedCommand " + ToBase64(NoProgressPrelude + t.Inline) : "-File " + Quote(file) + " " + ExpandArgs(t.Args));
-                        return Exec(shell, args, AppPaths.Resolve(t.WorkDir), asAdmin, true, t.TimeoutSec);
+                        return Exec(shell, args, AppPaths.Resolve(t.WorkDir), false, true, t.TimeoutSec);
                     }
                 case "open":
                     {
@@ -377,6 +398,8 @@ namespace Mxx1Toolbox
             if (t.Module == ModuleSystem) { return RunSystem(t); }
 
             if (t.Module == ModulePrivacy) { return RunPrivacy(t, asAdmin); }
+
+            if (t.Module == ModuleSysreg) { return RunSysreg(t, asAdmin); }
 
             if (t.Module != ModulePermdel)
             {
@@ -508,22 +531,7 @@ namespace Mxx1Toolbox
             LaunchResult r = new LaunchResult();
             if (Privacy.NeedsAdmin(t.Options) && asAdmin && !IsAdmin())
             {
-                try
-                {
-                    try { File.Delete(AppPaths.ElevatedResultFile); } catch { }
-                    ProcessStartInfo psi = new ProcessStartInfo(AppPaths.ExePath, "run " + t.Id + " --admin");
-                    psi.UseShellExecute = true;
-                    psi.Verb = "runas";
-                    Process.Start(psi);
-                    r.Deferred = true;
-                    r.Message = "已请求以管理员身份运行（请在 UAC 窗口确认）—— 结果几秒后自动弹出来";
-                }
-                catch (Exception ex)
-                {
-                    r.Ok = false;
-                    r.Message = "请求管理员权限失败：" + ex.Message;
-                }
-                return r;
+                return LaunchElevatedCopy(t);
             }
 
             bool ok;
@@ -541,6 +549,59 @@ namespace Mxx1Toolbox
             return r;
         }
 
+        /// <summary>「常用设置」里写注册表的那批按钮。和隐私开关同一条路：HKLM 的改动没法在
+        /// 本进程里自我提权，于是工具箱用 `run &lt;id&gt; --admin` 把自己再起一遍，那个子进程没有
+        /// 控制台，报告写进日志和交接文件，父进程过几秒取出来弹窗口。</summary>
+        private static LaunchResult RunSysreg(ToolItem t, bool asAdmin)
+        {
+            LaunchResult r = new LaunchResult();
+            // 「还原设置改动」要把 HKLM 的原值写回去，所以它自己也要管理员；它的 options 是空的，
+            // 问不出开关是谁，只能按 action 判断。
+            bool needAdmin = SysReg.NeedsAdmin(t.Options)
+                || string.Equals(t.Action, "restore", StringComparison.OrdinalIgnoreCase);
+            if (needAdmin && asAdmin && !IsAdmin())
+            {
+                return LaunchElevatedCopy(t);
+            }
+
+            bool ok;
+            string report;
+            if (string.Equals(t.Action, "restore", StringComparison.OrdinalIgnoreCase)) { report = SysReg.Restore(out ok); }
+            else if (string.Equals(t.Action, "status", StringComparison.OrdinalIgnoreCase)) { report = SysReg.Status(); ok = true; }
+            else { report = SysReg.Set(t.Options, string.Equals(t.Action, "on", StringComparison.OrdinalIgnoreCase), out ok); }
+
+            r.Ok = ok;
+            r.Output = report;
+            r.Message = ok ? "系统设置已处理" : "有地方没成功（细节见报告）";
+            Logger.Write(t.Name, report);
+            return r;
+        }
+
+        /// <summary>「需要管理员」的统一做法：把自己以管理员身份再起一遍，命令是 `run &lt;id&gt; --admin`。
+        /// 子进程是 winexe（没有控制台），所以它把结果写进交接文件，父进程过几秒读出来弹窗口
+        /// （MainForm.PickUpElevatedResult）—— 否则用户只看到一句"已请求管理员权限"就没了下文。
+        /// 只有这一条路能既提权又不闪出控制台窗口：直接 runas 起 powershell / cmd 会开一个真窗口。</summary>
+        internal static LaunchResult LaunchElevatedCopy(ToolItem t)
+        {
+            LaunchResult r = new LaunchResult();
+            try
+            {
+                try { File.Delete(AppPaths.ElevatedResultFile); } catch { }
+                ProcessStartInfo psi = new ProcessStartInfo(AppPaths.ExePath, "run " + t.Id + " --admin");
+                psi.UseShellExecute = true;
+                psi.Verb = "runas";
+                Process.Start(psi);
+                r.Deferred = true;
+                r.Message = "已请求以管理员身份运行（请在 UAC 窗口确认）—— 结果几秒后自动弹出来";
+            }
+            catch (Exception ex)
+            {
+                r.Ok = false;
+                r.Message = "请求管理员权限失败：" + ex.Message;
+            }
+            return r;
+        }
+
         private static LaunchResult Exec(string file, string args, string workDir, bool elevate, bool wait, int timeoutSec)
         {
             LaunchResult r = new LaunchResult();
@@ -549,6 +610,11 @@ namespace Mxx1Toolbox
                 ProcessStartInfo psi = new ProcessStartInfo(file, args);
                 psi.CreateNoWindow = true;
                 if (!string.IsNullOrEmpty(workDir) && Directory.Exists(workDir)) { psi.WorkingDirectory = workDir; }
+
+                // 已经提权了就别再 runas 一次：UseShellExecute=true 会**开一个真控制台窗口**
+                // （CreateNoWindow 被忽略），于是每点一次需要管理员的按钮就闪一下 PowerShell ——
+                // 用户 2026-10-04 的反馈。已经在管理员上下文里时直接静默跑就行。
+                if (elevate && IsAdmin()) { elevate = false; }
 
                 if (elevate)
                 {

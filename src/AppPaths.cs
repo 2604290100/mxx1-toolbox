@@ -24,6 +24,10 @@ namespace Mxx1Toolbox
         /// 把已经改过的值当成原值）。</summary>
         public static string PrivacyBackupFile { get { return Path.Combine(BaseDir, "privacy-original.tsv"); } }
 
+        /// <summary>同一套机制，记的是「常用设置」里那批写注册表的系统设置（任务栏合并方式 /
+        /// 开始菜单对齐 / 驱动自动安装 / 内核隔离 / 资源管理器与右键菜单的 CLSID 覆盖）。</summary>
+        public static string SysRegBackupFile { get { return Path.Combine(BaseDir, "sysreg-original.tsv"); } }
+
         /// <summary>结果交接文件。按钮需要管理员权限时工具箱会把自己以管理员身份再起一遍，而那个
         /// 子进程是 winexe（没有控制台），Console 输出等于扔掉 —— 所以它把结果写在这里，
         /// 父进程过几秒读出来，照常弹结果窗口（否则用户只看到一句"已请求管理员权限"就没了下文）。</summary>

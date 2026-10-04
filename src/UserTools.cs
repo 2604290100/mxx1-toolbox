@@ -194,6 +194,61 @@ namespace Mxx1Toolbox
             catch (Exception ex) { return ex.Message; }
         }
 
+        // ---------------------------------------------------------------- 最近用过
+
+        /// <summary>最近点过的按钮 id，最新的在最前面（「常用」页签用它）。和 pinned.txt 一样
+        /// 独立成一个文件：每次点按钮都会重写它，塞进 settings.ini 会连主题设置一起赔进去。</summary>
+        public const int RecentLimit = 12;
+
+        public static string RecentFile { get { return Path.Combine(AppPaths.BaseDir, "recent.txt"); } }
+
+        public static List<string> LoadRecent()
+        {
+            List<string> list = new List<string>();
+            try
+            {
+                if (!File.Exists(RecentFile)) { return list; }
+                foreach (string line in File.ReadAllLines(RecentFile, Encoding.UTF8))
+                {
+                    string id = line.Trim();
+                    if (id.Length > 0 && !id.StartsWith("#") && !list.Contains(id)) { list.Add(id); }
+                    if (list.Count >= RecentLimit) { break; }
+                }
+            }
+            catch { }
+            return list;
+        }
+
+        /// <summary>把一个按钮挪到最近使用的最前面。返回 "" 表示写成功。</summary>
+        public static string PushRecent(string id)
+        {
+            if (id.Length == 0) { return ""; }
+            try
+            {
+                List<string> list = LoadRecent();
+                list.RemoveAll(delegate(string s) { return string.Equals(s, id, StringComparison.OrdinalIgnoreCase); });
+                list.Insert(0, id);
+                while (list.Count > RecentLimit) { list.RemoveAt(list.Count - 1); }
+                AppPaths.EnsureBase();
+                StringBuilder sb = new StringBuilder();
+                sb.AppendLine("# 最近点过的按钮 id（一行一个，最新在最上）。「常用」页签用它，删掉这个文件就清空了。");
+                foreach (string s in list) { sb.AppendLine(s); }
+                File.WriteAllText(RecentFile, sb.ToString(), new UTF8Encoding(false));
+                return "";
+            }
+            catch (Exception ex) { return ex.Message; }
+        }
+
+        public static string ClearRecent()
+        {
+            try
+            {
+                if (File.Exists(RecentFile)) { File.Delete(RecentFile); }
+                return "";
+            }
+            catch (Exception ex) { return ex.Message; }
+        }
+
         /// <summary>Writes the whole user layer. Returns "" on success, otherwise the reason.</summary>
         public static string Save(List<ToolItem> mine)
         {

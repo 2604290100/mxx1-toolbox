@@ -25,6 +25,18 @@ namespace Mxx1Toolbox
         public int LogKeepDays = 30;
         public string PermanentDeleteExe = "";       // empty = auto locate at run time
 
+        /// <summary>窗口几何。X/Y = -1 表示没记过（第一次打开居中）；宽/高 = 0 表示没记过。
+        /// **默认固定尺寸**（用户 2026-10-04 定的：固定比自适应好，宽度也不用跟着内容变）；
+        /// 勾上 WindowAutoSize 之后高度才跟着当前页签的按钮走。</summary>
+        public int WindowX = -1;
+        public int WindowY = -1;
+        public int WindowWidth = 0;
+        public int WindowHeight = 0;
+        public bool WindowAutoSize = false;
+
+        /// <summary>上次停留的页签 id（"" = 没记过，按"常用页有没有东西"挑一个默认页）。</summary>
+        public string LastTab = "";
+
         public static string ThemeDisplay(string mode)
         {
             switch (mode)
@@ -100,7 +112,20 @@ namespace Mxx1Toolbox
                     if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out days) && days >= 0) { LogKeepDays = days; }
                     break;
                 case "permanentdeleteexe": PermanentDeleteExe = value; break;
+                case "windowx": WindowX = ToInt(value, -1); break;
+                case "windowy": WindowY = ToInt(value, -1); break;
+                case "windowwidth": WindowWidth = ToInt(value, 0); break;
+                case "windowheight": WindowHeight = ToInt(value, 0); break;
+                case "windowautosize": WindowAutoSize = ToBool(value, true); break;
+                case "lasttab": LastTab = value; break;
             }
+        }
+
+        private static int ToInt(string value, int fallback)
+        {
+            int n;
+            if (int.TryParse((value ?? "").Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out n)) { return n; }
+            return fallback;
         }
 
         private static string Normalize(string value)
@@ -132,6 +157,12 @@ namespace Mxx1Toolbox
                 sb.AppendLine("ShowLogPanel=" + (ShowLogPanel ? "1" : "0"));
                 sb.AppendLine("LogKeepDays=" + LogKeepDays.ToString(CultureInfo.InvariantCulture));
                 sb.AppendLine("PermanentDeleteExe=" + PermanentDeleteExe);
+                sb.AppendLine("WindowX=" + WindowX.ToString(CultureInfo.InvariantCulture));
+                sb.AppendLine("WindowY=" + WindowY.ToString(CultureInfo.InvariantCulture));
+                sb.AppendLine("WindowWidth=" + WindowWidth.ToString(CultureInfo.InvariantCulture));
+                sb.AppendLine("WindowHeight=" + WindowHeight.ToString(CultureInfo.InvariantCulture));
+                sb.AppendLine("WindowAutoSize=" + (WindowAutoSize ? "1" : "0"));
+                sb.AppendLine("LastTab=" + LastTab);
                 File.WriteAllText(AppPaths.SettingsIni, sb.ToString(), new UTF8Encoding(false));
             }
             catch

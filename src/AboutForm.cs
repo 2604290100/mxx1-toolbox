@@ -37,8 +37,10 @@ namespace Mxx1Toolbox
         public AboutForm(Theme theme)
         {
             Text = "关于 " + ProductTitle;
-            ClientSize = new Size(470, 300);
-            MinimumSize = new Size(430, 280);
+            // 里面除了署名还有两段说明 + 一节快捷键（用户报过"关于里面高度不够没有显示全面"），
+            // 所以高度给足。
+            ClientSize = new Size(470, 470);
+            MinimumSize = new Size(430, 400);
             StartPosition = FormStartPosition.CenterParent;
             MinimizeBox = false;
             MaximizeBox = false;
@@ -66,14 +68,34 @@ namespace Mxx1Toolbox
             note.AutoSize = true;
             note.MaximumSize = new Size(410, 0);
             note.Margin = new Padding(2, 10, 2, 8);
+            // 这段原来写着"灰色的按钮……点一下只会写日志，鼠标停上去会说明"——三处都是旧行为：
+            // 灰色按钮现在是禁用的（点不动、也收不到鼠标消息所以没有悬停说明，说明挪到底栏）。
+            // 一段会骗人的说明比没有说明更糟（2026-10-04 复核界面时发现）。
             note.Text = "主界面是多行多列的按钮墙：点一下按钮就启动一个已经做好的程序或功能。"
-                + "灰色的按钮表示功能还没接入（点一下只会写日志，鼠标停上去会说明）。"
-                + "「右键增强」里的按钮打开隔壁的「永久删除（不进回收站）」安装器，工具箱本身不改动它。"
-                + "「系统工具」调的是 Windows 自带的组件，只读查看、不改系统。"
+                + "灰色的按钮表示功能还没接入：它点不动，鼠标停上去也不会弹说明（禁用控件收不到鼠标消息），"
+                + "这一页有几个灰色按钮写在最下面那条状态栏里。"
+                + "按钮上点右键可以置顶（置顶的会汇总到「常用」页）、编辑、复制启动命令、查看定义。"
+                + "「系统工具」调的是 Windows 自带的组件，只读查看、不改系统；"
+                + "「常用设置」和「隐私设置」里写注册表的按钮会先把原值记下来、写完读回核对，随时能一键还原。"
                 + "外部工具（exe）请放进本程序旁边的 bin-tools 文件夹，找不到工具时会有提示。"
                 + "按钮全部由 tools\\*.json 定义，加按钮不需要重新编译。";
             _root.Controls.Add(note);
             _root.SetColumnSpan(note, 2);
+
+            // 快捷键没有别的入口，全靠猜（用户 2026-10-04 提的"从用户体验看还缺什么"）。
+            Label keys = new Label();
+            keys.AutoSize = true;
+            keys.MaximumSize = new Size(410, 0);
+            keys.Margin = new Padding(2, 0, 2, 8);
+            keys.Text = "快捷键：" + Environment.NewLine
+                + "　Ctrl+F 搜索（搜全部页签的按钮名 / 说明 / id）　Ctrl+N 新建按钮　"
+                + "Ctrl+L 日志面板　Ctrl+, 设置" + Environment.NewLine
+                + "　Alt+1~9 运行这一页的前 9 个按钮　方向键在按钮之间移动　Enter 运行　"
+                + "菜单键 / Shift+F10 右键菜单" + Environment.NewLine
+                + "　F5 重新加载按钮清单　Esc 关掉搜索　"
+                + "按住 Shift 点按钮 = 这一次以管理员身份运行";
+            _root.Controls.Add(keys);
+            _root.SetColumnSpan(keys, 2);
 
             TableLayoutPanel buttons = new TableLayoutPanel();
             buttons.Dock = DockStyle.Fill;
@@ -104,8 +126,22 @@ namespace Mxx1Toolbox
             ApplyTheme(theme);
         }
 
-        private void AddRow(string label, string value)
+        /// <summary>窗口高度按内容定：里面有两段说明 + 一节快捷键，字号 / DPI 一变写死的高度就
+        /// 会把下面那排按钮切掉（用户 2026-10-04 报的"关于里面高度不够没有显示全面"）。</summary>
+        protected override void OnLoad(EventArgs e)
         {
+            base.OnLoad(e);
+            try
+            {
+                int want = _root.PreferredSize.Height + 6;
+                int max = Screen.FromControl(this).WorkingArea.Height - 80;
+                if (want > max) { want = max; }
+                if (want > ClientSize.Height) { ClientSize = new Size(ClientSize.Width, want); }
+            }
+            catch { }
+        }
+
+        private void AddRow(string label, string value)        {
             Label l = new Label();
             l.AutoSize = true;
             l.Text = label;

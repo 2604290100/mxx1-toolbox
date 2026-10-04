@@ -110,8 +110,25 @@ if ($existed) { $before = [System.IO.File]::ReadAllText($settingsFile, [System.T
 $utf8 = New-Object System.Text.UTF8Encoding($false)
 [void][System.IO.Directory]::CreateDirectory((Split-Path -Parent $settingsFile))
 
+# 只覆盖这几项，其余原样留着：窗口位置/大小、上次页签、日志保留天数、安装器路径
+# 都是用户的现场，拍完截图不该被清掉（原来整份重写，跑一次截图就把用户的窗口位置忘了）。
+function New-Settings {
+    param([string]$Theme, [string]$LastTab, [bool]$AutoSize)
+    $keep = @()
+    if ($before) {
+        foreach ($line in ($before -split "`r?`n")) {
+            if ($line -match '^\s*(Theme|ClickMode|ConfirmDangerous|ShowLogPanel|LastTab|WindowAutoSize)\s*=') { continue }
+            if ($line.Trim().Length -gt 0) { $keep += $line }
+        }
+    }
+    $text = "Theme=$Theme`r`nClickMode=single`r`nConfirmDangerous=1`r`nShowLogPanel=0`r`n"
+    $text += "LastTab=$LastTab`r`nWindowAutoSize=" + $(if ($AutoSize) { '1' } else { '0' }) + "`r`n"
+    foreach ($line in $keep) { $text += $line + "`r`n" }
+    return $text
+}
+
 Write-Host '浅色主题...'
-[System.IO.File]::WriteAllText($settingsFile, "Theme=light`r`nClickMode=single`r`nConfirmDangerous=1`r`nShowLogPanel=0`r`nLogKeepDays=30`r`nPermanentDeleteExe=`r`n", $utf8)
+[System.IO.File]::WriteAllText($settingsFile, (New-Settings -Theme 'light' -LastTab 'common' -AutoSize $true), $utf8)
 $p1 = Start-Shot
 if (-not $p1.HasExited -and $p1.MainWindowHandle -ne [IntPtr]::Zero) {
     [void][Shot]::SetForegroundWindow($p1.MainWindowHandle)
@@ -131,7 +148,7 @@ if (-not $p1.HasExited -and $p1.MainWindowHandle -ne [IntPtr]::Zero) {
 Start-Sleep -Milliseconds 800
 
 Write-Host '深色主题...'
-[System.IO.File]::WriteAllText($settingsFile, "Theme=dark`r`nClickMode=single`r`nConfirmDangerous=1`r`nShowLogPanel=0`r`nLogKeepDays=30`r`nPermanentDeleteExe=`r`n", $utf8)
+[System.IO.File]::WriteAllText($settingsFile, (New-Settings -Theme 'dark' -LastTab 'common' -AutoSize $true), $utf8)
 $p2 = Start-Shot
 if (-not $p2.HasExited -and $p2.MainWindowHandle -ne [IntPtr]::Zero) {
     [void][Shot]::SetForegroundWindow($p2.MainWindowHandle)

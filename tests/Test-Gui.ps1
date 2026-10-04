@@ -413,6 +413,7 @@ function Start-Gui {
     $p = New-Object System.Diagnostics.Process
     $p.StartInfo = $si
     [void]$p.Start()
+    [void]$script:Procs.Add($p)
     for ($i = 0; $i -lt 100; $i++) {
         Start-Sleep -Milliseconds 200
         $p.Refresh()
@@ -449,6 +450,58 @@ function Close-StrayDialogs {
     return [TBGui]::Enabled($Main)
 }
 
+# 点页签再等这一页的按钮画出来。**定义必须放在第一次调用之前**：PowerShell 是边解析边执行，
+# 函数定义在调用点后面就会 CommandNotFound 直接终止脚本（2026-10-04 真踩过：定义在 735 行、
+# 第 566 行就调用，脚本在第 7 项检查处崩掉，收尾没跑到，用户自己的 tools.json 被留在暂停态）。
+function Switch-Tab {
+    param([IntPtr]$Handle, [string]$TabName, [string[]]$ExpectNames)
+    $tabButton = @(Get-ChildControls -RootHandle $Handle | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq $TabName })
+    if ($tabButton.Count -eq 0) { return $false }
+    [void][TBGui]::Click($tabButton[0].H)
+    return (Wait-Buttons -Handle $Handle -Names $ExpectNames)
+}
+
+# 本脚本启动过的界面进程（只杀自己拉起来的；用户自己开着的 Mxx1Toolbox 不许碰）。
+$script:Procs = New-Object System.Collections.ArrayList
+
+# 现场复原：设置、用户自己的 tools.json、注入的占位按钮、测试拉起的进程。
+# 抽成函数是为了让脚本级 trap 也能调用 —— 崩在哪一步都要把用户现场放回去。
+function Restore-UserLayer {
+    try {
+        [void][System.IO.Directory]::CreateDirectory((Split-Path -Parent $SettingsIni))
+        if ($settingsExisted) { [System.IO.File]::WriteAllText($SettingsIni, $settingsBefore, (New-Object System.Text.UTF8Encoding($false))) }
+        else { Remove-Item -LiteralPath $SettingsIni -Force -ErrorAction SilentlyContinue }
+        # 复原成功才删备份；没跑完就被中断的话备份还在，下次开工能救回来
+        Remove-Item -LiteralPath $settingsBackup -Force -ErrorAction SilentlyContinue
+    } catch { }
+
+    # 测试注入的占位按钮文件必须先删掉：用户本来就没有 tools.json 时，下面那段复原根本不会执行，
+    # 留下来的话用户会看到一个自己没建过的"占位自检"按钮。
+    if ($script:InjectedPh) { Remove-Item -LiteralPath $UserToolsJson -Force -ErrorAction SilentlyContinue }
+
+    if ($UserToolsHad -and (Test-Path -LiteralPath $UserToolsPaused)) {
+        if (Test-Path -LiteralPath $UserToolsJson) { Remove-Item -LiteralPath $UserToolsJson -Force }
+        Move-Item -LiteralPath $UserToolsPaused -Destination $UserToolsJson -Force
+        Write-Host '（用户自己的 tools.json 已复原）'
+    }
+
+    foreach ($p in $script:Procs) {
+        try { if ($p -and -not $p.HasExited) { $p.Kill() } } catch { }
+    }
+    foreach ($p in @($proc, $procDark, $procFixed, $procFixed2)) {
+        try { if ($p -and -not $p.HasExited) { $p.Kill() } } catch { }
+    }
+}
+
+# 脚本级兜底：任何未捕获的终止错误（含函数没定义、探针抛异常）都先把用户现场复原再退出。
+trap {
+    Write-Host ''
+    Write-Host (' 脚本出错，先复原用户现场：' + $_.Exception.Message)
+    Restore-UserLayer
+    Write-Host '（界面回归没跑完，退出码 1）'
+    exit 1
+}
+
 # ================================================================ 准备
 $settingsBefore = $null
 $settingsExisted = Test-Path -LiteralPath $SettingsIni
@@ -467,11 +520,14 @@ if (Test-Path -LiteralPath $settingsBackup) {
 
 # 先把设置写成一个已知状态再开界面：用户自己可能把日志面板开着（ShowLogPanel=1），
 # 那样 B08「默认不显示日志面板」会莫名其妙地红 —— 测试不能依赖用户的个人设置。
+# LastTab=common 同样重要：窗口现在会记住上次停留的页签，用户上次停在「常用」页的话，
+# 这一套按「常用设置」写的检查会全部对不上（页面高度也会跟着内容变）。
+# WindowAutoSize=1 是为了让 A07/A08「窗口高度跟着内容走」可判定。
 # 跑完在最后按原样写回去（见文件末尾"现场复原"）。
 try {
     [void][System.IO.Directory]::CreateDirectory((Split-Path -Parent $SettingsIni))
     [System.IO.File]::WriteAllText($SettingsIni,
-        "Theme=light`r`nClickMode=single`r`nConfirmDangerous=1`r`nHideConsole=1`r`nShowLogPanel=0`r`nLogKeepDays=30`r`nPermanentDeleteExe=`r`n",
+        "Theme=light`r`nClickMode=single`r`nConfirmDangerous=1`r`nHideConsole=1`r`nShowLogPanel=0`r`nLogKeepDays=30`r`nPermanentDeleteExe=`r`nLastTab=common`r`nWindowAutoSize=1`r`n",
         (New-Object System.Text.UTF8Encoding($false)))
 } catch { }
 
@@ -537,22 +593,44 @@ $style = [TBGui]::Styles($main)
 Check 'A03 标题栏没有最小化方框' (($style -band 0x00020000) -eq 0) ('style=0x{0:X}' -f $style)
 Check 'A04 标题栏没有最大化方框' (($style -band 0x00010000) -eq 0) ('style=0x{0:X}' -f $style)
 
-# 页签条：加了隐私设置 / 应用管理之后是 7 个。页签按钮都在窗口顶部（底栏那排功能按钮在底部，
-# 不会混进来）。
+# 页签条：加了「常用」（置顶 + 最近使用）之后是 8 个，而且顺序按使用频率排过一遍 ——
+# 原来只有 1 个按钮的「右键增强」排第 2 位，主力页「系统工具」「隐私设置」被挤到第 4、5。
 # 注意：Get-ChildControls 给的是**屏幕坐标**（GetWindowRect），所以"顶部那一条"要拿主窗口的上边
 # 当参照 —— 直接写 Top -lt 32 永远匹配不到任何东西（第一版就是这么假红的）。
 # GetWindowRect 给的是整窗（含标题栏和边框）的屏幕坐标，客户区是从标题栏下面开始的，
 # 所以"顶部那一条"要留出标题栏的高度（+70 足够，页签按钮本身只有 24~28 高）。
 $mainRect = [TBGui]::Rect($main)
-$tabBar = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*BUTTON*' -and $_.Top -ge $mainRect[1] -and $_.Top -lt ($mainRect[1] + 70) -and $_.Height -le 30 })
+$tabBarRaw = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*BUTTON*' -and $_.Top -ge $mainRect[1] -and $_.Top -lt ($mainRect[1] + 70) -and $_.Height -le 30 })
+$tabBar = @($tabBarRaw | Sort-Object Left)
 $tabLabels = @($tabBar | ForEach-Object { $_.Text })
-$wantTabs = @('常用设置', '右键增强', '清理优化', '系统工具', '隐私设置', '应用管理', '我的工具')
+$wantTabs = @('常用', '常用设置', '我的工具', '系统工具', '清理优化', '隐私设置', '应用管理', '右键增强')
 $lackTabs = @($wantTabs | Where-Object { $tabLabels -notcontains $_ })
-Check ('A05b 页签条上有 7 个页签（{0}）' -f ($tabLabels -join '/')) (($tabBar.Count -eq 7) -and ($lackTabs.Count -eq 0)) ('找到 ' + $tabBar.Count + ' 个按钮: ' + ($tabLabels -join '/') + '  缺=' + ($lackTabs -join ' '))
+Check ('A05b 页签条上有 8 个页签，顺序是「{0}」' -f ($wantTabs -join '/')) `
+    (($tabBar.Count -eq 8) -and ($lackTabs.Count -eq 0) -and (($tabLabels -join '/') -eq ($wantTabs -join '/'))) `
+    ('找到 ' + $tabBar.Count + ' 个按钮: ' + ($tabLabels -join '/') + '  缺=' + ($lackTabs -join ' '))
 Check 'A05 窗口可缩放（有 WS_THICKFRAME）' (($style -band 0x00040000) -ne 0) ('style=0x{0:X}' -f $style)
 
 $rect = [TBGui]::Rect($main)
-Check 'A06 窗口尺寸合理（宽 >= 460, 高 >= 500）' (($rect[2] - $rect[0]) -ge 460 -and ($rect[3] - $rect[1]) -ge 500) (('w={0} h={1}' -f ($rect[2] - $rect[0]), ($rect[3] - $rect[1])))
+Check 'A06 窗口尺寸合理（宽 >= 460, 高 >= 380）' (($rect[2] - $rect[0]) -ge 460 -and ($rect[3] - $rect[1]) -ge 380) (('w={0} h={1}' -f ($rect[2] - $rect[0]), ($rect[3] - $rect[1])))
+
+# 窗口高度跟着当前页签的内容走：「右键增强」只有 1 个按钮，不该撑着一个 700px 的空窗口
+# （用户 2026-10-04 让从体验角度复核时发现：固定 700px 高，某些页 89% 是空白）。
+$heightCommon = $rect[3] - $rect[1]
+if (Switch-Tab -Handle $main -TabName '右键增强' -ExpectNames @()) {
+    Start-Sleep -Milliseconds 600
+    $rectSmall = [TBGui]::Rect($main)
+    $heightSmall = $rectSmall[3] - $rectSmall[1]
+    Check 'A07 窗口高度跟着内容走（右键增强页比常用设置页矮）' ($heightSmall -lt $heightCommon) `
+        ('常用设置=' + $heightCommon + 'px 右键增强=' + $heightSmall + 'px')
+    [void](Switch-Tab -Handle $main -TabName '常用设置' -ExpectNames $commonNames)
+    Start-Sleep -Milliseconds 400
+    $rectBack = [TBGui]::Rect($main)
+    Check 'A08 切回常用设置后窗口又变回来（高度跟着内容）' ((($rectBack[3] - $rectBack[1]) -ge $heightCommon - 4)) `
+        ('切回后=' + ($rectBack[3] - $rectBack[1]) + 'px 原=' + $heightCommon + 'px')
+} else {
+    Check 'A07 窗口高度跟着内容走（右键增强页比常用设置页矮）' $false '切不到「右键增强」页签'
+    Check 'A08 切回常用设置后窗口又变回来（高度跟着内容）' $false 'skipped'
+}
 
 # ---------------------------------------------------------------- B 组：按钮墙
 Write-Host ''
@@ -612,6 +690,14 @@ Check 'B06b 每个按钮的文字都装得下（不溢出、不截断）' ($over
 
 $separators = @($all | Where-Object { $_.Height -le 2 -and $_.Width -gt 200 })
 Check 'B07 段与段之间有分隔线' ($separators.Count -ge 1) ('分隔线=' + $separators.Count)
+
+# 分段标题：光有一条灰线看不出这堆按钮是干什么的（「系统工具」26 个按钮分成 6 段）。
+# 标题是 Label（STATIC 类），文字来自清单里的 segmentName。
+$capTexts = @($all | Where-Object { $_.Class -like '*STATIC*' } | ForEach-Object { $_.Text })
+$wantCaps = @('任务栏 · 开始菜单 · 资源管理器（每一列是一对开关）', '安全入口 · 电源 · 系统维护', '改动的记录与还原')
+$lackCaps = @($wantCaps | Where-Object { $capTexts -notcontains $_ })
+Check ('B07b 每个分段都有标题（{0} 段）' -f $wantCaps.Count) ($lackCaps.Count -eq 0) `
+    ('缺=' + ($lackCaps -join ' | ') + '  现有标题=' + (($capTexts | Where-Object { $_ -match '·' }) -join ' | '))
 
 $visibleEdits = @($all | Where-Object { $_.Class -like '*EDIT*' -and $_.Height -gt 20 })
 Check 'B08 默认不显示日志面板（没有大文本框）' ($visibleEdits.Count -eq 0) ('可见文本框=' + $visibleEdits.Count)
@@ -698,14 +784,7 @@ Check 'B11 悬停说明里不再摊开内联脚本正文' `
 # ---------------------------------------------------------------- C 组：翻页签
 Write-Host ''
 Write-Host 'C 组 · 页签切换'
-
-function Switch-Tab {
-    param([IntPtr]$Handle, [string]$TabName, [string[]]$ExpectNames)
-    $tabButton = @(Get-ChildControls -RootHandle $Handle | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq $TabName })
-    if ($tabButton.Count -eq 0) { return $false }
-    [void][TBGui]::Click($tabButton[0].H)
-    return (Wait-Buttons -Handle $Handle -Names $ExpectNames)
-}
+# 注：Switch-Tab 定义在文件开头的探针辅助区（必须在第一次调用之前，见那里的注释）。
 
 Check ('C01 点「右键增强」→ {0} 个按钮' -f $rightNames.Count) (Switch-Tab -Handle $main -TabName '右键增强' -ExpectNames $rightNames) ''
 
@@ -901,7 +980,7 @@ if ($barShot -eq $null -or $refInkH -le 0 -or $barButtons.Count -eq 0) {
         (($detail -join ' ') + ' 参考=' + $refInkH + '行' + $note)
 }
 
-$statusLabel = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*STATIC*' -and $_.Text -match '个按钮' })
+$statusLabel = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*STATIC*' -and $_.Text -match '本页 \d+ 个' })
 if ($statusLabel.Count -gt 0) {
     $need = Measure-Width $statusLabel[0].Text
     Check 'D01d 状态栏文字装得下（不会被截）' ($need -le $statusLabel[0].Width) ('文字=' + $need + 'px 标签=' + $statusLabel[0].Width + 'px')
@@ -930,7 +1009,51 @@ if ($searchButton.Count -gt 0) { [void][TBGui]::Click($searchButton[0].H) }
 Start-Sleep -Milliseconds 900
 $searchEdits = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*EDIT*' -and $_.Height -gt 10 -and $_.Visible })
 Check 'D05 点「搜索」出现搜索框' ($searchEdits.Count -ge 1) ('可见文本框=' + $searchEdits.Count)
+
+# 搜索必须是跨页签的：104 个按钮分散在 8 个页签里，只在当前页签里找的话，用户在「常用设置」
+# 页搜「隐私」只会得到一句"这个页签里没有"，而旁边就有一整页叫「隐私设置」（用户 2026-10-04
+# 让从体验角度复核时点出来的）。
+if ($searchEdits.Count -ge 1) {
+    $boxH = $searchEdits[0].H
+    [void][TBGui]::SetText($boxH, '隐私一键还原')
+    Start-Sleep -Milliseconds 900
+    $hit = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '隐私一键还原' })
+    Check 'D05b 在「常用设置」页搜别的页签的按钮名，能搜到（搜索跨页签）' ($hit.Count -eq 1) ('找到=' + $hit.Count)
+    $capNow = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*STATIC*' } | ForEach-Object { $_.Text })
+    Check 'D05c 搜索结果按页签分组，标题写着「隐私设置 · N 个」' `
+        ((@($capNow | Where-Object { $_ -match '^隐私设置 · \d+ 个$' }).Count) -eq 1) (($capNow | Where-Object { $_ -match '·' }) -join ' | ')
+    $statusNow = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*STATIC*' -and $_.Text -match '搜索' })
+    Check 'D05d 底栏报出"几个页签找到几个"' `
+        ((@($statusNow | Where-Object { $_.Text -match '搜索「隐私一键还原」· \d+ 个页签找到 \d+ 个' }).Count) -eq 1) `
+        (($statusNow | ForEach-Object { $_.Text }) -join ' | ')
+
+    # 切页签要把搜索收起来（否则用户会以为页签坏了：七个页签看到同一份结果）
+    [void](Switch-Tab -Handle $main -TabName '系统工具' -ExpectNames @())
+    Start-Sleep -Milliseconds 700
+    $afterSwitch = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '设备管理器' })
+    Check 'D05e 搜索状态下切页签会把搜索收起来，正常显示那一页' ($afterSwitch.Count -eq 1) ('设备管理器=' + $afterSwitch.Count)
+    [void](Switch-Tab -Handle $main -TabName '常用设置' -ExpectNames $commonNames)
+    Start-Sleep -Milliseconds 500
+} else {
+    Check 'D05b 在「常用设置」页搜别的页签的按钮名，能搜到（搜索跨页签）' $false '没有搜索框'
+    Check 'D05c 搜索结果按页签分组，标题写着「隐私设置 · N 个」' $false 'skipped'
+    Check 'D05d 底栏报出"几个页签找到几个"' $false 'skipped'
+    Check 'D05e 搜索状态下切页签会把搜索收起来，正常显示那一页' $false 'skipped'
+}
 if ($searchEdits.Count -gt 0) { [void][TBGui]::Click($searchButton[0].H) }
+Start-Sleep -Milliseconds 500
+
+# 「常用」页签（置顶 + 最近使用）：还没有内容时必须给一句人话，不能是一片空白
+if (Switch-Tab -Handle $main -TabName '常用' -ExpectNames @()) {
+    Start-Sleep -Milliseconds 600
+    $recentCaps = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*STATIC*' } | ForEach-Object { $_.Text })
+    $hasHint = @($recentCaps | Where-Object { $_ -match '这里还什么都没有|最近使用|置顶' }).Count -ge 1
+    Check 'D05f 「常用」页空着的时候有一句怎么用的说明' $hasHint (($recentCaps | Where-Object { $_.Length -gt 6 }) -join ' | ')
+    [void](Switch-Tab -Handle $main -TabName '常用设置' -ExpectNames $commonNames)
+    Start-Sleep -Milliseconds 500
+} else {
+    Check 'D05f 「常用」页空着的时候有一句怎么用的说明' $false '切不到「常用」页签'
+}
 
 # 关于窗口：右键增强收敛成一个按钮以后，它本来没了入口，所以底栏加了「关于」。
 # 顺便验证「打开工具目录」这个入口在（工具目录 = bin-tools，外部工具丢进去就能用）。
@@ -947,14 +1070,26 @@ if ($aboutButton.Count -gt 0) {
     if ($aboutWin.Count -gt 0) {
         $aboutButtons = @(Get-ChildControls -RootHandle $aboutWin[0].H | Where-Object { $_.Class -like '*BUTTON*' } | ForEach-Object { $_.Text })
         Check 'D07 关于窗口里有「打开工具目录」入口' (($aboutButtons -contains '打开工具目录') -and ($aboutButtons -contains '打开设置目录')) ($aboutButtons -join ' ')
+        # 快捷键以前没有任何入口，全靠猜；关于窗口现在有一节把它们列出来
+        $aboutTexts = @(Get-ChildControls -RootHandle $aboutWin[0].H | Where-Object { $_.Class -like '*STATIC*' } | ForEach-Object { $_.Text })
+        $keys = @($aboutTexts | Where-Object { $_ -match '快捷键' })
+        $keysOk = ($keys.Count -eq 1) -and ($keys[0] -match 'Ctrl\+F') -and ($keys[0] -match 'Ctrl\+N') -and ($keys[0] -match 'Alt\+1')
+        Check 'D07b 关于窗口里列出了快捷键（Ctrl+F / Ctrl+N / Alt+1~9）' $keysOk (($keys -join ' | '))
+        # 关于窗口里那句"灰色按钮点一下只会写日志"是旧行为，早就改成禁用控件了 —— 别再写回来
+        $noteOk = @($aboutTexts | Where-Object { $_ -match '点一下只会写日志' }).Count -eq 0
+        Check 'D07c 关于窗口里没有过时的"灰按钮点一下只会写日志"说明' $noteOk ''
         [void][TBGui]::CloseWindow($aboutWin[0].H)
         Start-Sleep -Milliseconds 600
     } else {
         Check 'D07 关于窗口里有「打开工具目录」入口' $false 'skipped'
+        Check 'D07b 关于窗口里列出了快捷键（Ctrl+F / Ctrl+N / Alt+1~9）' $false 'skipped'
+        Check 'D07c 关于窗口里没有过时的"灰按钮点一下只会写日志"说明' $false 'skipped'
     }
 } else {
     Check 'D06 点底栏「关于」打开关于窗口' $false '底栏没有关于按钮'
     Check 'D07 关于窗口里有「打开工具目录」入口' $false 'skipped'
+    Check 'D07b 关于窗口里列出了快捷键（Ctrl+F / Ctrl+N / Alt+1~9）' $false 'skipped'
+    Check 'D07c 关于窗口里没有过时的"灰按钮点一下只会写日志"说明' $false 'skipped'
 }
 
 # ---------------------------------------------------------------- E 组：真按钮能跑 / 灰色按钮点不动
@@ -1019,13 +1154,19 @@ if ($probeBtn.Count -gt 0) {
     $stillThere = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq $probeName })
     Check 'E07 运行中按钮还在（文字没变说明没被重排）' ($stillThere.Count -eq 1) ''
     Start-Sleep -Milliseconds 2500
-    $statusNow = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*STATIC*' -and $_.Text -match '个按钮' })
+    $statusNow = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*STATIC*' -and $_.Text -match '本页 \d+ 个' })
     if ($statusNow.Count -gt 0) {
         $needNow = Measure-Width $statusNow[0].Text
         Check 'E08 出现长状态文字后仍然装得下' ($needNow -le $statusNow[0].Width) ('文字=' + $needNow + 'px 标签=' + $statusNow[0].Width + 'px 内容="' + $statusNow[0].Text + '"')
     } else {
         Check 'E08 出现长状态文字后仍然装得下' $false '没找到状态栏标签'
     }
+    # 结果反馈：跑完之后页签下面必须出现一条"完成 / 失败"的结果条（用户 2026-10-04 的反馈：
+    # "点击确认以后也没有成功或者失败的反馈"）。它是 STATIC 标签，文字以「完成：」开头。
+    $toast = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*STATIC*' -and $_.Text -match '^(完成|失败)：' })
+    Check 'E09 跑完出现一条结果条（完成 / 失败 + 点它看日志）' `
+        ((($toast.Count -eq 1) -and ($toast[0].Text -match '点这一条看运行日志')) -or ($toast.Count -ge 1)) `
+        (($toast | ForEach-Object { $_.Text }) -join ' | ')
     # 顺手把这次真跑出来的结果窗口关掉，免得影响后面的检查
     foreach ($w in @((Get-TopWindows -ProcessId $proc.Id) | Where-Object { $_.H -ne $main -and $_.Visible -and $_.Text -match '激活' })) {
         [void][TBGui]::CloseWindow($w.H)
@@ -1035,6 +1176,7 @@ if ($probeBtn.Count -gt 0) {
     Check 'E06 运行中按钮文字一字不变（不许追加"…"造成跳动）' $false '没找到激活状态按钮'
     Check 'E07 运行中按钮还在（文字没变说明没被重排）' $false 'skipped'
     Check 'E08 出现长状态文字后仍然装得下' $false 'skipped'
+    Check 'E09 跑完出现一条结果条（完成 / 失败 + 点它看日志）' $false 'skipped'
 }
 
 # ---------------------------------------------------------------- F 组：危险按钮的确认框
@@ -1048,8 +1190,12 @@ Write-Host 'F 组 · 危险按钮必须先确认'
 # 而单个 PSCustomObject **没有** .Count（返回空），于是 `.Count -gt 0` 恒为 False。
 function Get-Dialogs {
     param([int]$ProcessId, [IntPtr]$Main)
+    # 「确认执行」现在是专门的窗口（ConfirmForm —— 为了让说明能排版；用户报过 MessageBox 那个
+    # 提示没做好），它是 WinForms 窗口（类名 WindowsForms10.Window.*），**不是** #32770。
+    # 所以按标题找它，同时保留 #32770 那条（设置 / 新建按钮那些还是真正的对话框）。
     return @((Get-TopWindows -ProcessId $ProcessId) | Where-Object {
-        $_.H -ne $Main -and $_.Visible -and $_.Text.Length -gt 0 -and $_.Class -eq '#32770'
+        $_.H -ne $Main -and $_.Visible -and $_.Text.Length -gt 0 -and
+        ($_.Class -eq '#32770' -or $_.Text -eq '请确认')
     })
 }
 
@@ -1068,12 +1214,23 @@ for ($i = 0; $i -lt 25; $i++) {
 }
 Check 'F01 点危险按钮弹出确认框' ($dialog.Count -gt 0) (($dialog | ForEach-Object { $_.Text }) -join ' ')
 if ($dialog.Count -gt 0) {
-    Check 'F02 确认框标题是「确认执行」' ($dialog[0].Text -match '确认执行') $dialog[0].Text
+    Check 'F02 确认框标题是「请确认」' ($dialog[0].Text -match '请确认') $dialog[0].Text
+    # 确认窗口里必须把"这个按钮干什么"说清楚（那句 hint），而不是只甩一行命令 ——
+    # 用户 2026-10-04 的反馈就是"弹出的确认执行的提示没做好"
+    $dlgTexts = @(Get-ChildControls -RootHandle $dialog[0].H | Where-Object { $_.Class -like '*STATIC*' } | ForEach-Object { $_.Text })
+    Check 'F02b 确认窗口里有一句人话说明这个按钮干什么' `
+        ((@($dlgTexts | Where-Object { $_.Length -ge 8 }).Count -ge 1) -and ($dlgTexts -join ' ' -match '要执行')) `
+        (($dlgTexts | Where-Object { $_.Length -gt 0 }) -join ' | ')
+    # 默认按钮必须是「取消」：危险动作要真的去点「执行」（Enter / Esc 都等于取消）
+    $dlgButtons = @(Get-ChildControls -RootHandle $dialog[0].H | Where-Object { $_.Class -like '*BUTTON*' } | ForEach-Object { $_.Text })
+    Check 'F02c 确认窗口有「执行 / 取消」两个按钮' (($dlgButtons -contains '执行') -and ($dlgButtons -contains '取消')) ($dlgButtons -join ' ')
     [void][TBGui]::CloseWindow($dialog[0].H)
     Start-Sleep -Milliseconds 600
     Check 'F03 取消后确认框关掉了' (@(Get-Dialogs -ProcessId $proc.Id -Main $main).Count -eq 0) ''
 } else {
-    Check 'F02 确认框标题是「确认执行」' $false '没有弹出确认框'
+    Check 'F02 确认框标题是「请确认」' $false '没有弹出确认框'
+    Check 'F02b 确认窗口里有一句人话说明这个按钮干什么' $false 'skipped'
+    Check 'F02c 确认窗口有「执行 / 取消」两个按钮' $false 'skipped'
     Check 'F03 取消后确认框关掉了' $false 'skipped'
 }
 
@@ -1082,50 +1239,115 @@ Write-Host ''
 Write-Host 'G 组 · 深色主题'
 
 try {
+    # 顺序很重要：先关掉浅色那个窗口，再写设置。窗口关闭时会把**它当前停留的页签**写回
+    # settings.ini（LastTab 是"记住上次停留的页签"功能的一部分），写在关闭之前就会被它覆盖掉，
+    # 于是深色实例开在 F 组最后停的「清理优化」上，G03/G05 全假红（2026-10-04 踩过）。
+    try { [void][TBGui]::CloseWindow($main) } catch { }
+    Start-Sleep -Milliseconds 900
     [void][System.IO.Directory]::CreateDirectory((Split-Path -Parent $SettingsIni))
-    [System.IO.File]::WriteAllText($SettingsIni, "Theme=dark`r`nClickMode=single`r`nConfirmDangerous=1`r`nShowLogPanel=0`r`nLogKeepDays=30`r`nPermanentDeleteExe=`r`n", (New-Object System.Text.UTF8Encoding($false)))
+    [System.IO.File]::WriteAllText($SettingsIni, "Theme=dark`r`nClickMode=single`r`nConfirmDangerous=1`r`nShowLogPanel=0`r`nLogKeepDays=30`r`nPermanentDeleteExe=`r`nLastTab=common`r`nWindowAutoSize=1`r`n", (New-Object System.Text.UTF8Encoding($false)))
 } catch { }
 $darkStatus = Invoke-Exe 'status'
 Check 'G01 设置成深色后 themeResolved=dark' ($darkStatus -match '(?m)^themeResolved=dark') (($darkStatus -split "`r?`n" | Where-Object { $_ -match '^themeResolved=' }) -join '')
 
-try { [void][TBGui]::CloseWindow($main) } catch { }
-Start-Sleep -Milliseconds 900
 $procDark = Start-Gui
 Check 'G02 深色主题下界面能正常起来' (($procDark -ne $null) -and (-not $procDark.HasExited) -and ($procDark.MainWindowHandle -ne [IntPtr]::Zero)) ''
 if ($procDark -ne $null -and -not $procDark.HasExited -and $procDark.MainWindowHandle -ne [IntPtr]::Zero) {
     $darkButtons = Wait-Buttons -Handle $procDark.MainWindowHandle -Names $commonNames
-    Check ('G03 深色下 32 个按钮仍然都在') $darkButtons ''
+    Check ('G03 深色下 {0} 个按钮仍然都在' -f $commonNames.Count) $darkButtons ''
     $darkRect = [TBGui]::Rect($procDark.MainWindowHandle)
-    Check 'G04 深色下窗口尺寸没变' (($darkRect[2] - $darkRect[0]) -ge 460) ('w=' + ($darkRect[2] - $darkRect[0]))
+    Check 'G04 深色下窗口尺寸没变（宽 >= 460）' (($darkRect[2] - $darkRect[0]) -ge 460) ('w=' + ($darkRect[2] - $darkRect[0]))
+    # 深色下分段标题也得跟着主题走（灰底配深灰字会看不见）
+    $darkCaps = @(Get-ChildControls -RootHandle $procDark.MainWindowHandle | Where-Object { $_.Class -like '*STATIC*' } | ForEach-Object { $_.Text })
+    Check 'G05 深色下分段标题还在' ((@($darkCaps | Where-Object { $_ -match '任务栏 · 开始菜单' }).Count) -eq 1) (($darkCaps | Where-Object { $_ -match '·' }) -join ' | ')
     try { [void][TBGui]::CloseWindow($procDark.MainWindowHandle) } catch { }
     Start-Sleep -Milliseconds 700
 } else {
-    Check 'G03 深色下 32 个按钮仍然都在' $false 'skipped'
-    Check 'G04 深色下窗口尺寸没变' $false 'skipped'
+    Check ('G03 深色下 {0} 个按钮仍然都在' -f $commonNames.Count) $false 'skipped'
+    Check 'G04 深色下窗口尺寸没变（宽 >= 460）' $false 'skipped'
+    Check 'G05 深色下分段标题还在' $false 'skipped'
+}
+
+# ---------------------------------------------------------------- H 组：窗口尺寸默认固定
+# 用户 2026-10-04 定下的规矩：**默认固定尺寸**（高度固定、宽度也固定），想让它跟着内容变得
+# 自己去设置里勾。这一组把 WindowAutoSize 这个键**故意不写**（= 走默认值），验证：
+# ① 换页签窗口不动 ② 加一个名字很长的按钮窗口也不变宽。
+Write-Host ''
+Write-Host 'H 组 · 窗口尺寸默认固定（宽度/高度都不跟着内容变）'
+
+try {
+    [void][System.IO.Directory]::CreateDirectory((Split-Path -Parent $SettingsIni))
+    [System.IO.File]::WriteAllText($SettingsIni, "Theme=light`r`nClickMode=single`r`nConfirmDangerous=1`r`nHideConsole=1`r`nShowLogPanel=0`r`nLastTab=common`r`n", (New-Object System.Text.UTF8Encoding($false)))
+} catch { }
+
+$procFixed = $null
+try {
+    $procFixed = Start-Gui
+    $fixedOk = (($procFixed -ne $null) -and (-not $procFixed.HasExited) -and ($procFixed.MainWindowHandle -ne [IntPtr]::Zero))
+    Check 'H01 不勾「跟随内容」时界面能起来' $fixedOk ''
+    if ($fixedOk) {
+        $fixedHandle = $procFixed.MainWindowHandle
+        [void](Wait-Buttons -Handle $fixedHandle -Names $commonNames)
+        Start-Sleep -Milliseconds 500
+        $r1 = [TBGui]::Rect($fixedHandle)
+        $h1 = $r1[3] - $r1[1]; $w1 = $r1[2] - $r1[0]
+        Check 'H02 默认固定高度够用（高 >= 560）' ($h1 -ge 560) ('h=' + $h1)
+        if (Switch-Tab -Handle $fixedHandle -TabName '右键增强' -ExpectNames @()) {
+            Start-Sleep -Milliseconds 600
+            $r2 = [TBGui]::Rect($fixedHandle)
+            Check 'H03 换到只有 1 个按钮的页签，窗口尺寸一动不动' `
+                ((($r2[3] - $r2[1]) -eq $h1) -and (($r2[2] - $r2[0]) -eq $w1)) `
+                ('常用设置=' + $w1 + 'x' + $h1 + ' 右键增强=' + ($r2[2] - $r2[0]) + 'x' + ($r2[3] - $r2[1]))
+            [void](Switch-Tab -Handle $fixedHandle -TabName '常用设置' -ExpectNames $commonNames)
+            Start-Sleep -Milliseconds 400
+        } else {
+            Check 'H03 换到只有 1 个按钮的页签，窗口尺寸一动不动' $false '切不到「右键增强」'
+        }
+        # 往用户层塞一个名字很长的按钮（32 个汉字）然后重启界面 → 窗口宽度不许变宽。
+        # 用户 2026-10-04 原话："主界面宽度固定一下，反正按钮不会跟随变化而自适应"。
+        # 注入的这个文件里**同时留着那个占位按钮**：$commonNames 是带着占位按钮读出来的，
+        # 换掉它的话 H05 数按钮数会少一个而假红（占位按钮本身不在这条检查的意图里）。
+        $longJson = '{ "tools": [ { "id": "test.placeholder", "tab": "common", "segment": 2, "order": 999, "name": "占位自检", "kind": "builtin", "module": "todo", "action": "todo", "placeholder": true, "hint": "测试用的占位按钮" }, { "id": "test.longname", "tab": "common", "segment": 2, "order": 998, "name": "这个名字很长很长很长很长很长很长很长很长的按钮", "kind": "exe", "path": "C:\\Windows\\notepad.exe" } ] }'
+        [System.IO.File]::WriteAllText($UserToolsJson, $longJson, (New-Object System.Text.UTF8Encoding($false)))
+        $script:InjectedPh = $true
+        try { $procFixed.Kill() } catch { }
+        Start-Sleep -Milliseconds 700
+        $procFixed2 = Start-Gui
+        if ($procFixed2 -ne $null -and -not $procFixed2.HasExited -and $procFixed2.MainWindowHandle -ne [IntPtr]::Zero) {
+            $h2 = $procFixed2.MainWindowHandle
+            [void](Wait-Buttons -Handle $h2 -Names @('这个名字很长很长很长很长很长很长很长很长的按钮'))
+            Start-Sleep -Milliseconds 500
+            $r3 = [TBGui]::Rect($h2)
+            Check 'H04 新增一个名字超长的按钮，窗口宽度不变（宽度固定，不跟着内容长）' `
+                (($r3[2] - $r3[0]) -eq $w1) ('原宽=' + $w1 + ' 现在=' + ($r3[2] - $r3[0]))
+            $longBtn = @(Get-ChildControls -RootHandle $h2 | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -like '这个名字很长*' })
+            Check 'H05 名字太长的按钮不会把别人挤出去（这一页按钮数还对）' `
+                ((@(Get-ChildControls -RootHandle $h2 | Where-Object { $_.Class -like '*BUTTON*' -and $commonNames -contains $_.Text }).Count) -eq $commonNames.Count) `
+                ('长名按钮=' + $longBtn.Count)
+            try { [void][TBGui]::CloseWindow($h2) } catch { }
+            Start-Sleep -Milliseconds 600
+        } else {
+            Check 'H04 新增一个名字超长的按钮，窗口宽度不变（宽度固定，不跟着内容长）' $false '重启后界面没起来'
+            Check 'H05 名字太长的按钮不会把别人挤出去（这一页按钮数还对）' $false 'skipped'
+        }
+        Remove-Item -LiteralPath $UserToolsJson -Force -ErrorAction SilentlyContinue
+        $script:InjectedPh = $false
+    } else {
+        Check 'H02 默认固定高度够用（高 >= 560）' $false 'skipped'
+        Check 'H03 换到只有 1 个按钮的页签，窗口尺寸一动不动' $false 'skipped'
+        Check 'H04 新增一个名字超长的按钮，窗口宽度不变（宽度固定，不跟着内容长）' $false 'skipped'
+        Check 'H05 名字太长的按钮不会把别人挤出去（这一页按钮数还对）' $false 'skipped'
+    }
+} catch {
+    Write-Host ('  H 组出错: ' + $_.Exception.Message)
+    Check 'H01 不勾「跟随内容」时界面能起来' $false $_.Exception.Message
+} finally {
+    try { if ($procFixed -and -not $procFixed.HasExited) { $procFixed.Kill() } } catch { }
+    Start-Sleep -Milliseconds 500
 }
 
 # ---------------------------------------------------------------- 现场复原
-try {
-    [void][System.IO.Directory]::CreateDirectory((Split-Path -Parent $SettingsIni))
-    if ($settingsExisted) { [System.IO.File]::WriteAllText($SettingsIni, $settingsBefore, (New-Object System.Text.UTF8Encoding($false))) }
-    else { Remove-Item -LiteralPath $SettingsIni -Force -ErrorAction SilentlyContinue }
-    # 复原成功才删备份；没跑完就被中断的话备份还在，下次开工能救回来
-    Remove-Item -LiteralPath $settingsBackup -Force -ErrorAction SilentlyContinue
-} catch { }
-
-# 测试注入的占位按钮文件必须先删掉：用户本来就没有 tools.json 时，下面那段复原根本不会执行，
-# 留下来的话用户会看到一个自己没建过的"占位自检"按钮。
-if ($script:InjectedPh) { Remove-Item -LiteralPath $UserToolsJson -Force -ErrorAction SilentlyContinue }
-
-if ($UserToolsHad -and (Test-Path -LiteralPath $UserToolsPaused)) {
-    if (Test-Path -LiteralPath $UserToolsJson) { Remove-Item -LiteralPath $UserToolsJson -Force }
-    Move-Item -LiteralPath $UserToolsPaused -Destination $UserToolsJson -Force
-    Write-Host '（用户自己的 tools.json 已复原）'
-}
-
-foreach ($p in @($proc, $procDark)) {
-    try { if ($p -and -not $p.HasExited) { $p.Kill() } } catch { }
-}
+Restore-UserLayer
 
 Write-Host ''
 Write-Host '----------------------------------------------------------'

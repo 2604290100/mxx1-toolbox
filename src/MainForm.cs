@@ -3,6 +3,7 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Globalization;
 using System.IO;
 using System.Threading;
 using System.Windows.Forms;
@@ -25,8 +26,15 @@ namespace Mxx1Toolbox
         private int _cellWidth = 114;
         private const int ToolRowHeight = 36;
         private const int SeparatorRowHeight = 13;
+        // 分段标题行：原来那条灰线旁边多一句人话（「修复与诊断 ————」）。26 个按钮分成 6 段时，
+        // 光看灰线不知道这堆是干什么的（见 docs/DESIGN.md §4.8）。
+        private const int CaptionRowHeight = 24;
         private const int Columns = 4;
         private const int LogPanelHeight = 170;
+        private const int SearchRowHeight = 28;
+        private const int ToastRowHeight = 26;
+        /// <summary>没记过用户尺寸时的固定高度（内容最高的页签也基本装得下）。</summary>
+        private const int DefaultFixedHeight = 620;
 
         private readonly Settings _settings;
         private Theme _theme;
@@ -42,6 +50,18 @@ namespace Mxx1Toolbox
         private DateTime _elevatedSince;
         private int _elevatedTries;
 
+        // 运行计时：DISM / SFC 这类要跑几分钟，只转个圈看不出是活着还是卡死了（底栏那一格会走秒）
+        private System.Windows.Forms.Timer _runTimer;
+        private DateTime _runStarted = DateTime.MinValue;
+        private DateTime _runFinished = DateTime.MinValue;
+        private string _lastElapsed = "";
+
+        // 窗口几何：_fitting 期间改尺寸的是我们自己，别当成"用户拖过窗口"（那会把自动高度关掉）
+        private bool _fitting;
+        private int _contentRows;
+        private int _contentSeps;
+        private readonly List<Label> _sepLabels = new List<Label>();
+
         private TableLayoutPanel _root;
         private TableLayoutPanel _tabBar;
         private readonly Dictionary<string, Button> _tabButtons = new Dictionary<string, Button>(StringComparer.OrdinalIgnoreCase);
@@ -52,6 +72,13 @@ namespace Mxx1Toolbox
         private readonly List<ToolButton> _gridButtons = new List<ToolButton>();
         private Panel _logPanel;
         private TextBox _logBox;
+        private Panel _toastRow;
+        private Label _toastLabel;
+        private bool _toastOk = true;
+        private System.Windows.Forms.Timer _toastTimer;
+        /// <summary>宽度在启动时定一次就不再动：用户 2026-10-04 明确说"主界面宽度固定一下，
+        /// 反正按钮不会跟随变化而自适应"。</summary>
+        private int _fixedWidth;
         private TableLayoutPanel _statusBar;
         private Label _statusLabel;
         private Button _btnSearch;
@@ -82,7 +109,9 @@ namespace Mxx1Toolbox
 
             Text = AboutForm.ProductTitle + " v" + AboutForm.VersionText;
             // The real size is set once the button names are known (see ComputeCellWidth).
-            MinimumSize = new Size(460, 520);
+            // 最小尺寸只要容得下 8 个页签和一行按钮就行：窗口高度默认贴着当前页签的内容走
+            // （见 FitToContent），所以「右键增强」那种只有 1 个按钮的页码再撑个 700px 空窗口。
+            MinimumSize = new Size(520, 240);
             StartPosition = FormStartPosition.CenterScreen;
             MinimizeBox = false;
             MaximizeBox = false;
@@ -98,7 +127,13 @@ namespace Mxx1Toolbox
             _tips.ShowAlways = true;
 
             ReloadTools();
+            // 宽度是**固定**的（用户 2026-10-04 的规矩：「主界面宽度固定一下，反正按钮不会跟随变化
+            // 而自适应」）。设置里记过就用记着的那一个（拖过窗口也会更新它），没记过就在下面按清单里
+            // 的名字量一次，然后在 FitToContent 里立刻记进设置 —— 之后再加多长的名字都不改窗口宽度，
+            // 改的只是那个按钮上的省略号（悬停提示里永远是全名）。
+            if (_settings.WindowWidth > 0) { _fixedWidth = _settings.WindowWidth; }
             _cellWidth = ComputeCellWidth();
+            ClampCellWidthToWindow();
             using (Font barFont = new Font("Microsoft YaHei", 8.25f, FontStyle.Regular, GraphicsUnit.Point))
             {
                 // One line of 8.25pt text measures 16px, but a flat button also reserves its 1px
@@ -110,7 +145,10 @@ namespace Mxx1Toolbox
                 if (_barButtonHeight < 24) { _barButtonHeight = 24; }
             }
             _statusBarHeight = _barButtonHeight + 4;   // 2px margin above and below
-            ClientSize = new Size(Math.Max(500, Columns * _cellWidth + 24), 700);
+            // 上次停在哪个页签就还停在哪个（第一次打开：常用页有东西就用它，否则常用设置）
+            _currentTab = PickInitialTab();
+            // 真实高度在 BuildGrid → FitToContent 里按内容定；这里先给个能用的初值
+            ClientSize = new Size(Math.Max(500, Columns * _cellWidth + 24), 320);
             BuildUi();
             BuildGrid();
             ApplyTheme();
@@ -118,8 +156,30 @@ namespace Mxx1Toolbox
             RefreshLogBox();
             UpdateStatusBar();
 
+            // 运行计时（DISM / SFC 这类要跑几分钟，底栏得能看出还活着）
+            _runTimer = new System.Windows.Forms.Timer();
+            _runTimer.Interval = 1000;
+            _runTimer.Tick += delegate
+            {
+                if (_running > 0) { UpdateStatusBar(); }
+                else { _runTimer.Stop(); }
+            };
+
             try { Microsoft.Win32.SystemEvents.UserPreferenceChanged += OnUserPreferenceChanged; }
             catch { }
+        }
+
+        /// <summary>启动时停在哪个页签。上次的页签还存在就用它；没有记录时，如果「常用」页里有
+        /// 置顶或最近使用的按钮就用「常用」，否则回到「常用设置」。</summary>
+        private string PickInitialTab()
+        {
+            string last = (_settings.LastTab ?? "").Trim();
+            if (last.Length > 0 && Tabs.Index(last) < Tabs.Ids.Length) { return last; }
+            List<ToolItem> pinned;
+            List<ToolItem> recent;
+            SplitFavorites(out pinned, out recent);
+            if (pinned.Count + recent.Count > 0) { return Tabs.Recent; }
+            return Tabs.Common;
         }
 
         // ---------------------------------------------------------------- construction
@@ -129,14 +189,15 @@ namespace Mxx1Toolbox
             _root = new TableLayoutPanel();
             _root.Dock = DockStyle.Fill;
             _root.ColumnCount = 1;
-            _root.RowCount = 5;
+            _root.RowCount = 6;
             _root.Margin = new Padding(0);
             _root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
-            _root.RowStyles.Add(new RowStyle(SizeType.Absolute, TabBarHeight));   // tabs
-            _root.RowStyles.Add(new RowStyle(SizeType.Absolute, 0f));             // search row
-            _root.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));            // button grid
-            _root.RowStyles.Add(new RowStyle(SizeType.Absolute, 0f));             // log panel
-            _root.RowStyles.Add(new RowStyle(SizeType.Absolute, _statusBarHeight));// status bar
+            _root.RowStyles.Add(new RowStyle(SizeType.Absolute, TabBarHeight));   // 0 页签
+            _root.RowStyles.Add(new RowStyle(SizeType.Absolute, 0f));             // 1 结果条（跑完才有）
+            _root.RowStyles.Add(new RowStyle(SizeType.Absolute, 0f));             // 2 搜索行
+            _root.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));            // 3 按钮墙
+            _root.RowStyles.Add(new RowStyle(SizeType.Absolute, 0f));             // 4 日志面板
+            _root.RowStyles.Add(new RowStyle(SizeType.Absolute, _statusBarHeight));// 5 状态栏
 
             // tabs: one flat button per page, equal width
             _tabBar = new TableLayoutPanel();
@@ -166,6 +227,25 @@ namespace Mxx1Toolbox
             }
             _root.Controls.Add(_tabBar, 0, 0);
 
+            // 结果条：跑完一个按钮之后在页签下面出现一行有颜色的横幅（成功 / 失败 + 用时），
+            // 8 秒后自己消失，点它展开运行日志。用户 2026-10-04 的反馈："点击确认以后也没有
+            // 成功或者失败的反馈" —— 以前只有底栏一闪而过的一行小字。
+            _toastRow = new Panel();
+            _toastRow.Dock = DockStyle.Fill;
+            _toastRow.Margin = new Padding(0);
+            _toastRow.Padding = new Padding(10, 2, 10, 2);
+            _toastRow.Visible = false;
+            _toastLabel = new Label();
+            _toastLabel.Dock = DockStyle.Fill;
+            _toastLabel.AutoSize = false;
+            _toastLabel.TextAlign = ContentAlignment.MiddleLeft;
+            _toastLabel.AutoEllipsis = true;
+            _toastLabel.Cursor = Cursors.Hand;
+            _toastLabel.Click += delegate { if (!_logPanel.Visible) { ToggleLogPanel(); } };
+            _tips.SetToolTip(_toastLabel, "点这里展开运行日志（这条提示 8 秒后自己消失）");
+            _toastRow.Controls.Add(_toastLabel);
+            _root.Controls.Add(_toastRow, 0, 1);
+
             // search row (hidden until the user asks for it)
             _searchRow = new Panel();
             _searchRow.Dock = DockStyle.Fill;
@@ -182,7 +262,7 @@ namespace Mxx1Toolbox
                 UpdateStatusBar();
             };
             _searchRow.Controls.Add(_searchBox);
-            _root.Controls.Add(_searchRow, 0, 1);
+            _root.Controls.Add(_searchRow, 0, 2);
 
             _content = new Panel();
             _content.Dock = DockStyle.Fill;
@@ -192,7 +272,7 @@ namespace Mxx1Toolbox
             _content.AllowDrop = true;
             _content.DragEnter += OnDragEnter;
             _content.DragDrop += OnDragDrop;
-            _root.Controls.Add(_content, 0, 2);
+            _root.Controls.Add(_content, 0, 3);
 
             _logPanel = new Panel();
             _logPanel.Dock = DockStyle.Fill;
@@ -207,7 +287,7 @@ namespace Mxx1Toolbox
             _logBox.Dock = DockStyle.Fill;
             _logBox.Font = new Font("Consolas", 8.25f, FontStyle.Regular, GraphicsUnit.Point);
             _logPanel.Controls.Add(_logBox);
-            _root.Controls.Add(_logPanel, 0, 3);
+            _root.Controls.Add(_logPanel, 0, 4);
 
             _statusBar = new TableLayoutPanel();
             _statusBar.Dock = DockStyle.Fill;
@@ -255,7 +335,7 @@ namespace Mxx1Toolbox
 
             _statusBar.Controls.Add(_statusLabel, 0, 0);
             _statusBar.Controls.Add(right, 1, 0);
-            _root.Controls.Add(_statusBar, 0, 4);
+            _root.Controls.Add(_statusBar, 0, 5);
 
             Controls.Add(_root);
             AllowDrop = true;
@@ -348,6 +428,15 @@ namespace Mxx1Toolbox
             return cell;
         }
 
+        /// <summary>网格里的一块按钮：一句小标题 + 它下面那几个按钮。普通页签里一块 = 一个
+        /// segment（标题来自清单的 segmentName）；搜索时一块 = 一个页签；「常用」页里一块 =
+        /// 置顶 / 最近使用。</summary>
+        private sealed class GridBlock
+        {
+            public string Caption = "";
+            public List<ToolItem> Items = new List<ToolItem>();
+        }
+
         private void BuildGrid()
         {
             if (_grid != null)
@@ -357,6 +446,7 @@ namespace Mxx1Toolbox
                 _grid = null;
             }
             _gridButtons.Clear();
+            _sepLabels.Clear();
 
             _grid = new TableLayoutPanel();
             _grid.Dock = DockStyle.Top;
@@ -378,57 +468,53 @@ namespace Mxx1Toolbox
             // wider than its neighbours (interface regression B05).
             _grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
 
-            List<ToolItem> visible = new List<ToolItem>();
-            foreach (ToolItem t in _tools)
-            {
-                if (t.Hidden) { continue; }
-                if (!string.Equals(t.Tab, _currentTab, StringComparison.OrdinalIgnoreCase)) { continue; }
-                if (_filter.Length > 0 && !Matches(t, _filter)) { continue; }
-                visible.Add(t);
-            }
-
-            int segment = int.MinValue;
             int row = -1;
             int col = Columns;
-            foreach (ToolItem t in visible)
+            _contentRows = 0;
+            _contentSeps = 0;
+            int shown = 0;
+            bool firstBlock = true;
+            foreach (GridBlock block in CollectBlocks())
             {
-                if (t.Segment != segment)
+                if (block.Items.Count == 0) { continue; }
+                if (block.Caption.Length > 0 || !firstBlock) { AddSeparatorRow(ref row, block.Caption); }
+                firstBlock = false;
+                col = Columns;
+                foreach (ToolItem t in block.Items)
                 {
-                    if (segment != int.MinValue) { AddSeparatorRow(ref row); col = Columns; }
-                    segment = t.Segment;
-                    col = Columns;
+                    if (col >= Columns)
+                    {
+                        row++;
+                        _grid.RowStyles.Add(new RowStyle(SizeType.Absolute, ToolRowHeight));
+                        _grid.RowCount = row + 1;
+                        _contentRows++;
+                        col = 0;
+                    }
+                    ToolButton b = new ToolButton(t);
+                    b.Dock = DockStyle.Fill;
+                    b.Margin = new Padding(3);
+                    b.Click += OnToolClick;
+                    b.MouseDoubleClick += OnToolDoubleClick;
+                    b.ContextMenuStrip = _menu;
+                    b.Enter += delegate { UpdateStatusBar(); };
+                    _tips.SetToolTip(b, TipFor(t, _settings));
+                    _grid.Controls.Add(b, col, row);
+                    _gridButtons.Add(b);
+                    col++;
+                    shown++;
                 }
-                if (col >= Columns)
-                {
-                    row++;
-                    _grid.RowStyles.Add(new RowStyle(SizeType.Absolute, ToolRowHeight));
-                    _grid.RowCount = row + 1;
-                    col = 0;
-                }
-                ToolButton b = new ToolButton(t);
-                b.Dock = DockStyle.Fill;
-                b.Margin = new Padding(3);
-                b.Click += OnToolClick;
-                b.MouseDoubleClick += OnToolDoubleClick;
-                b.ContextMenuStrip = _menu;
-                b.Enter += delegate { UpdateStatusBar(); };
-                _tips.SetToolTip(b, TipFor(t, _settings));
-                _grid.Controls.Add(b, col, row);
-                _gridButtons.Add(b);
-                col++;
             }
 
-            if (visible.Count == 0)
+            if (shown == 0)
             {
                 row++;
                 _grid.RowStyles.Add(new RowStyle(SizeType.Absolute, ToolRowHeight));
                 _grid.RowCount = row + 1;
+                _contentRows++;
                 Label empty = new Label();
                 empty.AutoSize = true;
                 empty.Margin = new Padding(6, 6, 6, 6);
-                empty.Text = _filter.Length > 0
-                    ? "这个页签里没有匹配「" + _filter + "」的按钮。"
-                    : "这个页签还没有按钮。把 exe / 脚本拖进来，或编辑 " + AppPaths.UserToolsJson;
+                empty.Text = EmptyMessage();
                 _grid.Controls.Add(empty, 0, row);
                 _grid.SetColumnSpan(empty, Columns);
             }
@@ -436,19 +522,164 @@ namespace Mxx1Toolbox
             _content.Controls.Add(_grid);
             foreach (ToolButton b in _gridButtons) { b.ApplyTheme(_theme); }
             ColorSeparators();
+            FitToContent();
         }
 
-        private void AddSeparatorRow(ref int row)
+        /// <summary>这一页（或这次搜索）该显示哪些块。</summary>
+        private List<GridBlock> CollectBlocks()
+        {
+            List<GridBlock> blocks = new List<GridBlock>();
+
+            if (_filter.Length > 0)
+            {
+                // 搜索是跨页签的：104 个按钮分散在 8 个页签里，只在当前页签里找，用户会得到
+                // 一句"这个页签里没有"然后永远找不到（在「常用设置」页搜「隐私」就是这种情况）。
+                foreach (string tabId in Tabs.Ids)
+                {
+                    GridBlock blk = new GridBlock();
+                    foreach (ToolItem t in _tools)
+                    {
+                        if (t.Hidden) { continue; }
+                        if (!string.Equals(t.Tab, tabId, StringComparison.OrdinalIgnoreCase)) { continue; }
+                        if (!Matches(t, _filter)) { continue; }
+                        blk.Items.Add(t);
+                    }
+                    if (blk.Items.Count == 0) { continue; }
+                    blk.Caption = Tabs.Display(tabId) + " · " + blk.Items.Count + " 个";
+                    blocks.Add(blk);
+                }
+                return blocks;
+            }
+
+            if (string.Equals(_currentTab, Tabs.Recent, StringComparison.OrdinalIgnoreCase))
+            {
+                List<ToolItem> pinned;
+                List<ToolItem> recent;
+                SplitFavorites(out pinned, out recent);
+                if (pinned.Count > 0)
+                {
+                    GridBlock p = new GridBlock();
+                    p.Caption = "置顶 · " + pinned.Count + " 个（在按钮上点右键可以取消置顶）";
+                    p.Items = pinned;
+                    blocks.Add(p);
+                }
+                if (recent.Count > 0)
+                {
+                    GridBlock r = new GridBlock();
+                    r.Caption = "最近使用 · " + recent.Count + " 个（最多 " + UserTools.RecentLimit + " 个）";
+                    r.Items = recent;
+                    blocks.Add(r);
+                }
+                return blocks;
+            }
+
+            // 普通页签：按 segment 分组，标题来自清单里的 segmentName（没写就只画一条细线）
+            int segment = int.MinValue;
+            GridBlock current = null;
+            foreach (ToolItem t in _tools)
+            {
+                if (t.Hidden) { continue; }
+                if (!string.Equals(t.Tab, _currentTab, StringComparison.OrdinalIgnoreCase)) { continue; }
+                if (current == null || t.Segment != segment)
+                {
+                    segment = t.Segment;
+                    current = new GridBlock();
+                    blocks.Add(current);
+                }
+                if (current.Caption.Length == 0 && t.SegmentName.Length > 0) { current.Caption = t.SegmentName; }
+                current.Items.Add(t);
+            }
+            return blocks;
+        }
+
+        /// <summary>「常用」页的两块内容：置顶的（跨页签汇总）+ 最近点过的。
+        /// 置顶以前只是在本页内往前排，跨页签的常用按钮还是得挨个页签去找。</summary>
+        private void SplitFavorites(out List<ToolItem> pinned, out List<ToolItem> recent)
+        {
+            pinned = new List<ToolItem>();
+            recent = new List<ToolItem>();
+            List<string> pinIds = UserTools.LoadPinned();
+            foreach (ToolItem t in _tools)
+            {
+                if (t.Hidden || t.Placeholder || !t.Pinned && !UserTools.IsPinned(t.Id, pinIds)) { continue; }
+                pinned.Add(t);
+            }
+            foreach (string id in UserTools.LoadRecent())
+            {
+                ToolItem found = null;
+                foreach (ToolItem t in _tools)
+                {
+                    if (string.Equals(t.Id, id, StringComparison.OrdinalIgnoreCase)) { found = t; break; }
+                }
+                if (found == null || found.Hidden || found.Placeholder) { continue; }
+                if (found.Pinned || UserTools.IsPinned(found.Id, pinIds)) { continue; }   // 置顶那块已经显示了
+                recent.Add(found);
+            }
+        }
+
+        private string EmptyMessage()
+        {
+            if (_filter.Length > 0)
+            {
+                return "8 个页签里都没有匹配「" + _filter + "」的按钮。搜的是按钮名 / 说明 / id，试短一点的关键字。";
+            }
+            if (string.Equals(_currentTab, Tabs.Recent, StringComparison.OrdinalIgnoreCase))
+            {
+                return "这里还什么都没有：在任意按钮上点右键 →「置顶」，或者随便点几个按钮，最近用过的就会自动出现在「常用」页。";
+            }
+            return "这个页签还没有按钮。把 exe / 脚本拖进来，或编辑 " + AppPaths.UserToolsJson;
+        }
+
+        private void AddSeparatorRow(ref int row, string caption)
         {
             row++;
-            _grid.RowStyles.Add(new RowStyle(SizeType.Absolute, SeparatorRowHeight));
+            _grid.RowStyles.Add(new RowStyle(SizeType.Absolute,
+                caption.Length > 0 ? CaptionRowHeight : SeparatorRowHeight));
             _grid.RowCount = row + 1;
-            Panel sep = new Panel();
-            sep.Dock = DockStyle.Fill;
-            sep.Margin = new Padding(3, 6, 3, 6);
-            sep.BackColor = _theme.SegmentLine;
-            _grid.Controls.Add(sep, 0, row);
-            _grid.SetColumnSpan(sep, Columns);
+            _contentSeps++;
+
+            if (caption.Length == 0)
+            {
+                Panel sep = new Panel();
+                sep.Dock = DockStyle.Fill;
+                sep.Margin = new Padding(3, 6, 3, 6);
+                sep.BackColor = _theme.SegmentLine;
+                _grid.Controls.Add(sep, 0, row);
+                _grid.SetColumnSpan(sep, Columns);
+                return;
+            }
+
+            // 标题行：左边一句人话，右边一条细线（细线的高度 = 行高减去上下外边距）
+            TableLayoutPanel line = new TableLayoutPanel();
+            line.Dock = DockStyle.Fill;
+            line.Margin = new Padding(8, 0, 8, 0);
+            line.ColumnCount = 2;
+            line.RowCount = 1;
+            line.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            line.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+            line.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+
+            Label cap = new Label();
+            cap.AutoSize = true;
+            // 只锚左边 = 垂直居中（上下都不锚定的时候 WinForms 会把它摆在中间）
+            cap.Anchor = AnchorStyles.Left;
+            cap.Text = caption;
+            cap.Font = new Font("Microsoft YaHei", 8.25f, FontStyle.Regular, GraphicsUnit.Point);
+            cap.ForeColor = _theme.BarText;
+            cap.BackColor = Color.Transparent;
+            cap.TextAlign = ContentAlignment.MiddleLeft;
+            cap.Margin = new Padding(0, 0, 8, 0);
+
+            Panel rule = new Panel();
+            rule.Dock = DockStyle.Fill;
+            rule.Margin = new Padding(0, (CaptionRowHeight / 2), 0, (CaptionRowHeight / 2) - 1);
+            rule.BackColor = _theme.SegmentLine;
+
+            line.Controls.Add(cap, 0, 0);
+            line.Controls.Add(rule, 1, 0);
+            _grid.Controls.Add(line, 0, row);
+            _grid.SetColumnSpan(line, Columns);
+            _sepLabels.Add(cap);
         }
 
         private void ColorSeparators()
@@ -459,6 +690,151 @@ namespace Mxx1Toolbox
                 Panel p = c as Panel;
                 if (p != null) { p.BackColor = _theme.SegmentLine; }
             }
+            foreach (Label l in _sepLabels) { l.ForeColor = _theme.BarText; }
+        }
+
+        // ---------------------------------------------------------------- 窗口尺寸
+
+        /// <summary>窗口宽度和高度。
+        ///
+        /// 用户 2026-10-04 定的规矩：**默认固定尺寸**（宽度固定、高度固定），想让它跟着内容变
+        /// 得自己去设置里勾「窗口高度跟随当前页签的内容」。宽度永远不会跟着内容变 —— 按钮是固定
+        /// 宽度的 4 列网格，加一个名字很长的按钮不该把整个窗口撑宽（那会让窗口一直在跳）。
+        ///
+        /// 勾了跟随内容之后：高度 = 页签条 + 当前页按钮墙 + 状态栏（+ 搜索行 + 日志面板），
+        /// 上限是屏幕工作区的九成，超过就在按钮墙里滚动。</summary>
+        private void FitToContent()
+        {
+            if (_fixedWidth <= 0) { _fixedWidth = FixedWidth(); }
+            ClampCellWidthToWindow();
+            // 第一次量出来的宽度立刻记进设置：下次开机还是这个宽度。不这么写的话，用户加了一个名字
+            // 很长的按钮、下次开机窗口就宽一圈 —— 那就不是"固定宽度"了（Test-Gui 的 H04 盯着这条）。
+            // 用户自己拖过窗口的话，RememberGeometry 会把拖出来的尺寸写成新的固定宽度。
+            if (_settings.WindowWidth != _fixedWidth)
+            {
+                _settings.WindowWidth = _fixedWidth;
+                _settings.Save();
+            }
+            int width = _fixedWidth;
+
+            int height;
+            if (_settings.WindowAutoSize)
+            {
+                height = TabBarHeight + ContentHeight() + _statusBarHeight;
+                if (_toastRow != null && _toastRow.Visible) { height += ToastRowHeight; }
+                if (_searchRow != null && _searchRow.Visible) { height += SearchRowHeight; }
+                if (_logPanel != null && _logPanel.Visible) { height += LogPanelHeight; }
+                int max = ScreenHeight() - 80;
+                if (height > max) { height = max; }
+                if (height < 240) { height = 240; }
+            }
+            else
+            {
+                height = (_settings.WindowHeight > 0) ? _settings.WindowHeight : DefaultFixedHeight;
+            }
+
+            if (ClientSize.Width == width && ClientSize.Height == height) { return; }
+            _fitting = true;
+            try { ClientSize = new Size(width, height); }
+            finally { _fitting = false; }
+        }
+
+        /// <summary>固定的宽度：设置里记过就用记着的那一个，否则四列按钮 + 网格内边距
+        /// （启动时算一次，之后不再跟着内容变）。</summary>
+        private int FixedWidth()
+        {
+            if (_settings.WindowWidth > 0) { return _settings.WindowWidth; }
+            int w = Columns * _cellWidth + 24;
+            if (w < 520) { w = 520; }
+            return w;
+        }
+
+        /// <summary>列宽不许超过窗口宽度允许的上限。宽度是固定的：名字超长的按钮改用省略号
+        /// （ToolButton.AutoEllipsis，悬停提示里是全名），既不能把窗口撑宽，也不能把同排别的
+        /// 按钮挤出去 / 挤出窗口（Test-Gui 的 H04 / H05 盯着这两条）。</summary>
+        private void ClampCellWidthToWindow()
+        {
+            if (_fixedWidth <= 0) { return; }
+            int max = (_fixedWidth - 24) / Columns;
+            if (max < 104) { max = 104; }
+            if (_cellWidth > max) { _cellWidth = max; }
+        }
+
+        private int ContentHeight()
+        {
+            // 按钮行 + 分隔/标题行 + 网格自己的上下 padding（BuildGrid 里的 Padding(8,6,8,6)）
+            return _contentRows * ToolRowHeight + _contentSeps * CaptionRowHeight + 12;
+        }
+
+        private int ScreenHeight()
+        {
+            try
+            {
+                Screen s = IsHandleCreated ? Screen.FromControl(this) : Screen.PrimaryScreen;
+                if (s != null) { return s.WorkingArea.Height; }
+            }
+            catch { }
+            return 900;
+        }
+
+        /// <summary>记住窗口现在在哪、多大。拖过窗口之后不再自动改高度（设置里可以改回「跟随内容」）。</summary>
+        private void RememberGeometry()
+        {
+            if (WindowState != FormWindowState.Normal) { return; }
+            _settings.WindowX = Location.X;
+            _settings.WindowY = Location.Y;
+            _settings.WindowWidth = ClientSize.Width;
+            _settings.WindowHeight = ClientSize.Height;
+        }
+
+        protected override void OnLoad(EventArgs e)
+        {
+            base.OnLoad(e);
+            if (_settings.WindowX >= 0 && _settings.WindowY >= 0 && IsOnScreen(_settings.WindowX, _settings.WindowY))
+            {
+                StartPosition = FormStartPosition.Manual;
+                Location = new Point(_settings.WindowX, _settings.WindowY);
+            }
+            FitToContent();
+        }
+
+        /// <summary>上次的位置还在屏幕里吗（换显示器、拔掉外接屏之后，记下来的坐标可能已经在屏幕外）。</summary>
+        private bool IsOnScreen(int x, int y)
+        {
+            try
+            {
+                foreach (Screen s in Screen.AllScreens)
+                {
+                    Rectangle r = s.WorkingArea;
+                    if (x >= r.Left - 20 && x < r.Right - 80 && y >= r.Top - 20 && y < r.Bottom - 60) { return true; }
+                }
+            }
+            catch { }
+            return false;
+        }
+
+        private const int WM_ENTERSIZEMOVE = 0x0231;
+        private const int WM_EXITSIZEMOVE = 0x0232;
+        private Size _sizeBeforeDrag;
+
+        protected override void WndProc(ref Message m)
+        {
+            if (m.Msg == WM_ENTERSIZEMOVE) { _sizeBeforeDrag = ClientSize; }
+            base.WndProc(ref m);
+            // _fitting 期间是我们自己在按内容改尺寸，那不是"用户拖过窗口"
+            if (m.Msg != WM_EXITSIZEMOVE || _fitting) { return; }
+            bool resized = (_sizeBeforeDrag != ClientSize);
+            if (resized && _settings.WindowAutoSize)
+            {
+                // 用户自己拖了边框：之后按这个尺寸显示（设置里能改回「跟随内容」）
+                _settings.WindowAutoSize = false;
+                SetStatus("窗口大小已记住 · 在「设置」里可以改回跟随内容");
+                Logger.Write("窗口", "用户手动调整了窗口大小 " + ClientSize.Width + "x" + ClientSize.Height + "，之后按这个尺寸显示");
+            }
+            // 拖过的尺寸就是新的固定尺寸（宽度也一样：不勾跟随内容时窗口尺寸只由用户决定）
+            _fixedWidth = ClientSize.Width;
+            RememberGeometry();
+            _settings.Save();
         }
 
         private static bool Matches(ToolItem t, string needle)
@@ -523,6 +899,12 @@ namespace Mxx1Toolbox
             UpdateTabColors();
             foreach (ToolButton b in _gridButtons) { b.ApplyTheme(_theme); }
             ColorSeparators();
+            if (_toastRow != null && _toastRow.Visible)
+            {
+                _toastRow.BackColor = _toastOk ? _theme.ToastOkBack : _theme.ToastFailBack;
+                _toastLabel.BackColor = _toastRow.BackColor;
+                _toastLabel.ForeColor = _toastOk ? _theme.ToastOkText : _theme.ToastFailText;
+            }
 
             Native.ApplyDarkTitleBar(Handle, _theme.DarkMode);
             Native.ApplyDarkControl(_logBox.Handle, _theme.DarkMode);
@@ -579,6 +961,16 @@ namespace Mxx1Toolbox
             string tab = Convert.ToString(b.Tag);
             if (string.Equals(tab, _currentTab, StringComparison.OrdinalIgnoreCase)) { return; }
             _currentTab = tab;
+            _settings.LastTab = tab;
+            // 搜索是跨页签的（结果里已经标了页签名），所以切页签时把搜索收起来，
+            // 不然用户会一个页签一个页签地看到同一份结果，以为页签坏了。
+            if (_filter.Length > 0)
+            {
+                _searchBox.Text = "";
+                _filter = "";
+                ShowSearch(false);
+                BuildGrid();
+            }
             BuildGrid();
             UpdateTabColors();
             SetStatus("就绪");
@@ -782,14 +1174,11 @@ namespace Mxx1Toolbox
         private void ReloadAfterUserEdit(string tab)
         {
             ReloadTools();
+            // 重算列宽（只加宽不缩窄），但绝不越过窗口宽度允许的上限：宽度固定的规矩优先，
+            // 名字超长的按钮改用省略号（悬停提示里是全名），不会把窗口撑宽。
             int cell = ComputeCellWidth();
-            if (cell > _cellWidth)
-            {
-                _cellWidth = cell;
-                int want = Columns * _cellWidth + 24;
-                if (want < 500) { want = 500; }
-                if (ClientSize.Width < want) { ClientSize = new Size(want, ClientSize.Height); }
-            }
+            if (cell > _cellWidth) { _cellWidth = cell; }
+            ClampCellWidthToWindow();
             if (!string.IsNullOrEmpty(tab)) { _currentTab = tab; UpdateTabColors(); }
             BuildGrid();
             UpdateStatusBar();
@@ -851,11 +1240,14 @@ namespace Mxx1Toolbox
 
             if (_settings.ConfirmDangerous && (t.Danger || t.Confirm))
             {
-                string message = "确定要执行「" + t.Name + "」吗？" + Environment.NewLine + Environment.NewLine
-                    + (t.Danger ? "它会改动系统设置。" + Environment.NewLine : "")
-                    + Launcher.DescribeCommand(t, _settings, asAdmin);
-                DialogResult answer = MessageBox.Show(this, message, "确认执行",
-                    MessageBoxButtons.OKCancel, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
+                // 专用确认窗口，不是 MessageBox：MessageBox 里只能塞一段不能换行排版、不能滚动的
+                // 纯文本，脚本类按钮等于把 700 字符的正文摊给用户看（用户 2026-10-04 的反馈）。
+                bool elevatedChild = Launcher.IsAdmin() && asAdmin;
+                DialogResult answer;
+                using (ConfirmForm f = new ConfirmForm(t, Launcher.DescribeCommand(t, _settings, asAdmin), asAdmin, elevatedChild, _theme))
+                {
+                    answer = f.ShowDialog(this);
+                }
                 if (answer != DialogResult.OK)
                 {
                     SetStatus(t.Name + " · 已取消");
@@ -896,6 +1288,14 @@ namespace Mxx1Toolbox
 
             b.SetBusy(true, 0);
             _running++;
+            if (_running == 1)
+            {
+                _runStarted = DateTime.Now;
+                _lastElapsed = "";
+                if (_runTimer != null) { _runTimer.Start(); }
+            }
+            // 「常用」页的「最近使用」：点过的按钮自动排到最前面（写进 recent.txt）
+            UserTools.PushRecent(t.Id);
             SetStatus(t.Name + " · 正在运行…");
             UpdateStatusBar();
             Logger.Write(t.Name, "开始：" + Launcher.DescribeCommand(t, _settings, asAdmin));
@@ -921,9 +1321,18 @@ namespace Mxx1Toolbox
         {
             if (_running > 0) { _running--; }
             if (b != null && !b.IsDisposed) { b.SetBusy(false, 0); }
+            // 跑完把用时说出来：脚本类按钮（DISM / SFC / 清理）以前只有一句"完成"，
+            // 用户不知道刚才那几分钟到底干了什么、是不是白等了。
+            string took = ElapsedText(DateTime.Now - _runStarted);
+            if (_running == 0)
+            {
+                _runFinished = DateTime.Now;
+                _lastElapsed = took;
+                if (_runTimer != null) { _runTimer.Stop(); }
+            }
 
-            Logger.Write(t.Name, (r.Ok ? "完成" : "失败") + " · " + r.Message);
-            SetStatus(t.Name + " · " + (r.Ok ? "完成" : "失败")
+            Logger.Write(t.Name, (r.Ok ? "完成" : "失败") + " · 用时 " + took + " · " + r.Message);
+            SetStatus(t.Name + " · " + (r.Ok ? "完成" : "失败") + "（" + took + "）"
                 + (r.ExitCode != 0 ? "（退出码 " + r.ExitCode + "）" : ""));
             RefreshLogBox();
             UpdateStatusBar();
@@ -943,16 +1352,26 @@ namespace Mxx1Toolbox
                 }
                 _elevatedWatch.Start();
                 SetStatus(t.Name + " · 等管理员窗口确认……（结果会自动弹出来）");
+                ShowToast(true, t.Name + " 已请求管理员权限 · 请在 UAC 窗口点「是」，结果随后自动弹出来");
+                return;
             }
+
+            // 结果反馈（用户 2026-10-04 的反馈："点击确认以后也没有成功或者失败的反馈"）：
+            // ① 页签下面一条有颜色的结果条（8 秒后自己消失，点它看日志）
+            // ② 有输出的还是照旧弹结果窗口（脚本类按钮就靠它看正文）
+            // ③ 失败且没有输出 → 仍然弹一个提示框，别让失败悄悄过去
+            string summary = (r.Message != null && r.Message.Length > 0) ? r.Message : (r.Ok ? "执行完成" : "执行失败");
+            ShowToast(r.Ok, t.Name + " · " + took + " · " + summary);
 
             if (r.Output != null && r.Output.Trim().Length > 0)
             {
-                OutputForm f = new OutputForm(t.Name, t.Name + "　——　" + r.Message, r.Output, _theme);
+                string head = t.Name + "　——　" + (r.Ok ? "成功" : "失败") + "（用时 " + took + "）· " + r.Message;
+                OutputForm f = new OutputForm(t.Name, head, r.Output, _theme);
                 f.Show(this);
             }
             else if (!r.Ok)
             {
-                MessageBox.Show(this, r.Message, t.Name, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show(this, r.Message, t.Name + "（失败）", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
         }
 
@@ -1049,16 +1468,26 @@ namespace Mxx1Toolbox
         }
 
         private void OpenSettings()
-        {            using (SettingsForm f = new SettingsForm(_settings, _theme))
+        {
+            using (SettingsForm f = new SettingsForm(_settings, _theme))
             {
                 DialogResult r = f.ShowDialog(this);
                 if (r == DialogResult.OK)
                 {
+                    // 在设置里取消「跟随内容」时，把现在的窗口尺寸当成用户选定的尺寸记下来
+                    if (!_settings.WindowAutoSize && (_settings.WindowWidth == 0 || _settings.WindowHeight == 0))
+                    {
+                        _settings.WindowWidth = ClientSize.Width;
+                        _settings.WindowHeight = ClientSize.Height;
+                    }
+                    _settings.Save();
                     ApplyTheme();
                     ApplyLogPanelVisibility();
+                    FitToContent();
                     SetStatus("设置已保存");
                     Logger.Write("设置", "主题=" + _settings.Theme + " 启动方式=" + _settings.ClickMode
-                        + " 二次确认=" + (_settings.ConfirmDangerous ? "开" : "关"));
+                        + " 二次确认=" + (_settings.ConfirmDangerous ? "开" : "关")
+                        + " 窗口跟随内容=" + (_settings.WindowAutoSize ? "开" : "关"));
                 }
             }
         }
@@ -1214,18 +1643,44 @@ namespace Mxx1Toolbox
             // Kept short on purpose: the label is a fixed width and a long line (the old format
             // plus a full "完成：xxx 退出码 0" message) overflowed it, so the tail was cut off.
             // The complete line is available as a tooltip and in the run log.
-            string text = total + " 个按钮 · 本页 " + here;
+            string text;
+            if (_filter.Length > 0)
+            {
+                // 搜索是跨页签的，底栏要说清查了几个页签、找到几个，别只报"本页"。
+                int hits = 0;
+                int tabsHit = 0;
+                foreach (string id in Tabs.Ids)
+                {
+                    int n = 0;
+                    foreach (ToolItem t in _tools)
+                    {
+                        if (t.Hidden || t.Tab != id || !Matches(t, _filter)) { continue; }
+                        n++;
+                    }
+                    hits += n;
+                    if (n > 0) { tabsHit++; }
+                }
+                text = "搜索「" + _filter + "」· " + tabsHit + " 个页签找到 " + hits + " 个 · " + _statusText;
+            }
+            else
+            {
+                // 长任务（DISM / SFC 要跑几分钟）没有计时的话，转个圈看不出是活着还是卡死了
+                string head = (_running > 0)
+                    ? "运行中 " + _running + "（已 " + ElapsedText(DateTime.Now - _runStarted) + "）"
+                    : _statusText;
+                text = head + " · 本页 " + here + " 个（共 " + total + "）";
+            }
+            // 底栏这一格宽度固定、长了会被裁，所以要紧的话放前面（"刚才那一下怎么了"必须看得见），
+            // 提醒类的挂在后面。完整的一行仍然在悬停说明里。
             // 没提权时说一句：好几十个按钮要管理员权限，点了才弹 UAC 会让人以为是坏了。
-            // 底栏这一格是固定宽度、长了会被裁，但整行都在悬停说明里（见下面 SetToolTip）。
-            if (!Launcher.IsAdmin()) { text += " · 未提权（部分按钮会弹 UAC）"; }
+            if (!Launcher.IsAdmin()) { text += " · 未提权"; }
             // A disabled control shows no tooltip, so the explanation for the grey buttons lives
             // here, and only while such a button is actually on this page.
             if (greyHere > 0) { text += " · 灰色 " + greyHere + " 个没接功能"; }
             if (_warnings.Count > 0) { text += " · 定义有 " + _warnings.Count + " 处问题"; }
-            if (_running > 0) { text += " · 运行中 " + _running; }
-            text += " · " + _statusText;
             _statusLabel.Text = text;
-            _tips.SetToolTip(_statusLabel, text);
+            _tips.SetToolTip(_statusLabel, text + Environment.NewLine
+                + "（灰色按钮点不动：禁用控件收不到鼠标消息，它的说明只能写在这一行）");
             _btnLog.Text = _logPanel.Visible ? "收起日志" : "日志";
 
             // 页签按钮的悬停说明：这一页有几个按钮。放在这里（而不是建按钮的时候）是因为
@@ -1235,9 +1690,63 @@ namespace Mxx1Toolbox
                 Button tabButton;
                 if (!_tabButtons.TryGetValue(id, out tabButton)) { continue; }
                 int onTab = 0;
+                if (string.Equals(id, Tabs.Recent, StringComparison.OrdinalIgnoreCase))
+                {
+                    List<ToolItem> pinnedForTip;
+                    List<ToolItem> recentForTip;
+                    SplitFavorites(out pinnedForTip, out recentForTip);
+                    onTab = pinnedForTip.Count + recentForTip.Count;
+                    _tips.SetToolTip(tabButton, "常用 · 置顶 " + pinnedForTip.Count + " 个 + 最近用过 "
+                        + recentForTip.Count + " 个（点这里切换；右键任意按钮可以置顶）");
+                    continue;
+                }
                 foreach (ToolItem t in _tools) { if (t.Tab == id && !t.Hidden) { onTab++; } }
                 _tips.SetToolTip(tabButton, Tabs.Display(id) + " · " + onTab + " 个按钮（点这里切换）");
             }
+        }
+
+        /// <summary>跑完一个按钮的结果条：一句人话（成功 / 失败 + 用时 + 结果摘要），
+        /// 底色跟着成败变，8 秒后自己消失；点它展开运行日志看细节。</summary>
+        private void ShowToast(bool ok, string text)
+        {
+            if (_toastRow == null || _toastLabel == null) { return; }
+            _toastLabel.Text = (ok ? "完成：" : "失败：") + text + "　（点这一条看运行日志）";
+            _toastOk = ok;
+            _toastRow.BackColor = ok ? _theme.ToastOkBack : _theme.ToastFailBack;
+            _toastLabel.BackColor = _toastRow.BackColor;
+            _toastLabel.ForeColor = ok ? _theme.ToastOkText : _theme.ToastFailText;
+            _toastRow.Visible = true;
+            _root.RowStyles[1].Height = (float)ToastRowHeight;
+            if (_toastTimer == null)
+            {
+                _toastTimer = new System.Windows.Forms.Timer();
+                _toastTimer.Interval = 8000;
+                _toastTimer.Tick += delegate
+                {
+                    _toastTimer.Stop();
+                    HideToast();
+                };
+            }
+            _toastTimer.Stop();
+            _toastTimer.Start();
+            FitToContent();
+        }
+
+        private void HideToast()
+        {
+            if (_toastRow == null || !_toastRow.Visible) { return; }
+            _toastRow.Visible = false;
+            if (_root != null) { _root.RowStyles[1].Height = 0f; }
+            FitToContent();
+        }
+
+        /// <summary>把一段时长写成人话：90 秒以内报秒，再长就报分。</summary>
+        private static string ElapsedText(TimeSpan span)        {
+            double seconds = span.TotalSeconds;
+            if (seconds < 0) { seconds = 0; }
+            if (seconds < 90) { return seconds.ToString("0.0", CultureInfo.InvariantCulture) + " 秒"; }
+            return Math.Floor(span.TotalMinutes).ToString("0", CultureInfo.InvariantCulture)
+                + " 分 " + span.Seconds.ToString("0", CultureInfo.InvariantCulture) + " 秒";
         }
 
         private void RefreshLogBox()
@@ -1255,8 +1764,12 @@ namespace Mxx1Toolbox
         {
             if (_searchRow.Visible == show) { return; }
             _searchRow.Visible = show;
-            _root.RowStyles[1].Height = show ? 28f : 0f;
-            if (show) { _searchBox.Focus(); }
+            _root.RowStyles[2].Height = show ? (float)SearchRowHeight : 0f;
+            if (show)
+            {
+                _searchBox.Focus();
+                SetStatus("输入关键字 · 搜的是全部 " + Tabs.Ids.Length + " 个页签（Esc 关掉）");
+            }
             else
             {
                 _searchBox.Text = "";
@@ -1264,6 +1777,7 @@ namespace Mxx1Toolbox
                 BuildGrid();
             }
             UpdateStatusBar();
+            FitToContent();
         }
 
         private void ToggleLogPanel()
@@ -1279,8 +1793,9 @@ namespace Mxx1Toolbox
         {
             bool show = _settings.ShowLogPanel;
             _logPanel.Visible = show;
-            _root.RowStyles[3].Height = show ? (float)LogPanelHeight : 0f;
+            _root.RowStyles[4].Height = show ? (float)LogPanelHeight : 0f;
             UpdateStatusBar();
+            FitToContent();
         }
 
         // ---------------------------------------------------------------- keyboard
@@ -1337,6 +1852,14 @@ namespace Mxx1Toolbox
         protected override void OnFormClosed(FormClosedEventArgs e)
         {
             try { Microsoft.Win32.SystemEvents.UserPreferenceChanged -= OnUserPreferenceChanged; }
+            catch { }
+            // 记住窗口在哪、多大、停在哪个页签（下次打开就回到原样）
+            try
+            {
+                _settings.LastTab = _currentTab;
+                RememberGeometry();
+                _settings.Save();
+            }
             catch { }
             base.OnFormClosed(e);
         }

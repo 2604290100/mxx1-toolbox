@@ -72,6 +72,7 @@ namespace Mxx1Toolbox
                     case "status": return Status();
                     case "tip": return Tip(args);
                     case "privacy": return PrivacyCommand(args);
+                    case "sysreg": return SysRegCommand(args);
                     case "pin": return PinCommand(args, true);
                     case "unpin": return PinCommand(args, false);
                     case "export": return ExportCommand(args);
@@ -190,6 +191,8 @@ namespace Mxx1Toolbox
             Console.WriteLine("  Mxx1Toolbox.exe tip [id]             打印按钮的悬停说明（界面上鼠标停住时看到的那段）");
             Console.WriteLine("  Mxx1Toolbox.exe privacy status       只读列出隐私开关的当前状态（不改任何东西）");
             Console.WriteLine("  Mxx1Toolbox.exe privacy selftest     用工具箱自己的测试键自检「原值 → 写入 → 还原」链路");
+            Console.WriteLine("  Mxx1Toolbox.exe sysreg status        只读列出系统设置开关（任务栏/开始菜单/内核隔离…）的状态与原值");
+            Console.WriteLine("  Mxx1Toolbox.exe sysreg selftest      自检系统设置那条链路（DWORD / 字符串 / 整棵键三种值）");
             Console.WriteLine("  Mxx1Toolbox.exe pin <id> / unpin <id>  把按钮置顶 / 取消置顶（排在这一页最前面）");
             Console.WriteLine("  Mxx1Toolbox.exe export <文件>        把「我的工具」导出成一个文件");
             Console.WriteLine("  Mxx1Toolbox.exe import <文件>        把导出文件里的按钮并进来（同 id 覆盖）");
@@ -244,7 +247,7 @@ namespace Mxx1Toolbox
             }
             if (what == "items")
             {
-                foreach (PrivacyItem i in Privacy.All)
+                foreach (RegItemSpec i in Privacy.All)
                 {
                     Console.WriteLine(i.Id + "\t" + i.Name + "\t" + i.Values.Length + " 个值\t"
                         + (i.Admin ? "要管理员" : "不用管理员"));
@@ -260,6 +263,39 @@ namespace Mxx1Toolbox
                 return ok ? 0 : 1;
             }
             Console.Error.WriteLine("用法: privacy status | items | selftest");
+            return 2;
+        }
+
+        /// <summary>`sysreg status | items | selftest`：「常用设置」里那批写注册表的按钮用的后端。
+        /// 和隐私开关一样，命令行**故意不提供**"真的去改系统设置"的入口 —— 那只能从界面点
+        /// （成对按钮 + 可一键还原），自检只碰 HKCU\Software\mxx1-toolbox\sysreg-selftest。</summary>
+        private static int SysRegCommand(string[] args)
+        {
+            string what = (args.Length > 1) ? args[1].ToLowerInvariant() : "status";
+            if (what == "status")
+            {
+                Console.Write(SysReg.Status());
+                return 0;
+            }
+            if (what == "items")
+            {
+                foreach (Tweak t in SysReg.All)
+                {
+                    Console.WriteLine(t.Id + "\t" + t.Item.Name + "\t" + t.Item.Values.Length + " 个值\t"
+                        + t.OnLabel + " / " + t.OffLabel + "\t"
+                        + (t.Item.Admin ? "要管理员" : "不用管理员"));
+                }
+                return 0;
+            }
+            if (what == "selftest")
+            {
+                bool ok;
+                string report = SysReg.SelfTest(out ok);
+                Console.Write(report);
+                Console.WriteLine("selftest=" + (ok ? "pass" : "fail"));
+                return ok ? 0 : 1;
+            }
+            Console.Error.WriteLine("用法: sysreg status | items | selftest");
             return 2;
         }
 
@@ -425,7 +461,7 @@ namespace Mxx1Toolbox
                 // 隐私开关指向的是注册表里的值，不是文件：kind=registry，target=要改的值（人话）。
                 kind = "registry";
                 target = Launcher.DescribeCommand(t, settings, false);
-                PrivacyItem pi = Privacy.Find(t.Options);
+                RegItemSpec pi = Privacy.Find(t.Options);
                 if (pi == null && (t.Action == "off" || t.Action == "on"))
                 {
                     kind = "unknown";
@@ -434,6 +470,21 @@ namespace Mxx1Toolbox
                     hint = "隐私设置里没有这个开关: " + t.Options;
                 }
                 else { hint = pi != null ? pi.What : ""; }
+            }
+            else if (t.Kind == "builtin" && t.Module == Launcher.ModuleSysreg)
+            {
+                // 系统设置开关也是注册表值（CLSID 覆盖那几条是"整个键"）：kind=registry
+                kind = "registry";
+                target = Launcher.DescribeCommand(t, settings, false);
+                Tweak tw = SysReg.FindTweak(t.Options);
+                if (tw == null && (t.Action == "off" || t.Action == "on"))
+                {
+                    kind = "unknown";
+                    target = "";
+                    exists = false;
+                    hint = "系统设置里没有这个开关: " + t.Options;
+                }
+                else { hint = tw != null ? tw.Item.What : ""; }
             }
             else if (t.Kind == "builtin" && t.Module == Launcher.ModuleSystem)
             {

@@ -91,18 +91,34 @@ function Get-Key {
     return ''
 }
 
+# 「改动前的原值」两个文件的指纹。自检会临时把它们挪走再放回来，所以比对指纹才知道有没有动过
+# 用户的记录 —— 用户自己用过隐私开关 / 系统设置按钮时这两个文件本来就该存在。
+function Get-BackupHash {
+    $files = @(
+        (Join-Path $env:LOCALAPPDATA 'mxx1-toolbox\privacy-original.tsv'),
+        (Join-Path $env:LOCALAPPDATA 'mxx1-toolbox\sysreg-original.tsv')
+    )
+    $parts = @()
+    foreach ($f in $files) {
+        if (Test-Path -LiteralPath $f) { $parts += (Get-FileHash -LiteralPath $f -Algorithm SHA256).Hash }
+        else { $parts += 'none' }
+    }
+    return ($parts -join '|')
+}
+
 # ---------------------------------------------------------------- A 组：status / list
 Write-Host 'A 组 · status 与 list'
 
 $status = Invoke-Exe 'status'
 Check 'A01 status 退出码 0' ($status.Code -eq 0) ('exit=' + $status.Code)
 Check 'A02 中文输出没有乱码（UTF-8）' ($status.Out -match 'name=萌新工具箱') ('name=' + (Get-Key $status.Out 'name'))
-Check 'A03 版本号 1.3.0' ((Get-Key $status.Out 'version') -eq '1.3.0') (Get-Key $status.Out 'version')
-Check 'A04 按钮总数 103（测试期间用户层的按钮会暂停：常用 31 + 系统工具 26 + 隐私 29 + 应用 5 + 清理 8 + 右键 1 + 我的 3）' ((Get-Key $status.Out 'buttons') -eq '103') (Get-Key $status.Out 'buttons')
+Check 'A03 版本号 1.4.0' ((Get-Key $status.Out 'version') -eq '1.4.0') (Get-Key $status.Out 'version')
+Check 'A04 按钮总数 105（测试期间用户层的按钮会暂停：常用 33 + 系统工具 26 + 隐私 29 + 应用 5 + 清理 8 + 右键 1 + 我的 3）' ((Get-Key $status.Out 'buttons') -eq '105') (Get-Key $status.Out 'buttons')
 Check 'A05 内置清单里没有灰色占位按钮了（两个「资源管理器」也接上了真功能；灰规则改由 B 组注入验证）' ((Get-Key $status.Out 'placeholders') -eq '0') (Get-Key $status.Out 'placeholders')
 Check 'A06 危险按钮 3 个' ((Get-Key $status.Out 'dangerous') -eq '3') (Get-Key $status.Out 'dangerous')
 
-$tabExpect = @{ 'common' = 31; 'rightmenu' = 1; 'cleanup' = 8; 'system' = 26; 'privacy' = 29; 'apps' = 5; 'mine' = 3 }
+# 「常用」页签是合成的（置顶 + 最近使用），清单里没有它的按钮，所以是 0
+$tabExpect = @{ 'recent' = 0; 'common' = 33; 'mine' = 3; 'system' = 26; 'cleanup' = 8; 'privacy' = 29; 'apps' = 5; 'rightmenu' = 1 }
 $tabOk = $true
 $tabDetail = @()
 foreach ($k in $tabExpect.Keys) {
@@ -110,13 +126,13 @@ foreach ($k in $tabExpect.Keys) {
     $tabDetail += ($k + '=' + $v)
     if ($v -ne [string]$tabExpect[$k]) { $tabOk = $false }
 }
-Check 'A07 七个页签的按钮数正确（31/1/8/26/29/5/3）' $tabOk ($tabDetail -join ' ')
+Check 'A07 八个页签的按钮数正确（0/33/3/26/8/29/5/1）' $tabOk ($tabDetail -join ' ')
 
 $list = Invoke-Exe 'list'
 Check 'A08 list 退出码 0' ($list.Code -eq 0) ('exit=' + $list.Code)
-Check 'A09 list 报的按钮数一致' ((Get-Key $list.Out 'buttons') -eq '103') (Get-Key $list.Out 'buttons')
+Check 'A09 list 报的按钮数一致' ((Get-Key $list.Out 'buttons') -eq '105') (Get-Key $list.Out 'buttons')
 $lines = @($list.Out -split "`r?`n" | Where-Object { $_ -match "`t" })
-Check 'A10 list 打出 103 行按钮' ($lines.Count -eq 103) ('lines=' + $lines.Count)
+Check 'A10 list 打出 105 行按钮' ($lines.Count -eq 105) ('lines=' + $lines.Count)
 
 $rmList = Invoke-Exe 'list --tab rightmenu'
 Check 'A11 右键增强只有 1 个按钮' ((Get-Key $rmList.Out 'shown') -eq '1') (Get-Key $rmList.Out 'shown')
@@ -403,7 +419,7 @@ Write-Host 'H 组 · 悬停说明（用户 2026-10-04 报过「鼠标悬停的�
 # tip 命令打印的就是界面塞给 ToolTip 的那个字符串，所以这里能直接断言，不用去动真鼠标。
 $tipsAll = Invoke-Exe 'tip'
 Check 'H01 tip 退出码 0' ($tipsAll.Code -eq 0) ('exit=' + $tipsAll.Code)
-Check 'H02 tip 覆盖了每个按钮（103 个）' ((Get-Key $tipsAll.Out 'tips') -eq '103') (Get-Key $tipsAll.Out 'tips')
+Check 'H02 tip 覆盖了每个按钮（105 个）' ((Get-Key $tipsAll.Out 'tips') -eq '105') (Get-Key $tipsAll.Out 'tips')
 
 $blocks = @{}
 $curId = ''
@@ -500,12 +516,16 @@ foreach ($line in $pvLines) {
 Check 'I07 状态报告把每一组开关都念到了' ($notListed.Count -eq 0) ($notListed -join ' ')
 
 # 写入 / 读回 / 还原 这条链路：用工具箱自己的测试键自检，不碰任何真实设置
+# 用户自己可能已经有原值记录（用过隐私开关就会生成），所以自检前后要比对文件内容 ——
+# 不能简单断言"文件不存在"（用户有记录时那是唯一正确的状态）。
+$pvBackupBefore = Get-BackupHash
 $pvSelf = Invoke-Exe 'privacy selftest'
 Check 'I08 自检通过（记原值 → 写入 → 读回核对 → 还原，含"原来没有这个值"的分支）' `
     (($pvSelf.Code -eq 0) -and ($pvSelf.Out -match 'selftest=pass')) `
     (($pvSelf.Out -split "`r?`n" | Where-Object { $_ -match 'selftest=' }) -join '')
-Check 'I09 自检没留下垃圾（测试键已删、没有生成原值备份文件）' `
-    ((-not (Test-Path -LiteralPath 'HKCU:\SOFTWARE\mxx1-toolbox\privacy-selftest')) -and (-not (Test-Path -LiteralPath (Join-Path $env:LOCALAPPDATA 'mxx1-toolbox\privacy-original.tsv')))) ''
+Check 'I09 自检没留下垃圾（测试键已删、用户自己的原值记录原样放回）' `
+    ((-not (Test-Path -LiteralPath 'HKCU:\SOFTWARE\mxx1-toolbox\privacy-selftest')) -and `
+     ((Get-BackupHash) -eq $pvBackupBefore)) ('before=' + $pvBackupBefore + ' after=' + (Get-BackupHash))
 
 # 命令行故意不提供"真的去改隐私设置"的入口：那只能从界面点（要么弹确认框、要么是可还原的成对开关）
 $pvWrite = Invoke-Exe 'privacy set off telemetry'
@@ -625,6 +645,57 @@ Check 'K10 「系统体检」跑得通而且是只读的' (($health.Code -eq 0) 
 $need = @('系统：', '激活：', '内存：', '磁盘 ', '开机自启项', 'hosts', '管理员：')
 $miss = @($need | Where-Object { $health.Out.IndexOf($_) -lt 0 })
 Check 'K11 体检报告包含系统/激活/内存/磁盘/自启项/hosts/管理员' ($miss.Count -eq 0) ('缺=' + ($miss -join ' '))
+
+# ---------------------------------------------------------------- L 组：系统设置改动（sysreg）
+# 「常用设置」里那 6 对写注册表的按钮现在和隐私开关共用一套「记原值 + 读回核对 + 一键还原」的机制。
+Write-Host ''
+Write-Host 'L 组 · 系统设置改动（记原值 / 读回核对 / 一键还原；只读命令 + 自检）'
+
+$srItems = Invoke-Exe 'sysreg items'
+Check 'L01 sysreg items 退出码 0' ($srItems.Code -eq 0) ('exit=' + $srItems.Code)
+$srLines = @($srItems.Out -split "`r?`n" | Where-Object { $_ -match "`t" })
+Check 'L02 6 个系统设置开关都在表里（任务栏/开始菜单/驱动/内核隔离/资源管理器/右键菜单）' ($srLines.Count -eq 6) ('数=' + $srLines.Count)
+
+# 每一对都必须是「一个 off 按钮 + 一个 on 按钮」；按钮的 options 不在 list 输出里，所以按
+# 方向数数：两个方向的按钮数必须一样多，而且加起来就是这一页那 12 个成对按钮。
+$srList = Invoke-Exe 'list --tab common'
+$srOn = @($srList.Out -split "`r?`n" | Where-Object { $_ -match 'sysreg/on' })
+$srOff = @($srList.Out -split "`r?`n" | Where-Object { $_ -match 'sysreg/off' })
+Check 'L03 6 对开关 = 12 个按钮（任务栏/开始菜单/驱动/内核隔离/资源管理器/右键菜单）' `
+    (($srOn.Count -eq 6) -and ($srOff.Count -eq 6)) ('on=' + $srOn.Count + ' off=' + $srOff.Count)
+Check 'L04 on / off 两个方向的按钮数一样多（成对）' ($srOn.Count -eq $srOff.Count) ('on=' + $srOn.Count + ' off=' + $srOff.Count)
+$srExtra = @($srList.Out -split "`r?`n" | Where-Object { $_ -match 'sysreg/(status|restore)' })
+Check 'L04b 另有「查看设置改动 / 还原设置改动」两个入口按钮' ($srExtra.Count -eq 2) ('找到=' + $srExtra.Count)
+
+$srStatus = Invoke-Exe 'sysreg status'
+Check 'L05 sysreg status 退出码 0（只读）' ($srStatus.Code -eq 0) ('exit=' + $srStatus.Code)
+Check 'L06 状态报告里每个开关都有一行' `
+    ((@('任务栏按钮合并方式', '开始菜单对齐方式', '驱动自动安装', '内核隔离', '资源管理器样式', '右键菜单样式') | Where-Object { $srStatus.Out.IndexOf($_) -lt 0 }).Count -eq 0) ''
+
+# 命令行故意不提供"直接改系统设置"的入口（和隐私开关一样：只能从界面点成对按钮 + 一键还原）
+$srWrite = Invoke-Exe 'sysreg set off taskbar-combine'
+Check 'L07 命令行没有"直接改系统设置"的入口（退出码 2）' ($srWrite.Code -eq 2) ('exit=' + $srWrite.Code)
+
+# 自检：DWORD / 字符串 / 整棵键（CLSID 那种覆盖）三种值各走一遍「记原值 → 写入 → 读回 → 还原」
+$srBackupBefore = Get-BackupHash
+$srSelf = Invoke-Exe 'sysreg selftest'
+Check 'L08 自检通过（DWORD / 字符串 / 整棵键三种值都走完记原值 → 写入 → 读回 → 还原）' `
+    (($srSelf.Code -eq 0) -and ($srSelf.Out -match 'selftest=pass')) ('exit=' + $srSelf.Code + ' ' + (($srSelf.Out -split "`r?`n" | Select-Object -Last 1)))
+Check 'L09 自检覆盖了「原来没有这个值」的分支' ($srSelf.Out -match '原来没有这个值') ''
+Check 'L10 自检没留下垃圾（测试键已删、用户自己的原值记录原样放回）' `
+    ((-not (Test-Path -LiteralPath 'HKCU:\SOFTWARE\mxx1-toolbox\sysreg-selftest')) -and `
+     ((Get-BackupHash) -eq $srBackupBefore)) ('before=' + $srBackupBefore + ' after=' + (Get-BackupHash))
+
+# 合规底线：系统设置这张表里也不许出现安全防线（Defender / 防火墙 / UAC / SmartScreen / 实时防护）
+$srText = ($srItems.Out + $srStatus.Out)
+$srBad = @('Defender', '防火墙', 'UAC', 'SmartScreen', '实时防护', '篡改') | Where-Object { $srText.IndexOf($_) -ge 0 }
+Check 'L11 系统设置开关里没有任何"关掉安全防线"的东西（合规底线）' ($srBad.Count -eq 0) ($srBad -join ' ')
+
+# 只读的那条腿：--dry 把 sysreg 按钮解析成注册表动作，不真的写
+$srDry = Invoke-Exe 'run taskbar-never-combine --dry'
+Check 'L12 sysreg 按钮 --dry 解析成注册表动作，说明里点明了可一键还原' `
+    (((Get-Key $srDry.Out 'kind') -eq 'registry') -and ((Get-Key $srDry.Out 'target') -match '可一键还原')) `
+    ('kind=' + (Get-Key $srDry.Out 'kind') + ' target=' + (Get-Key $srDry.Out 'target'))
 
 # ---------------------------------------------------------------- 汇总
 Write-Host ''

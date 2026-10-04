@@ -20,14 +20,16 @@ namespace Mxx1Toolbox
         private readonly CheckBox _logPanelBox;
         private readonly NumericUpDown _keepDays;
         private readonly TextBox _permdelBox;
+        private readonly CheckBox _autoSizeBox;
+        private readonly CheckBox _rememberTabBox;
 
         public SettingsForm(Settings settings, Theme theme)
         {
             _settings = settings;
 
             Text = "设置";
-            ClientSize = new Size(580, 340);
-            MinimumSize = new Size(500, 330);
+            ClientSize = new Size(580, 430);
+            MinimumSize = new Size(500, 380);
             StartPosition = FormStartPosition.CenterParent;
             MinimizeBox = false;
             MaximizeBox = false;
@@ -100,6 +102,42 @@ namespace Mxx1Toolbox
             pathRow.Controls.Add(tools);
             AddRow("永久删除安装器", pathRow);
 
+            // 窗口：默认高度贴着当前页签的内容（「右键增强」只有 1 个按钮时不再撑一个空窗口）。
+            // 用户自己拖过边框之后会自动取消勾选，这里可以把勾重新打上。
+            _autoSizeBox = new CheckBox();
+            _autoSizeBox.Text = "窗口高度跟随当前页签的内容（不勾 = 固定高度，拖过窗口会记住）";
+            _autoSizeBox.AutoSize = true;
+            _autoSizeBox.Checked = _settings.WindowAutoSize;
+            _autoSizeBox.CheckedChanged += delegate
+            {
+                if (_autoSizeBox.Checked)
+                {
+                    _settings.WindowAutoSize = true;
+                    _settings.WindowWidth = 0;
+                    _settings.WindowHeight = 0;
+                }
+            };
+            AddRow("窗口", _autoSizeBox);
+
+            _rememberTabBox = new CheckBox();
+            _rememberTabBox.Text = "记住上次停留的页签和窗口位置";
+            _rememberTabBox.AutoSize = true;
+            _rememberTabBox.Checked = _settings.LastTab.Length > 0 || _settings.WindowX >= 0;
+            AddRow("", _rememberTabBox);
+
+            Button clearRecent = MakeButton("清空最近使用（" + UserTools.LoadRecent().Count + " 个）");
+            clearRecent.Click += delegate
+            {
+                string error = UserTools.ClearRecent();
+                if (error.Length > 0)
+                {
+                    MessageBox.Show(this, "清空失败：" + error, "最近使用", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+                clearRecent.Text = "清空最近使用（0 个）";
+            };
+            AddRow("「常用」页", clearRecent);
+
             Label hint = new Label();
             hint.AutoSize = true;
             hint.MaximumSize = new Size(380, 0);
@@ -127,6 +165,20 @@ namespace Mxx1Toolbox
             AcceptButton = save;
             CancelButton = cancel;
             ApplyTheme(theme);
+        }
+
+        /// <summary>高度按内容定：设置项是一点点加上去的，写死的高度会把下面那排按钮切掉。</summary>
+        protected override void OnLoad(EventArgs e)
+        {
+            base.OnLoad(e);
+            try
+            {
+                int want = _root.PreferredSize.Height + 6;
+                int max = Screen.FromControl(this).WorkingArea.Height - 80;
+                if (want > max) { want = max; }
+                if (want > ClientSize.Height) { ClientSize = new Size(ClientSize.Width, want); }
+            }
+            catch { }
         }
 
         /// <summary>One settings row: a label in column 0 and the field in column 1.</summary>
@@ -196,6 +248,13 @@ namespace Mxx1Toolbox
             _settings.ShowLogPanel = _logPanelBox.Checked;
             _settings.LogKeepDays = (int)_keepDays.Value;
             _settings.PermanentDeleteExe = _permdelBox.Text.Trim();
+            _settings.WindowAutoSize = _autoSizeBox.Checked;
+            if (!_rememberTabBox.Checked)
+            {
+                _settings.LastTab = "";
+                _settings.WindowX = -1;
+                _settings.WindowY = -1;
+            }
             _settings.Save();
         }
 

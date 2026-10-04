@@ -1,7 +1,7 @@
 {
   "_comment": "隐私设置页签。29 个按钮 = 11 组「关闭 X / 开启 X」成对开关 + 4 个权限直达入口（相机/麦克风/位置/后台应用）+ 查看状态 / 一键优化 / 一键还原。后端是 src\\Privacy.cs 的开关表（每个开关可能对应好几个注册表值，「系统广告」一组就是 8 个）：写之前先把原值记到 %LOCALAPPDATA%\\mxx1-toolbox\\privacy-original.tsv，写完读回核对，「隐私一键还原」按那份记录逐条写回去。合规底线：只碰隐私 / 广告 / 遥测开关，Defender、防火墙、UAC、SmartScreen 这些安全防线一概不碰、也不代关。",
   "tools": [
-    { "id": "privacy-telemetry-off",  "tab": "privacy", "segment": 1, "order": 10,  "name": "关闭微软遥测",  "kind": "builtin", "module": "privacy", "action": "off", "options": "telemetry",    "runAsAdmin": true, "hint": "关闭诊断数据上报（写 AllowTelemetry=0）。Windows 专业版/家庭版的下限是「基本」，所以这个策略在专业版上只能压到最低、压不到 0" },
+    { "id": "privacy-telemetry-off",  "tab": "privacy", "segment": 1, "segmentName": "成对开关：关闭 / 开回（改之前会记下原值）", "order": 10,  "name": "关闭微软遥测",  "kind": "builtin", "module": "privacy", "action": "off", "options": "telemetry",    "runAsAdmin": true, "hint": "关闭诊断数据上报（写 AllowTelemetry=0）。Windows 专业版/家庭版的下限是「基本」，所以这个策略在专业版上只能压到最低、压不到 0" },
     { "id": "privacy-telemetry-on",   "tab": "privacy", "segment": 1, "order": 11,  "name": "开启微软遥测",  "kind": "builtin", "module": "privacy", "action": "on",  "options": "telemetry",    "runAsAdmin": true, "hint": "把诊断数据上报改回默认值（AllowTelemetry=1）" },
 
     { "id": "privacy-errorreport-off","tab": "privacy", "segment": 1, "order": 20,  "name": "关闭错误报告",  "kind": "builtin", "module": "privacy", "action": "off", "options": "error-report", "runAsAdmin": true, "hint": "程序崩溃时不再往微软上报，也不会再弹「Windows 遇到问题」那个窗口" },
@@ -34,12 +34,12 @@
     { "id": "privacy-feedback-off",   "tab": "privacy", "segment": 1, "order": 110, "name": "关闭反馈请求",  "kind": "builtin", "module": "privacy", "action": "off", "options": "feedback",     "hint": "不再被隔三差五问「你觉得 Windows 怎么样」" },
     { "id": "privacy-feedback-on",    "tab": "privacy", "segment": 1, "order": 111, "name": "开启反馈请求",  "kind": "builtin", "module": "privacy", "action": "on",  "options": "feedback",     "hint": "恢复 Windows 的反馈请求弹窗" },
 
-    { "id": "privacy-camera",         "tab": "privacy", "segment": 2, "order": 10, "name": "相机权限",      "kind": "builtin", "module": "system", "action": "privacy-camera",       "hint": "打开系统的相机权限页 —— 逐个应用允许或禁止用摄像头（工具箱不代改权限，那一页才是权威）" },
+    { "id": "privacy-camera",         "tab": "privacy", "segment": 2, "segmentName": "权限页面（打开系统设置）", "order": 10, "name": "相机权限",      "kind": "builtin", "module": "system", "action": "privacy-camera",       "hint": "打开系统的相机权限页 —— 逐个应用允许或禁止用摄像头（工具箱不代改权限，那一页才是权威）" },
     { "id": "privacy-microphone",     "tab": "privacy", "segment": 2, "order": 20, "name": "麦克风权限",    "kind": "builtin", "module": "system", "action": "privacy-microphone",   "hint": "打开系统的麦克风权限页 —— 逐个应用允许或禁止录音" },
     { "id": "privacy-location",       "tab": "privacy", "segment": 2, "order": 30, "name": "位置权限",      "kind": "builtin", "module": "system", "action": "privacy-location",     "hint": "打开系统的位置权限页 —— 定位总开关和逐个应用的授权都在这里" },
     { "id": "privacy-background",     "tab": "privacy", "segment": 2, "order": 40, "name": "后台应用",      "kind": "builtin", "module": "system", "action": "privacy-background",   "hint": "打开「后台应用」页 —— 哪些应用可以在后台运行，一页里全列出来" },
 
-    { "id": "privacy-status",         "tab": "privacy", "segment": 3, "order": 10, "name": "查看隐私状态",  "kind": "builtin", "module": "privacy", "action": "status",   "hint": "只读：把上面每个开关现在的状态列出来（哪些已经关了、哪些还是系统默认）" },
+    { "id": "privacy-status",         "tab": "privacy", "segment": 3, "segmentName": "状态 · 优化 · 还原", "order": 10, "name": "查看隐私状态",  "kind": "builtin", "module": "privacy", "action": "status",   "hint": "只读：把上面每个开关现在的状态列出来（哪些已经关了、哪些还是系统默认）" },
     { "id": "privacy-optimize",       "tab": "privacy", "segment": 3, "order": 20, "name": "隐私一键优化",  "kind": "builtin", "module": "privacy", "action": "optimize", "runAsAdmin": true, "confirm": true, "hint": "把这一页的开关全部关掉（安全防线一概不碰）。改动前的原值会先记下来，所以随时能还原" },
     { "id": "privacy-restore",        "tab": "privacy", "segment": 3, "order": 30, "name": "隐私一键还原",  "kind": "builtin", "module": "privacy", "action": "restore",  "runAsAdmin": true, "hint": "按改动前记录的原值逐条写回去（原来没有的值就删掉）；还原成功后原值记录会清空" }
   ]

@@ -43,6 +43,13 @@ namespace Mxx1Toolbox
         public Color LogBack;
         public Color LogText;
 
+        // 跑完一个按钮后的结果条（成功 / 失败）。以前点完只在底栏闪一行字，用户报了
+        // "点击确认以后也没有成功或者失败的反馈"，所以给它一条自己会消失的横幅。
+        public Color ToastOkBack;
+        public Color ToastOkText;
+        public Color ToastFailBack;
+        public Color ToastFailText;
+
         public static Theme Light()
         {
             Theme t = new Theme();
@@ -77,6 +84,10 @@ namespace Mxx1Toolbox
             t.InputBorder = Color.FromArgb(0xAD, 0xAD, 0xAD);
             t.LogBack = Color.White;
             t.LogText = Color.FromArgb(0x22, 0x22, 0x22);
+            t.ToastOkBack = Color.FromArgb(0xE3, 0xF4, 0xE3);
+            t.ToastOkText = Color.FromArgb(0x14, 0x5A, 0x1E);
+            t.ToastFailBack = Color.FromArgb(0xFC, 0xE6, 0xE6);
+            t.ToastFailText = Color.FromArgb(0x9B, 0x1B, 0x1B);
             return t;
         }
 
@@ -114,6 +125,10 @@ namespace Mxx1Toolbox
             t.InputBorder = Color.FromArgb(0x5A, 0x5A, 0x5A);
             t.LogBack = Color.FromArgb(0x18, 0x18, 0x18);
             t.LogText = Color.FromArgb(0xD8, 0xD8, 0xD8);
+            t.ToastOkBack = Color.FromArgb(0x1B, 0x33, 0x1E);
+            t.ToastOkText = Color.FromArgb(0x9B, 0xE0, 0x9B);
+            t.ToastFailBack = Color.FromArgb(0x3A, 0x1E, 0x1E);
+            t.ToastFailText = Color.FromArgb(0xFF, 0xA0, 0xA0);
             return t;
         }
 

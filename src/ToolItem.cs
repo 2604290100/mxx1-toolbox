@@ -16,6 +16,10 @@ namespace Mxx1Toolbox
         public string Name = "-";
         public string Icon = "";          // optional explicit path; default = assets\icons\<id>.png
 
+        /// <summary>分段标题（可选）。同一段（tab 里相同的 segment）只认第一个按钮写的那句，
+        /// 界面上把原来那条灰线渲染成「标题 ————」，104 个按钮才扫得动。</summary>
+        public string SegmentName = "";
+
         public string Kind = "builtin";   // builtin | exe | script | open | macro
         public string Module = "";        // builtin: permdel | app
         public string Action = "";        // builtin: install / uninstall / status / verify / ...
@@ -69,8 +73,8 @@ namespace Mxx1Toolbox
             t.Id = Json.GetString(o, "id", "");
             t.Tab = NormalizeTab(Json.GetString(o, "tab", Tabs.Mine));
             t.Segment = Json.GetInt(o, "segment", 1);
-            t.Order = Json.GetInt(o, "order", 0);
-            t.Name = Json.GetString(o, "name", t.Id);
+            t.Order = Json.GetInt(o, "order", 0);            t.Name = Json.GetString(o, "name", t.Id);
+            t.SegmentName = Json.GetString(o, "segmentName", "");
             t.Icon = Json.GetString(o, "icon", "");
 
             t.Kind = Json.GetString(o, "kind", "builtin").Trim().ToLowerInvariant();
@@ -113,9 +117,12 @@ namespace Mxx1Toolbox
         }
     }
 
-    /// <summary>The seven tabs, in display order.</summary>
+    /// <summary>The eight tabs, in display order. Sorted by how often a person actually goes there:
+    /// 「常用」(pinned + 最近使用) first, then the page people open the toolbox for. The old order had
+    /// 「右键增强」(a single button) second and pushed 「系统工具」/「隐私设置」 to slots 4 and 5.</summary>
     internal static class Tabs
     {
+        public const string Recent = "recent";
         public const string Common = "common";
         public const string RightMenu = "rightmenu";
         public const string Cleanup = "cleanup";
@@ -124,12 +131,13 @@ namespace Mxx1Toolbox
         public const string Apps = "apps";
         public const string Mine = "mine";
 
-        public static readonly string[] Ids = new string[] { Common, RightMenu, Cleanup, System, Privacy, Apps, Mine };
+        public static readonly string[] Ids = new string[] { Recent, Common, Mine, System, Cleanup, Privacy, Apps, RightMenu };
 
         public static string Display(string id)
         {
             switch (id)
             {
+                case Recent: return "常用";
                 case Common: return "常用设置";
                 case RightMenu: return "右键增强";
                 case Cleanup: return "清理优化";

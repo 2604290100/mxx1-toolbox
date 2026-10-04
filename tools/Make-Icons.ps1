@@ -74,6 +74,9 @@ function Get-Shape {
         @('privacy-location',  'globe'),
         @('privacy-background','window'),
         @('privacy',           'eye'),
+        # 「常用设置」里那批写注册表的按钮（builtin/sysreg）：查看改动 / 还原改动
+        @('sysreg-status',     'info'),
+        @('sysreg-restore',    'refresh'),
         @('appx',           'list'),
         @('uninstall-app',  'minus'),
         @('default-app',    'window'),

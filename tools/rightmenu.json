@@ -1,7 +1,7 @@
 {
   "_comment": "右键增强页签 —— 只留一个按钮：打开隔壁 permanent-delete-menu 的 PermanentDeleteSetup.exe（零改动集成）。安装 / 卸载 / 查看状态 / 测试 / 使用条款 / 引擎日志 / 版本更新 都在那个程序自己的窗口里，工具箱不重复实现。下面 _disabled 里的 8 条是原来的分按钮定义，想恢复就把它们整段搬进 tools 数组（加载器只看 tools，_disabled 是注释用）。",
   "tools": [
-    { "id": "permdel.gui", "tab": "rightmenu", "segment": 1, "order": 10, "name": "永久删除工具", "kind": "builtin", "module": "permdel", "action": "gui", "pinned": true }
+    { "id": "permdel.gui", "tab": "rightmenu", "segment": 1, "segmentName": "隔壁工具（永久删除）", "order": 10, "name": "永久删除工具", "kind": "builtin", "module": "permdel", "action": "gui", "pinned": true }
   ],
   "_disabled": [
     { "id": "permdel.install",    "name": "安装到右键",   "kind": "builtin", "module": "permdel", "action": "install",    "options": "--quiet", "runAsAdmin": true, "confirm": true },

@@ -98,6 +98,18 @@ namespace Mxx1Toolbox
             IntPtr h = LoadImage(GetModuleHandle(null), new IntPtr(GroupId), ImageIcon, size, size, 0);
             return (h == IntPtr.Zero) ? null : Icon.FromHandle(h);
         }
+
+        /// <summary>托盘气泡（见 src\Balloon.cs）要用一张图标。
+        ///
+        /// **故意不复用窗口那两张缓存**：`NotifyIcon` 释放时有连图标句柄一起销毁的写法，
+        /// 一旦撞上，复用缓存就会把窗口标题栏那张也弄坏 —— 这里每次现取一张、不释放。
+        /// 用它的那条路（一键解除）马上就退出了，多一个图标句柄无所谓；取不到返回 null，
+        /// 调用方退回系统图标。</summary>
+        public static Icon ForTray()
+        {
+            try { return FromModule(SystemInformation.SmallIconSize.Width); }
+            catch { return null; }
+        }
     }
 
     /// <summary>工具箱自己的窗口基类 —— 只做一件事：句柄建好时把图标装上。

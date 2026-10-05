@@ -283,7 +283,7 @@ if ($winName -eq 'Windows 7') {
 }
 
 # bin-tools 里的工具文件夹会自动长出按钮（v1.5.3，R 组专门测它）。这台机器的工具目录里可能有
-# 用户自己放的工具，所以数量基准写成「112 + 自动按钮数」——别把用户的东西当成测试失败。
+# 用户自己放的工具，所以数量基准写成「114 + 自动按钮数」——别把用户的东西当成测试失败。
 $autoBase = 0
 $autoByTab = @{}
 foreach ($line in ($status.Out -split "`r?`n")) {
@@ -295,13 +295,13 @@ foreach ($line in ($status.Out -split "`r?`n")) {
     }
 }
 
-Check ('A04 按钮总数 112 + 工具目录里自动加载的 {0} 个（测试期间用户层的按钮会暂停：常用 33 + 系统工具 26 + 隐私 29 + 应用 5 + 清理 8 + 右键 8 + 我的 3）' -f $autoBase) `
-    ((Get-Key $status.Out 'buttons') -eq [string](112 + $autoBase)) (Get-Key $status.Out 'buttons')
+Check ('A04 按钮总数 114 + 工具目录里自动加载的 {0} 个（测试期间用户层的按钮会暂停：常用 33 + 系统工具 26 + 隐私 29 + 应用 5 + 清理 8 + 右键 10 + 我的 3）' -f $autoBase) `
+    ((Get-Key $status.Out 'buttons') -eq [string](114 + $autoBase)) (Get-Key $status.Out 'buttons')
 Check 'A05 内置清单里没有灰色占位按钮了（两个「资源管理器」也接上了真功能；灰规则改由 B 组注入验证）' ((Get-Key $status.Out 'placeholders') -eq '0') (Get-Key $status.Out 'placeholders')
 Check 'A06 危险按钮 3 个' ((Get-Key $status.Out 'dangerous') -eq '3') (Get-Key $status.Out 'dangerous')
 
 # 「常用」页签是合成的（置顶 + 最近使用），清单里没有它的按钮，所以是 0
-$tabExpect = @{ 'recent' = 0; 'common' = 33; 'mine' = 3; 'system' = 26; 'cleanup' = 8; 'privacy' = 29; 'apps' = 5; 'rightmenu' = 8 }
+$tabExpect = @{ 'recent' = 0; 'common' = 33; 'mine' = 3; 'system' = 26; 'cleanup' = 8; 'privacy' = 29; 'apps' = 5; 'rightmenu' = 10 }
 $tabOk = $true
 $tabDetail = @()
 foreach ($k in $tabExpect.Keys) {
@@ -309,16 +309,16 @@ foreach ($k in $tabExpect.Keys) {
     $tabDetail += ($k + '=' + $v)
     if ($v -ne [string]([int]$tabExpect[$k] + [int]$autoByTab[$k])) { $tabOk = $false }
 }
-Check 'A07 八个页签的按钮数正确（0/33/3/26/8/29/5/8，加上自动按钮）' $tabOk ($tabDetail -join ' ')
+Check 'A07 八个页签的按钮数正确（0/33/3/26/8/29/5/10，加上自动按钮）' $tabOk ($tabDetail -join ' ')
 
 $list = Invoke-Exe 'list'
 Check 'A08 list 退出码 0' ($list.Code -eq 0) ('exit=' + $list.Code)
-Check 'A09 list 报的按钮数一致' ((Get-Key $list.Out 'buttons') -eq [string](112 + $autoBase)) (Get-Key $list.Out 'buttons')
+Check 'A09 list 报的按钮数一致' ((Get-Key $list.Out 'buttons') -eq [string](114 + $autoBase)) (Get-Key $list.Out 'buttons')
 $lines = @($list.Out -split "`r?`n" | Where-Object { $_ -match "`t" })
-Check ('A10 list 打出 {0} 行按钮' -f (112 + $autoBase)) ($lines.Count -eq (112 + $autoBase)) ('lines=' + $lines.Count)
+Check ('A10 list 打出 {0} 行按钮' -f (114 + $autoBase)) ($lines.Count -eq (114 + $autoBase)) ('lines=' + $lines.Count)
 
 $rmList = Invoke-Exe 'list --tab rightmenu'
-Check 'A11 右键增强 8 个按钮（7 个右键菜单 + 隔壁永久删除工具）' ((Get-Key $rmList.Out 'shown') -eq [string](8 + [int]$autoByTab['rightmenu'])) (Get-Key $rmList.Out 'shown')
+Check 'A11 右键增强 10 个按钮（9 个右键菜单 + 隔壁永久删除工具）' ((Get-Key $rmList.Out 'shown') -eq [string](10 + [int]$autoByTab['rightmenu'])) (Get-Key $rmList.Out 'shown')
 Check 'A12 右键增强里的按钮是"真功能"（不带 placeholder 标记）' (-not ($rmList.Out -match 'placeholder')) ''
 Check 'A13 右键增强那个按钮叫「永久删除工具」' ($rmList.Out -match '永久删除工具') (($rmList.Out -split "`r?`n" | Where-Object { $_ -match "`t" }) -join '')
 
@@ -662,7 +662,7 @@ if ($fixtureExe.Length -eq 0) {
         Check 'R04 重名的自动按钮被拒绝（不能覆盖内置按钮的 id）' `
             ((-not ($s2.Out -match [regex]::Escape($d))) -and (-not ($listMineR.Out -match '偷偷换掉')) -and ($listMineR.Out -match '\+ 新建按钮')) ''
         Check 'R05 坏清单只跳过它自己，别的按钮照常在' `
-            ((-not ($s2.Out -match [regex]::Escape($e))) -and ([int](Get-Key $s2.Out 'buttons') -ge 112)) (Get-Key $s2.Out 'buttons')
+            ((-not ($s2.Out -match [regex]::Escape($e))) -and ([int](Get-Key $s2.Out 'buttons') -ge 114)) (Get-Key $s2.Out 'buttons')
         Check 'R06 坏清单在日志里有说明（不是悄悄吞掉）' `
             (($s2.Err -match [regex]::Escape($e)) -or ($s2.Err -match 'tool\.json')) `
             (($s2.Err -split "`r?`n" | Select-Object -First 3) -join ' | ')
@@ -787,7 +787,7 @@ Write-Host 'H 组 · 悬停说明（用户 2026-10-04 报过「鼠标悬停的�
 # tip 命令打印的就是界面塞给 ToolTip 的那个字符串，所以这里能直接断言，不用去动真鼠标。
 $tipsAll = Invoke-Exe 'tip'
 Check 'H01 tip 退出码 0' ($tipsAll.Code -eq 0) ('exit=' + $tipsAll.Code)
-Check ('H02 tip 覆盖了每个按钮（112 + 自动 {0} 个）' -f $autoBase) ((Get-Key $tipsAll.Out 'tips') -eq [string](112 + $autoBase)) (Get-Key $tipsAll.Out 'tips')
+Check ('H02 tip 覆盖了每个按钮（114 + 自动 {0} 个）' -f $autoBase) ((Get-Key $tipsAll.Out 'tips') -eq [string](114 + $autoBase)) (Get-Key $tipsAll.Out 'tips')
 
 $blocks = @{}
 $curId = ''
@@ -1109,24 +1109,24 @@ $rmItems = Invoke-Exe 'rightmenu items'
 Check 'M01 rightmenu items 退出码 0（只读）' ($rmItems.Code -eq 0) ('exit=' + $rmItems.Code)
 $rmLoc = @($rmItems.Out -split "`r?`n" | Where-Object { $_ -match "`t" })
 Check 'M02 装 4 个位置（任意文件 / 文件夹 / 文件夹里的空白处 / 桌面空白处）' ($rmLoc.Count -eq 4) ('数=' + $rmLoc.Count)
-Check 'M03 两项的名字对得上（解除文件占用 / 常用功能）' `
-    (($rmItems.Out.IndexOf('解除文件占用') -ge 0) -and ($rmItems.Out.IndexOf('常用功能') -ge 0)) ''
+Check 'M03 三项的名字对得上（解除文件占用 / 一键解除占用 / 常用功能）' `
+    (($rmItems.Out.IndexOf('解除文件占用') -ge 0) -and ($rmItems.Out.IndexOf('一键解除占用') -ge 0) -and ($rmItems.Out.IndexOf('常用功能') -ge 0)) ''
 
 $rmList = Invoke-Exe 'list --tab rightmenu'
 $rmBtns = @($rmList.Out -split "`r?`n" | Where-Object { $_ -match '^rightmenu\.' })
-Check 'M04 「右键增强」页签新增 7 个按钮（加上隔壁永久删除工具 = 8 个）' ($rmBtns.Count -eq 7) ('新按钮=' + $rmBtns.Count)
-$rmOnOff = @($rmBtns | Where-Object { $_ -match 'rightmenu/(unlock|common)\.(on|off)' })
-Check 'M05 装 / 撤是成对的（解除占用一对 + 常用功能一对）' ($rmOnOff.Count -eq 4) ('数=' + $rmOnOff.Count)
+Check 'M04 「右键增强」页签新增 9 个按钮（加上隔壁永久删除工具 = 10 个）' ($rmBtns.Count -eq 9) ('新按钮=' + $rmBtns.Count)
+$rmOnOff = @($rmBtns | Where-Object { $_ -match 'rightmenu/(unlock|auto|common)\.(on|off)' })
+Check 'M05 装 / 撤是成对的（解除占用一对 + 一键解除一对 + 常用功能一对）' ($rmOnOff.Count -eq 6) ('数=' + $rmOnOff.Count)
 
 $rmStatus = Invoke-Exe 'rightmenu status'
 Check 'M06 rightmenu status 退出码 0（只读）' ($rmStatus.Code -eq 0) ('exit=' + $rmStatus.Code)
-$rmNeed = @('解除文件占用', '常用功能 子菜单', '菜单里的 exe', '最近使用最多留 30 个')
+$rmNeed = @('解除文件占用', '一键解除占用', '常用功能 子菜单', '菜单里的 exe', '最近使用最多留 30 个')
 $rmMiss = @($rmNeed | Where-Object { $rmStatus.Out.IndexOf($_) -lt 0 })
-Check 'M07 状态里念了：装没装 / 子菜单几项 / 菜单里的 exe / 最近使用上限 30' ($rmMiss.Count -eq 0) ('缺=' + ($rmMiss -join ' '))
+Check 'M07 状态里念了：三项装没装 / 子菜单几项 / 菜单里的 exe / 最近使用上限 30' ($rmMiss.Count -eq 0) ('缺=' + ($rmMiss -join ' '))
 
 $rmHelp = Invoke-Exe 'rightmenu help'
-Check 'M08 说明里写清了怎么卸干净 + 四条底线（系统关键进程不能结束）' `
-    (($rmHelp.Code -eq 0) -and ($rmHelp.Out.IndexOf('怎么卸干净') -ge 0) -and ($rmHelp.Out.IndexOf('系统关键进程') -ge 0)) ('exit=' + $rmHelp.Code)
+Check 'M08 说明里写清了怎么卸干净 + 底线（系统关键进程不能结束 / 一键解除没有确认框）' `
+    (($rmHelp.Code -eq 0) -and ($rmHelp.Out.IndexOf('怎么卸干净') -ge 0) -and ($rmHelp.Out.IndexOf('系统关键进程') -ge 0) -and ($rmHelp.Out.IndexOf('没有确认框') -ge 0)) ('exit=' + $rmHelp.Code)
 
 $rmWrite = Invoke-Exe 'rightmenu install'
 Check 'M09 命令行没有"直接装右键菜单"的入口（退出码 2）' ($rmWrite.Code -eq 2) ('exit=' + $rmWrite.Code)
@@ -1333,6 +1333,104 @@ try {
     if (Test-Path -LiteralPath $rmH) { Remove-Item -LiteralPath $rmH -Recurse -Force -ErrorAction SilentlyContinue }
 }
 
+# ---- 「一键解除占用」（`rightmenu unlock --auto`）：**不弹窗口**，直接结束占着它的程序 -------
+# 用户 2026-10-05 要的：「保留现有的功能的前提下加个不弹窗的一键解除」。这条路**没有确认框**，
+# 所以这一组盯的是它的底线，不是它的功能：
+#   ① 真占着它的**普通程序**会被结束（连它启动的子进程），文件跟着松开；
+#   ② 系统关键进程一个都不许动 —— 拿系统事件日志那个文件当靶子：它永远被几个 svchost 服务占着，
+#      而 svchost 在禁止名单里（实测这一条真是这样，不是编的）；
+#   ③ 没同意过《免责声明与服务条款》时一个进程都不碰（没有窗口可以弹确认框，所以规矩是
+#      "不同意就不动手"、只写日志）；
+#   ④ 没给路径时退出码 2（不猜、更不乱动）。
+$autoDir = Join-Path $env:TEMP 'mxx1-auto-unlock'
+if (Test-Path -LiteralPath $autoDir) { Remove-Item -LiteralPath $autoDir -Recurse -Force }
+New-Item -ItemType Directory -Path $autoDir | Out-Null
+$autoFile = Join-Path $autoDir 'locked.txt'
+Set-Content -LiteralPath $autoFile -Value 'x' -Encoding UTF8
+$autoFree = Join-Path $autoDir 'free.txt'
+Set-Content -LiteralPath $autoFree -Value 'x' -Encoding UTF8
+$autoEnv = @{ MXX1_NO_NOTIFY = '1' }     # 回归测试不许在别人桌面上弹气泡
+# 这一组验的是"它真会结束进程"，而一键解除在**没同意过条款时故意什么都不做** ——
+# 所以先确保本机处于"已同意"，跑完在 finally 里按原样放回。这一步不能省：
+# 条款正文一改（指纹就对不上）或者在一台全新机器 / CI 上跑，状态就是 required，
+# 那样 M31–M33 会整片假红（2026-10-05 真踩过：改了 docs\DISCLAIMER.md，本机立刻变回 required）。
+$autoConsent0 = 'unknown'
+$probeA = Invoke-Exe 'consent'
+if ($probeA.Out -match '(?m)^consent=(\w+)') { $autoConsent0 = $Matches[1] }
+$autoKid = $null
+$autoKid2 = $null
+$autoKid = Start-Process powershell.exe -WindowStyle Hidden -PassThru -ArgumentList @(
+    '-NoProfile', '-Command', ("`$fs=[System.IO.File]::Open('" + $autoFile + "','Open','ReadWrite','None'); Start-Sleep 180"))
+try {
+    if ($autoConsent0 -ne 'agreed') { $null = Invoke-Exe 'consent --accept' }
+    Start-Sleep -Milliseconds 800
+    $autoQ1 = Invoke-Exe ('rightmenu unlock --query-only "' + $autoFile + '"')
+    Check 'M30 夹具自检：这个文件真的被锁上了（查得到 lockers=1）' `
+        ((Get-Key $autoQ1.Out 'lockers') -eq '1') ('lockers=' + (Get-Key $autoQ1.Out 'lockers'))
+
+    $auto1 = Invoke-Exe ('rightmenu unlock --auto --quiet "' + $autoFile + '"') 90 $Exe $autoEnv
+    Start-Sleep -Milliseconds 400
+    if ($autoKid) { $autoKid.Refresh() }
+    Check 'M31 一键解除：不弹窗口就把占着它的程序结束了（连它启动的子进程）' `
+        (($auto1.Code -eq 0) -and ((Get-Key $auto1.Out 'auto') -eq 'killed') -and `
+         ([int](Get-Key $auto1.Out 'killed') -ge 1) -and $autoKid.HasExited) `
+        ('exit=' + $auto1.Code + ' auto=' + (Get-Key $auto1.Out 'auto') + ' killed=' + (Get-Key $auto1.Out 'killed') + ' 子进程还活着=' + (-not $autoKid.HasExited))
+
+    $autoQ2 = Invoke-Exe ('rightmenu unlock --query-only "' + $autoFile + '"')
+    Check 'M32 一键解除之后文件真的松开了（再查 lockers=0，而且系统允许删了）' `
+        (((Get-Key $autoQ2.Out 'lockers') -eq '0') -and ((Get-Key $autoQ2.Out 'candelete') -eq 'yes')) `
+        ('lockers=' + (Get-Key $autoQ2.Out 'lockers') + ' candelete=' + (Get-Key $autoQ2.Out 'candelete'))
+
+    $auto2 = Invoke-Exe ('rightmenu unlock --auto --quiet "' + $autoFree + '"') 90 $Exe $autoEnv
+    Check 'M33 没程序占着它时：如实说 auto=none、一个进程都没结束（不谎报已解锁）' `
+        (($auto2.Code -eq 0) -and ((Get-Key $auto2.Out 'auto') -eq 'none') -and ((Get-Key $auto2.Out 'killed') -eq '0')) `
+        ('auto=' + (Get-Key $auto2.Out 'auto') + ' killed=' + (Get-Key $auto2.Out 'killed'))
+
+    # ② 系统关键进程：系统事件日志文件永远被 Event Log 等几个 svchost 服务占着。
+    $autoSys = Join-Path $env:SystemRoot 'System32\winevt\Logs\System.evtx'
+    if (Test-Path -LiteralPath $autoSys) {
+        $autoSysQ1 = Invoke-Exe ('rightmenu unlock --query-only "' + $autoSys + '"')
+        $autoSysRun = Invoke-Exe ('rightmenu unlock --auto --quiet "' + $autoSys + '"') 90 $Exe $autoEnv
+        $autoSysQ2 = Invoke-Exe ('rightmenu unlock --query-only "' + $autoSys + '"')
+        Check 'M34 不许动系统关键进程：被几个 svchost 服务占着的日志文件一动没动' `
+            (($autoSysRun.Code -eq 0) -and ((Get-Key $autoSysRun.Out 'killed') -eq '0') -and `
+             ([int](Get-Key $autoSysQ1.Out 'lockers') -ge 1) -and `
+             ((Get-Key $autoSysQ1.Out 'lockers') -eq (Get-Key $autoSysQ2.Out 'lockers'))) `
+            ('auto=' + (Get-Key $autoSysRun.Out 'auto') + ' killed=' + (Get-Key $autoSysRun.Out 'killed') + ' 占用者 ' + (Get-Key $autoSysQ1.Out 'lockers') + '→' + (Get-Key $autoSysQ2.Out 'lockers'))
+    } else {
+        Skip 'M34 不许动系统关键进程' '这台机器上没有系统事件日志文件'
+    }
+
+    # ③ 条款门：这条路没有窗口可以弹《使用条款确认》，所以"没同意"= 一个进程都不碰。
+    $autoConsent0 = 'unknown'
+    $probeA = Invoke-Exe 'consent'
+    if ($probeA.Out -match '(?m)^consent=(\w+)') { $autoConsent0 = $Matches[1] }
+    $autoKid2 = Start-Process powershell.exe -WindowStyle Hidden -PassThru -ArgumentList @(
+        '-NoProfile', '-Command', ("`$fs=[System.IO.File]::Open('" + $autoFree + "','Open','ReadWrite','None'); Start-Sleep 180"))
+    try {
+        Start-Sleep -Milliseconds 800
+        $null = Invoke-Exe 'consent --reset'
+        $auto3 = Invoke-Exe ('rightmenu unlock --auto --quiet "' + $autoFree + '"') 90 $Exe $autoEnv
+        Start-Sleep -Milliseconds 400
+        if ($autoKid2) { $autoKid2.Refresh() }
+        Check 'M35 没同意过使用条款时一个进程都不碰（只写日志，auto=skipped-consent）' `
+            (($auto3.Code -eq 0) -and ((Get-Key $auto3.Out 'auto') -eq 'skipped-consent') -and `
+             ((Get-Key $auto3.Out 'killed') -eq '0') -and (-not $autoKid2.HasExited)) `
+            ('auto=' + (Get-Key $auto3.Out 'auto') + ' killed=' + (Get-Key $auto3.Out 'killed') + ' 子进程还活着=' + (-not $autoKid2.HasExited))
+    } finally {
+        # M35 把同意状态清掉了，这里放回"已同意"（整个块收尾时还会按最开始的样放回一次）
+        $null = Invoke-Exe 'consent --accept'
+    }
+
+    $auto4 = Invoke-Exe 'rightmenu unlock --auto'
+    Check 'M36 一键解除没给路径时退出码 2（不猜、更不乱动）' ($auto4.Code -eq 2) ('exit=' + $auto4.Code)
+} finally {
+    # 同意状态按最开始的样放回（S 组会再自己快照一次，所以这里必须是"原样"）
+    if ($autoConsent0 -eq 'required') { $null = Invoke-Exe 'consent --reset' } else { $null = Invoke-Exe 'consent --accept' }
+    foreach ($p in @($autoKid, $autoKid2)) { if ($p -and -not $p.HasExited) { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue } }
+    if (Test-Path -LiteralPath $autoDir) { Remove-Item -LiteralPath $autoDir -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
 # ---- 装 / 卸：整段都在**隔离的根**里做（MXX1_RIGHTMENU_ROOT），绝不碰用户真实的右键菜单
 $rmTestRoot = 'HKCU:\Software\mxx1-toolbox\rightmenu-test'
 $rmRealShell = 'HKCU:\Software\Classes\*\shell'
@@ -1371,6 +1469,26 @@ try {
          ("$($rmProp.'(default)')" -eq '') -and ($rmPlaces.Count -eq 4)) `
         ('MUIVerb=' + $rmProp.MUIVerb + ' cmd=' + $rmCmd + ' 占位符对的=' + ($rmPlaces -join ','))
 
+    # ---- 第三项「一键解除占用」（v1.5.4 加）：和上面那个是**两条独立的入口**，
+    #      用户明确要的"保留现有的功能、另外给一个不弹窗的"。命令里多一个 --auto。
+    $rmInsAuto = Invoke-Exe 'run rightmenu.auto.on' 60 $Exe $rmEnv
+    $rmAutoLines = @($rmInsAuto.Out -split "`r?`n" | Where-Object { $_ -match '√ 一键解除占用' })
+    Check 'M37 在隔离根里装上「一键解除占用」：4 个位置都写了、读回核对过' `
+        (($rmInsAuto.Code -eq 0) -and ($rmAutoLines.Count -eq 4)) ('exit=' + $rmInsAuto.Code + ' √=' + $rmAutoLines.Count)
+
+    $rmAutoVerb = Join-Path $rmTestRoot '*\shell\Mxx1AutoUnlock'
+    $rmAutoProp = Get-ItemProperty -LiteralPath $rmAutoVerb -ErrorAction SilentlyContinue
+    $rmAutoPlaces = @()
+    foreach ($rmP in @(@('*\shell', '%1'), @('Directory\shell', '%1'), `
+                       @('Directory\Background\shell', '%V'), @('DesktopBackground\Shell', '%V'))) {
+        $rmPc = "$((Get-ItemProperty -LiteralPath (Join-Path $rmTestRoot ($rmP[0] + '\Mxx1AutoUnlock\command')) -ErrorAction SilentlyContinue).'(default)')"
+        if ($rmPc -match ('rightmenu unlock --auto "' + [regex]::Escape($rmP[1]) + '"$')) { $rmAutoPlaces += $rmP[1] }
+    }
+    Check 'M38 一键解除的 verb 走的是不弹窗口那条命令（--auto）+ 占位符按位置（背景用 %V）' `
+        (($rmAutoProp.MUIVerb -eq '一键解除占用') -and ($rmAutoProp.MultiSelectModel -eq 'Player') -and `
+         ("$($rmAutoProp.'(default)')" -eq '') -and ($rmAutoPlaces.Count -eq 4)) `
+        ('MUIVerb=' + $rmAutoProp.MUIVerb + ' 占位符对的=' + ($rmAutoPlaces -join ','))
+
     $rmIns2 = Invoke-Exe 'run rightmenu.common.on' 60 $Exe $rmEnv
     Check 'M17 装上「常用功能」：级联子菜单的子项写出来了' `
         (($rmIns2.Code -eq 0) -and ($rmIns2.Out -match '子菜单写了 \d+ 项')) ('exit=' + $rmIns2.Code)
@@ -1397,7 +1515,7 @@ try {
     #      转成真正的 .ico 再指过去。
     $rmIconKeys = @()
     foreach ($rmR in @('*\shell', 'Directory\shell', 'Directory\Background\shell', 'DesktopBackground\Shell')) {
-        foreach ($rmVerbName in @('Mxx1Unlock', 'Mxx1Common')) {
+        foreach ($rmVerbName in @('Mxx1Unlock', 'Mxx1AutoUnlock', 'Mxx1Common')) {
             $rmIconKeys += (Join-Path $rmTestRoot ($rmR + '\' + $rmVerbName))
         }
     }
@@ -1412,8 +1530,8 @@ try {
             } else { $rmIconBad += $rmIcon }
         } else { $rmIconBad += ($rmK + ' -> ' + $rmIcon) }
     }
-    Check 'M20a 两项的图标：Icon 指向真实存在的 .ico（不是没有图标资源的 exe，也不是 .png）' `
-        (($rmIconOk -eq 8) -and ($rmIconBad.Count -eq 0)) ('ok=' + $rmIconOk + '/8 坏=' + ($rmIconBad -join ' '))
+    Check 'M20a 三项的图标：Icon 指向真实存在的 .ico（不是没有图标资源的 exe，也不是 .png）' `
+        (($rmIconOk -eq 12) -and ($rmIconBad.Count -eq 0)) ('ok=' + $rmIconOk + '/12 坏=' + ($rmIconBad -join ' '))
 
     $rmSubIcons = @($rmShared | Where-Object { "$((Get-ItemProperty -LiteralPath $_.PSPath -ErrorAction SilentlyContinue).Icon)".Length -gt 0 })
     Check 'M20b 「常用功能」子菜单每一项也有图标（子项自己带 Icon）' `
@@ -1435,12 +1553,12 @@ try {
     # 一起删掉（2026-10-04 真踩，见 MenuIcons.Dir 的注释）
     $rmInTestDir = @($rmIconKeys | Where-Object { "$((Get-ItemProperty -LiteralPath $_ -ErrorAction SilentlyContinue).Icon)" -like ($rmTestIconDir + '\*') })
     Check 'M20b2 测试装的图标写在 rightmenu-icons-test 里（和用户真实那份分开）' `
-        ($rmInTestDir.Count -eq 8) ('在 test 目录里的=' + $rmInTestDir.Count)
+        ($rmInTestDir.Count -eq 12) ('在 test 目录里的=' + $rmInTestDir.Count)
 
     # 状态里要能念出"图标在不在"（文件被清理软件删掉时，用户能从状态里看出来要点一次装上）
     $rmStat = Invoke-Exe 'rightmenu status' 60 $Exe $rmEnv
-    Check 'M20d 状态里念得出菜单图标都在（8 个）' `
-        (($rmStat.Code -eq 0) -and ($rmStat.Out -match '菜单图标\s*8 个都在')) `
+    Check 'M20d 状态里念得出菜单图标都在（12 个）' `
+        (($rmStat.Code -eq 0) -and ($rmStat.Out -match '菜单图标\s*12 个都在')) `
         ('exit=' + $rmStat.Code + ' ' + (@($rmStat.Out -split "`r?`n" | Where-Object { $_ -match '菜单图标' }) -join ' '))
 
     # ---- 自动修补：旧版装出来的键（背景位置写 %1、Icon 指着一个没有图标资源的 exe）应该在
@@ -1469,10 +1587,12 @@ try {
 
     $rmOff = Invoke-Exe 'run rightmenu.common.off' 60 $Exe $rmEnv
     $rmOff2 = Invoke-Exe 'run rightmenu.unlock.off' 60 $Exe $rmEnv
-    Check 'M21 撤掉两项：自己写的键全删了（verb + 共用子项键）' `
+    $rmOff3 = Invoke-Exe 'run rightmenu.auto.off' 60 $Exe $rmEnv
+    Check 'M21 撤掉三项：自己写的键全删了（两个 verb + 共用子项键）' `
         (((Test-Path -LiteralPath (Join-Path $rmTestRoot '*\shell\Mxx1Unlock')) -eq $false) -and `
+         ((Test-Path -LiteralPath (Join-Path $rmTestRoot '*\shell\Mxx1AutoUnlock')) -eq $false) -and `
          ((Test-Path -LiteralPath (Join-Path $rmTestRoot 'Mxx1Toolbox.Common')) -eq $false)) `
-        ('off=' + $rmOff.Code + '/' + $rmOff2.Code)
+        ('off=' + $rmOff.Code + '/' + $rmOff2.Code + '/' + $rmOff3.Code)
     $rmRealAfter = @(Get-ChildItem -LiteralPath $rmRealShell -ErrorAction SilentlyContinue | Select-Object -ExpandProperty PSChildName)
     $rmRealMine = @($rmRealAfter | Where-Object { $_ -match 'Mxx1' })
     # 判据是"这次测试一个字都没改用户的真实菜单"，**不是**"用户的菜单里不许有我们的键"：

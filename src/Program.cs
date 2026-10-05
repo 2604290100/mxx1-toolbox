@@ -49,7 +49,8 @@ namespace Mxx1Toolbox
             return 0;
         }
 
-        /// <summary>`rightmenu unlock "&lt;路径&gt;"` = 要开那个小窗口（不是查一下就退出）。</summary>
+        /// <summary>`rightmenu unlock "&lt;路径&gt;"` = 要开那个小窗口（不是查一下就退出、也不是
+        /// 那条不弹窗口的一键解除）。</summary>
         private static bool IsUnlockGui(string[] args)
         {
             if (args.Length < 2) { return false; }
@@ -58,6 +59,8 @@ namespace Mxx1Toolbox
             foreach (string a in args)
             {
                 if (string.Equals(a, "--query-only", StringComparison.OrdinalIgnoreCase)) { return false; }
+                // 「一键解除占用」那条路：不弹窗口，走命令行（见 src\AutoUnlock.cs）
+                if (string.Equals(a, "--auto", StringComparison.OrdinalIgnoreCase)) { return false; }
             }
             return true;
         }
@@ -248,6 +251,8 @@ namespace Mxx1Toolbox
             Console.WriteLine("  Mxx1Toolbox.exe rightmenu status     只读列出右键菜单里装了什么（装 / 卸只在界面里点）");
             Console.WriteLine("  Mxx1Toolbox.exe rightmenu help       右键增强的说明（怎么卸干净 / 菜单没出现怎么办）");
             Console.WriteLine("  Mxx1Toolbox.exe rightmenu unlock --query-only <路径>   只查谁占着这个文件，不弹窗不结束进程");
+            Console.WriteLine("  Mxx1Toolbox.exe rightmenu unlock --auto <路径>         一键解除占用：不弹窗口，直接结束占用它的程序");
+            Console.WriteLine("                                                        （右键菜单里的「" + RightMenu.AutoTitle + "」用的就是它）");
             Console.WriteLine("  Mxx1Toolbox.exe ui [log|settings]    打开界面并直接看日志 / 设置（右键子菜单的固定入口用它）");
             Console.WriteLine("  Mxx1Toolbox.exe pin <id> / unpin <id>  把按钮置顶 / 取消置顶（排在这一页最前面）");
             Console.WriteLine("  Mxx1Toolbox.exe export <文件>        把「我的工具」导出成一个文件");
@@ -364,7 +369,8 @@ namespace Mxx1Toolbox
         }
 
         /// <summary>`rightmenu status | items | help` 只读；`rightmenu unlock --query-only &lt;路径&gt;` 只打印
-        /// 谁占着它（不弹窗、也**不结束任何进程**）。
+        /// 谁占着它（不弹窗、也**不结束任何进程**）；`rightmenu unlock --auto &lt;路径&gt;` 是唯一一个
+        /// 会动手的命令行入口（右键菜单里那一项用的，不弹窗、直接结束占用它的程序，见 src\AutoUnlock.cs）。
         ///
         /// 和 `sysreg` 同一条规矩：**写注册表的入口故意只在界面**（「装上 / 撤掉…」那两个按钮，
         /// 会过确认框），命令行不提供写入口 —— Test-Cli 的 L07 那条底线。
@@ -383,7 +389,7 @@ namespace Mxx1Toolbox
                 {
                     Console.WriteLine(loc.Id + "\t" + loc.Label + "\t" + loc.Key);
                 }
-                Console.WriteLine("titles=" + RightMenu.UnlockTitle + " / " + RightMenu.CommonTitle);
+                Console.WriteLine("titles=" + RightMenu.UnlockTitle + " / " + RightMenu.AutoTitle + " / " + RightMenu.CommonTitle);
                 Console.WriteLine("shared=" + RightMenu.SharedKey);
                 Console.WriteLine("root=" + RightMenu.RootLabel);
                 return 0;
@@ -401,8 +407,42 @@ namespace Mxx1Toolbox
             {
                 return HandlesQuery(args);
             }
-            Console.Error.WriteLine("用法: rightmenu status | items | help | unlock [--query-only] <路径> | handles <路径>");
+            Console.Error.WriteLine("用法: rightmenu status | items | help | unlock [--query-only|--auto] <路径> | handles <路径>");
             return 2;
+        }
+
+        /// <summary>`rightmenu unlock ...` 后面那串路径（跳过 -- 开头的开关；多选时资源管理器
+        /// 会给多个路径，MultiSelectModel=Player 会一次全传进来）。</summary>
+        private static List<string> PathArgs(string[] args)
+        {
+            List<string> list = new List<string>();
+            for (int i = 2; i < args.Length; i++)
+            {
+                if (args[i] == null || args[i].StartsWith("--")) { continue; }
+                if (args[i].Trim().Length > 0) { list.Add(args[i].Trim()); }
+            }
+            return list;
+        }
+
+        /// <summary>有没有这个开关（`--auto` 和 `--notify=0` 两种写法都认）。</summary>
+        private static bool HasFlag(string[] args, string name)
+        {
+            foreach (string a in args)
+            {
+                if (a == null) { continue; }
+                if (string.Equals(a, name, StringComparison.OrdinalIgnoreCase)) { return true; }
+                if (a.StartsWith(name + "=", StringComparison.OrdinalIgnoreCase)) { return true; }
+            }
+            return false;
+        }
+
+        /// <summary>一键解除那条路要不要弹气泡。`--quiet` / `--notify=0` / 环境变量
+        /// MXX1_NO_NOTIFY=1 都能关掉（回归测试用它：测试不该在别人桌面上弹气泡）。</summary>
+        private static bool NotifyWanted(string[] args)
+        {
+            if (HasFlag(args, "--quiet") || HasFlag(args, "--notify=0")) { return false; }
+            string env = AppPaths.Expand(Environment.GetEnvironmentVariable("MXX1_NO_NOTIFY"));
+            return !(env != null && env.Trim() == "1");
         }
 
         /// <summary>只读：谁手里有这个文件 / 文件夹的**句柄**（全系统句柄表，像火绒那样）。
@@ -431,19 +471,21 @@ namespace Mxx1Toolbox
             return 0;
         }
 
-        /// <summary>只查不改：谁占着这个文件。测试用它（自己锁一个文件 → 断言能查到自己的 PID）。</summary>
+        /// <summary>只查不改：谁占着这个文件。测试用它（自己锁一个文件 → 断言能查到自己的 PID）。
+        /// 加 `--auto` 就换成另一条路：**不弹窗口**，直接结束占用它的程序（见 src\AutoUnlock.cs）——
+        /// 右键菜单里的「一键解除占用」用的就是它。</summary>
         private static int UnlockQuery(string[] args)
         {
-            string path = "";
-            for (int i = 2; i < args.Length; i++)
+            List<string> all = PathArgs(args);
+            if (HasFlag(args, "--auto"))
             {
-                if (args[i].StartsWith("--")) { continue; }
-                path = args[i];
-                break;
+                return AutoUnlock.Run(all.ToArray(), NotifyWanted(args), 6000);
             }
+
+            string path = (all.Count > 0) ? all[0] : "";
             if (path.Trim().Length == 0)
             {
-                Console.Error.WriteLine("用法: rightmenu unlock [--query-only] <文件或文件夹路径>");
+                Console.Error.WriteLine("用法: rightmenu unlock [--query-only|--auto] <文件或文件夹路径>");
                 return 2;
             }
             LockReport report = FileLock.Scan(new string[] { path });

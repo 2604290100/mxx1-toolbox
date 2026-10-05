@@ -16,15 +16,35 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
 > **接手 / 新会话先做两件事**：读 `docs\DESIGN.md`（外观与行为的**唯一正本**）和本文件。
 > 设计一改先改 `DESIGN.md`，再同步本 skill —— 两份分叉就会出现"两套行为"。
 
-## 当前状态（2026-10-05，v1.5.3）
+## 当前状态（2026-10-05，v1.5.3 + 未发布的 v1.5.4 改动）
 
-- ✅ **测试 339 项全绿**（本机 338 通过 + 1 跳过）：命令行回归 **197**（A03b–A03d/D01 盯兼容、R 组 14 项盯 **bin-tools 自动按钮**、
-  P 组 10 项盯**发布包内容**、S 组 26 项盯**条款确认门 + 更新检查**、M 组盯「右键增强」、A14–A17 盯 **exe 自己的图标**）
-  + 界面回归 **142**（I 组 27 项把**条款确认窗口**真开起来点一遍（含 I10b/I10c）、N 组 19 项盯「解除文件占用」小窗口）
-  （外加编码体检 182 个文件、内联脚本与清单体检 34 个脚本 / 7 个清单 + 每个 `.ps1` 的语法）。
-  产物 `bin\Mxx1Toolbox.exe`（770 KB 单文件），
-  七个 `tools.*.json` + 112 个 `icons.*.png` + **`Disclaimer.md`（9,466 字节）** +
+- ⚠️ **2026-10-05 又一轮（未发布，改完还没打 tag / 发 Release）**：用户问
+  **「工具箱里面的解除文件占用功能还有没有优化的空间？或者出一个不弹出窗口的版本」**，
+  拍板时说的是 **「保留现有的功能的前提下加个不弹窗的一键解除，对应也要单独加 2 个按钮
+  一个添加右键一个撤销右键」**，按钮名由用户点名：**装上一键解除占用 / 撤掉一键解除占用**。
+  这一轮 = 两条治本 + 第三个右键项：
+  ① **小窗口在查的时候是死的**（实测右键一个 400 个文件的文件夹：窗口 184ms 出现、
+  612ms 起完全没响应，一直到 7093ms）→ 扫描挪到**后台线程** + 状态行念秒数 + 查的时候按钮禁用。
+  见 `docs\DESIGN.md` §12.54；回归 **N20**（最长没人应 < 500ms，修好后实测 **0ms**）。
+  ② **「是哪个文件被占着」在大文件夹里报不出来**（原来只查**前 60 个**文件，实测 400 个文件里
+  占的是第 200 个 → 只会说"没定位到"）→ 改成**二分定位**（9 层约 18 次查询就指名，还比原来快）。
+  见 §12.55。
+  ③ **新入口「一键解除占用」**（`rightmenu unlock --auto`，`src\AutoUnlock.cs` + `src\Balloon.cs`）：
+  **不弹窗口**，后台查到谁占着它就**直接结束那些程序**，右下角一个气泡说结果；
+  装 / 撤是**单独一对按钮**（`rightmenu.auto.on` / `rightmenu.auto.off`，页签 8 → **10 个按钮**）。
+  底线比窗口那条更窄（系统关键进程 / explorer / 工具箱自己一律不动；没同意条款一个进程都不碰）。
+  见 §14.14；回归 **M30–M38** + 界面 **N19/N19b**。
+  顺手还修了 `Make-Icons.ps1` 会给 `bin-tools\` 自动按钮画图标并提交进仓库的问题（见坑 25）。
+- ✅ **测试 352 项全绿**（本机 351 通过 + 1 跳过）：命令行回归 **206**（A03b–A03d/D01 盯兼容、R 组 14 项盯 **bin-tools 自动按钮**、
+  P 组 10 项盯**发布包内容**、S 组 26 项盯**条款确认门 + 更新检查**、**M 组 38 项盯「右键增强」**、A14–A17 盯 **exe 自己的图标**）
+  + 界面回归 **146**（I 组 27 项把**条款确认窗口**真开起来点一遍（含 I10b/I10c）、**N 组 23 项**盯「解除文件占用」小窗口 +
+  「一键解除占用」不弹窗口）
+  （外加编码体检 186 个文件、内联脚本与清单体检 34 个脚本 / 7 个清单 + 每个 `.ps1` 的语法）。
+  产物 `bin\Mxx1Toolbox.exe`（763 KB 单文件），
+  七个 `tools.*.json` + 114 个 `icons.*.png` + **`Disclaimer.md`（改了：多了第三项与一键解除那几段）** +
   `assets\app.ico` 那份程序图标 已内嵌。
+  ⚠️ **条款正文改过了**（`docs\DISCLAIMER.md`）→ 指纹变了 → **所有人（包括用户自己）下次打开界面
+  会重新看到一次《使用条款确认》**，这是设计如此（想免打扰：`Mxx1Toolbox.exe consent --accept`）。
   **跑法固定：`powershell -ExecutionPolicy Bypass -File tests\Test-All.ps1`**（必须 Windows PowerShell
   5.1 —— 套件里有 `-Encoding Byte`，pwsh 7 改叫 `-AsByteStream`，跑到 M20 会当场中断；`Bypass`
   还会让子进程继承执行策略，M14f 那个"父进程拉子进程"的现场靠它。见 `docs\DESIGN.md` §15）。
@@ -153,6 +173,11 @@ D:\萌新工具开发\toolbox\
                                    文件夹往下扫 4 层 / 整批失败二分劈开重查 / 命中后定位到具体文件 +
                                    SelfCheck（自己独占打开一次，给"真没人在用 / 有人占着但报不出名字 /
                                    其实是权限"三种确定结论）+ 系统关键进程禁止结束
+  src\AutoUnlock.cs                **v1.5.4**：「一键解除占用」——不弹窗口那条路（`rightmenu unlock --auto`）。
+                                   查（复用 FileLock.Scan）→ 直接结束占着它的程序（FileLock.Kill）→ 写日志 + 气泡。
+                                   能结束谁只有一处规则：`FileLock.AutoUnlockTarget`（见「底线」那节）
+  src\Balloon.cs                   **v1.5.4**：右下角系统气泡（NotifyIcon.ShowBalloonTip）。不弹窗口但也不能
+                                   一声不吭 —— 结果至少要说一句；测试用 `--quiet` / `MXX1_NO_NOTIFY=1` 关掉它
   src\UnlockForm.cs                「解除文件占用」的结果窗口（`rightmenu unlock` 起来的独立进程，不开主界面；
                                    **高度按内容自适应**，见"界面硬规则"里那条）
   src\AppIcon.cs                   窗口图标（按 DPI 取 exe 资源里的那一档）+ `Mxx1Form` 基类（9 个窗口都从它派生）
@@ -183,14 +208,15 @@ D:\萌新工具开发\toolbox\
   assets\app.ico                   程序图标（`/win32icon` 用的就是它）
   tests\Test-All.ps1               一条命令跑完全部
   tools\Test-InlineSyntax.ps1      内联脚本语法 + 清单 JSON + **每个 .ps1 的语法**体检（34 个内联 / 7 个清单）
-  tests\Test-Cli.ps1               命令行回归 197 项（A03b–A03d/D01 盯兼容、A14–A17 盯 exe 图标、
+  tests\Test-Cli.ps1               命令行回归 206 项（A03b–A03d/D01 盯兼容、A14–A17 盯 exe 图标、
                                    L 组 12 项盯 sysreg、J09–J11 盯卸载窗口的列表、M 组盯右键增强、
                                    R 组 14 项盯 bin-tools 自动按钮、P 组 10 项盯发布包内容、
                                    S 组 26 项盯条款门 + 更新检查；
                                    环境不满足的项走 Skip()，打印 [SKIP] 不算失败）
-  tests\Test-Gui.ps1               界面回归 142 项（要交互式桌面，无桌面返回 3 = 跳过；A04b 盯窗口图标、
+  tests\Test-Gui.ps1               界面回归 146 项（要交互式桌面，无桌面返回 3 = 跳过；A04b 盯窗口图标、
                                    H 组盯固定尺寸、E04b 盯窗口位置、A09 盯 bin-tools 说明、
-                                   N 组 19 项盯解除占用小窗口，含 N14/N15/N17/N18 的高度自适应、
+                                   N 组 23 项盯解除占用小窗口（含 N14/N15/N17/N18 的高度自适应、
+                                   N19/N19b「一键解除占用一个窗口都不弹」、N20/N20b「扫描期间窗口一直活着」）、
                                    I 组 27 项把条款确认窗口真开起来点一遍，含 I10b/I10c）
   docs\DESIGN.md                   设计正本（含"踩过的坑"清单 + §13.7 自动按钮 + §16 兼容性 + §17 条款门）
   docs\DISCLAIMER.md               免责声明与服务条款正本（**编译时内嵌进 exe**，窗口显示的就是它）
@@ -225,6 +251,8 @@ powershell -File tools\Make-AppIcon.ps1       # 重生成 assets\app.ico（改�
 & bin\Mxx1Toolbox.exe sysreg  status          # 只读列 6 组系统设置开关的现状；items / selftest 同上
 & bin\Mxx1Toolbox.exe rightmenu status        # 只读列右键菜单里装了什么 / 子菜单几项（**写入口只在界面里点**）
 & bin\Mxx1Toolbox.exe rightmenu unlock --query-only <路径>   # 只查谁占着这个文件，不弹窗也不结束进程
+& bin\Mxx1Toolbox.exe rightmenu unlock --auto <路径>         # **一键解除占用**：不弹窗，直接结束占着它的程序
+                                                          #   （右键菜单里那一项用的就是它；--quiet 不弹气泡）
                                                           # 输出：path/exists/scanned/truncated/hits/lockers/
                                                           # badfiles/file/pid…/verdict/verdictlocked/error
                                                           # （tests 靠这些键断言，v1.5.1 加了后半截）
@@ -436,9 +464,9 @@ powershell -File tools\Make-AppIcon.ps1       # 重生成 assets\app.ico（改�
 - 全是只读查看：**不加 `danger` / `runAsAdmin` / 二次确认**。
 - 想加一个系统工具：在 `SystemTargets` 数组里加一行 + `tools\system.json` 里加一条同 `action` 的按钮。
 
-## 「右键增强」怎么点（8 个按钮 = 7 个右键菜单按钮 + 隔壁工具）
+## 「右键增强」怎么点（10 个按钮 = 9 个右键菜单按钮 + 隔壁工具）
 
-**用户 2026-10-04 定的方案**（设计正本 `docs\DESIGN.md` §14）：工具箱自己往 Windows 右键菜单里装两样
+**用户 2026-10-04 定的方案**（设计正本 `docs\DESIGN.md` §14）：工具箱自己往 Windows 右键菜单里装三样
 东西 —— **只写 `HKCU\Software\Classes`**，不要管理员、不装 shell 扩展 DLL、不起服务、不加开机启动
 （微软文档写明在这个根下注册子动词不需要提升权限；实测也是真的不用）。四个位置：任意文件 /
 文件夹 / 文件夹里的空白处（= 当前文件夹）/ 桌面空白处。
@@ -446,7 +474,28 @@ powershell -File tools\Make-AppIcon.ps1       # 重生成 assets\app.ico（改�
 | 装什么 | 键（都在 HKCU\Software\Classes 下） | 点了做什么 |
 | --- | --- | --- |
 | 解除文件占用 | `*\shell\Mxx1Unlock` 等 4 个 verb | `"<exe>" rightmenu unlock "%1"` → 开一个小窗口列出谁占着它 |
+| **一键解除占用**（v1.5.4） | `*\shell\Mxx1AutoUnlock` 等 4 个 verb | `"<exe>" rightmenu unlock --auto "%1"` → **不弹窗口**，直接结束占着它的程序 |
 | 常用功能（级联子菜单） | `*\shell\Mxx1Common` + 共用子项键 `Mxx1Toolbox.Common` | 子项 = 「常用」页的镜像，命令是 `"<exe>" run <id>` |
+
+**第三项「一键解除占用」**（`src\AutoUnlock.cs`，用户 2026-10-05 点名要的"不弹窗版本"）：
+
+- 用户原话：**「保留现有的功能的前提下加个不弹窗的一键解除，对应也要单独加 2 个按钮一个添加右键
+  一个撤销右键」** → **窗口版一个字节都没改**，这是另外一条入口；装 / 撤用**单独那对按钮**
+  （`rightmenu.auto.on` / `rightmenu.auto.off`），和「装上 / 撤掉解除占用」互不影响。
+- 查占用 / 结束进程**复用同一份实现**（`FileLock.Scan` / `FileLock.Kill`），区别只有"要不要问"。
+- **底线更窄，而且只有一处**（`FileLock.AutoUnlockTarget`，测试 M34 盯着）：只结束
+  **真占着文件的**（`lock`）和**它自己在运行的**（`run`）；系统关键进程 / `pid ≤ 4` / `svchost` /
+  `lsass`…、`explorer.exe`、工具箱自己 —— **一律不动**；"窗口里开着它"（`open`）不动。
+- **没同意过使用条款 = 一个进程都不碰**（这条路没有窗口可以弹确认框，规矩是"不同意就不动手"，
+  只写一行日志）。回归 **M35** 就是盯这条。
+- 结果用**托盘气泡**说一句（`src\Balloon.cs`）—— 不弹窗口，但也不能一声不吭
+  （用户 2026-10-04 报过「点击确认以后也没有成功或者失败的反馈」）。
+  测试一律 `--quiet` / `MXX1_NO_NOTIFY=1`：**别在别人桌面上弹东西**。
+- 命令行输出是给测试读的：`auto=killed|partial|none|locked|skipped-consent|error` / `killed=` /
+  `failed=` / `summary=`；退出码 0 = 正常跑完、2 = 没给路径、1 = 查询本身出错。
+- **实测**（写测试之前端到端跑过）：锁一个文件 → `auto=killed killed=2`（连 conhost 子进程一起），
+  再查 `lockers=0 candelete=yes`；系统事件日志那个永远被 4 个 `svchost` 占着的文件 →
+  `auto=locked killed=0`，占用者一个没少。
 
 - **「解除文件占用」**（`src\FileLock.cs`）：用 **Windows 自带的 Restart Manager**（`rstrtmgr.dll`
   的 `RmStartSession` → `RmRegisterResources` → `RmGetList`）查"谁占着这个文件"，**不装 handle.exe、
@@ -456,7 +505,10 @@ powershell -File tools\Make-AppIcon.ps1       # 重生成 assets\app.ico（改�
   - **查**：整批先问一次（实测 60 个文件一批只要 **10ms**，和查 1 个一样）判"有没有"；
     整批失败就**二分劈开重查**（RM 全有或全无：一个它不认的路径会让整批回 0 结果，
     含非法字符的路径、`kernel32.dll` 这种已知 DLL 都会，实测还撞到 `ERROR_INVALID_HANDLE(6)`）；
-    有命中再**逐个文件**问一遍（实测 **≈11ms/个**，上限 60 个）落定"是哪个文件"；
+    有命中再**定位到具体是哪个文件**：v1.5.4 起是**二分定位**（把这一批劈成两半各问一次，
+    哪半有人占着就继续劈，问到单个文件为止）—— 400 个文件里占的是第 200 个也只要 **9 层约 18 次**
+    查询（原来"挨着问前 60 个"既慢又定位不到：实测第 200 个直接报"没定位到"）；
+    查询次数预算 `MaxAttributeQueries = 64`，超了就说"还有 N 个文件没定位"；
   - **自查**（`SelfCheck`，v1.5.1 新增）：不管查没查到，都自己试着**独占打开**一次那个路径 ——
     能打开 = 「我自己能独占打开它 —— 现在真的没有程序占着它」；被共享冲突拒绝（`0x80070020`）
     = 「确实有程序占着它，但报不出是哪个程序」（对方权限更高 / 别的用户）；权限被拒（`0x80070005`）
@@ -683,7 +735,9 @@ powershell -File tools\Make-AppIcon.ps1       # 重生成 assets\app.ico（改�
       失败信息里带 `[TBGui]::WindowAt(x,y)` 与 `Foreground()`，一眼能看出是不是环境问题。
   18. **按钮增减会连累一批"写死数量"的老断言**：v1.5.0 加 7 个按钮，Test-Cli 里 A04/A07/A09/A10/A11/H02
       六项全红（都是 105 / 右键 1 这种硬编码），Test-Gui 那边因为名字是 `list` 读出来的反而没事。
-      加按钮时顺手搜一遍 `105` / `右键增强 1` / 页签分布那串数字。
+      v1.5.4 又加 2 个（一键解除那一对）→ 同样这六项 + M03/M05/M07/M08 一起红（112 → 114、右键 8 → 10）。
+      **加按钮时按顺序搜：`112`（现在是 114）、`右键增强 8`、`'rightmenu' = 8`、`ok=8/8`、`菜单图标 8 个`**
+      —— 页签分布那串数字（0/33/3/26/8/29/5/10）也在两处。
   19. **悬停说明（`hint`）别超过 110 字**：`ToolTip` 不换行，太长会顶出屏幕（H05 盯着）。
       长说明写进「右键增强说明」那种窗口里，`hint` 只留一句话。
   20. **`& bin\Mxx1Toolbox.exe …` 在命令行里读输出会读串**：它是 `/target:winexe`，PowerShell
@@ -710,6 +764,28 @@ powershell -File tools\Make-AppIcon.ps1       # 重生成 assets\app.ico（改�
       同类字段以后还会遇到（注册表原值、安装状态…）：**要么别放进这个对象，要么保存前合并**。
       回归：Test-Gui **I10b**（关窗口后记录还在）/ **I10c**（重开不再弹）——
       原来的 I09 是窗口**还开着**时查的，所以这个 bug 从测试里溜过去了。
+  25. **"这一步要几秒"就不能放在界面线程上**：解锁窗口原来在 `Shown` 里同步调 `FileLock.Scan()`
+      （实测右键一个 400 个文件的文件夹：窗口 184ms 出现、**612ms 起完全没响应，一直到 7093ms**，
+      拖不动、关不掉、任务栏写"无响应"）。而那个扫描**最坏十几秒**（时间 90% 花在系统的
+      `RmGetList` 上，工具自己的代码只占 0.8 秒），**慢不慢还取决于系统对那批路径的心情**
+      （同样的文件换个文件夹 6.1 秒 → 0.23 秒），代码里根本预判不了 → 只能挪到后台线程。
+      判据也别用"窗口还在不在"（窗口一直在，只是不回消息）：用
+      `SendMessageTimeout(WM_NULL, SMTO_ABORTIFHUNG)` 量"最长一次没人应的时长"，回归 **N20**
+      （修好后实测 **0ms**）。**这招拆小批次救不了**（400 个一批 5620ms vs 50 个一批查 8 次 5461ms）。
+      连带两个小教训：**扫描期间那三个按钮要禁用**（查完恢复）—— 于是测试点按钮前必须等它 `Enabled`，
+      否则点了禁用按钮会什么都不发生，然后假红成"没弹出确认框"（N09 真踩过）；
+      状态行上的秒数由界面线程的 `Timer` 改，**它还在动就说明界面没被堵住**。
+  26. **"挨着问前 N 个"不等于"定位到了"**：原来"是哪个文件被占着"是拿文件夹里**前 60 个**文件
+      挨着问一遍 —— 400 个文件里被占的是第 200 个时，只会得到一句"查到了占用的程序，但没定位到
+      是文件夹里哪个文件"（而这是 v1.5.1 专门做出来的东西）。改成**二分定位**：整批已经知道
+      "有人占着"，就劈成两半各问一次，哪半有人占着继续劈 —— 靠的是 RM **全有或全无**的性质。
+      400 个文件里 1 个被占：**9 层约 18 次查询**（原来 60 次，还找不到），**又快又准**。
+      查询次数要留预算（`MaxAttributeQueries = 64`；System32 那种被占很多的文件夹会撑大二分树）。
+  27. **`Make-Icons.ps1` 会给 `bin-tools\` 里的工具画图标并提交进仓库**：实测跑一次多出
+      `assets\icons\mine.memreduct.png`（那是我这台机器 `bin-tools\memreduct\` 自动长出来的按钮，
+      id 还是从文件夹名推的）。现在它连**自动按钮**一起跳过（读 `status` 的 `autoButton=` 行）——
+      注意 `Mxx1Toolbox.exe` 是 winexe，**必须 `Start-Process -Wait -RedirectStandardOutput`** 才读得到
+      输出（就是坑 20），`& $exe status` 拿到的是空数组，跳过的名单会静默变成空的。
 - **别在 PowerShell 里按像素调函数**：一个 `Get-Pixel` 每像素调一次，几万次调用要几分钟，
   看起来像卡死（踩过一次）。要么 `LockBits` 取一次 `byte[]` 再纯数组循环（`Get-InkRows` 的写法），
   要么用 csc 编个临时小工具（`local\InkDiag.cs` 那种）。
@@ -727,10 +803,14 @@ powershell -File tools\Make-AppIcon.ps1       # 重生成 assets\app.ico（改�
 2. **外部工具目录 `bin-tools\`**：① 工具目录、③ 扫 `tool.json` 自动长按钮 **都已实现**（见上面那节与
    `docs\DESIGN.md` §13.7）。还没做的只有 ② 「把 `bin-tools\` 里的 exe 内嵌进 exe、首次点击释放到固定目录」
    —— **等用户说"我只想拷一个 exe"再做，别自己开工。**
-3. 发版相关（打 tag / 发 Release / 改版本号）**先问用户**：他现在要的是"发布工具"，
-   Release 的说明文字与截图要他点头。
-4. 条款正文（`docs\DISCLAIMER.md`）**改一个字就会让所有人下次打开重新确认一次**（记的是正文指纹）——
-   用户刚点过一次同意，改之前先跟他说一声。
+3. ⚠️ **现在这一轮（一键解除占用 + 两条治本）改完还没发版**：版本号还是 `1.5.3`，`CHANGELOG.md` 里
+   记在 `[未发布]` 那一节。**打 tag / 发 Release / 改版本号先问用户**（原话："发布工具"，
+   Release 的说明文字与截图要他点头）。要发的话记得：改版本号（`src\AssemblyInfo.cs` + 标题栏）→
+   `build.ps1 -Package` → 打 tag → 发 Release（附 `Mxx1Toolbox.exe` + zip + SHA256）。
+4. 条款正文（`docs\DISCLAIMER.md`）**改一个字就会让所有人下次打开重新确认一次**（记的是正文指纹）。
+   **v1.5.4 这一轮已经改过了**（补了第三项与「一键解除占用」的行为 / 底线 / 风险），
+   所以用户下次打开会再看到一次《使用条款确认》——**已经跟他说明过**；
+   想免打扰：`bin\Mxx1Toolbox.exe consent --accept`。以后再改正文同样要先说一声。
 5. P1 的范围（先接哪个页签的真功能）要问用户，别自己挑。
 6. 图标要改样式就动 `tools\Make-Icons.ps1` 的关键词映射 / 配色，然后按
    `build.ps1 → Make-Icons.ps1 → 删孤儿 → build.ps1` 的顺序跑。

@@ -23,7 +23,10 @@ namespace Mxx1Toolbox
     ///    「没查到」让用户以为工具坏了；
     /// ④ **列出来的行不只是"占用"**（2026-10-04 又加）：真占着的（lock）、它自己在运行的（run）、
     ///    窗口里开着它的（open）—— 后两类不是占用，但恰好是用户最想问的两种情况
-    ///    （"我明明开着它"、"文件夹说被占着却报不出是谁"）。</summary>
+    ///    （"我明明开着它"、"文件夹说被占着却报不出是谁"）；
+    /// ⑤ **查的过程不许把窗口堵住**（2026-10-05 改）：扫描放后台线程，状态行上的秒数由界面
+    ///    线程上的 Timer 改 —— 那个秒数还在动就说明窗口没被堵住。之前是同步查的，实测
+    ///    "右键一个 400 个文件的文件夹，窗口出现后 612ms 一直卡到 7093ms 完全无响应"。</summary>
     internal sealed class UnlockForm : Mxx1Form
     {
         /// <summary>列表里的一行：哪个程序，占着哪个文件。</summary>
@@ -44,6 +47,8 @@ namespace Mxx1Toolbox
         private readonly List<Row> _rows = new List<Row>();
         private LockReport _report;
         private bool _busy;              // 正在后台扫句柄（这时别让按钮重复触发）
+        private bool _scanning;          // 正在后台查"谁占着它"（同理）
+        private int _scanStartTicks;     // 这一轮扫描是什么时候开始的（状态行要念秒数）
 
         private ListView _list;
         private Label _head;
@@ -52,6 +57,8 @@ namespace Mxx1Toolbox
         private Label _hint;
         private Button _killBtn;
         private Button _forceBtn;
+        private Button _refreshBtn;
+        private System.Windows.Forms.Timer _tick;   // 写全名：这个文件同时 using 了 System.Threading（要用 Thread）
         private TableLayoutPanel _root;   // 留着量尺寸（窗口高度按内容自适应时要用）
         private FlowLayoutPanel _bar;
 
@@ -105,7 +112,7 @@ namespace Mxx1Toolbox
             _status.ForeColor = _theme.BarText;
             _status.Margin = new Padding(2, 0, 2, 8);
             // 第一次检查要等一会儿（右键文件夹时要一个个文件问系统），先说一句、别让用户看着空白发呆。
-            _status.Text = "正在检查谁占着它……";
+            _status.Text = ScanText();
             root.Controls.Add(_status, 0, 1);
 
             _list = new ListView();
@@ -159,9 +166,9 @@ namespace Mxx1Toolbox
             _forceBtn = MakeButton("强制解锁（不关程序）");
             _forceBtn.Click += delegate { ForceUnlock(); };
             bar.Controls.Add(_forceBtn);
-            Button refresh = MakeButton("重新检查");
-            refresh.Click += delegate { RefreshLockers(); };
-            bar.Controls.Add(refresh);
+            _refreshBtn = MakeButton("重新检查");
+            _refreshBtn.Click += delegate { RefreshLockers(); };
+            bar.Controls.Add(_refreshBtn);
             Button copy = MakeButton("复制路径");
             copy.Click += delegate { CopyPaths(); };
             bar.Controls.Add(copy);
@@ -175,6 +182,14 @@ namespace Mxx1Toolbox
             // 结束进程必须真的去点那个按钮（和 ConfirmForm 里"默认按钮是取消"同一个理由）。
             CancelButton = close;
             Native.ApplyDarkTitleBar(Handle, _theme.DarkMode);
+
+            // 查的时候状态行上的秒数要动 —— 那个 Timer 只在界面线程上跑，所以它还能跟得上
+            // 本身就证明"扫描没有把界面堵住"（2026-10-05 之前是堵住的，见下面 RefreshLockers）。
+            _tick = new System.Windows.Forms.Timer();
+            _tick.Interval = 500;
+            _tick.Tick += delegate { TickStatus(); };
+            _tick.Start();
+
             UpdateSize();                      // 先按"正在检查"这点内容把窗口摆好，查完再长
 
             Shown += delegate
@@ -182,6 +197,35 @@ namespace Mxx1Toolbox
                 RefreshLockers();
                 Activate();
             };
+        }
+
+        /// <summary>正在检查时状态行上的那句话（秒数会跟着长，所以这里要现算）。
+        /// 两行，行数不随秒数变化 —— 免得窗口一边查一边忽高忽低。</summary>
+        private string ScanText()
+        {
+            int secs = (Environment.TickCount - _scanStartTicks) / 1000;
+            if (secs < 0) { secs = 0; }
+            return "正在检查谁占着它……（已经 " + secs.ToString(CultureInfo.InvariantCulture) + " 秒）"
+                + Environment.NewLine
+                + "文件夹越大越慢（要一个个文件问系统）；这个窗口可以正常拖动，也能直接关掉。";
+        }
+
+        private void TickStatus()
+        {
+            if (!_scanning || IsDisposed) { return; }
+            string want = ScanText();
+            if (want == _status.Text) { return; }
+            _status.Text = want;
+            UpdateSize();
+        }
+
+        /// <summary>按"现在能不能动手"统一开关按钮（扫描中 / 扫句柄中都不许重复触发）。</summary>
+        private void UpdateButtons()
+        {
+            bool ready = !_scanning && !_busy;
+            _killBtn.Enabled = ready;
+            _forceBtn.Enabled = ready;
+            _refreshBtn.Enabled = ready;
         }
 
         private Button MakeButton(string text)
@@ -238,10 +282,62 @@ namespace Mxx1Toolbox
             return false;
         }
 
+        /// <summary>查一次"谁占着它"，**在后台线程上查**。
+        ///
+        /// 2026-10-05 改的（自己实测出来的问题）：原来这一句是直接在界面线程上跑
+        /// `FileLock.Scan(_paths)` —— 而那个扫描最坏要十几秒（时间几乎全花在系统的
+        /// Restart Manager 上，实测 400 个文件的文件夹 0.2 秒，含 .git 的项目文件夹 5.9 秒，
+        /// 系统目录 System32 那一片 12.6 秒），于是那段时间窗口**完全没响应**：拖不动、关不掉，
+        /// 任务栏会写「（无响应）」。实测：窗口 184ms 出现，从 612ms 一直卡到 7093ms。
+        ///
+        /// 现在：后台线程查，查完 BeginInvoke 回来刷新界面；状态行每半秒改一次秒数
+        /// （那个 Timer 跑在界面线程上，它还能动就说明界面没被堵住）。</summary>
         private void RefreshLockers()
         {
+            if (_scanning || _busy) { return; }
+
+            _scanning = true;
+            _scanStartTicks = Environment.TickCount;
             _rows.Clear();
-            _report = FileLock.Scan(_paths);
+            _list.Items.Clear();
+            _list.Visible = false;
+            _empty.Visible = false;
+            _empty.Text = "";
+            _report = null;
+            _status.Text = ScanText();
+            UpdateButtons();
+            UpdateSize();
+
+            string[] paths = _paths;
+            Thread t = new Thread(delegate()
+            {
+                LockReport report = null;
+                string error = "";
+                try { report = FileLock.Scan(paths); }
+                catch (Exception ex) { error = ex.Message; }
+                try { BeginInvoke((MethodInvoker)delegate { ScanReady(report, error); }); }
+                catch { }   // 窗口已经被关掉了：那就什么都不用做
+            });
+            t.IsBackground = true;
+            t.Start();
+        }
+
+        /// <summary>后台查完了（界面线程）：把结果摆出来。</summary>
+        private void ScanReady(LockReport report, string error)
+        {
+            _scanning = false;
+            if (IsDisposed) { return; }
+
+            if (report == null)
+            {
+                _report = new LockReport();
+                _report.Error = (error.Length > 0) ? error : "查询失败";
+            }
+            else
+            {
+                _report = report;
+            }
+
             foreach (LockHit h in _report.Hits)
             {
                 foreach (FileLocker f in h.Lockers)
@@ -280,7 +376,7 @@ namespace Mxx1Toolbox
                 _status.Text = EmptyHeadline();
                 _empty.Text = EmptyBody();
             }
-            _killBtn.Enabled = true;
+            UpdateButtons();
             UpdateSize();
         }
 
@@ -578,6 +674,14 @@ namespace Mxx1Toolbox
             UpdateSize();
         }
 
+        /// <summary>窗口关掉时把那个秒数计时器停掉（留着也无所谓，进程马上就退了，图个干净）。</summary>
+        protected override void OnFormClosed(FormClosedEventArgs e)
+        {
+            try { if (_tick != null) { _tick.Stop(); _tick.Dispose(); } }
+            catch { }
+            base.OnFormClosed(e);
+        }
+
         private void CopyPaths()
         {
             try
@@ -597,7 +701,7 @@ namespace Mxx1Toolbox
         /// （这是危险动作：从别人脚下抽走句柄，那个程序可能出错 / 丢数据），确认了才真动手。</summary>
         private void ForceUnlock()
         {
-            if (_busy) { return; }
+            if (_busy || _scanning) { return; }
             // 「强制解锁」会从别的程序脚下抽走句柄（那个程序可能出错 / 丢数据）——
             // 这是会改动系统的动作，先过一遍使用条款的同意状态（命令行不拦，见 DISCLAIMER 5.1）。
             if (!Consent.EnsureAccepted(this, _theme, "解除文件占用 · 强制解锁"))
@@ -606,8 +710,7 @@ namespace Mxx1Toolbox
                 return;
             }
             _busy = true;
-            _killBtn.Enabled = false;
-            _forceBtn.Enabled = false;
+            UpdateButtons();
             SetStatus("正在检查全系统的句柄，大约几秒 —— 这一步走完会弹确认框。");
 
             List<string> targets = new List<string>();
@@ -636,8 +739,7 @@ namespace Mxx1Toolbox
         private void ForceUnlockReady(List<HandleHit> hits, string note)
         {
             _busy = false;
-            _killBtn.Enabled = true;
-            _forceBtn.Enabled = true;
+            UpdateButtons();
             if (IsDisposed) { return; }
 
             if (hits == null) { hits = new List<HandleHit>(); }

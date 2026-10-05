@@ -247,6 +247,17 @@ public class TBGui
     public static bool CloseWindow(IntPtr h) { return PostMessageW(h, 0x0010, IntPtr.Zero, IntPtr.Zero); }  // WM_CLOSE
     public static IntPtr Parent(IntPtr h) { return GetParent(h); }
 
+    // 「这个窗口现在还处理消息吗」：WM_NULL + SMTO_ABORTIFHUNG，超时没人接 = 界面被堵住了。
+    // 2026-10-05 加：解锁窗口的扫描原来在界面线程上跑，实测右键一个 400 个文件的文件夹时，
+    // 窗口从 612ms 一直卡到 7093ms（拖不动、关不掉、任务栏写"无响应"）。判据不能是"窗口还在不在"
+    // —— 只有"一条 WM_NULL 都回不了"才说明消息循环停了。
+    [DllImport("user32.dll", EntryPoint = "SendMessageTimeoutW")]
+    private static extern IntPtr SendMessageTimeoutNull(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam, uint flags, uint timeout, out IntPtr result);
+    public static bool Responds(IntPtr h, uint timeoutMs) {
+        IntPtr r;
+        return SendMessageTimeoutNull(h, 0x0000, IntPtr.Zero, IntPtr.Zero, 0x0002, timeoutMs, out r) != IntPtr.Zero;
+    }
+
     // PW_RENDERFULLCONTENT (2) asks the window to paint itself into the given DC, including its
     // children and the DWM composited title bar. The bitmap is created on the PowerShell side so
     // that this class never mentions System.Drawing -- that keeps Add-Type working on both
@@ -1654,6 +1665,19 @@ try {
 Write-Host ''
 Write-Host 'N 组 · 「解除文件占用」的结果窗口（从资源管理器右键调起来的那个独立小窗口）'
 
+# 扫描从 2026-10-05 起跑在**后台线程**上（以前是同步跑，窗口会卡死），所以"等它查完"必须是轮询，
+# 不能读一次就断言。判据：状态行不再写"正在检查谁占着它"。
+function Wait-UnlockTexts {
+    param([IntPtr]$Hwnd, [int]$Tries = 60, [int]$SleepMs = 250)
+    $texts = @()
+    for ($i = 0; $i -lt $Tries; $i++) {
+        $texts = @(Get-ChildControls -RootHandle $Hwnd | Where-Object { $_.Class -like '*STATIC*' } | ForEach-Object { $_.Text })
+        if (@($texts | Where-Object { $_ -match '正在检查谁占着它' }).Count -eq 0) { return $texts }
+        Start-Sleep -Milliseconds $SleepMs
+    }
+    return $texts
+}
+
 $unlockDir = Join-Path $env:TEMP 'mxx1-unlock-gui'
 if (Test-Path -LiteralPath $unlockDir) { Remove-Item -LiteralPath $unlockDir -Recurse -Force }
 New-Item -ItemType Directory -Path $unlockDir | Out-Null
@@ -1685,7 +1709,7 @@ try {
         Check 'N02 五个按钮都在（结束选中的进程 / 强制解锁 / 重新检查 / 复制路径 / 关闭）' `
             ($missBtn.Count -eq 0) ('缺=' + ($missBtn -join ' ') + ' 实际=' + ($ubtns -join ' '))
 
-        $utexts = @($ukids | Where-Object { $_.Class -like '*STATIC*' } | ForEach-Object { $_.Text })
+        $utexts = Wait-UnlockTexts -Hwnd $uh
         $found = @($utexts | Where-Object { $_ -match '查到 \d+ 个程序占着它' })
         Check 'N03 窗口里念出了「查到 N 个程序占着它」（真查到了那个锁）' ($found.Count -eq 1) ($utexts -join ' | ')
 
@@ -1887,9 +1911,12 @@ try {
         }
         if ($forceWin.Count -gt 0) {
             $fbtn = @()
-            for ($i = 0; $i -lt 20; $i++) {
+            # 注意要等它**可用**：扫描挪到后台线程之后，查的过程中那三个按钮是禁用的
+            # （2026-10-05 起走 UpdateButtons()），按钮"在"不等于能点 —— 直接点会什么都不发生，
+            # 然后这一组会假红成"没弹出确认框"（真踩过一次）。
+            for ($i = 0; $i -lt 40; $i++) {
                 $fbtn = @(Get-ChildControls -RootHandle $forceWin[0].H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '强制解锁（不关程序）' })
-                if ($fbtn.Count -eq 1) { break }
+                if (($fbtn.Count -eq 1) -and [TBGui]::Enabled($fbtn[0].H)) { break }
                 Start-Sleep -Milliseconds 250
             }
             Check 'N09a 窗口里有「强制解锁（不关程序）」按钮（照火绒那套：不结束进程，只抽句柄）' `
@@ -1993,6 +2020,119 @@ try {
     } finally {
         if ($freeProc -and -not $freeProc.HasExited) { try { $freeProc.Kill() } catch { } }
         if (Test-Path -LiteralPath $freeRoot) { Remove-Item -LiteralPath $freeRoot -Recurse -Force -ErrorAction SilentlyContinue }
+    }
+
+    # ---- N19 / N19b：用户 2026-10-05 要的「一键解除占用」—— **不许弹任何窗口** ----------------
+    # 这一条是本组的重点：真起一个 `rightmenu unlock --auto` 进程，从它出生到退出每 100ms 枚举一次
+    # 它的顶层窗口 —— 一个可见窗口都不许有（连一闪而过的也不行），同时那个占着文件的进程必须被结束、
+    # 文件必须松开。文件名 / 路径都用拼的（编码体检不许出现字面量绝对路径）。
+    $autoRoot = Join-Path $env:TEMP 'mxx1-auto-gui'
+    if (Test-Path -LiteralPath $autoRoot) { Remove-Item -LiteralPath $autoRoot -Recurse -Force }
+    New-Item -ItemType Directory -Path $autoRoot | Out-Null
+    $autoFile = Join-Path $autoRoot 'auto-locked.txt'
+    Set-Content -LiteralPath $autoFile -Value 'x' -Encoding UTF8
+    $autoHolder = $null
+    $autoProc = $null
+    try {
+        $autoHolder = Start-Process powershell.exe -WindowStyle Hidden -PassThru -ArgumentList @(
+            '-NoProfile', '-Command', ("`$fs=[System.IO.File]::Open('" + $autoFile + "','Open','ReadWrite','None'); Start-Sleep 120"))
+        Start-Sleep -Seconds 2
+        $autoProc = Start-Process -FilePath $Exe -PassThru -ArgumentList @('rightmenu', 'unlock', '--auto', '--quiet', $autoFile)
+        [void]$script:Procs.Add($autoProc)
+        $autoSeen = New-Object System.Collections.ArrayList
+        for ($i = 0; $i -lt 200; $i++) {          # 最多 20 秒（文件夹 / 大文件时扫描会久一点）
+            foreach ($w in @(Get-TopWindows -ProcessId $autoProc.Id)) {
+                if ($w.Visible) { [void]$autoSeen.Add($w.Text) }
+            }
+            $autoProc.Refresh()
+            if ($autoProc.HasExited) { break }
+            Start-Sleep -Milliseconds 100
+        }
+        Start-Sleep -Milliseconds 500
+        $autoProc.Refresh()
+        Check 'N19 一键解除不弹任何窗口（从生到死一个可见窗口都没有），而且自己退出' `
+            (($autoProc.HasExited) -and ($autoSeen.Count -eq 0)) `
+            ('看到过的窗口=' + $(if ($autoSeen.Count -eq 0) { '（没有）' } else { $autoSeen -join ' / ' }) + ' 退出了=' + $autoProc.HasExited)
+
+        $autoHolder.Refresh()
+        $autoOpen = $false
+        try { $fs2 = [System.IO.File]::Open($autoFile, 'Open', 'ReadWrite', 'None'); $autoOpen = $true; $fs2.Close() } catch { $autoOpen = $false }
+        Check 'N19b 一键解除真把文件松开了（占着它的进程被结束 + 我能独占打开它）' `
+            ($autoHolder.HasExited -and $autoOpen) ('holder 退出=' + $autoHolder.HasExited + ' 能独占打开=' + $autoOpen)
+    } finally {
+        if ($autoHolder -and -not $autoHolder.HasExited) { Stop-Process -Id $autoHolder.Id -Force -ErrorAction SilentlyContinue }
+        if ($autoProc -and -not $autoProc.HasExited) { try { $autoProc.Kill() } catch { } }
+        if (Test-Path -LiteralPath $autoRoot) { Remove-Item -LiteralPath $autoRoot -Recurse -Force -ErrorAction SilentlyContinue }
+    }
+
+    # ---- N20 / N20b：扫描期间窗口必须是"活的"（2026-10-05 修的那个卡死）------------------------
+    # 原来 FileLock.Scan 直接跑在界面线程上：实测右键一个 400 个文件的文件夹，窗口 184ms 出现、
+    # 612ms 起完全没响应，一直到 7093ms（拖不动、关不掉、任务栏写"无响应"）。这条回归不看截图、
+    # 也不看"窗口还在不在"，而是每 20ms 用 WM_NULL 问一次"你还处理消息吗"，量**最长一次没人应的时长**。
+    # 修好之后那个数应该是个位数毫秒（不管扫描要多久，它都不在界面线程上）；修之前会是整个扫描的时长。
+    $slowRoot = Join-Path $env:TEMP 'mxx1-unlock-slow-gui'
+    if (Test-Path -LiteralPath $slowRoot) { Remove-Item -LiteralPath $slowRoot -Recurse -Force }
+    New-Item -ItemType Directory -Path $slowRoot | Out-Null
+    for ($i = 1; $i -le 400; $i++) {
+        [System.IO.File]::WriteAllText((Join-Path $slowRoot ('f{0:000}.txt' -f $i)), 'x')
+    }
+    $slowFile = Join-Path $slowRoot 'f200.txt'      # 被占的是第 200 个：二分定位那条路也一起走一遍
+    $slowHolder = $null
+    $slowProc = $null
+    try {
+        $slowHolder = Start-Process powershell.exe -WindowStyle Hidden -PassThru -ArgumentList @(
+            '-NoProfile', '-Command', ("`$fs=[System.IO.File]::Open('" + $slowFile + "','Open','ReadWrite','None'); Start-Sleep 120"))
+        Start-Sleep -Seconds 2
+        $slowProc = Start-Process -FilePath $Exe -PassThru -ArgumentList @('rightmenu', 'unlock', $slowRoot)
+        [void]$script:Procs.Add($slowProc)
+        $slowWin = @()
+        for ($i = 0; $i -lt 60; $i++) {
+            Start-Sleep -Milliseconds 100
+            $slowWin = @((Get-TopWindows -ProcessId $slowProc.Id) | Where-Object { $_.Visible -and $_.Text -eq '解除文件占用' })
+            if ($slowWin.Count -gt 0) { break }
+        }
+        if ($slowWin.Count -gt 0) {
+            $sh = $slowWin[0].H
+            Start-Sleep -Milliseconds 120          # 让消息循环先转起来（窗口显示和 Run 之间有几毫秒）
+            $maxGap = 0
+            $gapStart = -1
+            $sawScan = $false
+            $sawDone = $false
+            $clock = [System.Diagnostics.Stopwatch]::StartNew()
+            for ($i = 0; $i -lt 120; $i++) {
+                $ok = [TBGui]::Responds($sh, 400)
+                $nowMs = $clock.ElapsedMilliseconds
+                if (-not $ok) {
+                    if ($gapStart -lt 0) { $gapStart = $nowMs }
+                } else {
+                    if ($gapStart -ge 0) {
+                        $gap = $nowMs - $gapStart
+                        if ($gap -gt $maxGap) { $maxGap = $gap }
+                        $gapStart = -1
+                    }
+                    $st = @(Get-ChildControls -RootHandle $sh | Where-Object { $_.Class -like '*STATIC*' } | ForEach-Object { $_.Text })
+                    if (@($st | Where-Object { $_ -match '正在检查谁占着它' }).Count -gt 0) { $sawScan = $true }
+                    if (@($st | Where-Object { $_ -match '个程序占着它|没有程序锁着它|确实有程序占着它' }).Count -gt 0) { $sawDone = $true }
+                }
+                if ($sawDone -and $clock.ElapsedMilliseconds -gt 1500) { break }
+                if ($clock.ElapsedMilliseconds -gt 6000) { break }
+                Start-Sleep -Milliseconds 20
+            }
+            Check 'N20 扫描期间窗口一直在处理消息（最长一次没人应 < 500ms；以前是整个扫描都卡着）' `
+                (($maxGap -lt 500) -and [TBGui]::Alive($sh)) `
+                ('最长无响应=' + $maxGap + 'ms 采到"正在检查"=' + $sawScan + ' 采到结论=' + $sawDone)
+            Check 'N20b 夹具自检：这一轮真的在扫、也真的出了结论（不然 N20 等于没测）' `
+                ($sawScan -and $sawDone) ('正在检查=' + $sawScan + ' 结论=' + $sawDone)
+            [void][TBGui]::CloseWindow($sh)
+            Start-Sleep -Milliseconds 700
+        } else {
+            Check 'N20 扫描期间窗口一直在处理消息（最长一次没人应 < 500ms；以前是整个扫描都卡着）' $false 'skipped（窗口没起来）'
+            Check 'N20b 夹具自检：这一轮真的在扫、也真的出了结论（不然 N20 等于没测）' $false 'skipped（窗口没起来）'
+        }
+    } finally {
+        if ($slowHolder -and -not $slowHolder.HasExited) { Stop-Process -Id $slowHolder.Id -Force -ErrorAction SilentlyContinue }
+        if ($slowProc -and -not $slowProc.HasExited) { try { $slowProc.Kill() } catch { } }
+        if (Test-Path -LiteralPath $slowRoot) { Remove-Item -LiteralPath $slowRoot -Recurse -Force -ErrorAction SilentlyContinue }
     }
 
     # ---- N10：从右键菜单点「激活状态」「查看设置改动」这种**结果就是一段文字**的按钮，必须弹出

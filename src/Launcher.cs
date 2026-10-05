@@ -353,6 +353,8 @@ namespace Mxx1Toolbox
                         string a = t.Action.ToLowerInvariant();
                         if (a == "unlock.on") { return "把「" + RightMenu.UnlockTitle + "」装进右键菜单（只写当前用户，可一键撤掉）"; }
                         if (a == "unlock.off") { return "把「" + RightMenu.UnlockTitle + "」从右键菜单里撤掉（只删工具箱自己写的键）"; }
+                        if (a == "auto.on") { return "把「" + RightMenu.AutoTitle + "」装进右键菜单（点了不弹窗口，查到占用就直接结束那些程序）"; }
+                        if (a == "auto.off") { return "把「" + RightMenu.AutoTitle + "」从右键菜单里撤掉（只删工具箱自己写的键）"; }
                         if (a == "common.on") { return "把「" + RightMenu.CommonTitle + "」子菜单装进右键菜单（内容 = 「常用」页：置顶 + 最近使用）"; }
                         if (a == "common.off") { return "把「" + RightMenu.CommonTitle + "」子菜单撤掉（只删工具箱自己写的键）"; }
                         if (a == "status") { return "只读：列出右键菜单里装了什么、子菜单现在几项"; }
@@ -682,7 +684,7 @@ namespace Mxx1Toolbox
             return r;
         }
 
-        /// <summary>「右键增强」：把两件事装进 / 撤出 Windows 右键菜单，外加状态、重建、说明。
+        /// <summary>「右键增强」：把三件事装进 / 撤出 Windows 右键菜单，外加状态、重建、说明。
         /// 只写 HKCU（**不需要管理员**，所以没有 runas 那条路），写之前记原值、写完读回核对，
         /// 撤掉按记录只删自己那几个键。三条底线见 src\RightMenu.cs 的注释和 docs\DESIGN.md §14.7。</summary>
         private static LaunchResult RunRightMenu(ToolItem t)
@@ -691,10 +693,12 @@ namespace Mxx1Toolbox
             bool ok;
             string report;
             string a = t.Action.ToLowerInvariant();
-            if (a == "unlock.on") { report = RightMenu.Install(true, false, out ok); }
-            else if (a == "unlock.off") { report = RightMenu.Uninstall(true, false, out ok); }
-            else if (a == "common.on") { report = RightMenu.Install(false, true, out ok); }
-            else if (a == "common.off") { report = RightMenu.Uninstall(false, true, out ok); }
+            if (a == "unlock.on") { report = RightMenu.Install(true, false, false, out ok); }
+            else if (a == "unlock.off") { report = RightMenu.Uninstall(true, false, false, out ok); }
+            else if (a == "auto.on") { report = RightMenu.Install(false, true, false, out ok); }
+            else if (a == "auto.off") { report = RightMenu.Uninstall(false, true, false, out ok); }
+            else if (a == "common.on") { report = RightMenu.Install(false, false, true, out ok); }
+            else if (a == "common.off") { report = RightMenu.Uninstall(false, false, true, out ok); }
             else if (a == "status") { report = RightMenu.Status(); ok = true; }
             else if (a == "rebuild") { report = RightMenu.Rebuild(out ok); }
             else if (a == "help") { report = RightMenu.Help(); ok = true; }

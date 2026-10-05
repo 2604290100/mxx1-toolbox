@@ -42,6 +42,10 @@ function Get-Shape {
         # 解除占用 = 钥匙（解锁）、常用功能 = 清单、重建 = 刷新、说明 = 文档
         @('rightmenu.unlock.on',  'key'),
         @('rightmenu.unlock.off', 'minus'),
+        # v1.5.4 加的第三个右键项：一键解除（不弹窗，查到占用就直接结束）—— 用闪电表示"一下就完"，
+        # 撤掉还是一个减号。注意这两行必须在下面那些泛匹配之前。
+        @('rightmenu.auto.on',    'bolt'),
+        @('rightmenu.auto.off',   'minus'),
         @('rightmenu.common.on',  'list'),
         @('rightmenu.common.off', 'minus'),
         @('rightmenu.rebuild',    'refresh'),
@@ -361,6 +365,11 @@ if ($items.Count -eq 0) { throw '没有从 exe 里读到按钮清单（先跑 bu
 
 # 用户自己建的按钮（%LOCALAPPDATA%\mxx1-toolbox\tools.json）不该被画进仓库的 assets\icons\：
 # 那是别人机器上的东西，提交进来只会污染仓库。先把它们的 id 读出来跳过。
+#
+# 同理还有 **bin-tools\ 里自动长出来的按钮**（src\ToolFolders.cs）：那是我这台机器上放了
+# 什么工具就长什么按钮，id 还是从文件夹名推出来的 —— 2026-10-05 实测漏过一次：跑了
+# Make-Icons 之后 assets\icons\mine.memreduct.png 被生成出来（那个 memreduct 文件夹是
+# 我自己放在 bin-tools 里的）。所以这里连它们一起跳过（status 的 autoButton= 行报的就是）。
 $userIds = @{}
 $userJson = Join-Path $env:LOCALAPPDATA 'mxx1-toolbox\tools.json'
 if (Test-Path -LiteralPath $userJson) {
@@ -372,8 +381,26 @@ if (Test-Path -LiteralPath $userJson) {
         Write-Host ('note     : 读不了用户 tools.json（跳过）: ' + $_.Exception.Message)
     }
 }
+$autoIds = @{}
+# 注意：Mxx1Toolbox.exe 是 winexe，PowerShell **不等待**它、`& $exe status` 也拿不到输出
+# （docs\DESIGN.md 坑 20 就是这一条）—— 必须 Start-Process -Wait -RedirectStandardOutput。
+$statusTmp = Join-Path $env:TEMP ('mxx1-icons-status-' + [guid]::NewGuid().ToString('N') + '.txt')
+try {
+    Start-Process -FilePath $exe -ArgumentList 'status' -Wait -WindowStyle Hidden -RedirectStandardOutput $statusTmp | Out-Null
+    foreach ($line in @(Get-Content -LiteralPath $statusTmp -Encoding UTF8)) {
+        if ($line -match '^autoButton=') {
+            $f = ($line -split "`t")
+            if ($f.Count -ge 2 -and $f[1].Trim().Length -gt 0) { $autoIds[$f[1].Trim()] = $true }
+        }
+    }
+} catch {
+    Write-Host ('note     : 读不了 status（跳不过 bin-tools 自动按钮）: ' + $_.Exception.Message)
+} finally {
+    if (Test-Path -LiteralPath $statusTmp) { Remove-Item -LiteralPath $statusTmp -Force -ErrorAction SilentlyContinue }
+}
+foreach ($k in $autoIds.Keys) { $userIds[$k] = $true }
 if ($userIds.Count -gt 0) {
-    Write-Host ('note     : 跳过 ' + $userIds.Count + ' 个用户自建按钮：' + (($userIds.Keys | Sort-Object) -join ' '))
+    Write-Host ('note     : 跳过 ' + $userIds.Count + ' 个用户 / bin-tools 自建按钮：' + (($userIds.Keys | Sort-Object) -join ' '))
 }
 
 $made = 0

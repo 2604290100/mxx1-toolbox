@@ -190,7 +190,7 @@ namespace Mxx1Toolbox
     ///    单个文件为止（单个还失败就记下来跳过，不拖累别的）。
     /// ③ **命中之后要说是哪个文件**：一批登记 400 个文件，RM 只告诉你"哪几个进程"，不告诉你是哪个
     ///    文件。所以先把整批问一次（10ms 级）判"有没有"，有命中再逐个文件问一遍（≈11ms/个）定位，
-    ///    上限 MaxAttributeFiles 个。
+    ///    上限 MaxAttributeQueries 次。
     ///
     /// 两个已知边界（如实告诉用户，不假装万能）：
     /// ① 别的用户 / 更高权限下跑的进程，没提权时**查不到**；
@@ -215,8 +215,13 @@ namespace Mxx1Toolbox
         /// <summary>整次扫描的时间上限（网络盘 / 十万个文件的目录不能把窗口挂死）。</summary>
         private const int MaxScanMs = 4000;
 
-        /// <summary>命中之后逐个文件定位的上限（≈11ms/个，60 个约 0.7 秒）。</summary>
-        private const int MaxAttributeFiles = 60;
+        /// <summary>命中之后"定位到具体哪个文件"的查询次数预算（≈12ms/次，64 次约 0.8 秒）。
+        ///
+        /// 为什么是"次数"而不是"文件数"：2026-10-05 改成二分定位之后，一次查询能排除掉一整半，
+        /// 所以 400 个文件里只有 1 个被占着时，9 层二分（约 18 次查询）就能指名，比原来
+        /// "挨着问前 60 个文件"（60 次）又快又准。被占的文件很多时（System32 那种）二分树会变大，
+        /// 这个预算就是刹车：超了就停下并如实说"还有没定位完的"。</summary>
+        private const int MaxAttributeQueries = 64;
 
         /// <summary>系统关键进程：列出来但不许结束。杀了会蓝屏或掉登录会话。</summary>
         private static readonly string[] CriticalNames = new string[]
@@ -314,7 +319,18 @@ namespace Mxx1Toolbox
             QueryResilient(right, into, r, depth + 1, clock);
         }
 
-        /// <summary>把"谁占着"落到"占着哪个文件"上（逐个文件再问一遍，有上限）。</summary>
+        /// <summary>把"谁占着"落到"占着哪个文件"上。
+        ///
+        /// 2026-10-05 改成**二分定位**（原来那版有个实测出来的 bug）：原来是拿文件夹里**前 60 个**
+        /// 文件挨着问一遍，于是"400 个文件的文件夹里被占的是第 200 个"这种情况只会得到一句
+        /// 「查到了占用的程序，但没定位到是文件夹里哪个文件」—— 而"指名是哪个文件被占着"
+        /// 恰恰是 v1.5.1 专门做出来的东西。
+        ///
+        /// 现在：整批已经问出"有人占着"，就把它劈成两半各问一次，哪一半有人占着就继续往下劈，
+        /// 一路劈到单个文件（400 个文件约 9 层）。因为 Restart Manager 是**全有或全无**的
+        /// （一批里只要有一个被占着，这一批就报"有人占着"），二分才成立。
+        /// 实测（自己造的 400 个文件、占用在第 200 个上）：原来 60 次查询都定位不到，
+        /// 现在 9 层约 18 次查询就指名了，而且比原来更快（每问一次系统约 12ms）。</summary>
         private static void Attribute(List<string> files, List<FileLocker> batch, LockReport r)
         {
             if (files.Count == 1)
@@ -326,41 +342,74 @@ namespace Mxx1Toolbox
                 return;
             }
 
-            int tried = 0;
-            List<string> covered = new List<string>();
-            foreach (string f in files)
-            {
-                if (tried >= MaxAttributeFiles) { break; }
-                tried++;
-                covered.Add(f);
-                List<FileLocker> part;
-                string error;
-                if (!TryQuery(new string[] { f }, out part, out error)) { continue; }
-                if (part.Count == 0) { continue; }
-                LockHit hit = new LockHit();
-                hit.File = f;
-                hit.Lockers = part;
-                r.Hits.Add(hit);
-            }
+            int used = 0;
+            List<string> covered = new List<string>();   // 已经问过的文件（用来如实说"还有多少个没定位"）
+            int half = files.Count / 2;
+            Bisect(files.GetRange(0, half), r, ref used, covered);
+            Bisect(files.GetRange(half, files.Count - half), r, ref used, covered);
 
             if (r.Hits.Count > 0)
             {
-                if (tried < files.Count)
+                if (covered.Count < files.Count)
                 {
-                    r.Note = "文件夹里还有 " + (files.Count - tried).ToString(CultureInfo.InvariantCulture)
-                        + " 个文件没逐个定位（上限 " + MaxAttributeFiles.ToString(CultureInfo.InvariantCulture)
-                        + " 个），上面列的是已经定位到的。";
+                    r.Note = "文件夹里还有 " + (files.Count - covered.Count).ToString(CultureInfo.InvariantCulture)
+                        + " 个文件没定位（查询次数到了上限 " + MaxAttributeQueries.ToString(CultureInfo.InvariantCulture)
+                        + " 次），上面列的是已经定位到的。";
                 }
                 return;
             }
 
-            // 整批说"有人占着"，但逐个问又都说没有：理论上不会发生，真发生了也要说清楚，
+            // 整批说"有人占着"，但逐批问又都说没有：理论上不会发生，真发生了也要说清楚，
             // 不能显示一个空列表让用户以为查完了。
             LockHit unknown = new LockHit();
             unknown.File = "";
             unknown.Lockers = batch;
             r.Hits.Add(unknown);
             r.Note = "查到了占用的程序，但没定位到是文件夹里哪个文件（可以直接结束它们试试）。";
+        }
+
+        /// <summary>二分定位：问这一批有没有人占着；有就劈成两半继续问，问到单个文件为止。
+        /// 一批里没人占着 = 这一整批都不用再问（covered 直接吃掉）。</summary>
+        private static void Bisect(List<string> files, LockReport r, ref int used, List<string> covered)
+        {
+            if (files.Count == 0) { return; }
+            if (used >= MaxAttributeQueries) { return; }
+
+            List<FileLocker> got;
+            string error;
+            used++;
+            if (!TryQuery(files.ToArray(), out got, out error))
+            {
+                // 这一批系统不肯答（里面有它不认的路径，比如某些系统 DLL）：单个还失败就记下来跳过
+                // （不能因为一个坏路径把整批丢掉），否则继续劈。
+                if (files.Count == 1)
+                {
+                    covered.Add(files[0]);
+                    r.BadFiles++;
+                    if (r.Error.Length == 0) { r.Error = error; }
+                    return;
+                }
+                int cut = files.Count / 2;
+                Bisect(files.GetRange(0, cut), r, ref used, covered);
+                Bisect(files.GetRange(cut, files.Count - cut), r, ref used, covered);
+                return;
+            }
+
+            if (got.Count == 0) { covered.AddRange(files); return; }
+
+            if (files.Count == 1)
+            {
+                LockHit hit = new LockHit();
+                hit.File = files[0];
+                hit.Lockers = got;
+                r.Hits.Add(hit);
+                covered.Add(files[0]);
+                return;
+            }
+
+            int half = files.Count / 2;
+            Bisect(files.GetRange(0, half), r, ref used, covered);
+            Bisect(files.GetRange(half, files.Count - half), r, ref used, covered);
         }
 
         /// <summary>文件夹往下扫（BFS：浅的在前；命中"当前目录"这种占用时先看靠上的文件）。</summary>
@@ -713,6 +762,27 @@ namespace Mxx1Toolbox
             return false;
         }
 
+        /// <summary>「一键解除占用」那条路允许结束的进程（**没有确认框**，所以底线写在这里、
+        /// 只写一份，界面 / 命令行都从这里问）。
+        ///
+        /// 允许：真占着文件的（lock）和"它自己在运行"的（run）—— 后者正是"文件夹里放着一个
+        /// 正在跑的安装包"那种最常见的删不掉，一键解除不管它就没用了。
+        /// 不许：「窗口里开着它」的（根本没锁文件，结束它纯属误伤）、系统关键进程与 pid ≤ 4、
+        /// 工具箱自己（就是当前进程）、以及 explorer.exe（结束它 = 桌面重启一次，
+        /// 无声无息地干这个会把用户吓一跳）。</summary>
+        public static bool AutoUnlockTarget(FileLocker f)
+        {
+            if (f == null) { return false; }
+            if (f.Protected) { return false; }
+            if (f.Source != FileLocker.SourceLock && f.Source != FileLocker.SourceRun) { return false; }
+            if (IsSelf(f.Pid)) { return false; }
+            string bare = (f.Exe == null) ? "" : f.Exe.Trim().ToLowerInvariant();
+            if (bare.EndsWith(".exe", StringComparison.Ordinal)) { bare = bare.Substring(0, bare.Length - 4); }
+            if (bare == "explorer") { return false; }
+            if (bare.Length == 0) { return false; }
+            return !NameIn(CriticalNames, bare);
+        }
+
         /// <summary>这个名字是不是"系统关键进程"（句柄级强制解锁那边也要用同一份名单，别两边各写一套）。</summary>
         public static bool IsProtectedName(string exe)
         {
@@ -831,6 +901,17 @@ namespace Mxx1Toolbox
         /// 又被守护子进程拉起来"这种回魂。</summary>
         public static string Kill(List<FileLocker> chosen)
         {
+            int killed;
+            int failed;
+            return Kill(chosen, out killed, out failed);
+        }
+
+        /// <summary>同 Kill，另外把"成了几个 / 没成几个"带出来 —— 「一键解除占用」那条路没有窗口，
+        /// 结果只剩一句短话（气泡），所以调用方需要这两个数，别去解析上面那份人话报告。</summary>
+        public static string Kill(List<FileLocker> chosen, out int killedOut, out int failedOut)
+        {
+            killedOut = 0;
+            failedOut = 0;
             StringBuilder sb = new StringBuilder();
             if (chosen == null || chosen.Count == 0) { return "  没有选中任何程序。"; }
 
@@ -945,6 +1026,8 @@ namespace Mxx1Toolbox
             {
                 sb.Append(" 另有 ").Append(skipped.ToString(CultureInfo.InvariantCulture)).Append(" 个没动。");
             }
+            killedOut = killed;
+            failedOut = failed;
             return sb.ToString();
         }
 

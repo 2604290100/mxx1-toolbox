@@ -172,7 +172,8 @@ namespace Mxx1Toolbox
             "注意：这里的东西优先于上面那些兜底路径 —— 隔壁工程重新编译过之后，",
             "记得把这里的旧副本一起换掉，否则用的还是旧版本。",
             "",
-            "打包时（build.ps1 -Package）隔壁的安装器会复制进「发布包」里的 bin-tools\\，不是这一个。",
+            "打包时（build.ps1 -Package）这个目录会被整个复制进「发布包」里的 bin-tools\\：",
+            "  在哪台机器上打包，包里带的就是那台机器上的工具（缓存 / 临时文件除外）。",
         };
 
         private static void WritePayloadNote(string dir)

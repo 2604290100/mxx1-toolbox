@@ -1666,6 +1666,129 @@ $cAfter = Invoke-Exe 'consent'
 Check 'S26 条款状态已按测试前的样子复原' ($cAfter.Out -match ('(?m)^consent=' + $consentBefore)) `
     ('now=' + (Get-Key $cAfter.Out 'consent') + ' before=' + $consentBefore)
 
+# ---------------------------------------------------------------- P 组：发布包里到底有什么
+Write-Host ''
+Write-Host 'P 组 · 发布包（build.ps1 -Package 打出来的 zip）'
+# 用户 2026-10-05 报：「bin-tools 里面只有 PermanentDeleteSetup.exe 进压缩包了，memreduct 没有进」。
+# 顺手翻 zip 还发现 assets\icons\ 在包里是个**空目录** —— 一百多张按钮图标一张都没进去
+# （Copy-Item 拷目录不带 -Recurse 时只建目录、不拷里面的文件，而通配符看着像"拷过了"）。
+# 所以打包逻辑挪进 tools\Make-Package.ps1，打完包自己回读 zip 逐个核对；这一组盯的就是那个核对：
+# 工具目录里该进包的文件一个都不能少，而且**测试只往临时目录打**，不许碰 bin\ 里真正的发布包。
+
+$pkgScript = Join-Path $root 'tools\Make-Package.ps1'
+Check 'P01 打包脚本在（tools\Make-Package.ps1，build.ps1 -Package 调的就是它）' `
+    (Test-Path -LiteralPath $pkgScript) $pkgScript
+
+$realZip = Join-Path $root 'bin\Mxx1Toolbox-package.zip'
+$realZipBefore = ''
+if (Test-Path -LiteralPath $realZip) { $realZipBefore = (Get-Item -LiteralPath $realZip).LastWriteTimeUtc.ToString('o') }
+
+$pTmp = Join-Path $env:TEMP ('mxx1-pkg-' + [Guid]::NewGuid().ToString('N').Substring(0, 8))
+$pStage = Join-Path $pTmp 'stage'
+$pZip = Join-Path $pTmp 'Mxx1Toolbox-package.zip'
+$hostExe = (Get-Process -Id $PID).Path
+try {
+    [void][System.IO.Directory]::CreateDirectory($pTmp)
+    $pOut = & $hostExe -NoProfile -ExecutionPolicy Bypass -File $pkgScript -Root $root -StageDir $pStage -ZipPath $pZip 2>&1
+    $pCode = $LASTEXITCODE
+    Check 'P02 打包脚本能单独跑通（不用为了测它把整个工程重编一遍）' `
+        (($pCode -eq 0) -and (Test-Path -LiteralPath $pZip)) `
+        ('exit=' + $pCode + '  ' + (@($pOut | Select-Object -Last 1) -join ''))
+
+    if (Test-Path -LiteralPath $pZip) {
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        $names = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+        $zr = [System.IO.Compression.ZipFile]::OpenRead($pZip)
+        try { foreach ($e in $zr.Entries) { [void]$names.Add($e.FullName.Replace('/', '\')) } } finally { $zr.Dispose() }
+
+        # assets\icons：2026-10-05 之前这里是空的
+        $iconSrc = @(Get-ChildItem -LiteralPath (Join-Path $root 'assets\icons') -Filter *.png -File -Force -ErrorAction SilentlyContinue)
+        $iconIn = @($iconSrc | Where-Object { $names.Contains('assets\icons\' + $_.Name) })
+        Check ('P03 assets\icons 里的 {0} 张按钮图标全在包里（这里以前是个空目录）' -f $iconSrc.Count) `
+            (($iconSrc.Count -gt 0) -and ($iconIn.Count -eq $iconSrc.Count)) ('in=' + $iconIn.Count + ' / ' + $iconSrc.Count)
+
+        # 工具目录：凡是该进包的都要在（说明.txt 由工具箱第一次打开界面时自己写，缓存 / 临时文件不进包）
+        $skipDirs = @('cache', 'temp', 'tmp', '.git')
+        $skipExts = @('.tmp', '.log', '.bak')
+        $toolSrc = New-Object System.Collections.ArrayList
+        $toolMiss = New-Object System.Collections.ArrayList
+        if (Test-Path -LiteralPath $toolDir) {
+            foreach ($f in @(Get-ChildItem -LiteralPath $toolDir -Recurse -File -Force)) {
+                $rel = $f.FullName.Substring($toolDir.Length).TrimStart('\')
+                if ($f.Name -eq '说明.txt') { continue }
+                if ($skipExts -contains $f.Extension.ToLowerInvariant()) { continue }
+                $parts = $rel.Split('\')
+                $skipIt = $false
+                for ($i = 0; $i -lt ($parts.Count - 1); $i++) {
+                    if ($skipDirs -contains $parts[$i].ToLowerInvariant()) { $skipIt = $true }
+                }
+                if ($skipIt) { continue }
+                [void]$toolSrc.Add($rel)
+                if (-not $names.Contains('bin-tools\' + $rel)) { [void]$toolMiss.Add($rel) }
+            }
+        }
+        if ($toolSrc.Count -eq 0) {
+            Skip 'P04 工具目录里的文件都进包了' '这台机器的工具目录是空的（用户还没往里放东西）'
+        } else {
+            Check ('P04 工具目录里的 {0} 个文件都进包了（说明.txt / 缓存不算）' -f $toolSrc.Count) `
+                ($toolMiss.Count -eq 0) `
+                $(if ($toolMiss.Count -gt 0) { '缺：' + (@($toolMiss | Select-Object -First 5) -join ' / ') } else { $toolDir })
+        }
+
+        # 工具文件夹：解压出来就得能长出按钮 —— tool.json 与 exe 一个都不能少
+        $folders = @(Get-ChildItem -LiteralPath $toolDir -Directory -Force -ErrorAction SilentlyContinue)
+        if ($folders.Count -eq 0) {
+            Skip 'P05 每个工具文件夹的 tool.json / exe 都在包里' '工具目录里还没有工具文件夹'
+        } else {
+            $bad = New-Object System.Collections.ArrayList
+            foreach ($fd in $folders) {
+                $json = Join-Path $fd.FullName 'tool.json'
+                if ((Test-Path -LiteralPath $json) -and (-not $names.Contains('bin-tools\' + $fd.Name + '\tool.json'))) {
+                    [void]$bad.Add($fd.Name + '\tool.json')
+                }
+                foreach ($ex in @(Get-ChildItem -LiteralPath $fd.FullName -Recurse -File -Filter *.exe -Force -ErrorAction SilentlyContinue)) {
+                    if (-not $names.Contains('bin-tools\' + $fd.Name + '\' + $ex.Name)) { [void]$bad.Add($fd.Name + '\' + $ex.Name) }
+                }
+            }
+            Check ('P05 每个工具文件夹的 tool.json / exe 都在包里（解压出来就有那个按钮，{0} 个文件夹）' -f $folders.Count) `
+                ($bad.Count -eq 0) $(if ($bad.Count -gt 0) { '缺：' + ($bad -join ' / ') } else { (@($folders | ForEach-Object { $_.Name }) -join ' / ') })
+        }
+
+        $srcCount = @(Get-ChildItem -LiteralPath (Join-Path $root 'src') -Filter *.cs -File -ErrorAction SilentlyContinue).Count
+        $jsonCount = @(Get-ChildItem -LiteralPath (Join-Path $root 'tools') -Filter *.json -File -ErrorAction SilentlyContinue).Count
+        # 和磁盘上的数量对，别写死 38 这种数字：加一个 .cs 文件就会假红
+        $srcMiss = @(Get-ChildItem -LiteralPath (Join-Path $root 'src') -Filter *.cs -File -ErrorAction SilentlyContinue |
+            Where-Object { -not $names.Contains('src\' + $_.Name) })
+        $jsonMiss = @(Get-ChildItem -LiteralPath (Join-Path $root 'tools') -Filter *.json -File -ErrorAction SilentlyContinue |
+            Where-Object { -not $names.Contains('tools\' + $_.Name) })
+        $basics = @('Mxx1Toolbox.exe', 'build.ps1', 'README.md', 'CHANGELOG.md', 'LICENSE', 'tools\Make-Package.ps1', 'src\Program.cs', 'tools\common.json', 'docs\DESIGN.md')
+        $missBasic = @($basics | Where-Object { -not $names.Contains($_) })
+        Check ('P06 包里该有的都在（exe / build.ps1 / 文档 / 打包脚本 / {0} 个源码 / {1} 个清单，一个不少）' -f $srcCount, $jsonCount) `
+            (($missBasic.Count -eq 0) -and ($srcMiss.Count -eq 0) -and ($jsonMiss.Count -eq 0)) `
+            ('缺基本文件=' + $(if ($missBasic.Count -gt 0) { $missBasic -join ' ' } else { '无' }) + ' 缺源码=' + $srcMiss.Count + ' 缺清单=' + $jsonMiss.Count)
+
+        $junk = @($names | Where-Object { $_ -like 'bin-tools\*' -and (($_ -like '*\cache\*') -or ($_ -like '*.tmp') -or ($_ -like '*.log') -or ($_ -like '*.bak')) })
+        Check 'P07 没把缓存 / 临时文件塞进包' ($junk.Count -eq 0) (($junk | Select-Object -First 3) -join ' / ')
+    }
+
+    # 失败路径也要有人管：没编过 exe 就打包，必须当场说清原因、退出码非 0（不能"打了个空包还挺高兴"）
+    $badRoot = Join-Path $pTmp 'noroot'
+    [void][System.IO.Directory]::CreateDirectory($badRoot)
+    $pFail = & $hostExe -NoProfile -ExecutionPolicy Bypass -File $pkgScript -Root $badRoot `
+        -StageDir (Join-Path $pTmp 'stage2') -ZipPath (Join-Path $pTmp 'x.zip') 2>&1
+    $pFailCode = $LASTEXITCODE
+    Check 'P08 没编译过时打包直接失败，并说清"先编译再打包"' `
+        (($pFailCode -ne 0) -and (($pFail | Out-String) -match '先编译再打包')) ('exit=' + $pFailCode)
+} finally {
+    Remove-Item -LiteralPath $pTmp -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+$realZipAfter = ''
+if (Test-Path -LiteralPath $realZip) { $realZipAfter = (Get-Item -LiteralPath $realZip).LastWriteTimeUtc.ToString('o') }
+Check 'P09 这一组只往临时目录打，没动 bin\ 里真正的发布包' ($realZipBefore -eq $realZipAfter) `
+    $(if ($realZipBefore -eq $realZipAfter) { 'zip 未改动' } else { 'zip 被改动了！before=' + $realZipBefore + ' after=' + $realZipAfter })
+Check 'P10 打包测试的临时目录收拾干净了（不留垃圾在 %TEMP%）' (-not (Test-Path -LiteralPath $pTmp)) $pTmp
+
 # ---------------------------------------------------------------- 汇总
 Write-Host ''
 Write-Host '----------------------------------------------------------'

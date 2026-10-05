@@ -18,11 +18,11 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
 
 ## 当前状态（2026-10-05，v1.5.3）
 
-- ✅ **测试 327 项全绿**（本机 326 通过 + 1 跳过）：命令行回归 **187**（A03b–A03d/D01 盯兼容、R 组 14 项盯 **bin-tools 自动按钮**、
-  S 组 26 项盯**条款确认门 + 更新检查**、M 组盯「右键增强」、A14–A17 盯 **exe 自己的图标**）
-  + 界面回归 **140**（I 组 25 项把**条款确认窗口**真开起来点一遍、N 组 19 项盯「解除文件占用」小窗口）
-  （外加编码体检 181 个文件、内联脚本与清单体检 34 个脚本 / 7 个清单）。
-  产物 `bin\Mxx1Toolbox.exe`（769 KB 单文件），
+- ✅ **测试 339 项全绿**（本机 338 通过 + 1 跳过）：命令行回归 **197**（A03b–A03d/D01 盯兼容、R 组 14 项盯 **bin-tools 自动按钮**、
+  P 组 10 项盯**发布包内容**、S 组 26 项盯**条款确认门 + 更新检查**、M 组盯「右键增强」、A14–A17 盯 **exe 自己的图标**）
+  + 界面回归 **142**（I 组 27 项把**条款确认窗口**真开起来点一遍（含 I10b/I10c）、N 组 19 项盯「解除文件占用」小窗口）
+  （外加编码体检 182 个文件、内联脚本与清单体检 34 个脚本 / 7 个清单 + 每个 `.ps1` 的语法）。
+  产物 `bin\Mxx1Toolbox.exe`（770 KB 单文件），
   七个 `tools.*.json` + 112 个 `icons.*.png` + **`Disclaimer.md`（9,466 字节）** +
   `assets\app.ico` 那份程序图标 已内嵌。
   **跑法固定：`powershell -ExecutionPolicy Bypass -File tests\Test-All.ps1`**（必须 Windows PowerShell
@@ -30,6 +30,16 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
   还会让子进程继承执行策略，M14f 那个"父进程拉子进程"的现场靠它。见 `docs\DESIGN.md` §15）。
   **环境不满足的项走 `Skip()`**（打印 `[SKIP]`，不算失败）：原来的写法是 `Check ... $false 'skipped'`，
   那会把"没测到"记成"失败" —— 克隆仓库的人在 C/F/G/R 组会一片假红。
+- ⚠️ **发布当天（2026-10-05）用户拿到 Release 后又报了两个真 bug，都已修并重传了资产**：
+  ① **打包漏文件**（「bin-tools 里面只有 PermanentDeleteSetup.exe 进压缩包了，memreduct 没有进」）——
+  打包原来写在 `build.ps1` 里，`bin-tools\` 只硬编码拷隔壁那一个安装器；同一处 `Copy-Item` 带通配符拷目录
+  **不带 `-Recurse` 只建空目录**，于是 `assets\icons\` 一百多张图标在包里是**空的**。
+  现在独立成 **`tools\Make-Package.ps1`**（逐条列文件 + 拷整棵树 + **回读 zip 逐个核对**，少一个就失败），
+  由 `build.ps1 -Package` 调用，命令行回归 **P 组**盯着它。见 `docs\DESIGN.md` §12.52。
+  ② **同意记录被"关闭窗口"抹掉**（「使用条款确认 每次打开都弹」）—— 主窗口那份 `Settings` 是
+  **构造函数**里加载的（比 `OnLoad` 的确认门早），关窗口时 `Save()` 拿旧快照把刚写下的指纹覆盖成空。
+  修法：`Settings.Save()` 里同意记录**只认磁盘那份**（`ConsentTouched` 标记由 `Consent.Accept/Reset` 置上），
+  确认通过后顺手刷新快照。见 `docs\DESIGN.md` §12.53，回归 I10b/I10c。
 - ✅ **v1.5.3（2026-10-05）四件事**：① **`bin-tools\<工具>\` 自动长按钮**（用户问
   「bin-tools 里面的工具是不是应该自动加载一个按钮？」）；② **完整的更新检查 + 免责声明与服务条款 +
   首次运行确认门**（用户点名照隔壁 `permanent-delete-menu` 那套做）；
@@ -95,9 +105,13 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
   已打 tag **`v1.5.3`**（指向最终提交）并发 Release，附 `Mxx1Toolbox.exe` 与 `Mxx1Toolbox-package.zip`
   （发布说明里带 SHA256）；CI 是绿的（编码体检 + 内联体检 + 编译 + 命令行回归）。
   **推送前依然要先问用户**（原话："推送的时候不要每次都推送，太卡了要问过我才行"）。
-  ⚠️ **发 Release 之后要重传资产**：资产是 `build.ps1 -Package` 的产物，源码改了就得
-  `gh release upload v1.5.3 bin\Mxx1Toolbox.exe bin\Mxx1Toolbox-package.zip --clobber`，
-  并把发布说明里的 SHA256 换掉（`gh release edit v1.5.3 --notes-file …`）。
+  ⚠️ **同一天用户拿到包之后报了两个 bug，已修并"原样重传"了 `v1.5.3` 的两个资产**
+  （用户 2026-10-05 的选择：不另开版本号，直接换掉；发布说明里的 SHA256 也换成了新的）。
+  流程：`build.ps1 -Package`（编 + 打 → `bin\Mxx1Toolbox-package.zip`）→
+  `gh release upload v1.5.3 bin\Mxx1Toolbox.exe bin\Mxx1Toolbox-package.zip --clobber` →
+  用 `Get-FileHash` 算新的 SHA256 更新说明（`gh release edit v1.5.3 --notes-file …`）。
+  **注意**：这样 tag 指向的那个提交不再等于资产的内容（zip 里的 `build.ps1` 是新的）——
+  用户明确选了这个做法；下次要避免这种错位就改版本号发新 tag。
 - ✅ 按钮图标：112 个 16×16 PNG 由 `tools\Make-Icons.ps1` 生成并内嵌（`icons.<id>.png`；
   用户自建按钮的图标**不**生成，免得把别人机器上的东西提交进仓库），
   全部经 `IconFactory.Normalize()` 归一化成 16×15 画布（见"界面硬规则"里那条）。
@@ -163,18 +177,21 @@ D:\萌新工具开发\toolbox\
   tools\Make-Screenshots.ps1       拍 docs\gui-shot.png / dark-shot.png / system-shot.png（PrintWindow）
   tools\Make-Icons.ps1             批量画图标（先从 exe 的 list 读清单，所以**先 build 再跑它**）
   tools\Make-AppIcon.ps1           画 assets\app.ico（程序自己的图标，八尺寸；改完要重新 build）
+  tools\Make-Package.ps1           打发布包 zip（build.ps1 -Package 调它；**回读 zip 逐个核对**，
+                                   少一个文件就失败 —— 见"打包"那条坑）
   assets\icons\*.png               112 个按钮图标（编译时内嵌成 icons.<id>.png）
   assets\app.ico                   程序图标（`/win32icon` 用的就是它）
   tests\Test-All.ps1               一条命令跑完全部
-  tools\Test-InlineSyntax.ps1      内联脚本语法 + 清单 JSON 体检（34 个脚本 / 7 个清单）
-  tests\Test-Cli.ps1               命令行回归 187 项（A03b–A03d/D01 盯兼容、A14–A17 盯 exe 图标、
+  tools\Test-InlineSyntax.ps1      内联脚本语法 + 清单 JSON + **每个 .ps1 的语法**体检（34 个内联 / 7 个清单）
+  tests\Test-Cli.ps1               命令行回归 197 项（A03b–A03d/D01 盯兼容、A14–A17 盯 exe 图标、
                                    L 组 12 项盯 sysreg、J09–J11 盯卸载窗口的列表、M 组盯右键增强、
-                                   R 组 14 项盯 bin-tools 自动按钮、S 组 26 项盯条款门 + 更新检查；
+                                   R 组 14 项盯 bin-tools 自动按钮、P 组 10 项盯发布包内容、
+                                   S 组 26 项盯条款门 + 更新检查；
                                    环境不满足的项走 Skip()，打印 [SKIP] 不算失败）
-  tests\Test-Gui.ps1               界面回归 140 项（要交互式桌面，无桌面返回 3 = 跳过；A04b 盯窗口图标、
+  tests\Test-Gui.ps1               界面回归 142 项（要交互式桌面，无桌面返回 3 = 跳过；A04b 盯窗口图标、
                                    H 组盯固定尺寸、E04b 盯窗口位置、A09 盯 bin-tools 说明、
                                    N 组 19 项盯解除占用小窗口，含 N14/N15/N17/N18 的高度自适应、
-                                   I 组 25 项把条款确认窗口真开起来点一遍）
+                                   I 组 27 项把条款确认窗口真开起来点一遍，含 I10b/I10c）
   docs\DESIGN.md                   设计正本（含"踩过的坑"清单 + §13.7 自动按钮 + §16 兼容性 + §17 条款门）
   docs\DISCLAIMER.md               免责声明与服务条款正本（**编译时内嵌进 exe**，窗口显示的就是它）
   assets\app.manifest              清单：asInvoker + supportedOS（Win7/8/8.1/10）+ System DPI + longPathAware
@@ -185,7 +202,8 @@ D:\萌新工具开发\toolbox\
 
 ```powershell
 powershell -File build.ps1                    # 编译 → bin\Mxx1Toolbox.exe
-powershell -File build.ps1 -Package            # 额外打 zip，并把隔壁 exe 拷进 bin-tools\
+powershell -File build.ps1 -Package            # 额外打 zip（调 tools\Make-Package.ps1，整棵 bin-tools\ 进包）
+powershell -File tools\Make-Package.ps1       # 只打包（不用重编）：-StageDir / -ZipPath 可指到临时目录
 powershell -File tools\Test-Encoding.ps1      # 编码体检（改完文件必跑；-Fix 修 BOM）
 powershell -ExecutionPolicy Bypass -File tests\Test-All.ps1   # 全套（无桌面加 -SkipGui）
 powershell -ExecutionPolicy Bypass -File tests\Test-Cli.ps1   # 命令行回归
@@ -244,8 +262,12 @@ powershell -File tools\Make-AppIcon.ps1       # 重生成 assets\app.ico（改�
 - **相对路径按「工具箱目录 → `bin-tools\`」解析**（`AppPaths.Resolve`），所以清单里只写文件名就行；
   `icon` 字段和 `open` 的 target 走同一条路。
 - 入口：设置窗口 + 关于窗口的「打开工具目录」（没有就自动建）；找不到工具时的提示里直接写出这个路径。
-- 打包：`build.ps1 -Package` 会把隔壁的 `PermanentDeleteSetup.exe` 拷进发布目录的 `bin-tools\`
-  （找不到就留空并打印一行说明，不报错）。
+- 打包：`build.ps1 -Package` → **`tools\Make-Package.ps1`** 把 **exe 旁边这个 `bin-tools\` 整个**
+  复制进发布包的 `bin-tools\`（用户自己放的工具文件夹 / 单个 exe 一起走；`cache` / `*.tmp` / `*.log` /
+  `*.bak` / `说明.txt` 除外，`说明.txt` 由工具箱第一次打开界面时自己写一份最新的）。
+  **哪台机器上打包，包里带的就是那台机器上的工具**；隔壁那个 `PermanentDeleteSetup.exe` 不在
+  `bin-tools\` 里时才从隔壁仓库的 `bin\` 补一份（找不到就打印一行说明，不报错）。
+  打完包会**回读 zip 逐个核对**，少一个文件就失败并列出少了哪些 —— 见下面"打包"那条坑。
 
 ### 放一个自己的工具进去（正确流程 + "谁会不会清掉它"）
 
@@ -674,6 +696,20 @@ powershell -File tools\Make-AppIcon.ps1       # 重生成 assets\app.ico（改�
       （`BITMAPINFOHEADER` + 自下而上的 BGRA + 全 0 的 AND 掩码）。
   22. **编码体检会拦"绝对路径"**：测试里造"旧版菜单"的假命令时写了 `C:\old\Mxx1Toolbox.exe`，
       `Test-Encoding.ps1` 立刻报 `FAIL abs path`。用 `'"' + $Exe + '" …'` 拼，别写字面量。
+  23. **打包（`Copy-Item` 拷目录必须带 `-Recurse`）**：2026-10-05 用户报「bin-tools 里面只有
+      PermanentDeleteSetup.exe 进压缩包了，memreduct 没有进」—— 而翻 zip 时还发现 `assets\icons\`
+      在包里是个**空目录**（112 张按钮图标一张没进；`Copy-Item (Join-Path $root 'assets\*') $dst`
+      不带 `-Recurse` 时，目录**只建目录、不拷文件**，还不报错）。现在打包在
+      **`tools\Make-Package.ps1`**：逐条列文件 + 拷整棵树 + **回读 zip 逐个核对**（少一个就失败）。
+      **教训：批处理式的"打包 / 拷贝"一定要有一句"打完自己读回来核对"**，否则错误只能等用户翻包。
+      回归：Test-Cli 的 **P 组**（P03 盯图标、P04/P05 盯工具目录、P08 盯失败路径、P09 盯"没碰真包"）。
+  24. **别用旧快照覆盖"另有一条权威写入路径"的字段**：2026-10-05 用户报「使用条款确认 每次打开都弹」。
+      主窗口的 `_settings` 是**构造函数**里 `Load()` 的，确认门在 `OnLoad` —— 快照比同意早，
+      关窗口 `Save()` 就把刚写下的指纹盖成空。修法：`Settings.Save()` 里同意记录**只认磁盘那份**
+      （`ConsentTouched` 由 `Consent.Accept/Reset` 置上），主窗口确认通过后顺手刷新快照。
+      同类字段以后还会遇到（注册表原值、安装状态…）：**要么别放进这个对象，要么保存前合并**。
+      回归：Test-Gui **I10b**（关窗口后记录还在）/ **I10c**（重开不再弹）——
+      原来的 I09 是窗口**还开着**时查的，所以这个 bug 从测试里溜过去了。
 - **别在 PowerShell 里按像素调函数**：一个 `Get-Pixel` 每像素调一次，几万次调用要几分钟，
   看起来像卡死（踩过一次）。要么 `LockBits` 取一次 `byte[]` 再纯数组循环（`Get-InkRows` 的写法），
   要么用 csc 编个临时小工具（`local\InkDiag.cs` 那种）。

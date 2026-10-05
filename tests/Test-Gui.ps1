@@ -2120,12 +2120,44 @@ if ($winI) {
     }
     try { if (-not $procI.HasExited) { [void][TBGui]::CloseWindow($procI.MainWindowHandle) } } catch { }
     Start-Sleep -Milliseconds 800
+
+    # 关掉窗口之后同意记录**必须还在**。用户 2026-10-05 报「使用条款确认每次打开都弹」：
+    # 主窗口那份 _settings 是在构造函数里加载的（比确认门早），关窗口时 Save() 又把刚记下的指纹
+    # 覆盖成空 —— 于是下次打开再弹一次。I09 是在窗口还开着的时候查的，所以以前根本抓不到这个。
+    $afterClose = [string](Invoke-Exe 'consent')
+    Check 'I10b 关掉窗口之后同意记录还在（不会被关闭时的设置保存抹掉）' `
+        (($afterClose -match '(?m)^consent=agreed') -and ($afterClose -match ('(?m)^consentHash=' + $consentHash))) `
+        (($afterClose -split "`r?`n" | Where-Object { $_ -like 'consent*' }) -join ' ')
+
+    # 再开一次界面：同意过就只该弹那一次 —— 这一项就是用户报的现象本身
+    $procR = Start-Gui
+    $winR = $null
+    for ($i = 0; $i -lt 15; $i++) {
+        Start-Sleep -Milliseconds 200
+        $w = Find-TopWindow -ProcessId $procR.Id -TextPrefix '使用条款确认'
+        if ($w) { $winR = $w; break }
+    }
+    $mainR = [IntPtr]::Zero
+    for ($i = 0; $i -lt 40; $i++) {
+        $procR.Refresh()
+        if ($procR.HasExited) { break }
+        if ($procR.MainWindowHandle -ne [IntPtr]::Zero) { $mainR = $procR.MainWindowHandle; break }
+        Start-Sleep -Milliseconds 200
+    }
+    $othersR = @(Get-Process Mxx1Toolbox -ErrorAction SilentlyContinue | Where-Object { $_.Id -ne $procR.Id }).Count
+    Check 'I10c 重新打开界面不再弹《使用条款确认》（同意过的就只弹一次）' `
+        (($null -eq $winR) -and ($mainR -ne [IntPtr]::Zero)) `
+        $(if ($winR) { '又弹了一次：' + $winR.Text + '（另有 ' + $othersR + ' 个工具箱实例在跑）' } else { '主窗口=' + $mainR })
+    try { if (-not $procR.HasExited) { [void][TBGui]::CloseWindow($procR.MainWindowHandle) } } catch { }
+    Start-Sleep -Milliseconds 500
 } else {
     foreach ($nm in @('I03 两个出口都在（同意并继续 / 不同意，退出）', 'I04 没勾选时「同意并继续」是禁用的（不能靠回车蒙过去）',
                       'I05 勾选框是没打勾的（默认不同意）', 'I06 窗口里真显示了条款正文（几 KB 的中文，不是一句"见文档"）',
                       'I07 勾上之后「同意并继续」才可以点', 'I08 点「同意并继续」之后确认窗口关掉',
                       'I09 同意状态变成 agreed，而且记的是当前正文指纹（不是一句 true）',
-                      'I10 同意之后主界面能用了（没有被模态窗口压着）')) {
+                      'I10 同意之后主界面能用了（没有被模态窗口压着）',
+                      'I10b 关掉窗口之后同意记录还在（不会被关闭时的设置保存抹掉）',
+                      'I10c 重新打开界面不再弹《使用条款确认》（同意过的就只弹一次）')) {
         Check $nm $false 'skipped（确认窗口没出现）'
     }
 }

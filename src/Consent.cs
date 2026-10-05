@@ -71,6 +71,7 @@ namespace Mxx1Toolbox
                 Settings s = Settings.Load();
                 s.AgreedDisclaimer = CurrentHash();
                 s.AgreedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+                s.ConsentTouched = true;   // 这一份就是要改同意记录，Save() 别把磁盘上的现值合并回来
                 s.Save();
                 Logger.Write("条款", "已同意当前这版条款 指纹=" + s.AgreedDisclaimer);
             }
@@ -86,6 +87,7 @@ namespace Mxx1Toolbox
                 Settings s = Settings.Load();
                 s.AgreedDisclaimer = "";
                 s.AgreedAt = "";
+                s.ConsentTouched = true;
                 s.Save();
                 Logger.Write("条款", "同意记录已清除");
             }

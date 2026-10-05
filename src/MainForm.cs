@@ -806,6 +806,11 @@ namespace Mxx1Toolbox
                     BeginInvoke((MethodInvoker)delegate { Close(); });
                     return;
                 }
+                // 同意记录是 Consent 直接写盘的。这份 _settings 是**构造函数里**加载的（比确认门早），
+                // 不刷新的话，关闭窗口时 Save() 会把刚记下的同意覆盖成空 —— 那就是用户 2026-10-05
+                // 报的「每次打开都弹」（Save() 里另有一道合并兜底，见 src\Settings.cs）。
+                _settings.AgreedDisclaimer = Consent.StoredHash();
+                _settings.AgreedAt = Consent.AgreedAt();
             }
             if (_settings.WindowX >= 0 && _settings.WindowY >= 0 && IsOnScreen(_settings.WindowX, _settings.WindowY))
             {

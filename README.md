@@ -186,9 +186,11 @@ bin\Mxx1Toolbox.exe help
 
 ```powershell
 powershell -File tools\Test-Encoding.ps1     # 编码红线体检（BOM / 纯 ASCII / 硬编码本机路径）
+powershell -File tools\Test-InlineSyntax.ps1 # 内联脚本语法 + 清单 JSON + 每个 .ps1 的语法体检
 powershell -ExecutionPolicy Bypass -File tests\Test-All.ps1   # 全部（无桌面时加 -SkipGui）
-powershell -ExecutionPolicy Bypass -File tests\Test-Cli.ps1   # 命令行回归 187 项（本机 186 通过 + 1 跳过）
-powershell -ExecutionPolicy Bypass -File tests\Test-Gui.ps1   # 界面回归 140 项（要交互式桌面，无桌面返回 3 = 跳过）
+powershell -ExecutionPolicy Bypass -File tests\Test-Cli.ps1   # 命令行回归 197 项（本机 196 通过 + 1 跳过）
+powershell -ExecutionPolicy Bypass -File tests\Test-Gui.ps1   # 界面回归 142 项（要交互式桌面，无桌面返回 3 = 跳过）
+powershell -File tools\Make-Package.ps1       # 只打发布包（build.ps1 -Package 调的就是它）
 powershell -File tools\Make-Screenshots.ps1  # 重新拍 docs 里的截图（浅色 / 深色 / 系统工具页签）
 powershell -File tools\Make-Icons.ps1        # 重新生成 16x16 PNG 图标（先 build 再跑，改完还要再 build）
 powershell -File tools\Make-AppIcon.ps1      # 重新生成 assets\app.ico（程序自己的图标，改完还要再 build）
@@ -205,8 +207,11 @@ powershell -File tools\Make-AppIcon.ps1      # 重新生成 assets\app.ico（程
 真按钮最暗墨迹 ≤ 80、灰按钮 ≥ 60、两者至少差 30）。
 
 命令行回归里的 `R` 组专测「工具目录自动长按钮」（`tool.json` / 光一个 exe / 多个 exe 说不清 /
-id 撞车 / 坏 JSON / 图标 / 用户层覆盖 / 收尾清理），`S` 组专测条款确认门与更新检查
-（**用本机假接口，不碰外网**），界面回归的 `I` 组把条款确认窗口真的开起来点一遍。
+id 撞车 / 坏 JSON / 图标 / 用户层覆盖 / 收尾清理），`P` 组专测**发布包里到底有什么**
+（`assets\icons` 的图标一张不少 / `bin-tools\` 整个进包 / 每个工具文件夹的 `tool.json` 与 exe 都在 /
+不夹带缓存 / 没编译时打包必须失败 / **只往临时目录打，不碰真正的发布包**），
+`S` 组专测条款确认门与更新检查（**用本机假接口，不碰外网**），
+界面回归的 `I` 组把条款确认窗口真的开起来点一遍（含「关掉窗口之后同意记录必须还在」）。
 涉及系统版本的几项（`A03b` / `A03c` / `A03d` / `D01`）**按这台机器是哪一版分叉断言**。
 
 ## 文件位置

@@ -156,37 +156,18 @@ $skillCandidates = @(
 if ($skillCandidates) { Write-Host ('skill    : ' + ($skillCandidates | Select-Object -First 1)) }
 
 if ($Package) {
-    $stage = Join-Path $binDir 'Mxx1Toolbox-package'
-    if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
-    foreach ($d in @('', 'src', 'assets', 'tools', 'tests', 'docs')) {
-        [void][System.IO.Directory]::CreateDirectory((Join-Path $stage $d))
-    }
-    Copy-Item $out $stage -Force
-    Copy-Item (Join-Path $root 'build.ps1') $stage -Force
-    Copy-Item (Join-Path $root 'README.md') $stage -Force -ErrorAction SilentlyContinue
-    Copy-Item (Join-Path $root 'CHANGELOG.md') $stage -Force -ErrorAction SilentlyContinue
-    Copy-Item (Join-Path $root 'LICENSE') $stage -Force -ErrorAction SilentlyContinue
-    Copy-Item (Join-Path $root 'src\*.cs') (Join-Path $stage 'src') -Force
-    Copy-Item (Join-Path $root 'assets\*') (Join-Path $stage 'assets') -Force
-    Copy-Item (Join-Path $root 'tools\*') (Join-Path $stage 'tools') -Force
-    Copy-Item (Join-Path $root 'tests\*') (Join-Path $stage 'tests') -Force
-    Copy-Item (Join-Path $root 'docs\*') (Join-Path $stage 'docs') -Force -ErrorAction SilentlyContinue
-
-    # External tools go into bin-tools\ (NOT tools\ -- that one holds the button manifests).
-    # The sibling project's installer is copied in when it has been built; without it the
-    # toolbox still runs and simply says which folder to drop the exe into.
-    $toolsStage = Join-Path $stage 'bin-tools'
-    [void][System.IO.Directory]::CreateDirectory($toolsStage)
-    $sibling = Join-Path (Split-Path -Parent $root) 'permanent-delete-menu\bin\PermanentDeleteSetup.exe'
-    if (Test-Path $sibling) {
-        Copy-Item $sibling $toolsStage -Force
-        Write-Host ('tools    : bin-tools\PermanentDeleteSetup.exe  (' + (Get-Item (Join-Path $toolsStage 'PermanentDeleteSetup.exe')).Length + ' bytes)')
-    } else {
-        Write-Host 'tools    : bin-tools\ 是空的（没找到隔壁的 PermanentDeleteSetup.exe，先 build 隔壁）'
-    }
-
-    $zip = Join-Path $binDir 'Mxx1Toolbox-package.zip'
-    if (Test-Path $zip) { Remove-Item $zip -Force }
-    Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip
-    Write-Host ('packed   : ' + $zip + '  (' + (Get-Item $zip).Length + ' bytes)')
+    # Packaging lives in tools\Make-Package.ps1 (this file has to stay PURE ASCII, and the packaging
+    # itself needs verifying, which is easier to do -- and to test -- in its own script).
+    #
+    # Why it changed (user report, 2026-10-05): "bin-tools 里面只有 PermanentDeleteSetup.exe 进压缩包了，
+    # memreduct 没有进". The old code here copied exactly one file (the sibling installer) and used
+    # Copy-Item with wildcards, which also turned assets\icons\ into an EMPTY folder inside the zip.
+    # The new script lists every file it packs, copies whole trees, and reads the zip back to check.
+    #
+    # Run it as a child process (same pattern as tests\Test-All.ps1) so the exit code is reliable.
+    $pkg = Join-Path $root 'tools\Make-Package.ps1'
+    if (-not (Test-Path $pkg)) { throw ('missing ' + $pkg) }
+    $hostExe = (Get-Process -Id $PID).Path
+    & $hostExe -NoProfile -ExecutionPolicy Bypass -File $pkg -Root $root
+    if ($LASTEXITCODE -ne 0) { throw ('packaging failed (exit ' + $LASTEXITCODE + ')') }
 }

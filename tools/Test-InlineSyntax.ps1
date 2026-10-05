@@ -13,6 +13,11 @@
       · 内联脚本里的 %变量%（cmd 展开语法）—— PowerShell 不展开它
       · 引号数量不成对（单引号计数为奇数）
 
+    另外：仓库里**每个 .ps1**（build.ps1 / tools\*.ps1 / tests\*.ps1）也用同一个解析器解析一遍。
+    为什么要有这一段：2026-10-05 在打包脚本里把 `$files.Count` 写成了 `files.Count`，那是**解析期**
+    错误，而 tools\Make-Package.ps1 只有"真要发版打包"的那一刻才会被执行到 —— 平时谁也不碰它，
+    错误就一直躺着（是打包测试跑起来才炸出来的）。脚本的语法体检比什么注释都便宜。
+
     用法: powershell -File tools\Test-InlineSyntax.ps1
     退出码: 0 = 全部通过, 1 = 有问题
 #>
@@ -94,7 +99,27 @@ foreach ($f in $files) {
     }
 }
 
-Write-Host ('检查了 ' + $checked + ' 个内联脚本（' + $files.Count + ' 个清单文件）')
+# ---- 仓库里每个 .ps1 也真解析一遍（脚本的语法错误只在"那一刻"才会炸） -------------------
+$scriptFiles = New-Object System.Collections.ArrayList
+foreach ($pat in @('build.ps1', 'tools\*.ps1', 'tests\*.ps1')) {
+    foreach ($f in @(Get-ChildItem (Join-Path $root $pat) -ErrorAction SilentlyContinue | Sort-Object Name)) {
+        [void]$scriptFiles.Add($f)
+    }
+}
+$parsedScripts = 0
+foreach ($f in $scriptFiles) {
+    $parsedScripts++
+    $errs = $null
+    [void][System.Management.Automation.Language.Parser]::ParseFile($f.FullName, [ref]$null, [ref]$errs)
+    if ($errs -and $errs.Count -gt 0) {
+        $problems++
+        foreach ($e in $errs) {
+            Report-Problem $f.Name '(整份脚本)' ($e.Message + '  @ 第 ' + $e.Extent.StartLineNumber + ' 行: ' + $e.Extent.Text.Trim())
+        }
+    }
+}
+
+Write-Host ('检查了 ' + $checked + ' 个内联脚本（' + $files.Count + ' 个清单文件）+ ' + $parsedScripts + ' 个 .ps1 脚本')
 if ($problems -gt 0) {
     Write-Host ('[FAIL] ' + $problems + ' 个问题')
     exit 1

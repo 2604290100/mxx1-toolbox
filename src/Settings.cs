@@ -43,6 +43,11 @@ namespace Mxx1Toolbox
         public string AgreedDisclaimer = "";
         public string AgreedAt = "";
 
+        /// <summary>这次保存是不是"就是要改同意记录"（只有 Consent.Accept / Consent.Reset 会置上）。
+        /// 没置上时 Save() 会把**磁盘上现有的**同意记录合并回来，见 Save() 里的说明：
+        /// 用户 2026-10-05 报的「使用条款确认每次打开都弹」就是这么来的。</summary>
+        public bool ConsentTouched = false;
+
         public static string ThemeDisplay(string mode)
         {
             switch (mode)
@@ -156,6 +161,22 @@ namespace Mxx1Toolbox
             try
             {
                 AppPaths.EnsureBase();
+
+                // 同意记录**不属于**这次保存要管的东西：它只有一个正本 —— 磁盘上那份，
+                // 由 Consent.Accept / Consent.Reset 直接写。别处的 Save() 只把它原样带过去。
+                //
+                // 为什么必须这样（用户 2026-10-05 报「使用条款确认每次打开都弹」）：
+                // 主窗口的 _settings 是在构造函数里 Load() 的，而条款确认门在 OnLoad 里 ——
+                // 也就是说这份快照是"同意之前"的（AgreedDisclaimer 空）。用户点完「同意并继续」
+                // 之后指纹确实写进了 settings.ini，可他关窗口时 OnFormClosed 又拿这份旧快照
+                // Save() 一遍，于是刚记下的同意被空值盖掉 → 下次打开又弹一次。
+                if (!ConsentTouched)
+                {
+                    Settings onDisk = Load();
+                    AgreedDisclaimer = onDisk.AgreedDisclaimer;
+                    AgreedAt = onDisk.AgreedAt;
+                }
+
                 StringBuilder sb = new StringBuilder();
                 sb.AppendLine("# 萌新工具箱设置（UTF-8 无 BOM）");
                 sb.AppendLine("Theme=" + Theme);

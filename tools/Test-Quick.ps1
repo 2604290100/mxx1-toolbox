@@ -183,6 +183,72 @@ function Get-ChangedPaths {
     return @($names | Where-Object { $_ } | ForEach-Object { $_.Trim() } | Where-Object { $_ } | Sort-Object -Unique)
 }
 
+# ---------------------------------------------------------------- "改了套件自己"到底该跑哪几组
+# 2026-10-06 用户原话：「**加一个功能不就是应该只测试一个功能的就行了？为什么要跑全套测试回答我！**」
+# 他说得对。原来映射表里写着「改 tests\Test-Cli.ps1 = 命令行全套」（上一轮我定的：怕挑组机制本身被改坏），
+# 结果"往 T 组里加两条断言"这种改动也要拖着另外 8 个组跑 95 秒。现在改成**按改动落在哪一块精确到组**：
+#   · `git diff -U0` 给出"这个文件里改了哪几行"；
+#   · 每个 `# ---- X 组：…` 标记划定一块（标记行 → 下一个标记行之前）；
+#   · 改动落在哪一块 → **只跑那一组**；
+#   · 改动落在**第一块之前**（文件头 / 参数 / 探针辅助 / 挑组逻辑 / 夹具准备）= 公共区，谁都可能受影响
+#     → 老老实实全套；
+#   · 哪一步拿不准（读不出 diff、文件是新建的、纯删除的 hunk、算出来的组名对不上）→ 也退回全套（宁多勿少）。
+function Get-GroupsTouchedInSuite {
+    param([string]$RelPath, [string[]]$AllGroups)
+    $full = Join-Path $root ($RelPath -replace '/', '\')
+    if (-not (Test-Path -LiteralPath $full -PathType Leaf)) { return $null }
+
+    # 组标记的行号。正则与两个套件里的 Get-AllGroups 是同一条 —— 两边认的"组"必须是同一批。
+    $marks = @()
+    $lineNo = 0
+    foreach ($line in (Get-Content -LiteralPath $full)) {
+        $lineNo++
+        $m = [regex]::Match($line, '^# (?:-{4,}|={4,})\s*([A-Z][0-9]*)(?![0-9A-Za-z])')
+        if ($m.Success) { $marks += , @{ Group = $m.Groups[1].Value; Line = $lineNo } }
+    }
+    if ($marks.Count -eq 0) { return $null }
+
+    # 改了哪几行。这里同样要**把 EAP 放开**（调用原生命令 git，理由见 Get-ChangedPaths 上面那段）。
+    # 两种口径都查一遍：看工作区（HEAD，含已 add 的）和"还没推到远端的提交"。
+    $ErrorActionPreference = 'Continue'
+    $ranges = @()
+    $revs = @()
+    if ($Since) { $revs += $Since } else { $revs += 'HEAD'; $revs += 'origin/main..HEAD' }
+    foreach ($rev in $revs) {
+        $out = @(& git -C $root diff -U0 --no-color $rev -- $RelPath 2>$null)
+        if ($LASTEXITCODE -ne 0) { continue }
+        foreach ($l in $out) {
+            $h = [regex]::Match($l, '^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@')
+            if (-not $h.Success) { continue }
+            $start = [int]$h.Groups[1].Value
+            $count = if ($h.Groups[2].Success) { [int]$h.Groups[2].Value } else { 1 }
+            # 纯删除（+N,0）落在"两行之间"，说不清属于哪一块 —— 不猜，退回全套
+            if ($count -le 0) { return $null }
+            $ranges += , @{ Start = $start; End = ($start + $count - 1) }
+        }
+    }
+    if ($ranges.Count -eq 0) { return $null }
+
+    $firstMark = (@($marks | Sort-Object { $_.Line })[0]).Line
+    foreach ($r in $ranges) {
+        if ($r.Start -lt $firstMark) { return $null }   # 动了公共区
+    }
+
+    $hit = @()
+    for ($i = 0; $i -lt $marks.Count; $i++) {
+        $start = $marks[$i].Line
+        $end = if ($i + 1 -lt $marks.Count) { $marks[$i + 1].Line - 1 } else { [int]::MaxValue }
+        foreach ($r in $ranges) {
+            if ($r.End -ge $start -and $r.Start -le $end) { $hit += $marks[$i].Group; break }
+        }
+    }
+    $hit = @($hit | Sort-Object -Unique)
+    if ($hit.Count -eq 0) { return $null }
+    # 算出来的组名必须是这个套件里真有的组（对不上就说明标记读歪了，别拿它当判据）
+    foreach ($g in $hit) { if (-not (Test-CoveredBy $g $AllGroups)) { return $null } }
+    return $hit
+}
+
 $changedPaths = @(Get-ChangedPaths)
 if (-not $Full -and $changedPaths.Count -eq 0) {
     if ($script:GitNote) {
@@ -217,6 +283,32 @@ if ($Full) {
         $isDoc = $false
         foreach ($pat in $docsOnly) { if ($norm -like $pat) { $isDoc = $true; break } }
         if ($isDoc) { continue }
+
+        # 改了"套件自己"：先按改动落在哪一块**精确到组**（见 Get-GroupsTouchedInSuite 上面那段），
+        # 只有"动了公共区 / 读不出改了哪一块"才退回整套 —— 用户 2026-10-06 问的那句
+        # 「加一个功能不就是应该只测试一个功能的就行了？为什么要跑全套」就是冲这条来的。
+        $suiteKind = ''
+        if ($norm -eq 'tests/Test-Cli.ps1') { $suiteKind = 'cli' }
+        elseif ($norm -eq 'tests/Test-Gui.ps1') { $suiteKind = 'gui' }
+        if ($suiteKind.Length -gt 0) {
+            $all = @($(if ($suiteKind -eq 'cli') { $allCli } else { $allGui }))
+            $touched = Get-GroupsTouchedInSuite -RelPath $norm -AllGroups $all
+            if ($null -ne $touched -and @($touched).Count -gt 0) {
+                Write-Host ('  ' + $norm + ' 只动了 ' + (@($touched) -join ',') + ' 组那几块 → 只跑这几组（不拖整个套件）')
+                if ($suiteKind -eq 'cli') { $cliGroups += @($touched) } else { $guiGroups += @($touched) }
+            } else {
+                Write-Host ('  ' + $norm + ' 动了公共区（夹具 / 挑组逻辑），或者读不出改了哪一块 → 这个套件按全套跑')
+                if ($suiteKind -eq 'cli') {
+                    $cliGroups = @($allCli)
+                    $whyFullCli += ($norm + ' 动了公共区（夹具 / 挑组逻辑 / 文件头），谁都可能受影响')
+                } else {
+                    $guiGroups = @($allGui)
+                    $whyFullGui += ($norm + ' 动了公共区（夹具 / 探针 / 文件头），谁都可能受影响')
+                }
+            }
+            continue
+        }
+
         $hit = $false
         foreach ($rule in $map.rules) {
             foreach ($pat in $rule.paths) {

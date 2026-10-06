@@ -884,11 +884,13 @@ powershell -File tools\Make-AppIcon.ps1       # 重生成 assets\app.ico（改�
 2. **外部工具目录 `bin-tools\`**：① 工具目录、③ 扫 `tool.json` 自动长按钮 **都已实现**（见上面那节与
    `docs\DESIGN.md` §13.7）。还没做的只有 ② 「把 `bin-tools\` 里的 exe 内嵌进 exe、首次点击释放到固定目录」
    —— **等用户说"我只想拷一个 exe"再做，别自己开工。**
-3. ⚠️ **v1.5.4 已经改好版本号，等用户点头才推 / 发**：版本号是 `1.5.4`
-   （`src\AssemblyInfo.cs`，标题栏跟着变 —— 唯一来源），`CHANGELOG.md` 里是 `[1.5.4] - 2026-10-06`。
-   **推送 / 打 tag / 发 Release 都要先问用户**（原话："推送的时候不要每次都推送，太卡了要问过我才行"，
-   以及"发布工具"—— Release 的说明文字与截图要他点头）。要发就：
-   `build.ps1 -Package` → 打 tag `v1.5.4` → 发 Release（附 `Mxx1Toolbox.exe` + zip + SHA256）。
+3. ✅ **v1.5.4 已经发布**（2026-10-06）：版本号 `1.5.4`（`src\AssemblyInfo.cs`，标题栏跟着变 ——
+   唯一来源），`CHANGELOG.md` 里是 `[1.5.4] - 2026-10-06`；已打 tag **`v1.5.4`**（指向 `e5c1bdb`）
+   并发 Release（附 `Mxx1Toolbox.exe` 788,992 字节 + `Mxx1Toolbox-package.zip` 1,124,644 字节 +
+   说明里的 SHA256），CI 绿的。**下一次要发版还是先问用户**（原话："推送的时候不要每次都推送，
+   太卡了要问过我才行"、"发布工具"—— Release 的说明文字要他点头）。
+   流程照旧：`build.ps1 -Package` → 算 SHA256 → `git tag -a vX.Y.Z` + push →
+   `gh release create vX.Y.Z bin\Mxx1Toolbox.exe bin\Mxx1Toolbox-package.zip --title … --notes-file …`。
 4. 条款正文（`docs\DISCLAIMER.md`）**改一个字就会让所有人下次打开重新确认一次**（记的是正文指纹）。
    **v1.5.4 这一轮改过三次**（① 补第三项与「一键解除占用」的行为 / 底线 / 风险；
    ② 把"右下角气泡"改成"鼠标旁边的小提示卡"；③ 底线里加上"不是你自己账户的程序也一律不动"

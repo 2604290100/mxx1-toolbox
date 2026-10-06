@@ -776,6 +776,10 @@ powershell -File tools\Make-AppIcon.ps1       # 重生成 assets\app.ico（改�
       —— 页签分布那串数字（0/33/3/26/8/29/5/10）也在两处。
   19. **悬停说明（`hint`）别超过 110 字**：`ToolTip` 不换行，太长会顶出屏幕（H05 盯着）。
       长说明写进「右键增强说明」那种窗口里，`hint` 只留一句话。
+      ⚠️ v1.5.4 又踩一次：改 `rightmenu.auto.on` 的 hint 补了"提示卡 / 看归属"那两句，
+      变成 **127 字**，本地没跑命令行回归、**CI 上 H05 当场红**。
+      **改完 hint 就量一下**（`tip <id>` 每行都 ≤110 字，`tip` 是 winexe，要
+      `Start-Process -Wait -RedirectStandardOutput`）。
   20. **`& bin\Mxx1Toolbox.exe …` 在命令行里读输出会读串**：它是 `/target:winexe`，PowerShell
       **不等待** GUI 子系统程序 —— `$LASTEXITCODE` 是空的、`$o = & $exe …` 是 `$null`、
       几次调用的输出还会挤在一起冒出来（2026-10-04 排查"RM 查不查得到占用"时被骗过一次：
@@ -854,6 +858,15 @@ powershell -File tools\Make-AppIcon.ps1       # 重生成 assets\app.ico（改�
       + **M39**（源码级看门狗：盯住那三条拒绝还在 —— 真造"系统服务占着文件"的现场要管理员 +
       计划任务，造不出来只能 Skip，那等于没测）。见 `docs\DESIGN.md` §12.57。
       连带一个调试小习惯：**"挑中了谁"要能看见**（`targets=`）—— 出事时第一句要问的就是它。
+  30. **给 `LinkLabel` 发 PostMessage 不会触发 `LinkClicked`，只有真鼠标才会**：用户 2026-10-06 要
+      「关于里面的网址点一下能打开」，回归 D07d 一开始写的是发 `WM_MOUSEMOVE` +
+      `WM_LBUTTONDOWN` + `WM_LBUTTONUP`（窗口已经 `SetForegroundWindow`、坐标就是控件正中间）——
+      **一条日志都不写**；换成 `SetCursorPos` + `mouse_event`（真鼠标）**立刻**就写了
+      「打开链接 https://mxx1.cn」。所以"能不能点"这种事只能真点（`TBGui.RealClick`）。
+      连带两条：① 真点之前先用 `WindowFromPoint` 确认鼠标底下**就是那个控件**
+      （`TBGui.HandleAt`，别用 `WindowAt` —— 那个会往上找顶层窗口），不是就跳过，别误点用户别的窗口；
+      ② 真点之前把鼠标位置存下来、跑完放回去（和 B10/B11 一个规矩）；
+      ③ 链接类控件跨进程看**类名没用**（LinkLabel 底下还是 `STATIC`），只能靠"点一下有没有反应"验。
 - **别在 PowerShell 里按像素调函数**：一个 `Get-Pixel` 每像素调一次，几万次调用要几分钟，
   看起来像卡死（踩过一次）。要么 `LockBits` 取一次 `byte[]` 再纯数组循环（`Get-InkRows` 的写法），
   要么用 csc 编个临时小工具（`local\InkDiag.cs` 那种）。

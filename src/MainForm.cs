@@ -97,6 +97,7 @@ namespace Mxx1Toolbox
         private ToolStripMenuItem _miReveal;
         private ToolStripMenuItem _miCopy;
         private ToolStripMenuItem _miDefine;
+        private ToolStripMenuItem _miHelp;
         private ToolStripMenuItem _miEdit;
         private ToolStripMenuItem _miDelete;
         private ToolStripMenuItem _miPin;
@@ -389,6 +390,11 @@ namespace Mxx1Toolbox
             _miCopy.Click += delegate { CopyCommand(); };
             _miDefine = new ToolStripMenuItem("查看按钮定义");
             _miDefine.Click += delegate { ShowDefinition(); };
+            // 「功能说明」和「查看按钮定义」是两件事：前者给人看（干什么用 / 怎么用），
+            // 后者给排查问题看（来源清单 / 路径 / 启动命令）。放在「运行」旁边 —— 用户想点之前
+            // 顺手先看一眼「这东西到底是干嘛的」。
+            _miHelp = new ToolStripMenuItem("功能说明…");
+            _miHelp.Click += delegate { ShowHelp(); };
             _miEdit = new ToolStripMenuItem("编辑按钮…");
             _miEdit.Click += delegate { EditUserButton(); };
             _miDelete = new ToolStripMenuItem("删除按钮");
@@ -399,6 +405,7 @@ namespace Mxx1Toolbox
 
             _menu.Items.Add(_miRun);
             _menu.Items.Add(_miRunAdmin);
+            _menu.Items.Add(_miHelp);
             _menu.Items.Add(_miPin);
             _menu.Items.Add(new ToolStripSeparator());
             _menu.Items.Add(_miEdit);
@@ -943,6 +950,61 @@ namespace Mxx1Toolbox
             return s;
         }
 
+        /// <summary>「功能说明」窗口里的整段正文。**界面和命令行共用这一个函数**
+        /// （`Mxx1Toolbox.exe tip <id> --full` 打的就是它），所以测试可以在不弹窗口的前提下
+        /// 断言"说明窗口里到底写了什么"。
+        ///
+        /// 正文来源只有清单：`hint`（一句话）+ `about`（详情整段）。程序里**不另抄一份文案** ——
+        /// 抄一份就会出现"说明窗口和悬停提示说两套话"。</summary>
+        public static string HelpText(ToolItem t, Settings settings)
+        {
+            System.Text.StringBuilder sb = new System.Text.StringBuilder();
+            sb.AppendLine("【它是干什么的】");
+            sb.AppendLine(t.Hint.Length > 0 ? t.Hint : "（这个按钮还没有写一句话说明）");
+            sb.AppendLine();
+            sb.AppendLine("【怎么用】");
+            sb.AppendLine(t.About.Trim().Length > 0
+                ? t.About.Trim()
+                : "（这个按钮还没有写详细说明，上面那句就是它目前的全部说明。）");
+            string marks = HelpMarks(t);
+            if (marks.Length > 0)
+            {
+                sb.AppendLine();
+                sb.AppendLine("【要注意什么】");
+                sb.AppendLine(marks.TrimEnd());
+            }
+            sb.AppendLine();
+            sb.AppendLine("【点下去会执行什么】");
+            string cmd = Launcher.DescribeCommand(t, settings, false);
+            if (t.Placeholder)
+            {
+                sb.AppendLine("这个按钮现在是灰的、点不动：功能还没接进来"
+                    + (t.Hint.Length > 0 ? "（" + t.Hint + "）" : "") + "。");
+            }
+            else if (cmd.Length > 200)
+            {
+                sb.AppendLine("这是一段比较长的脚本（" + cmd.Length.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                    + " 个字符），全文在按钮右键菜单的「查看按钮定义」里。");
+            }
+            else
+            {
+                sb.AppendLine(cmd);
+            }
+            return sb.ToString();
+        }
+
+        /// <summary>说明窗口里那一段"要注意什么"：危险 / 会弹确认框 / 要管理员权限 / 还没接功能。
+        /// 悬停提示里也有同一批话（TipFor），但那边一行只能放一句，这里可以展开。</summary>
+        private static string HelpMarks(ToolItem t)
+        {
+            System.Text.StringBuilder sb = new System.Text.StringBuilder();
+            if (t.Danger) { sb.AppendLine("· 它会改动系统设置，而且是这一类里后果比较重的一个；点下去会先弹确认框。"); }
+            else if (t.Confirm) { sb.AppendLine("· 它会改动系统设置，点下去会先弹一个确认框，确认之后才真的执行。"); }
+            if (t.RunAsAdmin) { sb.AppendLine("· 需要管理员权限：会弹一个 UAC 窗口，要点「是」。"); }
+            if (t.UserLayer) { sb.AppendLine("· 这是你自己加的按钮（在我的工具里），可以右键「编辑按钮」改它。"); }
+            return sb.ToString();
+        }
+
         // ---------------------------------------------------------------- theme
 
         public void ApplyTheme()
@@ -1072,6 +1134,8 @@ namespace Mxx1Toolbox
             _miReveal.Enabled = RevealPath(t).Length > 0;
             _miCopy.Enabled = true;
             _miDefine.Enabled = true;
+            // 说明窗口对每个按钮都能开：没写 about 的按钮也至少能说清"它是什么、会执行什么"
+            _miHelp.Enabled = true;
             // Editing and deleting only makes sense for the buttons this program wrote itself
             // (the user layer); the built in ones live inside the exe.
             _miEdit.Enabled = t.UserLayer;
@@ -1526,6 +1590,9 @@ namespace Mxx1Toolbox
                 case "newtool":
                     NewUserButton(null, null);
                     break;
+                case "hash":
+                    OpenHashTool();
+                    break;
                 default:
                     SetStatus("未实现的界面动作：" + t.Action);
                     Logger.Write(t.Name, "未实现的界面动作：" + t.Action);
@@ -1698,6 +1765,16 @@ namespace Mxx1Toolbox
             WindowPlacement.ShowCentered(f, this);
         }
 
+        /// <summary>「文件哈希校验」窗口（系统工具页那个按钮）。这是程序**自己**的窗口，
+        /// 不走 Launcher 起进程 —— 所以它是 module=app 的一条界面动作（和「新建按钮」同一类）。</summary>
+        private void OpenHashTool()
+        {
+            HashForm f = new HashForm(_theme);
+            WindowPlacement.ShowCentered(f, this);
+            SetStatus("文件哈希校验 · 选一个文件（也可以直接拖进来）就能算出 MD5 / SHA256");
+            Logger.Write("文件哈希校验", "打开窗口");
+        }
+
         private void OpenToolboxLog()
         {
             LogForm f = new LogForm("运行日志（工具箱）", Logger.CurrentFile(),
@@ -1764,6 +1841,33 @@ namespace Mxx1Toolbox
             sb.AppendLine("待接入      : " + (t.Placeholder ? "是（" + (t.Hint.Length > 0 ? t.Hint : "P1") + "）" : "否"));
             sb.AppendLine("图标        : " + t.IconPath + (File.Exists(t.IconPath) ? "（已找到）" : "（没有 PNG，界面用画的占位图标）"));
             OutputForm f = new OutputForm(t.Name + " · 按钮定义", "按钮定义（只读）", sb.ToString(), _theme);
+            WindowPlacement.ShowCentered(f, this);
+        }
+
+        /// <summary>右键 →「功能说明…」：给人看的那一页（干什么用 / 怎么用 / 要注意什么），
+        /// 正文由 HelpText 从清单的 hint + about 拼出来。不弹就不要它改任何东西 —— 纯只读窗口。</summary>
+        private void ShowHelp()
+        {
+            if (_menuTarget == null) { return; }
+            ShowHelpFor(_menuTarget);
+        }
+
+        /// <summary>打开某个按钮的「功能说明」。两个入口共用它：右键菜单 →「功能说明…」，
+        /// 以及选中按钮后按 F1（F1 = 帮助是通用习惯，也顺手让这个窗口能用键盘开出来）。</summary>
+        private void ShowHelpFor(ToolButton target)
+        {
+            if (target == null) { return; }
+            ToolItem t = target.Tool;
+            EventHandler run = delegate(object sender, EventArgs e)
+            {
+                // 说明窗口里那个「运行这个功能」：先把这个窗口关掉，再走和点按钮**完全同一条**路
+                // （RunTool：确认框 / 提权 / 条款同意门一个都不少），不然就成了绕开安全门的后门。
+                Control c = sender as Control;
+                Form owner = (c != null) ? c.FindForm() : null;
+                if (owner != null) { owner.Close(); }
+                RunTool(target, false);
+            };
+            HelpForm f = new HelpForm(t, HelpText(t, _settings), t.Name, !t.Placeholder, _theme, run);
             WindowPlacement.ShowCentered(f, this);
         }
 
@@ -2016,6 +2120,12 @@ namespace Mxx1Toolbox
                 return true;
             }
             if (keyData == Keys.Escape && _searchRow.Visible) { ShowSearch(false); return true; }
+            if (keyData == Keys.F1 && ActiveControl is ToolButton)
+            {
+                // F1 = 当前选中按钮的「功能说明」（和右键菜单那一项是同一个窗口）
+                ShowHelpFor((ToolButton)ActiveControl);
+                return true;
+            }
             if (keyData == Keys.Enter && ActiveControl is ToolButton)
             {
                 RunTool((ToolButton)ActiveControl, false);

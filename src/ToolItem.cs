@@ -42,6 +42,10 @@ namespace Mxx1Toolbox
         public bool Placeholder = false;
         public bool Hidden = false;
         public string Hint = "";
+        /// <summary>详情完整说明（清单里的 `about`）：给「功能说明」窗口用的整段文字 ——
+        /// 它是干什么的 / 什么时候适合用 / 操作步骤 / 安全保障。可以多行（JSON 里写 \n）。
+        /// 和 `hint` 的分工：`hint` 是鼠标停住时那一句（要短），`about` 是点开说明才看的整段。</summary>
+        public string About = "";
         public string Source = "";        // manifest the button came from (troubleshooting)
         public bool UserLayer = false;    // came from %LOCALAPPDATA%\mxx1-toolbox\tools.json
 
@@ -104,6 +108,7 @@ namespace Mxx1Toolbox
             t.Placeholder = Json.GetBool(o, "placeholder", false);
             t.Hidden = Json.GetBool(o, "hidden", false);
             t.Hint = Json.GetString(o, "hint", "");
+            t.About = Json.GetString(o, "about", "");
 
             if (t.Id.Length == 0) { throw new FormatException("按钮缺少 id（来自 " + source + "）"); }
             return t;

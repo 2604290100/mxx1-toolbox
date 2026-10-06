@@ -21,14 +21,15 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
 - 版本 **1.5.4**（`src\AssemblyInfo.cs` 是唯一来源），已打 tag `v1.5.4` 并发 Release：
   <https://github.com/2604290100/mxx1-toolbox/releases/tag/v1.5.4>（`Mxx1Toolbox.exe` 788,992 字节 +
   `Mxx1Toolbox-package.zip` 1,124,644 字节，说明里带 SHA256）。CI 绿的。
-- 测试 **360 项** = 命令行 **207**（206 通过 + 1 项环境不满足跳过）+ 界面 **153**；
-  编码体检 191 个文件。本地实测：命令行 116 秒、界面 146 秒。
+- 测试 **395 项** = 命令行 **234**（233 通过 + 1 项环境不满足跳过）+ 界面 **161**；
+  编码体检 194 个文件。本地实测：命令行约 2 分钟（挑组 `-Only T` 只要 2.9 秒）、界面约 2.5 分钟。
 - **测试可以挑组跑了**（`-Only M,N` / `-Skip P`）+ 提交前闸门 `tools\Test-Quick.ps1` +
   映射表 `tests\test-map.json`；分层与流程约定见 `docs\DESIGN.md` **§15**。
 - 这一轮（2026-10-06）改的东西：① 「一键解除占用」不弹窗口那条路（鼠标旁边一张提示卡，
   `src\AutoUnlock.cs` + `src\Balloon.cs`）；② 解锁窗口扫描不再卡界面 + 二分定位占用者；
   ③ 关于窗口的「官网 / 仓库」能点开；④ **CI 抓到的安全修复**：底线从"看进程名"改成"看归属"
   （见坑 29）；⑤ 挑组执行 + 闸门 + 映射表 + 本 skill 拆成三份。
+- **2026-10-06 晚二（这一轮）**：用户给了一份《UX 体验强化版说明文案》（10 个新工具各三段），要「做一个最简单的功能看一下开发速度」—— 落地了第一个：**「文件哈希校验 MD5/SHA256」**（系统工具页，`hash-check`）。同时把「说明文案」做成两层机制：`hint` = 悬停那一句、**新增 `about` = 右键「功能说明…」窗口里的整段详情**（窗口与 CLI `tip <id> --full` 打的是同一份 `MainForm.HelpText`；清单规矩交给 L0：写了 `about` 就必须有 `hint`、`hint` ≤ 120 字）。用户拍板「**面板简介那一层不做**」。顺手补了 F1（选中按钮按 F1 = 功能说明）。计数：命令行 **234** + 界面 **161** = **395 项**；设计正本 `docs\DESIGN.md` **§12.59**。
 - **2026-10-06 晚**：主窗口标题栏加了**最小化**（用户："给工具箱右上角添加一个最小化，目前很影响体验，
   只有关闭的情况下"）。只开最小化、不开最大化，所以标题栏会有一个**灰掉的最大化方框**（系统标准画法，
   用户拍板留着）—— 取舍与实测见 `docs\DESIGN.md` **§12.58**；界面回归补了 A03/A03b/A03c。
@@ -53,7 +54,7 @@ D:\萌新工具开发\toolbox\
                                    `MXX1_NO_OPEN=1` 时只写日志不真打开 —— 回归 D07d 靠它断言）
   src\ToolButton.cs                紧凑按钮（Flat + 主题配色 + 16×15 图标画布 + 灰色占位 + Flash/SetBusy）
   src\IconFactory.cs               图标：有 PNG 用 PNG，没有就实时画；一律 Normalize 成 16×15；GetMuted 出灰版
-  src\ToolItem.cs / ToolRegistry.cs 按钮模型 + 读内嵌 tools\*.json + 用户层 tools.json（只认 tools 数组）
+  src\ToolItem.cs / ToolRegistry.cs 按钮模型 + 读内嵌 tools\*.json + 用户层 tools.json（只认 tools 数组）；`hint` = 悬停那一句、**`about` = 「功能说明」窗口的整段详情**（新增字段）
   src\Launcher.cs                  按 kind 启动；SystemTargets 表（26 个系统工具）；找隔壁 exe / bin-tools；
                                    `LaunchElevatedCopy`（自己提权再起一遍 = 静默、不弹黑窗口）；UTF-8 输出
   src\RegEngine.cs                 "记原值 → 写入 → 读回核对 → 一键还原"的唯一实现（Privacy 与 SysReg 共用）
@@ -77,7 +78,12 @@ D:\萌新工具开发\toolbox\
                                    `MXX1_NO_NOTIFY=1` 关掉它（测试一律关，只有 N21 故意开着量位置）
   src\UnlockForm.cs                「解除文件占用」的结果窗口（`rightmenu unlock` 起来的独立进程，不开主界面；
                                    **高度按内容自适应**，见"界面硬规则"里那条）
-  src\AppIcon.cs                   窗口图标（按 DPI 取 exe 资源里的那一档）+ `Mxx1Form` 基类（9 个窗口都从它派生）
+  src\AppIcon.cs                   窗口图标（按 DPI 取 exe 资源里的那一档）+ `Mxx1Form` 基类（11 个窗口都从它派生）
+  src\HashTool.cs                  **本轮新增**：「文件哈希校验」——计算（MD5+SHA256 一趟读完、FileShare.ReadWrite 只读不独占、
+                                   不猜算法）+ 窗口 HashForm（后台线程 + 进度、拖文件进来、复制 / 对照值 / 对比）。
+                                   CLI `hash <文件> [--expect=]` 用的是同一份 HashTool
+  src\HelpForm.cs                  **本轮新增**：「功能说明」窗口（右键 →「功能说明…」/ 选中按钮按 F1）。
+                                   正文 = MainForm.HelpText（hint + about），窗口与 CLI `tip <id> --full` 同一份
   src\ConfirmForm.cs               自家的确认窗口「请确认」（不再用 MessageBox 甩命令，见 §"运行反馈"）
   src\UserTools.cs                 用户层 tools.json 的读写（最小 JSON writer，写入前备份 .bak）
   src\ToolFolders.cs               **v1.5.3**：扫 bin-tools\ 的工具文件夹，自动长出按钮（只读，
@@ -117,12 +123,12 @@ D:\萌新工具开发\toolbox\
   tools\Test-InlineSyntax.ps1      内联脚本语法 + 清单 JSON + **每个 .ps1 的语法**体检（34 个内联 / 7 个清单）
                                    + 闸门"读 git 改动"那段的**真跑自检**（假 git 往 stderr 写一行 warning，
                                    必须仍读得出文件名；见 DESIGN §15.3）
-  tests\Test-Cli.ps1               命令行回归 207 项（A03b–A03d/D01 盯兼容、A14–A17 盯 exe 图标、
+  tests\Test-Cli.ps1               命令行回归 234 项（A03b–A03d/D01 盯兼容、A14–A17 盯 exe 图标、
                                    L 组 12 项盯 sysreg、J09–J11 盯卸载窗口的列表、M 组盯右键增强、
                                    R 组 14 项盯 bin-tools 自动按钮、P 组 10 项盯发布包内容、
                                    S 组 26 项盯条款门 + 更新检查；
                                    环境不满足的项走 Skip()，打印 [SKIP] 不算失败）
-  tests\Test-Gui.ps1               界面回归 153 项（要交互式桌面，无桌面返回 3 = 跳过；A04b 盯窗口图标、
+  tests\Test-Gui.ps1               界面回归 161 项（要交互式桌面，无桌面返回 3 = 跳过；A04b 盯窗口图标、
                                    A03 盯"主窗口有最小化方框、没有最大化方框"、A03b/A03c 真发一次
                                    最小化再还原（位置尺寸一字不差）、
                                    H 组盯固定尺寸、E04b 盯窗口位置、A09 盯 bin-tools 说明、
@@ -159,6 +165,9 @@ powershell -File tools\Make-AppIcon.ps1       # 重生成 assets\app.ico（改�
 & bin\Mxx1Toolbox.exe disclaimer              # 打印条款正文（和窗口显示的一致）
 & bin\Mxx1Toolbox.exe consent [--accept|--reset]   # 看 / 记下 / 清掉首次运行的条款确认状态
 & bin\Mxx1Toolbox.exe tip [id]                # 打印按钮的悬停说明（界面交给 ToolTip 的就是这一串）
+& bin\Mxx1Toolbox.exe tip [id] --full         # 打印「功能说明」窗口里的整段正文（同一份 MainForm.HelpText）
+& bin\Mxx1Toolbox.exe hash <文件> [--expect=<校验值>]   # 算 MD5/SHA256（只读、不联网）；给 --expect 就顺便对一次：
+                                              #   0 = 一致、1 = 不一致、2 = 用法错/读不了/校验值认不出
 & bin\Mxx1Toolbox.exe privacy status          # 只读列隐私开关状态；selftest 自检「原值→写入→还原」
 & bin\Mxx1Toolbox.exe sysreg  status          # 只读列 6 组系统设置开关的现状；items / selftest 同上
 & bin\Mxx1Toolbox.exe rightmenu status        # 只读列右键菜单里装了什么 / 子菜单几项（**写入口只在界面里点**）
@@ -563,6 +572,17 @@ powershell -File tools\Make-AppIcon.ps1       # 重生成 assets\app.ico（改�
   `wscript.exe "<...>\PermanentDelete.vbs" %V`）—— **菜单不依赖这个 exe 在哪**，
   所以以后就算把 exe 内嵌/释放到别处，也不会把已装好的菜单搞坏。
 
+## 说明文案的两层（未发布这一轮起，改文案之前先看这一条）
+
+- **`hint`（悬停那一句）**：鼠标停在按钮上的 tooltip = 名称 + `hint` + 危险/管理员/灰色边界（`MainForm.TipFor`）。
+  要短 —— **超过 120 字 L0 体检当场报 FAIL**（悬停是一行一句，长了在 tooltip 里就是一堵墙）。
+- **`about`（详情整段）**：右键按钮 →「功能说明…」，或选中按钮按 **F1**。正文由 `MainForm.HelpText()`
+  拼成三段：它是干什么的（= `hint`）/ 怎么用（= `about`）/ 点下去会执行什么（= `Launcher.DescribeCommand`）。
+- **正文只有一个拼装处**：说明窗口（`src\HelpForm.cs`）和 `MXX1Toolbox.exe tip <id> --full` 用的是同一个函数
+  —— 所以"窗口里到底写了什么"能被自动断言（T24–T26 / C03h），也**不许在 C# 里另抄一份文案**。
+- **只写一半的说明比不写更糟**：写了 `about` 却没有 `hint` → L0 报 FAIL（用户会以为那就是全部）。
+- 「说明」和「查看按钮定义」是两件事：前者给人看，后者给排查问题看（来源清单 / 路径 / 启动命令）。
+
 ## 编码红线（踩过两次，能静默毁功能）
 
 - `.cs` / `.ps1` 必须 **UTF-8 带 BOM**（csc 与 PS 5.1 都按 ANSI 解码无 BOM 的文件）；
@@ -591,8 +611,8 @@ powershell -File tools\Make-AppIcon.ps1       # 重生成 assets\app.ico（改�
   | L0 | 编码体检 + 内联体检 | 约 5 秒 | **每次改完都跑，不商量**（BOM 掉了 / 清单坏了只有这两关能拦） |
   | L1 | 映射到的命令行组（`-Only`） | 4 - 60 秒 | 提交前：`powershell -File tools\Test-Quick.ps1` |
   | L2 | 映射到的界面组 | 约 2 分钟 | 涉及界面 / 互操作，且**你没开着工具箱** |
-  | L3 | 命令行全套 207 项 | 116 秒 | 推上去之后 CI 跑（在你机器之外） |
-  | L4 | 全套（命令行 207 + 界面 153） | 约 4.5 分钟 | **发版前一次** |
+  | L3 | 命令行全套 234 项 | 约 2 分钟 | 推上去之后 CI 跑（在你机器之外） |
+  | L4 | 全套（命令行 234 + 界面 161） | 约 5 分钟 | **发版前一次** |
 
 - **挑组**：两个套件都支持 `-Only M,N` / `-Skip P`（组标记就是源码里 `# ---- X 组：…` 那行的字母，
   前缀匹配）。**命令行挑组必须带上 A 组**（B/C/F/H/I/K/M/P/S 都读 A 跑出来的 `$status` 等公共量；
@@ -607,7 +627,7 @@ powershell -File tools\Make-AppIcon.ps1       # 重生成 assets\app.ico（改�
     命令行全套；改映射表 / 闸门自己（L0 那一层）**不强制任何套件**（它们的回归是闸门的两道自检：
     组名核对 + 覆盖率核对）。改 `src\MainForm.cs` 级的一次约 **26 秒**，不再是一分钟起步。
   - **只想验一小块时手写挑组**：`Test-Gui.ps1 -Only A`（只有十几条、几十秒），
-    `Test-Cli.ps1 -Only A,E`（4 秒）—— 清"界面回归欠账"不必每次都拉 153 项全量。
+    `Test-Cli.ps1 -Only A,E`（4 秒）—— 清"界面回归欠账"不必每次都拉 161 项全量。
 - **必须先确认工具箱没开着**（`Get-Process Mxx1Toolbox` 空）：两个套件都会写 `settings.ini` /
   暂停用户 `tools.json`，正跑着的那个实例会把内存状态写回去 → 一整套假红。**不要杀用户的进程。**
 - **一律 `powershell -ExecutionPolicy Bypass -File …`**（Windows PowerShell **5.1**，**不是 pwsh**）。
@@ -679,6 +699,6 @@ powershell -File tools\Make-AppIcon.ps1       # 重生成 assets\app.ico（改�
 9. ⚠️ **界面回归的欠账**（2026-10-06 晚）：v1.5.4 发版前没复跑，之后补跑了两次 ——
    一次 150 通过 + 1 失败（N21b，环境：鼠标挪不动，现在会走 `[SKIP]`），
    一次 149 通过 + 2 失败（B10/B11，环境：用户当时开着自己的工具箱，现在会走 `[SKIP]`）。
-   **这两条已经改成"环境不满足就 Skip"，但改完还没在"工具箱关着"的条件下复跑过完整界面回归**
-   （那一轮是 151 项；现在加了最小化那两条，是 **153 项**）——
+   **这两条已经改成"环境不满足就 Skip"**，并且 2026-10-06 晚在"工具箱关着"的条件下**跑过完整界面回归**
+   （**161 通过 / 0 失败**，含这一轮新加的哈希工具那 8 条）—— 这一笔欠账算清了。
    下次方便时（用户关掉工具箱）补一次：`powershell -File tests\Test-Gui.ps1`。

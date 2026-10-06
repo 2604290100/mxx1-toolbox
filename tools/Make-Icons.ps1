@@ -51,6 +51,8 @@ function Get-Shape {
         @('rightmenu.rebuild',    'refresh'),
         @('rightmenu.help',       'doc'),
         @('update-cache',   'trash'),
+        # 文件哈希校验（未发布这轮加的）：一个 "#" 号 —— 文件"指纹"最直观的写法
+        @('hash',           'hash'),
         @('sfc',            'wrench'),
         @('dism',           'wrench'),
         @('disk-check',     'disk'),
@@ -310,6 +312,13 @@ function Draw-Shape {
             $G.DrawEllipse($Pen, 3.0, 3.0, 10.0, 10.0)
             $G.DrawEllipse($Pen, 6.0, 6.0, 4.0, 4.0)
             $G.FillEllipse($Brush, 7.2, 7.2, 1.6, 1.6)
+        }
+        'hash' {
+            # 文件哈希校验：一个 "#" 号（两条竖 + 两条横），像指纹一样代表"就是这个文件"
+            $G.DrawLine($Pen, 6.2, 3.4, 5.0, 12.6)
+            $G.DrawLine($Pen, 10.2, 3.4, 9.0, 12.6)
+            $G.DrawLine($Pen, 4.0, 6.2, 12.0, 6.2)
+            $G.DrawLine($Pen, 3.6, 9.8, 11.6, 9.8)
         }
         default {
             $G.FillEllipse($Brush, 5.6, 5.6, 4.8, 4.8)

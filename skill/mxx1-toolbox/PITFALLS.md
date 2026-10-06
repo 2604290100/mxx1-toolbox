@@ -176,3 +176,14 @@
       **连带一个排查教训**：那次报错行被我自己的输出过滤器（`| Select-String -Pattern '要跑的|用时'`）
       吃掉了，屏幕上看只剩"跑了 1 秒、什么都没输出"，看着像程序悄悄退出 ——
       **排查时先把原始输出落盘（`Out-File`）再过滤**，别拿过滤后的结果当全部信息。
+  33. **界面自动化：UIA 在这台机器上把 WinForms 按钮报成 `ControlType.Pane`，而且报的矩形是错的**
+      （2026-10-06 写「文件哈希校验」的界面验证时踩到）：`AutomationElement.Current.BoundingRectangle`
+      给的是 `1488,536`，而那个按钮真实位置在它**下面 180px** —— 照它点会点到分段标题上，
+      表现出来是"点了没反应"。另外 `InvokePattern` 对报成 Pane 的元素直接 `Unsupported Pattern`。
+      **稳妥做法回到 `tests\Test-Gui.ps1` 那一套**：`EnumChildWindows` + `WM_GETTEXT` 读文字 +
+      `GetWindowRect` 拿真实屏幕坐标 + `PostMessage(BM_CLICK)` 点按钮 + 真鼠标（`SetCursorPos` +
+      `mouse_event`）点右键。两个连带事实：① **`BM_CLICK` 只发 `BN_CLICKED`、不动焦点** ——
+      想验快捷键（F1 这种走 `ProcessCmdKey` 的），必须先用**真鼠标**点一下那个按钮，
+      否则 `ActiveControl` 根本不是它，按 F1 什么都不会发生；② **读别的进程里 Edit 的文字要用
+      `WM_GETTEXT`（`SendMessageTimeout` + `SMTO_ABORTIFHUNG`）**，`GetWindowText` 对"没有标题的控件"
+      基本返回空（`[TBGui]::Text` 本来就这么写的）。

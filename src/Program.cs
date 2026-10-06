@@ -120,6 +120,7 @@ namespace Mxx1Toolbox
                     case "draft": return Draft(args);
                     case "status": return Status();
                     case "tip": return Tip(args);
+                    case "hash": return HashCommand(args);
                     case "privacy": return PrivacyCommand(args);
                     case "sysreg": return SysRegCommand(args);
                     case "rightmenu": return RightMenuCommand(args);
@@ -244,6 +245,9 @@ namespace Mxx1Toolbox
             Console.WriteLine("  Mxx1Toolbox.exe draft <路径>         把文件/文件夹按「拖进窗口」的规则变成按钮草稿");
             Console.WriteLine("  Mxx1Toolbox.exe status               打印 key=value 状态（脚本用）");
             Console.WriteLine("  Mxx1Toolbox.exe tip [id]             打印按钮的悬停说明（界面上鼠标停住时看到的那段）");
+            Console.WriteLine("  Mxx1Toolbox.exe tip [id] --full      打印按钮的「功能说明」全文（右键 →「功能说明…」那一页）");
+            Console.WriteLine("  Mxx1Toolbox.exe hash <文件>           算出这个文件的 MD5 / SHA256（只读，不上传）");
+            Console.WriteLine("  Mxx1Toolbox.exe hash <文件> --expect=<校验值>   顺便对一次：一致退出码 0，不一致 1");
             Console.WriteLine("  Mxx1Toolbox.exe privacy status       只读列出隐私开关的当前状态（不改任何东西）");
             Console.WriteLine("  Mxx1Toolbox.exe privacy selftest     用工具箱自己的测试键自检「原值 → 写入 → 还原」链路");
             Console.WriteLine("  Mxx1Toolbox.exe sysreg status        只读列出系统设置开关（任务栏/开始菜单/内核隔离…）的状态与原值");
@@ -274,10 +278,18 @@ namespace Mxx1Toolbox
 
         /// <summary>Prints the hover text of every button (or of one id). It is the very same string
         /// MainForm.TipFor hands to the ToolTip control, so the test suite can prove a tooltip is a
-        /// readable sentence instead of a screen-wide command line -- without moving the mouse.</summary>
+        /// readable sentence instead of a screen-wide command line -- without moving the mouse.
+        /// 加 `--full` 换成「功能说明」窗口里的那一整段正文（同一份 MainForm.HelpText）。</summary>
         private static int Tip(string[] args)
         {
-            string want = (args.Length > 1 && !args[1].StartsWith("-")) ? args[1] : "";
+            bool full = HasFlag(args, "--full");
+            string want = "";
+            for (int i = 1; i < args.Length; i++)
+            {
+                if (args[i].StartsWith("-")) { continue; }
+                want = args[i];
+                break;
+            }
             List<ToolItem> tools = Load();
             Settings settings = Settings.Load();
             int shown = 0;
@@ -285,7 +297,7 @@ namespace Mxx1Toolbox
             {
                 if (want.Length > 0 && !string.Equals(t.Id, want, StringComparison.OrdinalIgnoreCase)) { continue; }
                 Console.WriteLine("--- " + t.Id);
-                Console.WriteLine(TipText(t, settings));
+                Console.WriteLine(full ? MainForm.HelpText(t, settings) : TipText(t, settings));
                 shown++;
             }
             Console.WriteLine("tips=" + shown.ToString(CultureInfo.InvariantCulture));
@@ -295,6 +307,56 @@ namespace Mxx1Toolbox
                 return 2;
             }
             return 0;
+        }
+
+        /// <summary>`hash <文件> [--expect=<校验值>]` —— 算一个文件的 MD5 / SHA256。
+        /// 界面里那个按钮用的是**同一份** HashTool 实现（见 src\HashTool.cs），所以命令行算出来的
+        /// 值和窗口里显示的必然一致；测试也靠它拿 Get-FileHash 交叉验证（两套独立实现比一遍）。
+        ///
+        /// 退出码：0 = 算完（给了 --expect 且一致）；1 = 算完了但和给的校验值**不一致**；
+        /// 2 = 用法错 / 文件读不了 / 给的校验值连算法都认不出。
+        /// 只读：不写文件、不上传任何东西。</summary>
+        private static int HashCommand(string[] args)
+        {
+            string path = "";
+            string expect = "";
+            for (int i = 1; i < args.Length; i++)
+            {
+                string a = args[i];
+                if (a.StartsWith("--expect=", StringComparison.OrdinalIgnoreCase))
+                {
+                    expect = a.Substring("--expect=".Length);
+                    continue;
+                }
+                if (a.StartsWith("-")) { continue; }
+                if (path.Length == 0) { path = a; }
+            }
+            if (path.Trim().Length == 0)
+            {
+                Console.Error.WriteLine("用法: Mxx1Toolbox.exe hash <文件> [--expect=<校验值>]");
+                return 2;
+            }
+            HashTool.HashResult r = HashTool.Compute(path, null);
+            if (!r.Ok)
+            {
+                Console.Error.WriteLine("错误: " + r.Error);
+                return 2;
+            }
+            Console.WriteLine("file=" + path);
+            Console.WriteLine("size=" + r.Size.ToString(CultureInfo.InvariantCulture));
+            Console.WriteLine("md5=" + r.Md5);
+            Console.WriteLine("sha256=" + r.Sha256);
+            if (expect.Trim().Length == 0) { return 0; }
+
+            bool matched;
+            string algo;
+            string text = HashTool.Verdict(expect, r, out matched, out algo);
+            Console.WriteLine("expected=" + HashTool.Normalize(expect));
+            Console.WriteLine("algo=" + (algo.Length == 0 ? "unknown" : algo));
+            Console.WriteLine("match=" + (algo.Length == 0 ? "unknown" : (matched ? "true" : "false")));
+            Console.WriteLine("verdict=" + text);
+            if (algo.Length == 0) { return 2; }
+            return matched ? 0 : 1;
         }
 
         private static string TipText(ToolItem t, Settings settings)

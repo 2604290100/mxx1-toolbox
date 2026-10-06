@@ -364,6 +364,14 @@ public class TBGui
     public static bool CloseWindow(IntPtr h) { return PostMessageW(h, 0x0010, IntPtr.Zero, IntPtr.Zero); }  // WM_CLOSE
     public static IntPtr Parent(IntPtr h) { return GetParent(h); }
 
+    // 给窗口发一次按键（WM_KEYDOWN + WM_KEYUP）。F1 那种快捷键走的是 Form.ProcessCmdKey，
+    // 消息必须发给**窗口自己**（发给焦点控件不算数）—— C03g 用它验「选中按钮按 F1 = 功能说明」。
+    public static void Key(IntPtr h, int vk)
+    {
+        PostMessageW(h, 0x0100, (IntPtr)vk, IntPtr.Zero);
+        PostMessageW(h, 0x0101, (IntPtr)vk, IntPtr.Zero);
+    }
+
     // 「这个窗口现在还处理消息吗」：WM_NULL + SMTO_ABORTIFHUNG，超时没人接 = 界面被堵住了。
     // 2026-10-05 加：解锁窗口的扫描原来在界面线程上跑，实测右键一个 400 个文件的文件夹时，
     // 窗口从 612ms 一直卡到 7093ms（拖不动、关不掉、任务栏写"无响应"）。判据不能是"窗口还在不在"
@@ -1268,8 +1276,14 @@ if ($rightProbe.Count -eq 0 -or $rightShot -eq $null) {
     Check 'C01b 真功能按钮不是灰的（最暗墨迹 <= 80）' ($rightDark -ge 0 -and $rightDark -le 80) `
         ('最暗=' + $rightDark + ' 按钮=' + $rightProbe[0].Text)
     # 这条才是"灰色规则"真正想表达的东西：灰按钮必须明显比真按钮淡
-    Check 'C01d 灰按钮比真按钮明显淡（至少差 30）' (($greyDark - $rightDark) -ge 30) `
-        ('灰=' + $greyDark + ' 真=' + $rightDark + ' 差=' + ($greyDark - $rightDark))
+    # ⚠ 灰按钮那个墨迹是 **B 组**在「常用设置」页量出来的（占位按钮注入在那一页）。
+    # 只挑 C 组跑时它根本没被量过 —— 那种情况下要 Skip，不许记成失败（假红比没测更糟）。
+    if ($null -eq $greyDark -or "$greyDark" -eq '') {
+        Skip 'C01d 灰按钮比真按钮明显淡（至少差 30）' '挑组只跑 C：灰按钮的墨迹要 B 组先量（两个组一起跑才有意义）'
+    } else {
+        Check 'C01d 灰按钮比真按钮明显淡（至少差 30）' (($greyDark - $rightDark) -ge 30) `
+            ('灰=' + $greyDark + ' 真=' + $rightDark + ' 差=' + ($greyDark - $rightDark))
+    }
 
     # 抓像素偶尔会抓到切页签前的那一帧（图标行会整块偏上），所以量到明显不合理的范围就重抓一次。
     $rightInk = Get-InkRows -Shot $rightShot -Icon -X $rr.X -Y $rr.Y -W $rr.W -H $rr.H
@@ -1294,6 +1308,68 @@ if ($rightProbe.Count -eq 0 -or $rightShot -eq $null) {
 
 Check ('C02 点「清理优化」→ {0} 个按钮' -f $cleanNames.Count) (Switch-Tab -Handle $main -TabName '清理优化' -ExpectNames $cleanNames) ''
 Check ('C03 点「系统工具」→ {0} 个按钮' -f $sysNames.Count) (Switch-Tab -Handle $main -TabName '系统工具' -ExpectNames $sysNames) ''
+
+# ---- C03b–C03h：新按钮「文件哈希校验」+「功能说明」窗口（这一轮新做的两处界面）---------
+# 为什么用真鼠标点（RealClick）而不是 BM_CLICK：真点之后焦点会落在那个按钮上，下面 F1 才有对象
+# （BM_CLICK 只发 BN_CLICKED，不动焦点 —— 这一点实测过：BM_CLICK 之后按 F1 什么都不会发生）。
+# 为什么用 F1 验「功能说明」而不是右键菜单：ToolStrip 的菜单项不是独立窗口，探针点不到；
+# F1 和右键那一项走的是**同一个** ShowHelpFor、正文也是同一份 MainForm.HelpText。
+$hashBtn = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '文件哈希校验' })
+Check 'C03b 系统工具页里有「文件哈希校验」按钮（真按钮、可点）' ($hashBtn.Count -eq 1 -and $hashBtn[0].Enabled) ('找到=' + $hashBtn.Count)
+if ($hashBtn.Count -eq 1) {
+    $br = [TBGui]::Rect($hashBtn[0].H)
+    [void][TBGui]::Focus($main)
+    Start-Sleep -Milliseconds 300
+    [TBGui]::RealClick([int](($br[0] + $br[2]) / 2), [int](($br[1] + $br[3]) / 2))
+    $hashWin = @()
+    for ($i = 0; $i -lt 30; $i++) {
+        Start-Sleep -Milliseconds 200
+        $hashWin = @((Get-TopWindows -ProcessId $proc.Id) | Where-Object { $_.H -ne $main -and $_.Visible -and $_.Text -match '文件哈希校验' })
+        if ($hashWin.Count -gt 0) { break }
+    }
+    Check 'C03c 点「文件哈希校验」真开出了窗口（不是静默什么也没发生）' ($hashWin.Count -gt 0) `
+        (@((Get-TopWindows -ProcessId $proc.Id) | Where-Object { $_.H -ne $main -and $_.Visible } | ForEach-Object { $_.Text }) -join ' / ')
+    if ($hashWin.Count -gt 0) {
+        $hw = $hashWin[0].H
+        $hTexts = @(Get-ChildControls -RootHandle $hw | ForEach-Object { $_.Text })
+        Check 'C03d 窗口里有「选择文件…」和 MD5 / SHA256 两行' `
+            (($hTexts -contains '选择文件…') -and ($hTexts -contains 'MD5') -and ($hTexts -contains 'SHA256')) ($hTexts -join ' / ')
+        Check 'C03e 窗口里有「对照值」和「对比」（粘网站上给的校验值那一条）' `
+            (($hTexts -contains '对照值') -and ($hTexts -contains '对比')) ''
+        Check 'C03f 这个窗口只有算和看：没有任何会动文件的按钮' `
+            (@($hTexts | Where-Object { $_ -match '删除|清理|卸载|覆盖' }).Count -eq 0) ($hTexts -join ' / ')
+
+        # 关掉它，然后按 F1 —— 焦点还在那个按钮上
+        $hClose = @(Get-ChildControls -RootHandle $hw | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '关闭' })
+        if ($hClose.Count -gt 0) { [void][TBGui]::Click($hClose[0].H) } else { [void][TBGui]::CloseWindow($hw) }
+        Start-Sleep -Milliseconds 700
+        [void][TBGui]::Focus($main)
+        Start-Sleep -Milliseconds 300
+        [TBGui]::Key($main, 0x70)   # VK_F1
+        $helpWin = @()
+        for ($i = 0; $i -lt 30; $i++) {
+            Start-Sleep -Milliseconds 200
+            $helpWin = @((Get-TopWindows -ProcessId $proc.Id) | Where-Object { $_.H -ne $main -and $_.Visible -and $_.Text -match '功能说明' })
+            if ($helpWin.Count -gt 0) { break }
+        }
+        Check 'C03g 选中按钮按 F1 开出「功能说明」窗口' ($helpWin.Count -gt 0) `
+            (@((Get-TopWindows -ProcessId $proc.Id) | Where-Object { $_.H -ne $main -and $_.Visible } | ForEach-Object { $_.Text }) -join ' / ')
+        if ($helpWin.Count -gt 0) {
+            $hBody = ''
+            foreach ($c in (Get-ChildControls -RootHandle $helpWin[0].H)) {
+                if ($c.Class -like '*EDIT*') { $hBody = [TBGui]::Text($c.H) }
+            }
+            Check 'C03h 说明窗口里就是清单里那份文案（三段小标题 + 这句 hint）' `
+                (($hBody -match '【它是干什么的】') -and ($hBody -match '【怎么用】') -and ($hBody -match '计算 MD5/SHA256 校验码')) `
+                (($hBody -split "`r?`n" | Where-Object { $_ } | Select-Object -First 3) -join ' | ')
+            $helpBtns = @(Get-ChildControls -RootHandle $helpWin[0].H | Where-Object { $_.Class -like '*BUTTON*' } | ForEach-Object { $_.Text })
+            Check 'C03i 说明窗口里有「运行这个功能 / 复制说明 / 关闭」' `
+                (($helpBtns -contains '运行这个功能') -and ($helpBtns -contains '复制说明') -and ($helpBtns -contains '关闭')) ($helpBtns -join ' / ')
+            [void][TBGui]::CloseWindow($helpWin[0].H)
+            Start-Sleep -Milliseconds 600
+        }
+    }
+}
 Check ('C04 点「我的工具」→ {0} 个按钮' -f $mineNames.Count) (Switch-Tab -Handle $main -TabName '我的工具' -ExpectNames $mineNames) ''
 Check ('C04b 点「隐私设置」→ {0} 个按钮（成对开关都在这一页）' -f $privacyNames.Count) (Switch-Tab -Handle $main -TabName '隐私设置' -ExpectNames $privacyNames) ''
 $pvBad = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*BUTTON*' -and ($privacyNames -contains $_.Text) -and (-not $_.Enabled) })

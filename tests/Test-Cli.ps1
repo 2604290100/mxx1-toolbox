@@ -11,6 +11,8 @@
       * 「系统工具」12 个按钮：--dry 必须解析出目标，缺组件必须说明原因（不静默失灵）
       * 「工具目录自动长按钮」（R 组）：tool.json / 光一个 exe / 多个 exe 说不清 / id 撞车 / 坏 JSON
       * 条款确认门与更新检查（S 组）：disclaimer / consent / checkupdate，用本机假接口不碰外网
+      * 文件哈希校验（T 组）：算出来的校验码与 PowerShell 的 Get-FileHash 交叉验证 +
+        「功能说明」那三层文案（tip = 悬停一句、tip --full = 说明窗口的整段正文）
       * 兼容性（A03b–A03d / D01）：按这台机器是哪一版 Windows 分叉断言（见 docs\DESIGN.md §16）
       * 输出必须是 UTF-8（中文按钮名不能变成乱码）
       * 错误用法返回退出码 2
@@ -25,7 +27,7 @@
     前缀匹配（-Only A 会带上 A14 那种子块）。挑组跑完会在汇总里列出"没跑哪些组" ——
     那一行要写进汇报与提交信息；发版前要清空这份欠账。映射表见 tests\test-map.json。
     ⚠ B/C/F/H/I/K/M/P/S 这些组读 A 组跑出来的公共量（$status 等），挑组时**必须带上 A**
-    （tools\Test-Quick.ps1 会自动带上）。
+    （tools\Test-Quick.ps1 会自动带上）。T 组不读公共量，可以单独跑。
 #>
 [CmdletBinding()]
 param(
@@ -361,13 +363,13 @@ foreach ($line in ($status.Out -split "`r?`n")) {
     }
 }
 
-Check ('A04 按钮总数 114 + 工具目录里自动加载的 {0} 个（测试期间用户层的按钮会暂停：常用 33 + 系统工具 26 + 隐私 29 + 应用 5 + 清理 8 + 右键 10 + 我的 3）' -f $autoBase) `
-    ((Get-Key $status.Out 'buttons') -eq [string](114 + $autoBase)) (Get-Key $status.Out 'buttons')
+Check ('A04 按钮总数 115 + 工具目录里自动加载的 {0} 个（测试期间用户层的按钮会暂停：常用 33 + 系统工具 27 + 隐私 29 + 应用 5 + 清理 8 + 右键 10 + 我的 3）' -f $autoBase) `
+    ((Get-Key $status.Out 'buttons') -eq [string](115 + $autoBase)) (Get-Key $status.Out 'buttons')
 Check 'A05 内置清单里没有灰色占位按钮了（两个「资源管理器」也接上了真功能；灰规则改由 B 组注入验证）' ((Get-Key $status.Out 'placeholders') -eq '0') (Get-Key $status.Out 'placeholders')
 Check 'A06 危险按钮 3 个' ((Get-Key $status.Out 'dangerous') -eq '3') (Get-Key $status.Out 'dangerous')
 
 # 「常用」页签是合成的（置顶 + 最近使用），清单里没有它的按钮，所以是 0
-$tabExpect = @{ 'recent' = 0; 'common' = 33; 'mine' = 3; 'system' = 26; 'cleanup' = 8; 'privacy' = 29; 'apps' = 5; 'rightmenu' = 10 }
+$tabExpect = @{ 'recent' = 0; 'common' = 33; 'mine' = 3; 'system' = 27; 'cleanup' = 8; 'privacy' = 29; 'apps' = 5; 'rightmenu' = 10 }
 $tabOk = $true
 $tabDetail = @()
 foreach ($k in $tabExpect.Keys) {
@@ -375,13 +377,13 @@ foreach ($k in $tabExpect.Keys) {
     $tabDetail += ($k + '=' + $v)
     if ($v -ne [string]([int]$tabExpect[$k] + [int]$autoByTab[$k])) { $tabOk = $false }
 }
-Check 'A07 八个页签的按钮数正确（0/33/3/26/8/29/5/10，加上自动按钮）' $tabOk ($tabDetail -join ' ')
+Check 'A07 八个页签的按钮数正确（0/33/3/27/8/29/5/10，加上自动按钮）' $tabOk ($tabDetail -join ' ')
 
 $list = Invoke-Exe 'list'
 Check 'A08 list 退出码 0' ($list.Code -eq 0) ('exit=' + $list.Code)
-Check 'A09 list 报的按钮数一致' ((Get-Key $list.Out 'buttons') -eq [string](114 + $autoBase)) (Get-Key $list.Out 'buttons')
+Check 'A09 list 报的按钮数一致' ((Get-Key $list.Out 'buttons') -eq [string](115 + $autoBase)) (Get-Key $list.Out 'buttons')
 $lines = @($list.Out -split "`r?`n" | Where-Object { $_ -match "`t" })
-Check ('A10 list 打出 {0} 行按钮' -f (114 + $autoBase)) ($lines.Count -eq (114 + $autoBase)) ('lines=' + $lines.Count)
+Check ('A10 list 打出 {0} 行按钮' -f (115 + $autoBase)) ($lines.Count -eq (115 + $autoBase)) ('lines=' + $lines.Count)
 
 $rmList = Invoke-Exe 'list --tab rightmenu'
 Check 'A11 右键增强 10 个按钮（9 个右键菜单 + 隔壁永久删除工具）' ((Get-Key $rmList.Out 'shown') -eq [string](10 + [int]$autoByTab['rightmenu'])) (Get-Key $rmList.Out 'shown')
@@ -529,7 +531,7 @@ if ($permdel -eq '(未找到)' -or $permdel.Length -eq 0) {
 # ---------------------------------------------------------------- D 组：系统工具
 if (Test-GroupSelected 'D') {
 Write-Host ''
-Write-Host 'D 组 · 「系统工具」25 个按钮（Windows 自带组件 + 修复/诊断，--dry 只解析不启动）'
+Write-Host 'D 组 · 「系统工具」27 个按钮（Windows 自带组件 + 修复/诊断 + 文件哈希校验，--dry 只解析不启动）'
 
 # 缺组件的口径按系统版本分叉：Win7 上那 7 个 ms-settings: 按钮天生打不开（算"没有"），
 # Win10/11 上一个都不该缺。这样才能在两种机器上跑同一套测试。
@@ -539,14 +541,14 @@ Check 'D01 status 报 20 个系统工具动作（12 组件 + 2 诊断 + 4 权限
     (((Get-Key $status.Out 'systemTargets') -eq '20') -and $missOk) $d01detail
 
 $sysList = Invoke-Exe 'list --tab system'
-Check 'D02 系统工具页签 26 个按钮（25 + 系统体检）、没有 placeholder' `
-    (((Get-Key $sysList.Out 'shown') -eq '26') -and (-not ($sysList.Out -match 'placeholder'))) ''
+Check 'D02 系统工具页签 27 个按钮（25 + 文件哈希校验 + 系统体检）、没有 placeholder' `
+    (((Get-Key $sysList.Out 'shown') -eq '27') -and (-not ($sysList.Out -match 'placeholder'))) ''
 
 $sysIds = @()
 foreach ($line in ($sysList.Out -split "`r?`n")) {
     if ($line -match "`t") { $sysIds += ($line -split "`t")[0] }
 }
-Check 'D03 读到 26 个系统工具 id' ($sysIds.Count -eq 26) ($sysIds -join ' ')
+Check 'D03 读到 27 个系统工具 id' ($sysIds.Count -eq 27) ($sysIds -join ' ')
 
 $bad = @()
 $detail = @()
@@ -559,7 +561,7 @@ foreach ($id in $sysIds) {    $d = Invoke-Exe ('run ' + $id + ' --dry')
     if ($exists -ne 'yes' -and $hint.Length -eq 0) { $bad += ($id + ':没有解释'); continue }
     $detail += ($id + '=' + (Get-Key $d.Out 'kind'))
 }
-Check 'D04 26 个系统工具都有目标、且缺了就说明了原因' ($bad.Count -eq 0) (($bad -join ' ') + ' ' + ($detail -join ' '))
+Check 'D04 27 个系统工具都有目标、且缺了就说明了原因' ($bad.Count -eq 0) (($bad -join ' ') + ' ' + ($detail -join ' '))
 
 $dryMissing = Invoke-Exe 'run no.such.button --dry'
 Check 'D05 不存在的按钮 --dry 也是退出码 2' ($dryMissing.Code -eq 2) ('exit=' + $dryMissing.Code)
@@ -880,7 +882,7 @@ Write-Host 'H 组 · 悬停说明（用户 2026-10-04 报过「鼠标悬停的�
 # tip 命令打印的就是界面塞给 ToolTip 的那个字符串，所以这里能直接断言，不用去动真鼠标。
 $tipsAll = Invoke-Exe 'tip'
 Check 'H01 tip 退出码 0' ($tipsAll.Code -eq 0) ('exit=' + $tipsAll.Code)
-Check ('H02 tip 覆盖了每个按钮（114 + 自动 {0} 个）' -f $autoBase) ((Get-Key $tipsAll.Out 'tips') -eq [string](114 + $autoBase)) (Get-Key $tipsAll.Out 'tips')
+Check ('H02 tip 覆盖了每个按钮（114 + 自动 {0} 个）' -f $autoBase) ((Get-Key $tipsAll.Out 'tips') -eq [string](115 + $autoBase)) (Get-Key $tipsAll.Out 'tips')
 
 $blocks = @{}
 $curId = ''
@@ -2038,6 +2040,140 @@ if (Test-Path -LiteralPath $realZip) { $realZipAfter = (Get-Item -LiteralPath $r
 Check 'P09 这一组只往临时目录打，没动 bin\ 里真正的发布包' ($realZipBefore -eq $realZipAfter) `
     $(if ($realZipBefore -eq $realZipAfter) { 'zip 未改动' } else { 'zip 被改动了！before=' + $realZipBefore + ' after=' + $realZipAfter })
 Check 'P10 打包测试的临时目录收拾干净了（不留垃圾在 %TEMP%）' (-not (Test-Path -LiteralPath $pTmp)) $pTmp
+
+}
+
+# ---------------------------------------------------------------- T 组：文件哈希校验（新按钮）与「功能说明」文案
+# 用户 2026-10-06 提的那批新工具里先落地的一个（「文件哈希校验 MD5/SHA256」）。这个组盯三件事：
+#   ① 算出来的校验码对不对 —— 拿 PowerShell 自己的 Get-FileHash 当**独立实现**交叉验证
+#      （两边的算法库、读文件的代码都不一样，同时错成同一个值的概率可以忽略）；空文件再用一个
+#      公开已知的常量当第三个判据。
+#   ② 边界说人话：文件读不了 / 给的校验值位数不对时，不许报"不一致"吓人，也不许抛异常栈。
+#   ③ 三层文案真的从清单里读出来了：`tip <id>` = 悬停那句（要短）、`tip <id> --full` = 右键
+#      「功能说明…」窗口里的整段正文（界面里那个窗口打的就是同一份 MainForm.HelpText）。
+if (Test-GroupSelected 'T') {
+Write-Host 'T 组 · 文件哈希校验（MD5 / SHA256）与「功能说明」文案'
+
+$tDir = Join-Path $env:TEMP ('mxx1-hash-test-' + [Guid]::NewGuid().ToString('N').Substring(0, 8))
+[void][System.IO.Directory]::CreateDirectory($tDir)
+$tFile = Join-Path $tDir 'sample.bin'
+$tEmpty = Join-Path $tDir 'empty.bin'
+$tNone = Join-Path $tDir 'not-here.bin'
+
+try {
+    # 1 MB 的随机内容：既不是空文件、也不是纯文本，分块读那条路会真的走好几圈
+    $tBytes = New-Object byte[] (1024 * 1024)
+    $tRnd = New-Object System.Random 20261006
+    $tRnd.NextBytes($tBytes)
+    [System.IO.File]::WriteAllBytes($tFile, $tBytes)
+    [System.IO.File]::WriteAllBytes($tEmpty, (New-Object byte[] 0))
+
+    $wantMd5 = (Get-FileHash -LiteralPath $tFile -Algorithm MD5).Hash.ToLowerInvariant()
+    $wantSha = (Get-FileHash -LiteralPath $tFile -Algorithm SHA256).Hash.ToLowerInvariant()
+
+    $hash1 = Invoke-Exe ('hash "' + $tFile + '"')
+    Check 'T01 hash 退出码 0（只读算一个文件的校验和）' ($hash1.Code -eq 0) ('exit=' + $hash1.Code + ' ' + $hash1.Err)
+    Check 'T02 MD5 与 PowerShell 的 Get-FileHash 一致（两套独立实现互校）' ((Get-Key $hash1.Out 'md5') -eq $wantMd5) `
+        ('exe=' + (Get-Key $hash1.Out 'md5') + ' powershell=' + $wantMd5)
+    Check 'T03 SHA256 也与 Get-FileHash 一致' ((Get-Key $hash1.Out 'sha256') -eq $wantSha) `
+        ('exe=' + (Get-Key $hash1.Out 'sha256') + ' powershell=' + $wantSha)
+    Check 'T04 报出文件大小（1 MB = 1048576 字节）' ((Get-Key $hash1.Out 'size') -eq '1048576') (Get-Key $hash1.Out 'size')
+
+    # 空文件：SHA256 是所有算法库都必须给出的那个公开常量（第三个独立判据）
+    $hashE = Invoke-Exe ('hash "' + $tEmpty + '"')
+    Check 'T05 空文件：sha256 是那个公开的已知常量（e3b0c442…）' `
+        ((Get-Key $hashE.Out 'sha256') -eq 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855') `
+        (Get-Key $hashE.Out 'sha256')
+    Check 'T06 空文件：md5 也是已知常量（d41d8cd9…）' `
+        ((Get-Key $hashE.Out 'md5') -eq 'd41d8cd98f00b204e9800998ecf8427e') (Get-Key $hashE.Out 'md5')
+
+    # --expect：一致 / 不一致 / 认不出
+    $hashOk = Invoke-Exe ('hash "' + $tFile + '" --expect=' + $wantSha)
+    Check 'T07 --expect 一致：退出码 0 + match=true + 认出是 sha256' `
+        (($hashOk.Code -eq 0) -and ((Get-Key $hashOk.Out 'match') -eq 'true') -and ((Get-Key $hashOk.Out 'algo') -eq 'sha256')) `
+        ('exit=' + $hashOk.Code + ' match=' + (Get-Key $hashOk.Out 'match') + ' algo=' + (Get-Key $hashOk.Out 'algo'))
+    Check 'T08 一致时给的是人话（含「一致」和算法名）' (($hashOk.Out -match '一致') -and ($hashOk.Out -match 'SHA256')) `
+        (($hashOk.Out -split "`r?`n" | Where-Object { $_ -match '^verdict=' }) -join '')
+
+    $hashBad = Invoke-Exe ('hash "' + $tFile + '" --expect=0000' + $wantSha.Substring(4))
+    Check 'T09 --expect 不一致：退出码 1 + match=false' `
+        (($hashBad.Code -eq 1) -and ((Get-Key $hashBad.Out 'match') -eq 'false')) ('exit=' + $hashBad.Code + ' match=' + (Get-Key $hashBad.Out 'match'))
+    Check 'T10 不一致时提醒「可能没下全 / 可能被改过」' (($hashBad.Out -match '没下载全') -and ($hashBad.Out -match '被改过')) `
+        (($hashBad.Out -split "`r?`n" | Where-Object { $_ -match '^verdict=' }) -join '')
+
+    $hashOdd = Invoke-Exe ('hash "' + $tFile + '" --expect=abc123')
+    Check 'T11 位数不对：退出码 2 + match=unknown（不谎报「不一致」）' `
+        (($hashOdd.Code -eq 2) -and ((Get-Key $hashOdd.Out 'match') -eq 'unknown')) ('exit=' + $hashOdd.Code + ' match=' + (Get-Key $hashOdd.Out 'match'))
+    Check 'T12 认不出位数时说清「MD5 是 32 位、SHA256 是 64 位」' (($hashOdd.Out -match '32 位') -and ($hashOdd.Out -match '64 位')) `
+        (($hashOdd.Out -split "`r?`n" | Where-Object { $_ -match '^verdict=' }) -join '')
+
+    # 网站上的校验值写法五花八门：大写、带短横线、带空格，都得认
+    $dashed = ($wantMd5.ToUpperInvariant() -replace '(.{8})', '$1-').TrimEnd('-')
+    $hashDash = Invoke-Exe ('hash "' + $tFile + '" --expect=' + $dashed)
+    Check 'T13 大写 + 短横线分隔的校验值照样认（网站常见写法）' `
+        (($hashDash.Code -eq 0) -and ((Get-Key $hashDash.Out 'match') -eq 'true')) `
+        ('exit=' + $hashDash.Code + ' 值=' + $dashed)
+    $spaced = ($wantMd5.ToUpperInvariant() -replace '(.{4})', '$1 ').Trim()
+    $hashSpace = Invoke-Exe ('hash "' + $tFile + '" --expect="' + $spaced + '"')
+    Check 'T14 带空格的校验值也认（引号包起来的那一串不许被拆成两个参数）' `
+        (($hashSpace.Code -eq 0) -and ((Get-Key $hashSpace.Out 'match') -eq 'true')) ('exit=' + $hashSpace.Code)
+
+    # 读不了的文件：说人话，不抛异常栈、不静默成功
+    $hashNone = Invoke-Exe ('hash "' + $tNone + '"')
+    Check 'T15 文件不存在：退出码 2 + stderr 里是「找不到这个文件」+ 路径' `
+        (($hashNone.Code -eq 2) -and ($hashNone.Err -match '找不到这个文件') -and ($hashNone.Err -match 'not-here\.bin')) `
+        ('exit=' + $hashNone.Code + ' err=' + $hashNone.Err.Trim())
+
+    $hashUsage = Invoke-Exe 'hash'
+    Check 'T16 不写文件名：退出码 2 + 打印用法（不猜、不报错栈）' `
+        (($hashUsage.Code -eq 2) -and ($hashUsage.Err -match '用法')) ('exit=' + $hashUsage.Code + ' err=' + $hashUsage.Err.Trim())
+
+    # 独占这个文件，再看它给的是什么话（这条也顺手证明"读的时候出错了"是被人管着的）
+    $tLock = [System.IO.File]::Open($tFile, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::None)
+    try {
+        $hashLock = Invoke-Exe ('hash "' + $tFile + '"')
+        Check 'T17 文件被独占时：退出码 2 + 说清是「另一个程序占着」而不是崩掉' `
+            (($hashLock.Code -eq 2) -and ($hashLock.Err -match '独占|占用|另一个程序')) ('exit=' + $hashLock.Code + ' err=' + $hashLock.Err.Trim())
+    } finally { $tLock.Close() }
+
+    # 允许别人读（共享）的时候照样能算 —— 这是"只读、不独占"那条底线的正面证据
+    $tShare = [System.IO.File]::Open($tFile, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+    try {
+        $hashShare = Invoke-Exe ('hash "' + $tFile + '"')
+        Check 'T18 别的程序正开着这个文件时照样算得出来（FileShare.ReadWrite，不独占）' `
+            (($hashShare.Code -eq 0) -and ((Get-Key $hashShare.Out 'md5') -eq $wantMd5)) ('exit=' + $hashShare.Code)
+    } finally { $tShare.Close() }
+
+    # 按钮本身：清单里在不在、指向哪、悬停说明是什么
+    $tList = Invoke-Exe 'list --tab system'
+    Check 'T19 系统工具页里有「文件哈希校验」这个按钮' ($tList.Out -match 'hash-check' -and $tList.Out -match '文件哈希校验') `
+        (($tList.Out -split "`r?`n" | Where-Object { $_ -match 'hash-check' }) -join '')
+
+    $tDry = Invoke-Exe 'run hash-check --dry'
+    Check 'T20 --dry 认得出它是"程序内的窗口"（不启动任何进程）' `
+        ((Get-Key $tDry.Out 'kind') -eq 'window' -and (Get-Key $tDry.Out 'exists') -eq 'yes') `
+        ('kind=' + (Get-Key $tDry.Out 'kind') + ' target=' + (Get-Key $tDry.Out 'target'))
+
+    $tTip = Invoke-Exe 'tip hash-check'
+    Check 'T21 悬停说明就是清单里那句 hint（鼠标停住看得到）' ($tTip.Out -match '计算 MD5/SHA256 校验码，用来核对文件是否完好') `
+        (($tTip.Out -split "`r?`n" | Where-Object { $_ -and $_ -notmatch '^---|^tips=' }) -join ' | ')
+    Check 'T22 悬停说明里不许出现「内置动作: app/hash」这种机器话' (-not ($tTip.Out -match '内置动作')) ''
+    Check 'T23 悬停说明是短的：装不进 tooltip 的长正文不许挤进来（< 300 字）' `
+        ($tTip.Out -notmatch '不上传文件、不改动文件') ''
+
+    $tFull = Invoke-Exe 'tip hash-check --full'
+    Check 'T24 --full = 「功能说明」窗口的正文：三段小标题都在' `
+        (($tFull.Out -match '【它是干什么的】') -and ($tFull.Out -match '【怎么用】') -and ($tFull.Out -match '【点下去会执行什么】')) ''
+    Check 'T25 正文里带着清单 about 的详情（使用方法 / 不上传文件）' `
+        (($tFull.Out -match '使用方法') -and ($tFull.Out -match '不上传文件')) ''
+    Check 'T26 正文里说清了点下去会执行什么（人话，不是"内置动作"）' `
+        (($tFull.Out -match '文件哈希校验') -and (-not ($tFull.Out -match '内置动作'))) `
+        (($tFull.Out -split "`r?`n" | Where-Object { $_ -match '本程序里打开' }) -join '')
+}
+finally {
+    try { Remove-Item -LiteralPath $tDir -Recurse -Force -ErrorAction SilentlyContinue } catch { }
+}
+Check 'T27 哈希测试的临时目录收拾干净了' (-not (Test-Path -LiteralPath $tDir)) $tDir
 
 }
 

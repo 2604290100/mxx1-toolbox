@@ -57,9 +57,28 @@ foreach ($f in $files) {
         continue
     }
     foreach ($t in $list) {
+        # ---- 文案三层体检：说明文案只写一半，比不写更糟（用户以为那就是全部了）。
+        # 「悬停提示」= hint（鼠标停住看的那一句，必须短）；「详情说明」= about（右键
+        # 「功能说明…」窗口里的整段：怎么用 / 什么时候适合用 / 安全保障）。两者都在清单里，
+        # 界面和命令行读的是同一份（MainForm.TipFor / MainForm.HelpText）。
+        $id = [string]$t.id
+        if ($t.about) {
+            if (-not $t.hint) {
+                $problems++
+                Report-Problem $f.Name $id '写了 about（详情说明）却没有 hint（悬停提示那一句）—— 悬停是用户最先看到的那一层'
+            }
+            if (([string]$t.about).Trim().Length -lt 20) {
+                $problems++
+                Report-Problem $f.Name $id 'about（详情说明）短于 20 字：要么把它写清楚（怎么用 / 注意什么），要么就别写这个字段'
+            }
+        }
+        if ($t.hint -and ([string]$t.hint).Length -gt 120) {
+            $problems++
+            Report-Problem $f.Name $id ('hint（悬停提示）有 ' + ([string]$t.hint).Length + ' 个字 —— 悬停是一行一句，太长了在 tooltip 里就是一堵墙，详情请写进 about')
+        }
+
         if (-not $t.inline) { continue }
         $checked++
-        $id = [string]$t.id
         $isCmd = ($t.shell -eq 'cmd')
 
         if ($isCmd) {

@@ -362,6 +362,18 @@ namespace Mxx1Toolbox
                         if (a == "help") { return "一页说明：装在哪、怎么卸干净、右键里看不到怎么办"; }
                         return "内置动作: " + t.Module + "/" + t.Action;
                     }
+                    if (t.Module == ModuleApp)
+                    {
+                        // 程序**自己**的窗口（不是启动别的程序）：说明里必须写成一句人话。
+                        // 原来没有这一支，于是悬停说明和「功能说明」窗口里显示的会是
+                        // "内置动作: app/newtool" —— 那是给排查问题看的，不该出现在给用户看的文案里。
+                        string ua = t.Action.ToLowerInvariant();
+                        if (ua == "newtool") { return "在本程序里打开「新建按钮」窗口（不启动别的程序）"; }
+                        if (ua == "exporttools") { return "把「我的工具」导出到一个文件（不启动别的程序）"; }
+                        if (ua == "importtools") { return "从导出文件里把按钮并进来（不启动别的程序）"; }
+                        if (ua == "hash") { return "在本程序里打开「文件哈希校验」窗口（只读算校验码，不上传、不启动别的程序）"; }
+                        return "在本程序里打开的窗口: " + t.Action;
+                    }
                     return "内置动作: " + t.Module + "/" + t.Action;
             }
             return t.Kind + " (未实现)";

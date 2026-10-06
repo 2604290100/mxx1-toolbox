@@ -52,7 +52,8 @@
   和 **「常用功能」级联子菜单**（右键里多一个子菜单，放工具箱「常用」页的东西）。
   三项都只写 `HKCU\Software\Classes`，删掉键就干净；再加上**「永久删除工具」**：打开隔壁的
   [永久删除（不进回收站）](../permanent-delete-menu) 安装器窗口，零改动集成
-- 「系统工具」12 个按钮**都是真功能**：设备管理器 / 声音设置 / 设备和打印机 / 计划任务 / 注册表 / 服务 /
+- **「文件哈希校验」**：选一个文件（也可以直接拖进窗口）就算出 MD5 / SHA256，粘上网站上给的值按「对比」；**只在本机算、不上传、不改动文件**，`hash <文件>` 命令行同名入口
+- 「系统工具」12 个 Windows 组件按钮**都是真功能**：设备管理器 / 声音设置 / 设备和打印机 / 计划任务 / 注册表 / 服务 /
   （Win7 上没有 Windows 10 那个「设置」应用，走 `ms-settings:` 的 7 个按钮会直接告诉你**该去控制面板哪一项**）
 - **首次打开要勾一次同意**：界面第一次运行会弹《使用条款确认》（正文就是
   [`docs/DISCLAIMER.md`](docs/DISCLAIMER.md)，编译时内嵌进 exe），勾选「我已阅读并同意」之后
@@ -102,11 +103,12 @@ powershell -ExecutionPolicy Bypass -File build.ps1     # 编译，产物 bin\Mxx
 | --- | --- |
 | 左键单击按钮 | 执行（**灰色按钮**点不动 —— 它是禁用的；**运行中按钮文字不变**，只有图标变成转圈） |
 | 按住 Shift 单击 / 右键「以管理员身份运行」 | 提权执行（UAC） |
-| 右键按钮 | 运行 / 以管理员身份运行 / **编辑按钮… / 删除按钮**（只对自己加的按钮）/ 打开所在文件夹 / 复制启动命令 / 查看按钮定义 / 新建按钮… |
-| 鼠标停在按钮上 | 显示它会执行的命令（灰色按钮是禁用的，不弹提示，看状态栏） |
+| 右键按钮 | 运行 / 以管理员身份运行 / **功能说明…**（这按钮是干嘛的、怎么用、要注意什么）/ **编辑按钮… / 删除按钮**（只对自己加的按钮）/ 打开所在文件夹 / 复制启动命令 / 查看按钮定义（给排查问题看的技术细节）/ 新建按钮… |
+| 鼠标停在按钮上 | 一句话说明 + 它会执行的命令（灰色按钮是禁用的，不弹提示，看状态栏） |
 | 底部 `[搜索]` `[日志]` `[设置]` `[关于]` `[检查更新]` | 搜索 / 运行日志面板（**最新的在最上面**）/ 设置 / 关于（含「打开工具目录」）/ 更新检查（P2） |
 | 跑完一个按钮 | 页签下面弹一条**结果条**（绿 = 成功 / 红 = 失败，8 秒后自动收，**点它看运行日志**）；有输出就开结果窗口；只有"失败且没有输出"才弹消息框 |
 | `Ctrl+N` / `Ctrl+F` / `Ctrl+L` / `F5` / `Ctrl+,` | 新建按钮 / 搜索（搜全部八个页签）/ 日志 / 刷新按钮清单 / 设置 |
+| `F1`（选中某个按钮时） | 打开这个按钮的**「功能说明」**窗口（和右键里那一项是同一个） |
 | 方向键 + `Enter` | 键盘走格子并执行；`Alt+1..9` 直接执行本页前九个；菜单键或 `Shift+F10` 打开右键菜单 |
 
 ## 页签与按钮
@@ -115,14 +117,14 @@ powershell -ExecutionPolicy Bypass -File build.ps1     # 编译，产物 bin\Mxx
 | --- | --- | --- |
 | 常用 | 0+ | 置顶的按钮 + 最近用过的 30 个（按钮上右键可以置顶；空着时页面会给一句用法说明） |
 | 常用设置 | 33 | **全是真功能**（桌面图标 / 任务栏合并 ×2 / 任务栏搜索 / 开始菜单对齐 ×2 / 右键菜单风格 ×2 / 资源管理器样式 ×2 / 驱动自动安装 ×2 / 内核隔离 ×2 / 按流量计费 ×2 / 激活状态 / 休眠 / 电源模式 ×3 / 重启资源管理器 / 刷新 DNS / hosts 修改 / 实时防护·Defender·SmartScreen·防火墙·UAC·更新 六个「打开官方界面」入口 / BitLocker / **查看设置改动 / 还原设置改动**）；其中 12 个注册表开关**改之前会记原值、随时能还原** |
-| 系统工具 | 26 | **真功能**（12 个 Windows 组件 + 13 个修复诊断 + 系统体检） |
+| 系统工具 | 27 | **真功能**（12 个 Windows 组件 + 13 个修复诊断 + 文件哈希校验 + 系统体检） |
 | 隐私设置 | 29 | **真功能**（11 组成对开关 + 4 个权限入口 + 状态 / 一键优化 / 一键还原） |
 | 应用管理 | 5 | **真功能**（查看已安装应用 / 启动项 / 默认应用 / 应用和功能 / 单个卸载 —— 卸载窗口里显示中文应用名） |
 | 清理优化 | 8 | **真功能**（一键清理垃圾 / 清理临时文件 / 清空回收站 / 浏览器缓存 / 磁盘清理 / 存储感知 / 启动项 / 大文件查找） |
 | 右键增强 | 8 | **真功能**：装上 / 撤掉「解除文件占用」（右键文件就能查出谁占着它：真占着的程序 / 它自己在运行 / 窗口里开着它 / 能不能删，勾一下结束那个程序或「强制解锁」抽掉它的句柄）、装上 / 撤掉「常用功能」级联子菜单、右键菜单状态、重建常用功能、右键增强说明 + 「永久删除工具」 |
 | 我的工具 | 3+ | **真功能** `[+ 新建按钮]` + 导出 / 导入，加上你自己加的按钮 |
 
-「系统工具」26 个按钮对应哪个 Windows 组件、缺组件时说什么，见
+「系统工具」27 个按钮对应哪个 Windows 组件、缺组件时说什么，见
 [`docs/DESIGN.md`](docs/DESIGN.md) §4.4；「右键增强」那两项怎么装进右键菜单、底线是什么，见同文件 §14；
 按钮清单的正本也在那里。
 
@@ -179,6 +181,9 @@ bin\Mxx1Toolbox.exe status                   # key=value 状态（版本 / 按�
 bin\Mxx1Toolbox.exe checkupdate              # 只读版本号，不下载不替换（0 = 查过了，1 = 关掉了 / 查不成）
 bin\Mxx1Toolbox.exe disclaimer               # 打印免责声明与服务条款正文（和窗口显示的一致）
 bin\Mxx1Toolbox.exe consent [--accept|--reset]  # 看 / 记下 / 清掉首次运行的条款确认状态
+bin\Mxx1Toolbox.exe tip hash-check           # 打印按钮的悬停说明（界面 tooltip 里就是这一串）
+bin\Mxx1Toolbox.exe tip hash-check --full    # 打印「功能说明」窗口里的整段正文
+bin\Mxx1Toolbox.exe hash <文件> [--expect=<校验值>]   # 算 MD5 / SHA256（只读，不上传）；给了 --expect 就顺便对一次：一致退出码 0、不一致 1
 bin\Mxx1Toolbox.exe help
 ```
 
@@ -195,8 +200,8 @@ powershell -File tools\Test-Quick.ps1        # 提交前闸门：只跑这次改
 powershell -File tools\Test-Encoding.ps1     # 编码红线体检（BOM / 纯 ASCII / 硬编码本机路径）
 powershell -File tools\Test-InlineSyntax.ps1 # 内联脚本语法 + 清单 JSON + 每个 .ps1 的语法体检
 powershell -ExecutionPolicy Bypass -File tests\Test-All.ps1   # 全部（无桌面时加 -SkipGui）
-powershell -ExecutionPolicy Bypass -File tests\Test-Cli.ps1   # 命令行回归 207 项（本机 206 通过 + 1 跳过）
-powershell -ExecutionPolicy Bypass -File tests\Test-Gui.ps1   # 界面回归 153 项（要交互式桌面，无桌面返回 3 = 跳过）
+powershell -ExecutionPolicy Bypass -File tests\Test-Cli.ps1   # 命令行回归 234 项（本机 233 通过 + 1 跳过）
+powershell -ExecutionPolicy Bypass -File tests\Test-Gui.ps1   # 界面回归 161 项（要交互式桌面，无桌面返回 3 = 跳过）
 powershell -ExecutionPolicy Bypass -File tests\Test-Cli.ps1 -Only M,N   # 只跑 M、N 两组
 powershell -File tools\Sync-Skill.ps1        # 把 skill 的三份文件同步到三处副本（改完 skill 必跑）
 powershell -File tools\Make-Package.ps1       # 只打发布包（build.ps1 -Package 调的就是它）

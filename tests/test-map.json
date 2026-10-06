@@ -1,6 +1,6 @@
 {
   "_comment": "改哪块 → 该跑哪些测试组。给 tools\\Test-Quick.ps1 用；设计说明见 docs\\DESIGN.md §15。改这个文件的 paths/groups 时，顺手核对一句：那条规则真的覆盖得住吗（宁可多带一个组）。",
-  "_groups": "cli = tests\\Test-Cli.ps1 的组标记（A/A14/B/C/D/E/F/G/H/I/J/K/L/M/P/R/S）；gui = tests\\Test-Gui.ps1 的组标记（B/B10/C/D/E/F/G/H/I/N）。挑组的写法：-Only M,N。",
+  "_groups": "cli = tests\\Test-Cli.ps1 的组标记（A/A14/B/C/D/E/F/G/H/I/J/K/L/M/P/R/S/T）；gui = tests\\Test-Gui.ps1 的组标记（B/B10/C/D/E/F/G/H/I/N）。挑组的写法：-Only M,N。",
   "_prereq": "cli 里任何挑组都会自动带上 A 组：B/C/F/H/I/K/M/P/S 都读 A 组跑出来的 $status / $script:WinName 这些公共量。gui 的前置夹具都在「准备」段里，那时还没分组，所以不需要前置组。",
   "_fallback": "没有命中任何规则的改动 = 跑全套（宁多勿少）；纯文档清单里的例外不跑组。",
   "prereq": {
@@ -76,10 +76,11 @@
         "tools/system.json"
       ],
       "cli": [
-        "D"
+        "D",
+        "T"
       ],
       "gui": [],
-      "note": "系统工具页签：--dry 解析每个目标"
+      "note": "系统工具页签：--dry 解析每个目标（D）+ 文件哈希校验那个按钮（T）"
     },
     {
       "paths": [
@@ -240,18 +241,53 @@
     },
     {
       "paths": [
+        "src/HashTool.cs"
+      ],
+      "cli": [
+        "T"
+      ],
+      "gui": [],
+      "note": "文件哈希校验：算出来的值必须和 PowerShell 的 Get-FileHash 一致（T01-T18）。窗口那半（选文件 / 进度 / 对比）没有自动回归 —— 界面探针驱动不了系统「选择文件」对话框，靠 T 组的同一份 HashTool 实现 + 人眼"
+    },
+    {
+      "paths": [
+        "src/HelpForm.cs"
+      ],
+      "cli": [
+        "T"
+      ],
+      "gui": [],
+      "note": "「功能说明」窗口：正文由 T24-T26 认（同一份 MainForm.HelpText）。窗口本身没有自动回归 —— 它的入口在右键菜单里，界面探针打不开 ToolStrip 菜单项，所以这一条靠 T 组断言正文 + 人眼看过一次"
+    },
+    {
+      "paths": [
+        "src/ToolItem.cs"
+      ],
+      "cli": [
+        "A",
+        "B",
+        "H",
+        "T"
+      ],
+      "gui": [],
+      "note": "按钮清单的字段解析（新加的 about）：清单数量（A）、灰占位（B）、悬停说明（H）、说明正文（T）都读它"
+    },
+    {
+      "paths": [
         "src/Launcher.cs",
         "src/CommandLine.cs"
       ],
       "cli": [
         "C",
-        "D"
+        "D",
+        "H",
+        "T"
       ],
       "gui": [
         "E",
         "F"
       ],
-      "note": "启动按钮 / 系统工具目标表 / 提权：命令行 E 组（用法与错误）与界面 E/F 组"
+      "note": "启动按钮 / 系统工具目标表 / 提权 / 「点下去会执行什么」那句话：命令行 C 组与 E 组，加上悬停说明 H 与 T 组（说明正文里那一行也是它）"
     },
     {
       "paths": [
@@ -370,10 +406,11 @@
         "A",
         "E",
         "S",
-        "P"
+        "P",
+        "T"
       ],
       "gui": [],
-      "note": "命令行入口与开关（--notify / --quiet / consent / checkupdate / list）"
+      "note": "命令行入口与开关（--notify / --quiet / consent / checkupdate / list / hash）；T 组盯 hash 与 tip --full"
     },
     {
       "paths": [

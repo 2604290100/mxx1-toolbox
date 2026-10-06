@@ -196,7 +196,7 @@ powershell -File tools\Test-Encoding.ps1     # 编码红线体检（BOM / 纯 AS
 powershell -File tools\Test-InlineSyntax.ps1 # 内联脚本语法 + 清单 JSON + 每个 .ps1 的语法体检
 powershell -ExecutionPolicy Bypass -File tests\Test-All.ps1   # 全部（无桌面时加 -SkipGui）
 powershell -ExecutionPolicy Bypass -File tests\Test-Cli.ps1   # 命令行回归 207 项（本机 206 通过 + 1 跳过）
-powershell -ExecutionPolicy Bypass -File tests\Test-Gui.ps1   # 界面回归 151 项（要交互式桌面，无桌面返回 3 = 跳过）
+powershell -ExecutionPolicy Bypass -File tests\Test-Gui.ps1   # 界面回归 153 项（要交互式桌面，无桌面返回 3 = 跳过）
 powershell -ExecutionPolicy Bypass -File tests\Test-Cli.ps1 -Only M,N   # 只跑 M、N 两组
 powershell -File tools\Sync-Skill.ps1        # 把 skill 的三份文件同步到三处副本（改完 skill 必跑）
 powershell -File tools\Make-Package.ps1       # 只打发布包（build.ps1 -Package 调的就是它）

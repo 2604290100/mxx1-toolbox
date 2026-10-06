@@ -112,13 +112,30 @@ if ($List) { Show-Map; exit 0 }
 # ---------------------------------------------------------------- 这次改了什么
 function Get-ChangedPaths {
     if ($Changed.Count -gt 0) { return @($Changed) }
+    # ⚠️ 这一段必须**把 ErrorActionPreference 放开**（函数作用域，脚本其余部分照旧 Stop）。
+    # 原因：PowerShell 5.1 在 $ErrorActionPreference='Stop' 下，会把**原生命令写到 stderr 的每一行**
+    # 当成终止性错误 —— 而 git 只要工作区里有 CRLF 差异就会写
+    # `warning: in the working copy of 'X.md', CRLF will be replaced by LF …`，
+    # **`2>$null` 也拦不住**：命令当场被中断、$LASTEXITCODE 变成 -1、改动集读成空。
+    # 2026-10-06 实测踩到：闸门每次都报「自动读不出改动」，然后**静默退回全套跑** ——
+    # 表面看是"宁多勿少"很安全，实际是把 tests\test-map.json 整个架空，而且给出的原因是误导的。
+    # 自检在 tools\Test-InlineSyntax.ps1 末尾（用假 git 往 stderr 写一行 warning，断言仍读得出文件名）。
+    $ErrorActionPreference = 'Continue'
+    $script:GitNote = ''
     $names = @()
-    $inRepo = $true
     try {
         $names += @(& git -C $root diff --name-only $Since 2>$null)
+        $diffExit = $LASTEXITCODE
         $names += @(& git -C $root ls-files --others --exclude-standard 2>$null)
-    } catch { $inRepo = $false }
-    if ($LASTEXITCODE -ne 0 -and -not $inRepo) { return @() }
+        $lsExit = $LASTEXITCODE
+    } catch {
+        $script:GitNote = $_.Exception.Message
+        return @()
+    }
+    if ($diffExit -ne 0 -or $lsExit -ne 0) {
+        $script:GitNote = ('git 退出码 diff=' + $diffExit + ' ls-files=' + $lsExit)
+        return @()
+    }
     if (@($names | Where-Object { $_ }).Count -eq 0) {
         # 工作区是干净的 → 用"还没推到远端的提交"当改动集（提交之后才发现问题的那种跑法）
         $names += @(& git -C $root log --name-only --pretty=format: 'origin/main..HEAD' 2>$null)
@@ -131,7 +148,11 @@ function Get-ChangedPaths {
 
 $changedPaths = @(Get-ChangedPaths)
 if (-not $Full -and $changedPaths.Count -eq 0) {
-    Write-Host '（自动读不出改动，也没有 -Changed —— 按全套跑）'
+    if ($script:GitNote) {
+        Write-Host ('（读不出 git 改动：' + $script:GitNote + ' —— 按全套跑）')
+    } else {
+        Write-Host '（自动读不出改动，也没有 -Changed —— 按全套跑）'
+    }
     $Full = $true
 }
 
@@ -182,8 +203,20 @@ if ($Full) {
     }
 }
 
-$cliNotRun = @($allCli | Where-Object { $cliGroups -notcontains $_ })
-$guiNotRun = @($allGui | Where-Object { $guiGroups -notcontains $_ })
+# "哪些组没跑到"要按**前缀**算：两个套件的挑组都是前缀匹配（`-Only A` 会把 A14 一起跑，
+# 见 Test-Cli/Test-Gui 里的 Test-GroupSelected），所以只要有一个选中的组是它的前缀，它就跑到了。
+# 2026-10-06 实测踩到：`-Only A,B,…` 那一跑明明带了 A14，闸门却把它列进"本次不跑" ——
+# 这种**假欠账**会让人白跑一次 -Full（或者更糟：让人以为某组没测过）。
+function Test-CoveredBy {
+    param([string]$Group, [string[]]$Selected)
+    foreach ($s in @($Selected)) {
+        if (-not $s) { continue }
+        if ($Group.ToUpper().StartsWith($s.ToUpper())) { return $true }
+    }
+    return $false
+}
+$cliNotRun = @($allCli | Where-Object { -not (Test-CoveredBy $_ $cliGroups) })
+$guiNotRun = @($allGui | Where-Object { -not (Test-CoveredBy $_ $guiGroups) })
 
 Write-Host ''
 Write-Host ('要跑的命令行组：' + $(if ($cliGroups.Count -gt 0) { $cliGroups -join ',' } else { '（无）' }))
@@ -200,7 +233,11 @@ function Invoke-Stage {
     Write-Host ('===== ' + $Title + ' =====')
     $t0 = Get-Date
     $argv = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $ScriptPath) + $Extra
-    & $hostExe @argv
+    # 子进程的 stdout 必须**显式转出来**：它原来是直接进 Invoke-Stage 的输出流，而调用方写的是
+    # `[void](Invoke-Stage …)` —— 于是每一段测试的输出全被吞掉了：跑 2 分钟什么都看不见（像卡住），
+    # 失败时也只剩一句"闸门没过：命令行回归"，没有任何细节可查（2026-10-06 实测发现）。
+    # 走 Write-Host 打到宿主 stdout，`[void]` 就只吞掉函数返回的退出码。
+    & $hostExe @argv | Write-Host
     $code = $LASTEXITCODE
     $spent = ((Get-Date) - $t0).TotalSeconds
     Write-Host ('  （用时 {0:n1} 秒，退出码 {1}）' -f $spent, $code)

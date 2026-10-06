@@ -320,6 +320,15 @@ public class TBGui
     public static bool Alive(IntPtr h) { return IsWindow(h); }
     public static bool Click(IntPtr h) { return PostMessageW(h, 0x00F5, IntPtr.Zero, IntPtr.Zero); }
 
+    // A03b: really iconify once and bring it back -- WM_SYSCOMMAND (0x0112) with SC_MINIMIZE
+    // (0xF020), then SW_RESTORE (9). A style bit alone proves nothing: a window can carry
+    // WS_MINIMIZEBOX and still refuse to go down.
+    [DllImport("user32.dll")] private static extern bool IsIconic(IntPtr hWnd);
+    [DllImport("user32.dll")] private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+    public static void Minimize(IntPtr h) { SendMessageW(h, 0x0112, (IntPtr)0xF020, IntPtr.Zero); }
+    public static bool Iconic(IntPtr h) { return IsIconic(h); }
+    public static bool Restore(IntPtr h) { return ShowWindow(h, 9); }
+
     // 真鼠标点一下（B10/B11 也是这么动鼠标的，跑完要把鼠标放回去）。
     // **为什么 D07d 不能用 PostMessage**：实测过 —— 给 LinkLabel 发
     // WM_MOUSEMOVE / WM_LBUTTONDOWN / WM_LBUTTONUP（窗口已经在前台、坐标也是控件正中间）
@@ -971,8 +980,40 @@ if ($mainWin.Count -gt 0) { $title = $mainWin[0].Text }
 Check 'A02 标题栏写着「萌新工具箱 v<版本号>」' ($title -match '萌新工具箱\s*v\d+\.\d+\.\d+') $title
 
 $style = [TBGui]::Styles($main)
-Check 'A03 标题栏没有最小化方框' (($style -band 0x00020000) -eq 0) ('style=0x{0:X}' -f $style)
+# 用户 2026-10-06：「给工具箱右上角添加一个最小化，目前很影响体验，只有关闭的情况下」。
+# 只开最小化、不开最大化 —— 代价是标题栏多一个**灰掉的**最大化方框（系统对"只给最小化"的窗口
+# 就是这么画的，实测 state=0x1），用户看过渡对比之后拍板留着。所以这里断言的正是这两个位：
+# 有 WS_MINIMIZEBOX、没有 WS_MAXIMIZEBOX。**别把 A03 改回"没有最小化方框"**。
+Check 'A03 标题栏有最小化方框（能最小化到任务栏）' (($style -band 0x00020000) -ne 0) ('style=0x{0:X}' -f $style)
 Check 'A04 标题栏没有最大化方框' (($style -band 0x00010000) -eq 0) ('style=0x{0:X}' -f $style)
+
+# A03b / A03c：真的最小化一次，再从任务栏叫回来。**只看样式位不够** —— 位对了但窗口下不去的
+# 情况是存在的（消息循环卡住、被 owner 住）。判据用 IsIconic；回来之后必须还是原来那个位置和
+# 尺寸（最小化/还原把窗口挪走或改了大小，用户下次开机就按错的位置显示）。
+$rectBeforeMin = [TBGui]::Rect($main)
+[TBGui]::Minimize($main)
+$iconic = $false
+for ($i = 0; $i -lt 25; $i++) {
+    Start-Sleep -Milliseconds 100
+    if ([TBGui]::Iconic($main)) { $iconic = $true; break }
+}
+Check 'A03b 发一次最小化，窗口真的缩到任务栏（IsIconic）' $iconic ('iconic=' + $iconic)
+if ($iconic) {
+    [void][TBGui]::Restore($main)
+    $restored = $false
+    for ($i = 0; $i -lt 30; $i++) {
+        Start-Sleep -Milliseconds 100
+        if (-not [TBGui]::Iconic($main)) { $restored = $true; break }
+    }
+    Start-Sleep -Milliseconds 400
+    $rectAfterMin = [TBGui]::Rect($main)
+    $sameRect = (($rectAfterMin[0] -eq $rectBeforeMin[0]) -and ($rectAfterMin[1] -eq $rectBeforeMin[1]) -and
+                 ($rectAfterMin[2] -eq $rectBeforeMin[2]) -and ($rectAfterMin[3] -eq $rectBeforeMin[3]))
+    Check 'A03c 从任务栏还原后还是原来那个位置和尺寸' ($restored -and $sameRect) `
+        ('还原=' + $restored + ' 前=' + ($rectBeforeMin -join ',') + ' 后=' + ($rectAfterMin -join ','))
+} else {
+    Skip 'A03c 从任务栏还原后还是原来那个位置和尺寸' '最小化没成功（见 A03b），没法验还原'
+}
 
 # 窗口自己那张图标（用户 2026-10-04 报「编译好的 exe 没有图标」）：.NET 编译出来的 exe 资源里有图标
 # 不等于窗口标题栏/任务栏有 —— WinForms 不设 Form.Icon 时画的是它自带的"空白窗体"图标（一点白都没有）。

@@ -21,7 +21,7 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
 - 版本 **1.5.4**（`src\AssemblyInfo.cs` 是唯一来源），已打 tag `v1.5.4` 并发 Release：
   <https://github.com/2604290100/mxx1-toolbox/releases/tag/v1.5.4>（`Mxx1Toolbox.exe` 788,992 字节 +
   `Mxx1Toolbox-package.zip` 1,124,644 字节，说明里带 SHA256）。CI 绿的。
-- 测试 **358 项** = 命令行 **207**（206 通过 + 1 项环境不满足跳过）+ 界面 **151**；
+- 测试 **360 项** = 命令行 **207**（206 通过 + 1 项环境不满足跳过）+ 界面 **153**；
   编码体检 191 个文件。本地实测：命令行 116 秒、界面 146 秒。
 - **测试可以挑组跑了**（`-Only M,N` / `-Skip P`）+ 提交前闸门 `tools\Test-Quick.ps1` +
   映射表 `tests\test-map.json`；分层与流程约定见 `docs\DESIGN.md` **§15**。
@@ -29,6 +29,9 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
   `src\AutoUnlock.cs` + `src\Balloon.cs`）；② 解锁窗口扫描不再卡界面 + 二分定位占用者；
   ③ 关于窗口的「官网 / 仓库」能点开；④ **CI 抓到的安全修复**：底线从"看进程名"改成"看归属"
   （见坑 29）；⑤ 挑组执行 + 闸门 + 映射表 + 本 skill 拆成三份。
+- **2026-10-06 晚**：主窗口标题栏加了**最小化**（用户："给工具箱右上角添加一个最小化，目前很影响体验，
+  只有关闭的情况下"）。只开最小化、不开最大化，所以标题栏会有一个**灰掉的最大化方框**（系统标准画法，
+  用户拍板留着）—— 取舍与实测见 `docs\DESIGN.md` **§12.58**；界面回归补了 A03/A03b/A03c。
 - **条款正文这一轮改了三次**（`docs\DISCLAIMER.md`）→ 同意指纹变了 → **所有人（包括用户自己）
   下次打开界面会再看到一次《使用条款确认》**（想免打扰：`Mxx1Toolbox.exe consent --accept`）。
 - ⚠️ **欠账**：最后一次改动之后只跑了命令行回归 + 探针，**界面回归没复跑**
@@ -97,7 +100,10 @@ D:\萌新工具开发\toolbox\
   tools\Test-Encoding.ps1          编码红线体检（-Fix 修 BOM）
   tools\Test-Quick.ps1             **提交前闸门**：读 git 改动 → 查 tests\test-map.json → 跑
                                    L0（编码 + 内联）+ 编译 + `Test-Cli.ps1 -Only <受影响的组>`；
-                                   `-List` 打映射表，`-Gui` 连界面组一起跑（要你没开着工具箱）
+                                   `-List` 打映射表，`-Gui` 连界面组一起跑（要你没开着工具箱）。
+                                   ⚠️ 读 git 那段**必须**临时把 `$ErrorActionPreference` 放成
+                                   `Continue`（`Stop` 下 git 写 stderr 的 CRLF warning 会变成终止性错误，
+                                   改动集读成空 → 静默退回全套跑，映射表被架空）；见 DESIGN §15.3
   tools\Sync-Skill.ps1             skill 三份副本同步成一个字节（正本=仓库里那份；-Check 只核对）
   tests\test-map.json              **改哪块 → 跑哪些组**的映射表（给 Test-Quick.ps1 用；也当文档看）
   tools\Make-Screenshots.ps1       拍 docs\gui-shot.png / dark-shot.png / system-shot.png（PrintWindow）
@@ -109,12 +115,16 @@ D:\萌新工具开发\toolbox\
   assets\app.ico                   程序图标（`/win32icon` 用的就是它）
   tests\Test-All.ps1               一条命令跑完全部（也支持 `-Only` / `-Skip` 透传给两个套件）
   tools\Test-InlineSyntax.ps1      内联脚本语法 + 清单 JSON + **每个 .ps1 的语法**体检（34 个内联 / 7 个清单）
+                                   + 闸门"读 git 改动"那段的**真跑自检**（假 git 往 stderr 写一行 warning，
+                                   必须仍读得出文件名；见 DESIGN §15.3）
   tests\Test-Cli.ps1               命令行回归 207 项（A03b–A03d/D01 盯兼容、A14–A17 盯 exe 图标、
                                    L 组 12 项盯 sysreg、J09–J11 盯卸载窗口的列表、M 组盯右键增强、
                                    R 组 14 项盯 bin-tools 自动按钮、P 组 10 项盯发布包内容、
                                    S 组 26 项盯条款门 + 更新检查；
                                    环境不满足的项走 Skip()，打印 [SKIP] 不算失败）
-  tests\Test-Gui.ps1               界面回归 151 项（要交互式桌面，无桌面返回 3 = 跳过；A04b 盯窗口图标、
+  tests\Test-Gui.ps1               界面回归 153 项（要交互式桌面，无桌面返回 3 = 跳过；A04b 盯窗口图标、
+                                   A03 盯"主窗口有最小化方框、没有最大化方框"、A03b/A03c 真发一次
+                                   最小化再还原（位置尺寸一字不差）、
                                    H 组盯固定尺寸、E04b 盯窗口位置、A09 盯 bin-tools 说明、
                                    N 组 27 项盯解除占用小窗口（含 N14/N15/N17/N18 的高度自适应、
                                    N19/N19b「一键解除占用（--quiet）一个窗口都不弹」、N20/N20b「扫描期间窗口一直活着」、
@@ -281,7 +291,7 @@ powershell -File tools\Make-AppIcon.ps1       # 重生成 assets\app.ico（改�
 | 状态栏文字**只放短摘要**（`N 个按钮 · 本页 M · 名字 · 完成`），完整内容进日志 + 悬停提示 | 标签宽度固定，长句（旧格式实测 414px vs 392px）尾巴被截 |
 | 一律 `TableLayoutPanel` / 排版函数，**绝不手写坐标**；`Label` 绝不与按钮重叠 | 缩放/DPI 一变就错位；标签会吃掉鼠标点击，按钮"点了没反应" |
 | 页签用一排 `Flat` 按钮，**不用 `TabControl`** | `TabControl` 深色主题下不可控（白底标签刺眼） |
-| `MinimizeBox=false` + `MaximizeBox=false` | 标题栏多一个**灰掉的**最大化方框，点了没反应 |
+| **主窗口** `MinimizeBox=true` + `MaximizeBox=false`（其它窗口两个都 `false`） | 最小化要能用（2026-10-06 用户原话「给工具箱右上角添加一个最小化，目前很影响体验，只有关闭的情况下」）。**代价是标题栏多一个灰掉、点不动的最大化方框** —— 那是系统对"只给最小化"的窗口的标准画法（实测 `TITLEBARINFOEX` 报 `state=0x1`），用户看过对比后拍板留着。**别为了藏它把 `MaximizeBox` 改成 true**：按钮墙固定 4 列、列宽不随窗口变，最大化之后左上一小块 + 一大片空白，还会把记住的窗口尺寸写坏。见 `docs\DESIGN.md` §12.58；A03/A04/A03b/A03c 盯着 |
 | 界面文字不用 `✓ ⚠ →`（微软雅黑没字形）；图标走 PNG 或程序内绘制 | 渲染成空白 |
 | 日志显示**最新在最上面**，不给正序开关 | 想看刚点的那次结果得滚到底 |
 | DPI：清单里 `dpiAware=true`（System aware）+ `AutoScaleMode.Font` | 不要用 PerMonitorV2：它需要 app.config，而 exe.config 会破坏单文件 |
@@ -564,6 +574,10 @@ powershell -File tools\Make-AppIcon.ps1       # 重生成 assets\app.ico（改�
   先 `tools\Test-Encoding.ps1 -Fix` → 再 `build.ps1` → 最后跑测试。**
 - **没有 BOM 的临时脚本 + 中文注释 = PS 5.1 按 GBK 读，注释可能吞掉换行**（本仓库踩过：
   补丁脚本解析报一堆莫名其妙的错）。写一次性脚本要么纯 ASCII 注释，要么用 `pwsh`（7）跑。
+- **`$ErrorActionPreference='Stop'` 下别调原生命令**：PS 5.1 会把原生命令写到 stderr 的每一行当成
+  **终止性错误**（`2>$null` 也拦不住）→ 命令中断、`$LASTEXITCODE` 变 `-1`。闸门就是栽在这上面
+  （git 的 CRLF warning → 读不出改动 → 静默退回全套跑）。**见坑 31**，自检在
+  `tools\Test-InlineSyntax.ps1` 末尾。
 - **C# 里别用 `File` / `Shell` / `Url` 这种方法名**：它们会盖住 `System.IO.File`，
   于是类里每个 `File.Exists` 都编译不过（CS0119）。用 `FileTarget` / `ShellTarget` / `UrlTarget`。
 
@@ -578,7 +592,7 @@ powershell -File tools\Make-AppIcon.ps1       # 重生成 assets\app.ico（改�
   | L1 | 映射到的命令行组（`-Only`） | 4 - 60 秒 | 提交前：`powershell -File tools\Test-Quick.ps1` |
   | L2 | 映射到的界面组 | 约 2 分钟 | 涉及界面 / 互操作，且**你没开着工具箱** |
   | L3 | 命令行全套 207 项 | 116 秒 | 推上去之后 CI 跑（在你机器之外） |
-  | L4 | 全套（命令行 207 + 界面 151） | 约 4.5 分钟 | **发版前一次** |
+  | L4 | 全套（命令行 207 + 界面 153） | 约 4.5 分钟 | **发版前一次** |
 
 - **挑组**：两个套件都支持 `-Only M,N` / `-Skip P`（组标记就是源码里 `# ---- X 组：…` 那行的字母，
   前缀匹配）。**命令行挑组必须带上 A 组**（B/C/F/H/I/K/M/P/S 都读 A 跑出来的 `$status` 等公共量；
@@ -655,5 +669,6 @@ powershell -File tools\Make-AppIcon.ps1       # 重生成 assets\app.ico（改�
 9. ⚠️ **界面回归的欠账**（2026-10-06 晚）：v1.5.4 发版前没复跑，之后补跑了两次 ——
    一次 150 通过 + 1 失败（N21b，环境：鼠标挪不动，现在会走 `[SKIP]`），
    一次 149 通过 + 2 失败（B10/B11，环境：用户当时开着自己的工具箱，现在会走 `[SKIP]`）。
-   **这两条已经改成"环境不满足就 Skip"，但改完还没在"工具箱关着"的条件下复跑过完整 151 项** ——
+   **这两条已经改成"环境不满足就 Skip"，但改完还没在"工具箱关着"的条件下复跑过完整界面回归**
+   （那一轮是 151 项；现在加了最小化那两条，是 **153 项**）——
    下次方便时（用户关掉工具箱）补一次：`powershell -File tests\Test-Gui.ps1`。

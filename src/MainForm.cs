@@ -117,7 +117,14 @@ namespace Mxx1Toolbox
             // （见 FitToContent），所以「右键增强」那种只有 1 个按钮的页码再撑个 700px 空窗口。
             MinimumSize = new Size(520, 240);
             StartPosition = FormStartPosition.CenterScreen;
-            MinimizeBox = false;
+            // 最小化要能用（用户 2026-10-06：「给工具箱右上角添加一个最小化，目前很影响体验，
+            // 只有关闭的情况下」）。只开最小化、**不开最大化**：Windows 会给"只给最小化"的窗口
+            // 画一个灰掉的最大化方框（实测 TITLEBARINFOEX 的 state=0x1 = unavailable），
+            // 那是系统对这种窗口的标准画法，用户拍板留着那个灰方块。
+            // **别为了藏它把 MaximizeBox 改成 true**：按钮墙是固定 4 列、列宽也不随窗口变，
+            // 最大化之后墙挤在左上角、右边和下方一大片空白，而且 RememberGeometry / WndProc
+            // 会把铺满屏幕的尺寸写进 settings.ini，把用户记住的窗口大小冲掉。
+            MinimizeBox = true;
             MaximizeBox = false;
             FormBorderStyle = FormBorderStyle.Sizable;
             Font = new Font("Microsoft YaHei", 9f, FontStyle.Regular, GraphicsUnit.Point);

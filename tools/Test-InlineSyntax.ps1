@@ -119,6 +119,68 @@ foreach ($f in $scriptFiles) {
     }
 }
 
+# ---- 闸门"从 git 读改动"那段的真跑自检（用假 git 复现那个现场） ---------------------------
+# 为什么单测这一段：2026-10-06 实测踩到过 —— tools\Test-Quick.ps1 开头设了
+# $ErrorActionPreference='Stop'，而 PowerShell 5.1 在 Stop 下会把**原生命令写到 stderr 的每一行**
+# 当成终止性错误：git 只要工作区里有 CRLF 差异就会往 stderr 写
+# “warning: … CRLF will be replaced by LF …”，于是 `2>$null` **也拦不住** ——
+# 命令当场被中断、$LASTEXITCODE 变成 -1、改动集读成空 → 闸门**静默退回全套跑**
+# （表面"宁多勿少"很安全，实际把 tests\test-map.json 整个架空，报出来的原因还是误导的）。
+# 这种错只有真跑一次才现形，所以这里造一个**假 git**：它先往 stderr 写一行 warning，再往 stdout
+# 报一个文件名 —— 闸门那段函数必须仍然读出这个文件名（读不出就说明 EAP 那道防线又被拿掉了）。
+$quickPath = Join-Path $root 'tools\Test-Quick.ps1'
+if (-not (Test-Path -LiteralPath $quickPath)) {
+    $problems++
+    Report-Problem 'Test-Quick.ps1' '(整份脚本)' '找不到这个文件（提交前闸门）'
+} else {
+    $fnAsts = @()
+    try {
+        $quickAst = [System.Management.Automation.Language.Parser]::ParseFile($quickPath, [ref]$null, [ref]$null)
+        $fnAsts = @($quickAst.FindAll({ param($n)
+            ($n -is [System.Management.Automation.Language.FunctionDefinitionAst]) -and ($n.Name -eq 'Get-ChangedPaths')
+        }, $true))
+    } catch { }
+    if ($fnAsts.Count -eq 0) {
+        $problems++
+        Report-Problem 'Test-Quick.ps1' 'Get-ChangedPaths' '找不到这个函数（闸门"从 git 读改动"那段被改名或删掉了？自检没法做）'
+    } else {
+        $mockDir = Join-Path $env:TEMP 'mxx1-gitmock-selfcheck'
+        $probeOk = $false
+        $probeDetail = ''
+        try {
+            if (Test-Path -LiteralPath $mockDir) { Remove-Item -LiteralPath $mockDir -Recurse -Force }
+            [void][System.IO.Directory]::CreateDirectory($mockDir)
+            # 假 git：stderr 一行 warning（照抄 git 在 CRLF 差异下的真实输出），stdout 一个文件名
+            $mockCmd = "@echo off`r`necho warning: in the working copy of 'x.md', CRLF will be replaced by LF the next time Git touches it 1>&2`r`necho src/MainForm.cs`r`nexit /b 0`r`n"
+            [System.IO.File]::WriteAllText((Join-Path $mockDir 'git.cmd'), $mockCmd, [System.Text.Encoding]::ASCII)
+            # 注意 $root 不能写成盘符开头的字面路径：编码体检查"绝对路径"（闸门只用它拼 git 命令，
+            # 而 git 已经是假的了，所以这里随便给个相对名字就行）。
+            $probe = "`$ErrorActionPreference = 'Stop'`r`n" +
+                     "`$root = 'no-such-repo'`r`n`$Since = 'HEAD'`r`n`$Changed = @()`r`n" +
+                     "`$env:PATH = '" + $mockDir + ";' + `$env:PATH`r`n" +
+                     $fnAsts[0].Extent.Text + "`r`n" +
+                     "`$r = @(Get-ChangedPaths)`r`n" +
+                     "Write-Output ('COUNT=' + `$r.Count)`r`n" +
+                     "foreach (`$x in `$r) { Write-Output ('NAME=' + `$x) }`r`n"
+            [System.IO.File]::WriteAllText((Join-Path $mockDir 'probe.ps1'), $probe, (New-Object System.Text.UTF8Encoding($true)))
+            $out = @(& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $mockDir 'probe.ps1') 2>&1)
+            $outText = (@($out | ForEach-Object { [string]$_ }) -join ' / ')
+            $probeOk = ($outText -match 'NAME=src/MainForm\.cs')
+            $probeDetail = $outText
+        } catch {
+            $probeDetail = ('自检自己出错：' + $_.Exception.Message)
+        } finally {
+            if (Test-Path -LiteralPath $mockDir) { Remove-Item -LiteralPath $mockDir -Recurse -Force -ErrorAction SilentlyContinue }
+        }
+        if ($probeOk) {
+            Write-Host '  （闸门读 git 的自检：假 git 往 stderr 写了一行 warning，改动文件名照样读出来了）'
+        } else {
+            $problems++
+            Report-Problem 'Test-Quick.ps1' 'Get-ChangedPaths' ('假 git 往 stderr 写一行 warning 之后就读不出改动了 —— 闸门会静默退回全套跑（EAP 那道防线没了？）  实测输出: ' + $probeDetail)
+        }
+    }
+}
+
 Write-Host ('检查了 ' + $checked + ' 个内联脚本（' + $files.Count + ' 个清单文件）+ ' + $parsedScripts + ' 个 .ps1 脚本')
 if ($problems -gt 0) {
     Write-Host ('[FAIL] ' + $problems + ' 个问题')

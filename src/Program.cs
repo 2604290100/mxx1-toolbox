@@ -253,6 +253,7 @@ namespace Mxx1Toolbox
             Console.WriteLine("  Mxx1Toolbox.exe rightmenu unlock --query-only <路径>   只查谁占着这个文件，不弹窗不结束进程");
             Console.WriteLine("  Mxx1Toolbox.exe rightmenu unlock --auto <路径>         一键解除占用：不弹窗口，直接结束占用它的程序");
             Console.WriteLine("                                                        （右键菜单里的「" + RightMenu.AutoTitle + "」用的就是它）");
+            Console.WriteLine("                                                        加 --notify=<毫秒> 定提示卡显示多久，--quiet 连提示卡也不要");
             Console.WriteLine("  Mxx1Toolbox.exe ui [log|settings]    打开界面并直接看日志 / 设置（右键子菜单的固定入口用它）");
             Console.WriteLine("  Mxx1Toolbox.exe pin <id> / unpin <id>  把按钮置顶 / 取消置顶（排在这一页最前面）");
             Console.WriteLine("  Mxx1Toolbox.exe export <文件>        把「我的工具」导出成一个文件");
@@ -436,13 +437,35 @@ namespace Mxx1Toolbox
             return false;
         }
 
-        /// <summary>一键解除那条路要不要弹气泡。`--quiet` / `--notify=0` / 环境变量
-        /// MXX1_NO_NOTIFY=1 都能关掉（回归测试用它：测试不该在别人桌面上弹气泡）。</summary>
+        /// <summary>一键解除那条路要不要弹提示卡。`--quiet` / `--notify=0` / 环境变量
+        /// MXX1_NO_NOTIFY=1 都能关掉（回归测试用它：测试不该在别人桌面上弹东西）。</summary>
         private static bool NotifyWanted(string[] args)
         {
             if (HasFlag(args, "--quiet") || HasFlag(args, "--notify=0")) { return false; }
             string env = AppPaths.Expand(Environment.GetEnvironmentVariable("MXX1_NO_NOTIFY"));
             return !(env != null && env.Trim() == "1");
+        }
+
+        /// <summary>提示卡显示多久（毫秒）。`--notify=<毫秒>` 写多少就多少（界面回归要用短的，
+        /// 不然一条检查就要等 6 秒），0 = 不显示；不写是一张卡片看 6 秒的量。
+        /// 夹在 800ms - 60s：再短看不见，再长就成了"赖着不走"。</summary>
+        private static int NotifyMs(string[] args)
+        {
+            foreach (string a in args)
+            {
+                if (a == null) { continue; }
+                if (!a.StartsWith("--notify=", StringComparison.OrdinalIgnoreCase)) { continue; }
+                int ms;
+                if (!int.TryParse(a.Substring(9).Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out ms))
+                {
+                    continue;
+                }
+                if (ms <= 0) { return 0; }
+                if (ms < 800) { return 800; }
+                if (ms > 60000) { return 60000; }
+                return ms;
+            }
+            return 6000;
         }
 
         /// <summary>只读：谁手里有这个文件 / 文件夹的**句柄**（全系统句柄表，像火绒那样）。
@@ -479,7 +502,8 @@ namespace Mxx1Toolbox
             List<string> all = PathArgs(args);
             if (HasFlag(args, "--auto"))
             {
-                return AutoUnlock.Run(all.ToArray(), NotifyWanted(args), 6000);
+                int notifyMs = NotifyMs(args);
+                return AutoUnlock.Run(all.ToArray(), NotifyWanted(args) && notifyMs > 0, notifyMs);
             }
 
             string path = (all.Count > 0) ? all[0] : "";

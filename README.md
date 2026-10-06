@@ -46,7 +46,8 @@
   那个小窗口的高度按内容自适应：查出几个程序、正文有几行，窗口就多高，不长也不切；
   **查的过程不会把窗口卡住**（扫描在后台线程，状态行上的秒数还在走，窗口随时能拖能关）。
   和 **「一键解除占用」**（**不弹窗口**的一键版：右键一下，后台查到谁占着它就**直接结束那些程序**，
-  只在右下角冒个提示气泡说结果；系统关键进程 / 资源管理器 / 工具箱自己一律不动，
+  然后在**鼠标旁边弹一张小提示卡**说结果 —— 卡片不抢焦点、跟着鼠标走、几秒后自己消失、点一下就关；
+  系统关键进程 / 资源管理器 / 工具箱自己一律不动，
   没同意过使用条款时一个进程都不碰）。
   和 **「常用功能」级联子菜单**（右键里多一个子菜单，放工具箱「常用」页的东西）。
   三项都只写 `HKCU\Software\Classes`，删掉键就干净；再加上**「永久删除工具」**：打开隔壁的
@@ -194,7 +195,7 @@ powershell -File tools\Test-Encoding.ps1     # 编码红线体检（BOM / 纯 AS
 powershell -File tools\Test-InlineSyntax.ps1 # 内联脚本语法 + 清单 JSON + 每个 .ps1 的语法体检
 powershell -ExecutionPolicy Bypass -File tests\Test-All.ps1   # 全部（无桌面时加 -SkipGui）
 powershell -ExecutionPolicy Bypass -File tests\Test-Cli.ps1   # 命令行回归 206 项（本机 205 通过 + 1 跳过）
-powershell -ExecutionPolicy Bypass -File tests\Test-Gui.ps1   # 界面回归 146 项（要交互式桌面，无桌面返回 3 = 跳过）
+powershell -ExecutionPolicy Bypass -File tests\Test-Gui.ps1   # 界面回归 150 项（要交互式桌面，无桌面返回 3 = 跳过）
 powershell -File tools\Make-Package.ps1       # 只打发布包（build.ps1 -Package 调的就是它）
 powershell -File tools\Make-Screenshots.ps1  # 重新拍 docs 里的截图（浅色 / 深色 / 系统工具页签）
 powershell -File tools\Make-Icons.ps1        # 重新生成 16x16 PNG 图标（先 build 再跑，改完还要再 build）

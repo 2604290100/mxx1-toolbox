@@ -230,6 +230,9 @@ public class TBGui
     }
 
     public static int Styles(IntPtr h) { return GetWindowLongW(h, -16); }
+    // GWL_EXSTYLE (-20): the notice card must carry WS_EX_NOACTIVATE (never steals focus from what the
+    // user is typing into) and WS_EX_TOOLWINDOW (stays out of Alt+Tab). N21 asserts both.
+    public static int ExStyles(IntPtr h) { return GetWindowLongW(h, -20); }
     public static bool Visible(IntPtr h) { return IsWindowVisible(h); }
     public static bool Enabled(IntPtr h) { return IsWindowEnabled(h); }
     public static bool Alive(IntPtr h) { return IsWindow(h); }
@@ -2050,7 +2053,7 @@ try {
         }
         Start-Sleep -Milliseconds 500
         $autoProc.Refresh()
-        Check 'N19 一键解除不弹任何窗口（从生到死一个可见窗口都没有），而且自己退出' `
+        Check 'N19 一键解除（--quiet）不弹任何窗口（从生到死一个可见窗口都没有），而且自己退出' `
             (($autoProc.HasExited) -and ($autoSeen.Count -eq 0)) `
             ('看到过的窗口=' + $(if ($autoSeen.Count -eq 0) { '（没有）' } else { $autoSeen -join ' / ' }) + ' 退出了=' + $autoProc.HasExited)
 
@@ -2133,6 +2136,126 @@ try {
         if ($slowHolder -and -not $slowHolder.HasExited) { Stop-Process -Id $slowHolder.Id -Force -ErrorAction SilentlyContinue }
         if ($slowProc -and -not $slowProc.HasExited) { try { $slowProc.Kill() } catch { } }
         if (Test-Path -LiteralPath $slowRoot) { Remove-Item -LiteralPath $slowRoot -Recurse -Force -ErrorAction SilentlyContinue }
+    }
+
+    # ---- N21 / N21b / N21c / N21d：提示卡"真画得出来 + 就在鼠标旁边 + 跟着鼠标走 + 到点自己消失" ----
+    # 用户 2026-10-06 报：「气泡没有正常弹出，而且弹出的位置要跟随鼠标」。原来那条路用的是系统托盘
+    # 气泡（NotifyIcon.ShowBalloonTip）—— 这台精简版 Windows 上**根本看不到**（Win10 / Win11 把
+    # 「通知」或专注助手关掉时同样看不到），而且它的位置由系统定死在右下角，离用户正看着的地方很远。
+    # 现在改成自己画的卡片（src\Balloon.cs 的 NoticeForm）。四条规矩这条检查全盯住：
+    # 不抢焦点（WS_EX_NOACTIVATE）、跟着鼠标、到点自己关、而且**只此一张卡**（不是又弹回那个窗口）。
+    # 它要真动鼠标，所以先存下原来的位置、跑完放回去（和 B10/B11 一个规矩）。
+    $noticeRoot = Join-Path $env:TEMP 'mxx1-notice-gui'
+    if (Test-Path -LiteralPath $noticeRoot) { Remove-Item -LiteralPath $noticeRoot -Recurse -Force }
+    New-Item -ItemType Directory -Path $noticeRoot | Out-Null
+    $noticeFile = Join-Path $noticeRoot 'free.txt'
+    Set-Content -LiteralPath $noticeFile -Value 'x' -Encoding UTF8
+    $noticeSaved = [TBGui]::CursorAt()
+    $noticeProc = $null
+    try {
+        $nwa = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
+        [void][TBGui]::MoveCursor([int]($nwa.Left + $nwa.Width / 2), [int]($nwa.Top + $nwa.Height / 3))
+        Start-Sleep -Milliseconds 300
+
+        # --notify=3000：这条只等 3 秒（默认 6 秒，时间全花在等它自己消失上）
+        $noticeProc = Start-Process -FilePath $Exe -PassThru -ArgumentList @('rightmenu', 'unlock', '--auto', '--notify=3000', $noticeFile)
+        [void]$script:Procs.Add($noticeProc)
+        $noticeWin = @()
+        for ($i = 0; $i -lt 60; $i++) {
+            $noticeWin = @((Get-TopWindows -ProcessId $noticeProc.Id) | Where-Object { $_.Visible -and $_.Text -eq '一键解除占用' })
+            if ($noticeWin.Count -gt 0) { break }
+            Start-Sleep -Milliseconds 100
+        }
+        if ($noticeWin.Count -eq 0) {
+            foreach ($n in @(
+                'N21 提示卡真画得出来，而且就在鼠标旁边（不抢焦点、不占任务栏）',
+                'N21b 鼠标一动，卡片跟着动（不是落在角落里不管）',
+                'N21c 到点自己消失（没人点它，进程也跟着退出）',
+                'N21d 卡片上真的有字（不是一张空白窗口）')) {
+                Check $n $false 'skipped（卡片没起来）'
+            }
+        } else {
+            $nh = $noticeWin[0].H
+
+            # 位置：卡片跟鼠标有最多 60ms 的滞后，采样几次取最贴的一次（用户这时候也可能在动鼠标）
+            $best = $null
+            for ($i = 0; $i -lt 6; $i++) {
+                $c = [TBGui]::CursorAt()
+                $r = [TBGui]::Rect($nh)
+                $spread = [Math]::Abs(($r[0] - $c[0]) - 18) + [Math]::Abs(($r[1] - $c[1]) - 22)
+                if (($best -eq $null) -or ($spread -lt $best.Spread)) {
+                    $best = [pscustomobject]@{ C = $c; R = $r; Spread = $spread }
+                }
+                Start-Sleep -Milliseconds 120
+            }
+            $nex = [TBGui]::ExStyles($nh)
+            $noDialog = (@((Get-TopWindows -ProcessId $noticeProc.Id) | Where-Object { $_.Visible -and $_.Text -eq '解除文件占用' }).Count -eq 0)
+            Check 'N21 提示卡真画得出来，而且就在鼠标旁边（不抢焦点、不占任务栏）' `
+                (($best.Spread -le 20) -and (($nex -band 0x08000000) -ne 0) -and (($nex -band 0x00000080) -ne 0) -and $noDialog) `
+                ('卡片=' + ($best.R -join ',') + ' 鼠标=' + ($best.C -join ',') + ' 偏差=' + $best.Spread + ' exstyle=0x' + ('{0:X}' -f $nex) + ' 没有弹回结果窗口=' + $noDialog)
+
+            # 「看得到」这四个字只能看渲染出来的像素：卡片是自己画的（不是一堆 Label），
+            # 所以取"内区出现最多的颜色"当底色，数一下和底色差得明显的像素（左边那条状态色竖线不算）。
+            $shot = Get-WindowShot -Handle $nh
+            $ink = -1
+            $shotNote = '（窗口抓不到像素）'
+            if ($shot) {
+                $counts = @{}
+                for ($yy = 4; $yy -lt $shot.Height - 4; $yy++) {
+                    for ($xx = 6; $xx -lt $shot.Width - 6; $xx++) {
+                        $i = ($yy * $shot.Stride) + ($xx * 4)
+                        $key = ([int]$shot.Bytes[$i + 2] -shl 16) -bor ([int]$shot.Bytes[$i + 1] -shl 8) -bor [int]$shot.Bytes[$i]
+                        if ($counts.ContainsKey($key)) { $counts[$key] = $counts[$key] + 1 } else { $counts[$key] = 1 }
+                    }
+                }
+                $bg = 0; $bestN = -1
+                foreach ($k in $counts.Keys) { if ($counts[$k] -gt $bestN) { $bestN = $counts[$k]; $bg = $k } }
+                $bgR = ($bg -shr 16) -band 0xFF; $bgG = ($bg -shr 8) -band 0xFF; $bgB = $bg -band 0xFF
+                $ink = 0
+                for ($yy = 6; $yy -lt $shot.Height - 6; $yy++) {
+                    for ($xx = 6; $xx -lt $shot.Width - 6; $xx++) {
+                        $i = ($yy * $shot.Stride) + ($xx * 4)
+                        $d = [Math]::Abs([int]$shot.Bytes[$i + 2] - $bgR) + [Math]::Abs([int]$shot.Bytes[$i + 1] - $bgG) + [Math]::Abs([int]$shot.Bytes[$i] - $bgB)
+                        if ($d -gt 90) { $ink++ }
+                    }
+                }
+                $shotNote = ('墨迹像素=' + $ink + ' 卡片=' + $shot.Width + 'x' + $shot.Height)
+            }
+            Check 'N21d 卡片上真的有字（不是一张空白窗口）' ($ink -gt 60) $shotNote
+
+            # 跟着鼠标走：把鼠标挪一段，卡片必须挪同样一段（不许留在原地、也不许跑到角落去）
+            $c0 = [TBGui]::CursorAt()
+            $r0 = [TBGui]::Rect($nh)
+            [void][TBGui]::MoveCursor(($c0[0] + 200), ($c0[1] + 120))
+            Start-Sleep -Milliseconds 700
+            $c1 = [TBGui]::CursorAt()
+            $r1 = [TBGui]::Rect($nh)
+            $dxc = $c1[0] - $c0[0]; $dyc = $c1[1] - $c0[1]
+            $dxr = $r1[0] - $r0[0]; $dyr = $r1[1] - $r0[1]
+            $after = [Math]::Abs(($r1[0] - $c1[0]) - 18) + [Math]::Abs(($r1[1] - $c1[1]) - 22)
+            Check 'N21b 鼠标一动，卡片跟着动（不是落在角落里不管）' `
+                (($dxc -ge 150) -and ([Math]::Abs($dxr - $dxc) -le 80) -and ([Math]::Abs($dyr - $dyc) -le 80) -and ($after -le 30)) `
+                ('鼠标挪=' + $dxc + ',' + $dyc + ' 卡片挪=' + $dxr + ',' + $dyr + ' 挪完偏差=' + $after)
+
+            # 到点自己关（没人去点它），进程也跟着退出
+            $ngone = $false
+            for ($i = 0; $i -lt 60; $i++) {
+                Start-Sleep -Milliseconds 200
+                if (-not [TBGui]::Alive($nh)) { $ngone = $true; break }
+            }
+            for ($i = 0; $i -lt 30; $i++) {
+                $noticeProc.Refresh()
+                if ($noticeProc.HasExited) { break }
+                Start-Sleep -Milliseconds 100
+            }
+            $noticeProc.Refresh()
+            Check 'N21c 到点自己消失（没人点它，进程也跟着退出）' ($ngone -and $noticeProc.HasExited) `
+                ('卡片还在=' + (-not $ngone) + ' 进程退出=' + $noticeProc.HasExited)
+        }
+    } finally {
+        [void][TBGui]::MoveCursor($noticeSaved[0], $noticeSaved[1])
+        if ($noticeProc -and -not $noticeProc.HasExited) { try { $noticeProc.Kill() } catch { } }
+        if (Test-Path -LiteralPath $noticeRoot) { Remove-Item -LiteralPath $noticeRoot -Recurse -Force -ErrorAction SilentlyContinue }
     }
 
     # ---- N10：从右键菜单点「激活状态」「查看设置改动」这种**结果就是一段文字**的按钮，必须弹出

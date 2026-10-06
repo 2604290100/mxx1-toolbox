@@ -8,7 +8,7 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
 **主界面 = 多行多列的小按钮墙**，点一下按钮就启动一个已经做好的程序 / 脚本 / 功能。
 加按钮只是往 `tools\*.json` 丢配置，**不需要重新编译主程序**。
 
-- 程序名 **萌新工具箱**，标题栏 `萌新工具箱 v1.5.3`；署名 `mxx1` / `mxx1.cn`；GPL-3.0-or-later
+- 程序名 **萌新工具箱**，标题栏 `萌新工具箱 v1.5.4`；署名 `mxx1` / `mxx1.cn`；GPL-3.0-or-later
 - 工程目录 **`D:\萌新工具开发\toolbox\`**，与隔壁 `permanent-delete-menu` **互不修改**（只调它的 exe）
 - 支持范围 **Windows 7 SP1 / 10 / 11**（用户 2026-10-05 收窄的：**只考虑这三版**）；见「兼容性」一节
 - 外观参考：`C:\Users\Administrator\Pictures\Snipaste_2026-10-04_10-29-34.png`（那种紧凑按钮墙）
@@ -16,9 +16,20 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
 > **接手 / 新会话先做两件事**：读 `docs\DESIGN.md`（外观与行为的**唯一正本**）和本文件。
 > 设计一改先改 `DESIGN.md`，再同步本 skill —— 两份分叉就会出现"两套行为"。
 
-## 当前状态（2026-10-05，v1.5.3 + 未发布的 v1.5.4 改动）
+## 当前状态（2026-10-06，v1.5.4）
 
-- ⚠️ **2026-10-05 又一轮（未发布，改完还没打 tag / 发 Release）**：用户问
+- ⚠️ **2026-10-06 补一轮（用户拿到 v1.5.4 之前的构建之后报的）**：原话
+  **「气泡没有正常弹出，而且弹出的位置要跟随鼠标」**。根因：提示走的是**系统托盘气泡**
+  （`NotifyIcon.ShowBalloonTip`）—— 能不能看见由**用户的系统通知设置**说了算（这台是精简版
+  Windows，通知平台被裁过；Win10 / Win11 关掉「通知」或开着专注助手同样看不到），
+  而且位置由系统钉在**右下角**、离鼠标很远。现在改成**自己画的一张卡片**
+  （`src\Balloon.cs` 的 `NoticeForm`）：位置在**鼠标旁边**（右下 18/22，贴边翻到另一侧并夹进
+  那块屏幕的工作区）、**鼠标动它跟着动**（60ms 一拍、挪够 8 像素才动）、默认 6 秒自己消失、
+  点一下就关、**不抢焦点**（`ShowWithoutActivation` + `WS_EX_NOACTIVATE`）、不占任务栏。
+  新增 `--notify=<毫秒>` 定显示多久。见 `docs\DESIGN.md` **§12.56**；
+  回归 **N21 / N21b / N21c / N21d**（末尾那条"卡片上真的有字"是抓 `PrintWindow` 像素数的墨迹
+  —— **"有窗口"不等于"看得见"**，用户报的就是"看不到"）。见坑 28。
+- ✅ **2026-10-05 那一轮（已随 v1.5.4 一起发）**：用户问
   **「工具箱里面的解除文件占用功能还有没有优化的空间？或者出一个不弹出窗口的版本」**，
   拍板时说的是 **「保留现有的功能的前提下加个不弹窗的一键解除，对应也要单独加 2 个按钮
   一个添加右键一个撤销右键」**，按钮名由用户点名：**装上一键解除占用 / 撤掉一键解除占用**。
@@ -30,20 +41,20 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
   占的是第 200 个 → 只会说"没定位到"）→ 改成**二分定位**（9 层约 18 次查询就指名，还比原来快）。
   见 §12.55。
   ③ **新入口「一键解除占用」**（`rightmenu unlock --auto`，`src\AutoUnlock.cs` + `src\Balloon.cs`）：
-  **不弹窗口**，后台查到谁占着它就**直接结束那些程序**，右下角一个气泡说结果；
+  **不弹窗口**，后台查到谁占着它就**直接结束那些程序**，鼠标旁边一张提示卡说结果；
   装 / 撤是**单独一对按钮**（`rightmenu.auto.on` / `rightmenu.auto.off`，页签 8 → **10 个按钮**）。
   底线比窗口那条更窄（系统关键进程 / explorer / 工具箱自己一律不动；没同意条款一个进程都不碰）。
-  见 §14.14；回归 **M30–M38** + 界面 **N19/N19b**。
-  顺手还修了 `Make-Icons.ps1` 会给 `bin-tools\` 自动按钮画图标并提交进仓库的问题（见坑 25）。
-- ✅ **测试 352 项全绿**（本机 351 通过 + 1 跳过）：命令行回归 **206**（A03b–A03d/D01 盯兼容、R 组 14 项盯 **bin-tools 自动按钮**、
+  见 §14.14；回归 **M30–M38** + 界面 **N19/N19b/N21\***。
+  顺手还修了 `Make-Icons.ps1` 会给 `bin-tools\` 自动按钮画图标并提交进仓库的问题（见坑 27）。
+- ✅ **测试 356 项全绿**（本机 355 通过 + 1 跳过）：命令行回归 **206**（A03b–A03d/D01 盯兼容、R 组 14 项盯 **bin-tools 自动按钮**、
   P 组 10 项盯**发布包内容**、S 组 26 项盯**条款确认门 + 更新检查**、**M 组 38 项盯「右键增强」**、A14–A17 盯 **exe 自己的图标**）
-  + 界面回归 **146**（I 组 27 项把**条款确认窗口**真开起来点一遍（含 I10b/I10c）、**N 组 23 项**盯「解除文件占用」小窗口 +
-  「一键解除占用」不弹窗口）
+  + 界面回归 **150**（I 组 27 项把**条款确认窗口**真开起来点一遍（含 I10b/I10c）、**N 组 27 项**盯「解除文件占用」小窗口 +
+  「一键解除占用」不弹窗口 + 鼠标旁边的提示卡）
   （外加编码体检 186 个文件、内联脚本与清单体检 34 个脚本 / 7 个清单 + 每个 `.ps1` 的语法）。
-  产物 `bin\Mxx1Toolbox.exe`（763 KB 单文件），
-  七个 `tools.*.json` + 114 个 `icons.*.png` + **`Disclaimer.md`（改了：多了第三项与一键解除那几段）** +
-  `assets\app.ico` 那份程序图标 已内嵌。
-  ⚠️ **条款正文改过了**（`docs\DISCLAIMER.md`）→ 指纹变了 → **所有人（包括用户自己）下次打开界面
+  产物 `bin\Mxx1Toolbox.exe`（786,432 字节单文件 / 约 768 KB），
+  七个 `tools.*.json` + 114 个 `icons.*.png` + **`Disclaimer.md`（改过两次：第三项与一键解除那几段 +
+  「鼠标旁边的小提示卡」那两处）** + `assets\app.ico` 那份程序图标 已内嵌。
+  ⚠️ **条款正文又改过了**（`docs\DISCLAIMER.md`，v1.5.4 两次）→ 指纹变了 → **所有人（包括用户自己）下次打开界面
   会重新看到一次《使用条款确认》**，这是设计如此（想免打扰：`Mxx1Toolbox.exe consent --accept`）。
   **跑法固定：`powershell -ExecutionPolicy Bypass -File tests\Test-All.ps1`**（必须 Windows PowerShell
   5.1 —— 套件里有 `-Encoding Byte`，pwsh 7 改叫 `-AsByteStream`，跑到 M20 会当场中断；`Bypass`
@@ -174,10 +185,13 @@ D:\萌新工具开发\toolbox\
                                    SelfCheck（自己独占打开一次，给"真没人在用 / 有人占着但报不出名字 /
                                    其实是权限"三种确定结论）+ 系统关键进程禁止结束
   src\AutoUnlock.cs                **v1.5.4**：「一键解除占用」——不弹窗口那条路（`rightmenu unlock --auto`）。
-                                   查（复用 FileLock.Scan）→ 直接结束占着它的程序（FileLock.Kill）→ 写日志 + 气泡。
+                                   查（复用 FileLock.Scan）→ 直接结束占着它的程序（FileLock.Kill）→ 写日志 + 提示卡。
                                    能结束谁只有一处规则：`FileLock.AutoUnlockTarget`（见「底线」那节）
-  src\Balloon.cs                   **v1.5.4**：右下角系统气泡（NotifyIcon.ShowBalloonTip）。不弹窗口但也不能
-                                   一声不吭 —— 结果至少要说一句；测试用 `--quiet` / `MXX1_NO_NOTIFY=1` 关掉它
+  src\Balloon.cs                   **v1.5.4**：鼠标旁边的提示卡（`Balloon.Show` + `NoticeForm`，**自己画的卡片**）。
+                                   原来那一版是系统托盘气泡（NotifyIcon.ShowBalloonTip），用户 2026-10-06 报
+                                   「没有正常弹出 + 位置要跟随鼠标」→ 换成自己画（见坑 28 / DESIGN §12.56）。
+                                   不抢焦点、跟着鼠标、几秒自消、点一下就关；`--quiet` / `--notify=0` /
+                                   `MXX1_NO_NOTIFY=1` 关掉它（测试一律关，只有 N21 故意开着量位置）
   src\UnlockForm.cs                「解除文件占用」的结果窗口（`rightmenu unlock` 起来的独立进程，不开主界面；
                                    **高度按内容自适应**，见"界面硬规则"里那条）
   src\AppIcon.cs                   窗口图标（按 DPI 取 exe 资源里的那一档）+ `Mxx1Form` 基类（9 个窗口都从它派生）
@@ -213,10 +227,11 @@ D:\萌新工具开发\toolbox\
                                    R 组 14 项盯 bin-tools 自动按钮、P 组 10 项盯发布包内容、
                                    S 组 26 项盯条款门 + 更新检查；
                                    环境不满足的项走 Skip()，打印 [SKIP] 不算失败）
-  tests\Test-Gui.ps1               界面回归 146 项（要交互式桌面，无桌面返回 3 = 跳过；A04b 盯窗口图标、
+  tests\Test-Gui.ps1               界面回归 150 项（要交互式桌面，无桌面返回 3 = 跳过；A04b 盯窗口图标、
                                    H 组盯固定尺寸、E04b 盯窗口位置、A09 盯 bin-tools 说明、
-                                   N 组 23 项盯解除占用小窗口（含 N14/N15/N17/N18 的高度自适应、
-                                   N19/N19b「一键解除占用一个窗口都不弹」、N20/N20b「扫描期间窗口一直活着」）、
+                                   N 组 27 项盯解除占用小窗口（含 N14/N15/N17/N18 的高度自适应、
+                                   N19/N19b「一键解除占用（--quiet）一个窗口都不弹」、N20/N20b「扫描期间窗口一直活着」、
+                                   N21/N21b/N21c/N21d「提示卡就在鼠标旁边、跟着鼠标动、到点自己消失、卡片上真有字」）、
                                    I 组 27 项把条款确认窗口真开起来点一遍，含 I10b/I10c）
   docs\DESIGN.md                   设计正本（含"踩过的坑"清单 + §13.7 自动按钮 + §16 兼容性 + §17 条款门）
   docs\DISCLAIMER.md               免责声明与服务条款正本（**编译时内嵌进 exe**，窗口显示的就是它）
@@ -252,7 +267,8 @@ powershell -File tools\Make-AppIcon.ps1       # 重生成 assets\app.ico（改�
 & bin\Mxx1Toolbox.exe rightmenu status        # 只读列右键菜单里装了什么 / 子菜单几项（**写入口只在界面里点**）
 & bin\Mxx1Toolbox.exe rightmenu unlock --query-only <路径>   # 只查谁占着这个文件，不弹窗也不结束进程
 & bin\Mxx1Toolbox.exe rightmenu unlock --auto <路径>         # **一键解除占用**：不弹窗，直接结束占着它的程序
-                                                          #   （右键菜单里那一项用的就是它；--quiet 不弹气泡）
+                                                            #   加 --notify=<毫秒> 定提示卡显示多久（--quiet 连它也不要）
+                                                          #   （右键菜单里那一项用的就是它；--quiet 不要提示卡）
                                                           # 输出：path/exists/scanned/truncated/hits/lockers/
                                                           # badfiles/file/pid…/verdict/verdictlocked/error
                                                           # （tests 靠这些键断言，v1.5.1 加了后半截）
@@ -474,7 +490,7 @@ powershell -File tools\Make-AppIcon.ps1       # 重生成 assets\app.ico（改�
 | 装什么 | 键（都在 HKCU\Software\Classes 下） | 点了做什么 |
 | --- | --- | --- |
 | 解除文件占用 | `*\shell\Mxx1Unlock` 等 4 个 verb | `"<exe>" rightmenu unlock "%1"` → 开一个小窗口列出谁占着它 |
-| **一键解除占用**（v1.5.4） | `*\shell\Mxx1AutoUnlock` 等 4 个 verb | `"<exe>" rightmenu unlock --auto "%1"` → **不弹窗口**，直接结束占着它的程序 |
+| **一键解除占用**（v1.5.4） | `*\shell\Mxx1AutoUnlock` 等 4 个 verb | `"<exe>" rightmenu unlock --auto "%1"` → **不弹窗口**，直接结束占着它的程序，鼠标旁边一张提示卡说结果 |
 | 常用功能（级联子菜单） | `*\shell\Mxx1Common` + 共用子项键 `Mxx1Toolbox.Common` | 子项 = 「常用」页的镜像，命令是 `"<exe>" run <id>` |
 
 **第三项「一键解除占用」**（`src\AutoUnlock.cs`，用户 2026-10-05 点名要的"不弹窗版本"）：
@@ -488,9 +504,12 @@ powershell -File tools\Make-AppIcon.ps1       # 重生成 assets\app.ico（改�
   `lsass`…、`explorer.exe`、工具箱自己 —— **一律不动**；"窗口里开着它"（`open`）不动。
 - **没同意过使用条款 = 一个进程都不碰**（这条路没有窗口可以弹确认框，规矩是"不同意就不动手"，
   只写一行日志）。回归 **M35** 就是盯这条。
-- 结果用**托盘气泡**说一句（`src\Balloon.cs`）—— 不弹窗口，但也不能一声不吭
+- 结果用**鼠标旁边一张提示卡**说一句（`src\Balloon.cs` 的 `NoticeForm`）—— 不弹窗口，但也不能一声不吭
   （用户 2026-10-04 报过「点击确认以后也没有成功或者失败的反馈」）。
-  测试一律 `--quiet` / `MXX1_NO_NOTIFY=1`：**别在别人桌面上弹东西**。
+  ⚠️ 原来这一格是**系统托盘气泡**，用户 2026-10-06 报「没有正常弹出 + 位置要跟随鼠标」→ 换成自己画的
+  卡片（不抢焦点 / 跟着鼠标 / 几秒自消 / 点一下也关），见坑 28 与 `docs\DESIGN.md` §12.56。
+  卡片显示多久用 `--notify=<毫秒>` 定（默认 6 秒）；测试一律 `--quiet` / `--notify=0` /
+  `MXX1_NO_NOTIFY=1`：**别在别人桌面上弹东西**（只有 N21 那四条故意开着它量位置）。
 - 命令行输出是给测试读的：`auto=killed|partial|none|locked|skipped-consent|error` / `killed=` /
   `failed=` / `summary=`；退出码 0 = 正常跑完、2 = 没给路径、1 = 查询本身出错。
 - **实测**（写测试之前端到端跑过）：锁一个文件 → `auto=killed killed=2`（连 conhost 子进程一起），
@@ -786,6 +805,19 @@ powershell -File tools\Make-AppIcon.ps1       # 重生成 assets\app.ico（改�
       id 还是从文件夹名推的）。现在它连**自动按钮**一起跳过（读 `status` 的 `autoButton=` 行）——
       注意 `Mxx1Toolbox.exe` 是 winexe，**必须 `Start-Process -Wait -RedirectStandardOutput`** 才读得到
       输出（就是坑 20），`& $exe status` 拿到的是空数组，跳过的名单会静默变成空的。
+  28. **"让系统替你弹提示"= 把"能不能看见"交给了用户的系统设置**：用户 2026-10-06 报
+      **「气泡没有正常弹出，而且弹出的位置要跟随鼠标」** —— 原来那条路用的是
+      `NotifyIcon.ShowBalloonTip`，它 ① 能不能看见由用户的**通知设置 / 专注助手**说了算
+      （这台还是精简版 Windows，通知平台被裁过），② 位置由系统钉在**右下角**，离鼠标很远。
+      现在改成**自己画的卡片**（`src\Balloon.cs` 的 `NoticeForm`）：位置在鼠标旁边（右下 18/22，
+      贴边翻到另一侧并夹进那块屏幕的工作区）、鼠标动它跟着动、几秒自消、点一下就关，
+      而且要 `ShowWithoutActivation` + `WS_EX_NOACTIVATE`（**不许抢焦点**：正在打字时字照样
+      打进原来那个窗口）+ `WS_EX_TOOLWINDOW`（不进 Alt+Tab）。
+      位置实测（`GetCursorPos` + `GetWindowRect` 对着量）：鼠标 700,300 → 卡片 718,322（dx=18,dy=22）；
+      鼠标 1880,1020 → 卡片 1603,940（右下放不下，翻到左上）。
+      连带两条：① **"有窗口"不等于"看得见"** —— 回归 **N21d** 抓 `PrintWindow` 的像素数墨迹才算验过；
+      ② N21 要**真动鼠标**（`SetCursorPos`），所以先存原来的位置、跑完放回去（和 B10/B11 一个规矩），
+      而且采样几次取最贴的一次（卡片跟鼠标有 ≤60ms 的滞后，用户也可能正在动鼠标）。
 - **别在 PowerShell 里按像素调函数**：一个 `Get-Pixel` 每像素调一次，几万次调用要几分钟，
   看起来像卡死（踩过一次）。要么 `LockBits` 取一次 `byte[]` 再纯数组循环（`Get-InkRows` 的写法），
   要么用 csc 编个临时小工具（`local\InkDiag.cs` 那种）。
@@ -803,14 +835,15 @@ powershell -File tools\Make-AppIcon.ps1       # 重生成 assets\app.ico（改�
 2. **外部工具目录 `bin-tools\`**：① 工具目录、③ 扫 `tool.json` 自动长按钮 **都已实现**（见上面那节与
    `docs\DESIGN.md` §13.7）。还没做的只有 ② 「把 `bin-tools\` 里的 exe 内嵌进 exe、首次点击释放到固定目录」
    —— **等用户说"我只想拷一个 exe"再做，别自己开工。**
-3. ⚠️ **现在这一轮（一键解除占用 + 两条治本）改完还没发版**：版本号还是 `1.5.3`，`CHANGELOG.md` 里
-   记在 `[未发布]` 那一节。**打 tag / 发 Release / 改版本号先问用户**（原话："发布工具"，
-   Release 的说明文字与截图要他点头）。要发的话记得：改版本号（`src\AssemblyInfo.cs` + 标题栏）→
-   `build.ps1 -Package` → 打 tag → 发 Release（附 `Mxx1Toolbox.exe` + zip + SHA256）。
+3. ⚠️ **v1.5.4 已经改好版本号，等用户点头才推 / 发**：版本号是 `1.5.4`
+   （`src\AssemblyInfo.cs`，标题栏跟着变 —— 唯一来源），`CHANGELOG.md` 里是 `[1.5.4] - 2026-10-06`。
+   **推送 / 打 tag / 发 Release 都要先问用户**（原话："推送的时候不要每次都推送，太卡了要问过我才行"，
+   以及"发布工具"—— Release 的说明文字与截图要他点头）。要发就：
+   `build.ps1 -Package` → 打 tag `v1.5.4` → 发 Release（附 `Mxx1Toolbox.exe` + zip + SHA256）。
 4. 条款正文（`docs\DISCLAIMER.md`）**改一个字就会让所有人下次打开重新确认一次**（记的是正文指纹）。
-   **v1.5.4 这一轮已经改过了**（补了第三项与「一键解除占用」的行为 / 底线 / 风险），
-   所以用户下次打开会再看到一次《使用条款确认》——**已经跟他说明过**；
-   想免打扰：`bin\Mxx1Toolbox.exe consent --accept`。以后再改正文同样要先说一声。
+   **v1.5.4 这一轮改过两次**（① 补第三项与「一键解除占用」的行为 / 底线 / 风险；
+   ② 把"右下角气泡"改成"鼠标旁边的小提示卡"），所以用户下次打开会再看到一次《使用条款确认》
+   —— **已经跟他说明过**；想免打扰：`bin\Mxx1Toolbox.exe consent --accept`。以后再改正文同样要先说一声。
 5. P1 的范围（先接哪个页签的真功能）要问用户，别自己挑。
 6. 图标要改样式就动 `tools\Make-Icons.ps1` 的关键词映射 / 配色，然后按
    `build.ps1 → Make-Icons.ps1 → 删孤儿 → build.ps1` 的顺序跑。

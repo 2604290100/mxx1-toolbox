@@ -99,13 +99,14 @@ namespace Mxx1Toolbox
             return (h == IntPtr.Zero) ? null : Icon.FromHandle(h);
         }
 
-        /// <summary>托盘气泡（见 src\Balloon.cs）要用一张图标。
+        /// <summary>提示卡（见 src\Balloon.cs）左上角那一张小图标。
         ///
-        /// **故意不复用窗口那两张缓存**：`NotifyIcon` 释放时有连图标句柄一起销毁的写法，
-        /// 一旦撞上，复用缓存就会把窗口标题栏那张也弄坏 —— 这里每次现取一张、不释放。
-        /// 用它的那条路（一键解除）马上就退出了，多一个图标句柄无所谓；取不到返回 null，
-        /// 调用方退回系统图标。</summary>
-        public static Icon ForTray()
+        /// **故意不复用窗口那两张缓存**：卡片是**另一个进程**（`rightmenu unlock --auto`）
+        /// 里画的，跟主窗口不在一个进程里，缓存也共享不到；现取一张更省事，而且
+        /// `Icon.FromHandle` 出来的对象不持有句柄、Dispose 也不会毁掉 exe 资源。
+        /// 用它的那条路（一键解除）稍后就退出了，多一个图标句柄无所谓；取不到返回 null，
+        /// 卡片就只画字、不画图标。</summary>
+        public static Icon ForNotice()
         {
             try { return FromModule(SystemInformation.SmallIconSize.Width); }
             catch { return null; }

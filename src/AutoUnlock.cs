@@ -15,14 +15,16 @@ namespace Mxx1Toolbox
     /// 窗口一个字节都没改，这是**另外一条**入口。
     ///
     /// 它做什么：查谁占着它 → 把**真占着文件的**和**它自己在运行的**那些程序结束掉（连子进程）
-    /// → 右下角一个气泡说结果 → 退出。全程没有窗口、没有确认框。
+    /// → 鼠标旁边一张小提示卡说结果（几秒后自己消失）→ 退出。**没有需要你操作的窗口、没有确认框**
+    /// （v1.5.4 之前那句话是"右下角一个系统气泡"，用户 2026-10-06 报"看不到、而且位置要跟着鼠标走"
+    /// → 见 `src\Balloon.cs`）。
     ///
     /// 三条底线（没有确认框，所以底线必须更窄，测试盯着）：
     ///   ① 能结束谁由 `FileLock.AutoUnlockTarget` 一条规则说了算：系统关键进程 / pid ≤ 4 /
     ///      工具箱自己 / explorer.exe / 只是"窗口里开着它"（根本没锁文件）—— 一律不动；
     ///   ② 没同意过《免责声明与服务条款》就**一个进程都不碰**（这条路没有窗口可以弹确认框，
     ///      所以是"不同意就不动手"，只写日志）；
-    ///   ③ 干了什么全写日志（`Logger`），气泡看不到（系统通知被关了）也查得到。
+    ///   ③ 干了什么全写日志（`Logger`），提示卡一闪而过没看清也查得到。
     ///
     /// 命令行故意只输出 key=value（回归测试读它），不打印中文报告 —— 报告进日志。</summary>
     internal static class AutoUnlock
@@ -60,7 +62,7 @@ namespace Mxx1Toolbox
                 Console.WriteLine("killed=0");
                 Console.WriteLine("failed=0");
                 Console.WriteLine("summary=" + why);
-                if (notify) { Balloon.Show("一键解除占用 · 没执行", why, notifyMs); }
+                if (notify) { Balloon.Show("一键解除占用 · 没执行", why, notifyMs, NoticeKind.Warn); }
                 return 0;
             }
 
@@ -75,7 +77,7 @@ namespace Mxx1Toolbox
                 Logger.Write(LogTag, "这次查询本身出错了：" + ex.Message + " 路径=" + Join(targets));
                 Console.WriteLine("auto=error");
                 Console.WriteLine("error=" + ex.Message);
-                if (notify) { Balloon.Show("一键解除占用 · 失败", "查询出错：" + ex.Message, notifyMs); }
+                if (notify) { Balloon.Show("一键解除占用 · 失败", "查询出错：" + ex.Message, notifyMs, NoticeKind.Fail); }
                 return 1;
             }
 
@@ -104,7 +106,11 @@ namespace Mxx1Toolbox
                 Console.WriteLine("killed=0");
                 Console.WriteLine("failed=0");
                 Console.WriteLine("summary=" + summary);
-                if (notify) { Balloon.Show("一键解除占用", summary, notifyMs); }
+                if (notify)
+                {
+                    Balloon.Show("一键解除占用", summary, notifyMs,
+                        report.VerdictLocked ? NoticeKind.Warn : NoticeKind.Ok);
+                }
                 return 0;
             }
 
@@ -132,7 +138,11 @@ namespace Mxx1Toolbox
             Console.WriteLine("killed=" + killed.ToString(CultureInfo.InvariantCulture));
             Console.WriteLine("failed=" + failed.ToString(CultureInfo.InvariantCulture));
             Console.WriteLine("summary=" + text);
-            if (notify) { Balloon.Show("一键解除占用 · 已处理", text, notifyMs); }
+            if (notify)
+            {
+                Balloon.Show("一键解除占用 · 已处理", text, notifyMs,
+                    (failed == 0) ? NoticeKind.Ok : NoticeKind.Warn);
+            }
             return 0;
         }
 

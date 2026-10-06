@@ -263,7 +263,7 @@ Write-Host 'A 组 · status 与 list'
 $status = Invoke-Exe 'status'
 Check 'A01 status 退出码 0' ($status.Code -eq 0) ('exit=' + $status.Code)
 Check 'A02 中文输出没有乱码（UTF-8）' ($status.Out -match 'name=萌新工具箱') ('name=' + (Get-Key $status.Out 'name'))
-Check 'A03 版本号 1.5.3' ((Get-Key $status.Out 'version') -eq '1.5.3') (Get-Key $status.Out 'version')
+Check 'A03 版本号 1.5.4' ((Get-Key $status.Out 'version') -eq '1.5.4') (Get-Key $status.Out 'version')
 
 # 兼容性（v1.5.3）：只保证 Win7 / Win10 / Win11。系统工具页里 7 个按钮走的是 ms-settings:
 # 这个协议 —— 那是 Windows 10 起才有的「设置」应用，Win7 的注册表里根本没有它。
@@ -1676,7 +1676,7 @@ Check 'S09 help 里能查到 checkupdate / disclaimer / consent 三个命令' `
 $cuOff = Invoke-Exe 'checkupdate' 60 $Exe @{ MXX1_NO_UPDATE = '1' }
 Check 'S10 MXX1_NO_UPDATE=1 时一个字节都不发（update=disabled，退出码 1 = 这次没结论）' `
     (($cuOff.Code -eq 1) -and ($cuOff.Out -match '(?m)^update=disabled\r?$')) (Get-Key $cuOff.Out 'update')
-Check 'S11 关掉时也报版本号（脚本据此判断）' ((Get-Key $cuOff.Out 'version') -eq '1.5.3') (Get-Key $cuOff.Out 'version')
+Check 'S11 关掉时也报版本号（脚本据此判断）' ((Get-Key $cuOff.Out 'version') -eq '1.5.4') (Get-Key $cuOff.Out 'version')
 
 $cuBad = Invoke-Exe 'checkupdate' 60 $Exe @{
     MXX1_UPDATE_URL = 'http://127.0.0.1:9/releases'

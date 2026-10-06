@@ -1,0 +1,444 @@
+{
+  "_comment": "改哪块 → 该跑哪些测试组。给 tools\\Test-Quick.ps1 用；设计说明见 docs\\DESIGN.md §15。改这个文件的 paths/groups 时，顺手核对一句：那条规则真的覆盖得住吗（宁可多带一个组）。",
+  "_groups": "cli = tests\\Test-Cli.ps1 的组标记（A/A14/B/C/D/E/F/G/H/I/J/K/L/M/P/R/S）；gui = tests\\Test-Gui.ps1 的组标记（B/B10/C/D/E/F/G/H/I/N）。挑组的写法：-Only M,N。",
+  "_prereq": "cli 里任何挑组都会自动带上 A 组：B/C/F/H/I/K/M/P/S 都读 A 组跑出来的 $status / $script:WinName 这些公共量。gui 的前置夹具都在「准备」段里，那时还没分组，所以不需要前置组。",
+  "_fallback": "没有命中任何规则的改动 = 跑全套（宁多勿少）；纯文档清单里的例外不跑组。",
+  "prereq": {
+    "cli": [
+      "A"
+    ],
+    "gui": []
+  },
+  "docs_only": [
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "AGENTS.md",
+    "CONTRIBUTING.md",
+    "SECURITY.md",
+    "skill/*",
+    "docs/*",
+    ".editorconfig",
+    ".gitattributes",
+    ".gitignore",
+    ".github/*",
+    "bin-tools/*",
+    "local/*"
+  ],
+  "rules": [
+    {
+      "paths": [
+        "tools/*.json"
+      ],
+      "cli": [
+        "A",
+        "B",
+        "H"
+      ],
+      "gui": [
+        "B"
+      ],
+      "note": "按钮清单本身：按钮总数/页签分布（A）、灰占位按钮（B）、悬停说明（H）；界面那边是按钮墙（B）"
+    },
+    {
+      "paths": [
+        "tools/privacy.json"
+      ],
+      "cli": [
+        "I"
+      ],
+      "gui": [],
+      "note": "隐私设置页签"
+    },
+    {
+      "paths": [
+        "tools/apps.json"
+      ],
+      "cli": [
+        "J"
+      ],
+      "gui": [],
+      "note": "应用管理页签"
+    },
+    {
+      "paths": [
+        "tools/common.json"
+      ],
+      "cli": [
+        "K",
+        "L"
+      ],
+      "gui": [],
+      "note": "常用设置页签：自助功能（K）+ 注册表开关记原值/还原（L）"
+    },
+    {
+      "paths": [
+        "tools/system.json"
+      ],
+      "cli": [
+        "D"
+      ],
+      "gui": [],
+      "note": "系统工具页签：--dry 解析每个目标"
+    },
+    {
+      "paths": [
+        "tools/cleanup.json"
+      ],
+      "cli": [
+        "A"
+      ],
+      "gui": [],
+      "note": "清理优化页签没有专门的组，只被 A 组的数量断言盯着（想加组就照着 M 组的写法加）"
+    },
+    {
+      "paths": [
+        "tools/mine.json"
+      ],
+      "cli": [
+        "G",
+        "K"
+      ],
+      "gui": [],
+      "note": "我的工具页签：拖进来的东西变成什么按钮（G）+ 导入导出/置顶（K）"
+    },
+    {
+      "paths": [
+        "tools/rightmenu.json"
+      ],
+      "cli": [
+        "M"
+      ],
+      "gui": [
+        "N"
+      ],
+      "note": "右键增强页签：装/撤 verb、查占用、一键解除（M）；解占用那个小窗口和提示卡（N）"
+    },
+    {
+      "paths": [
+        "src/FileLock.cs",
+        "src/AutoUnlock.cs"
+      ],
+      "cli": [
+        "M"
+      ],
+      "gui": [
+        "N"
+      ],
+      "note": "查占用 / 结束进程 / 一键解除的底线：M30-M39 + 界面 N 组。改这里的底线一定要两个都跑"
+    },
+    {
+      "paths": [
+        "src/Balloon.cs"
+      ],
+      "cli": [
+        "M"
+      ],
+      "gui": [
+        "N"
+      ],
+      "note": "提示卡（位置跟着鼠标、几秒自消）；命令行那条路用 MXX1_NO_NOTIFY=1 跑"
+    },
+    {
+      "paths": [
+        "src/RightMenu.cs"
+      ],
+      "cli": [
+        "M"
+      ],
+      "gui": [],
+      "note": "右键菜单项的安装与命令拼装"
+    },
+    {
+      "paths": [
+        "src/UnlockForm.cs"
+      ],
+      "cli": [],
+      "gui": [
+        "N"
+      ],
+      "note": "「解除文件占用」窗口：高度自适应 / 扫描不卡界面（N14-N20）"
+    },
+    {
+      "paths": [
+        "src/MainForm.cs"
+      ],
+      "cli": [
+        "A",
+        "B",
+        "D",
+        "E",
+        "H"
+      ],
+      "gui": [
+        "B",
+        "B10",
+        "C",
+        "D",
+        "E",
+        "F",
+        "G",
+        "H"
+      ],
+      "note": "主窗口：按钮墙 / 页签 / 底栏日志 / 危险按钮确认框 / 主题 / 固定尺寸 —— 界面的组几乎全在这"
+    },
+    {
+      "paths": [
+        "src/ToolButton.cs",
+        "src/Theme.cs",
+        "src/IconFactory.cs",
+        "src/AppIcon.cs",
+        "src/Mxx1Form.cs"
+      ],
+      "cli": [
+        "A"
+      ],
+      "gui": [
+        "B",
+        "B10",
+        "G"
+      ],
+      "note": "按钮绘制 / 主题 / 图标：只有渲染结果能判（像素判据在界面 B/G 组）"
+    },
+    {
+      "paths": [
+        "assets/icons/*",
+        "assets/*.ico",
+        "assets/*.png"
+      ],
+      "cli": [
+        "A"
+      ],
+      "gui": [
+        "B"
+      ],
+      "note": "exe 图标（A14-A17 认像素）+ 按钮图标（界面 B 组）"
+    },
+    {
+      "paths": [
+        "src/Json.cs",
+        "src/Tools.cs"
+      ],
+      "cli": [
+        "A",
+        "B",
+        "R"
+      ],
+      "gui": [],
+      "note": "清单解析：严格 JSON（多一个逗号整份丢掉）；bin-tools 自动按钮（R）"
+    },
+    {
+      "paths": [
+        "src/ToolFolders.cs"
+      ],
+      "cli": [
+        "F",
+        "R"
+      ],
+      "gui": [],
+      "note": "bin-tools 工具目录与自动按钮"
+    },
+    {
+      "paths": [
+        "src/Launcher.cs",
+        "src/CommandLine.cs"
+      ],
+      "cli": [
+        "C",
+        "D"
+      ],
+      "gui": [
+        "E",
+        "F"
+      ],
+      "note": "启动按钮 / 系统工具目标表 / 提权：命令行 E 组（用法与错误）与界面 E/F 组"
+    },
+    {
+      "paths": [
+        "src/Privacy.cs"
+      ],
+      "cli": [
+        "I"
+      ],
+      "gui": [],
+      "note": "隐私开关表（成对开关 + 记原值）"
+    },
+    {
+      "paths": [
+        "src/SysReg.cs"
+      ],
+      "cli": [
+        "L"
+      ],
+      "gui": [],
+      "note": "常用设置的注册表开关（记原值 / 读回核对 / 一键还原）"
+    },
+    {
+      "paths": [
+        "src/Apps.cs"
+      ],
+      "cli": [
+        "J"
+      ],
+      "gui": [],
+      "note": "应用管理（只读 + 单个卸载）"
+    },
+    {
+      "paths": [
+        "src/Consent.cs",
+        "src/Disclaimer.cs",
+        "docs/DISCLAIMER.md"
+      ],
+      "cli": [
+        "S"
+      ],
+      "gui": [
+        "I"
+      ],
+      "note": "条款正本与同意门：改正文 = 改指纹 = 所有人重新确认一次（S 组 + 界面 I 组）"
+    },
+    {
+      "paths": [
+        "src/Settings.cs"
+      ],
+      "cli": [
+        "A",
+        "S"
+      ],
+      "gui": [
+        "B",
+        "G",
+        "I"
+      ],
+      "note": "settings.ini：主题/页签/日志面板/同意记录 —— 界面 B/G/I 组都靠它"
+    },
+    {
+      "paths": [
+        "src/UpdateCheck.cs"
+      ],
+      "cli": [
+        "S"
+      ],
+      "gui": [
+        "I",
+        "D"
+      ],
+      "note": "更新检查：只读版本号、失败静默、MXX1_NO_UPDATE=1 关掉"
+    },
+    {
+      "paths": [
+        "src/AboutForm.cs",
+        "src/LinksForm.cs"
+      ],
+      "gui": [
+        "D"
+      ],
+      "cli": [
+        "S"
+      ],
+      "note": "关于 / 常用链接窗口：网址可点（D07d 真鼠标点一下，MXX1_NO_OPEN=1）"
+    },
+    {
+      "paths": [
+        "src/WindowPlacement.cs"
+      ],
+      "gui": [
+        "E"
+      ],
+      "cli": [],
+      "note": "非模态窗口居中（E04b 比重叠比例）"
+    },
+    {
+      "paths": [
+        "src/LogViewer.cs",
+        "src/Logger.cs"
+      ],
+      "cli": [
+        "B"
+      ],
+      "gui": [
+        "D"
+      ],
+      "note": "日志：界面里最新在最上面"
+    },
+    {
+      "paths": [
+        "src/Program.cs",
+        "src/PathFix.cs"
+      ],
+      "cli": [
+        "A",
+        "E",
+        "S",
+        "P"
+      ],
+      "gui": [],
+      "note": "命令行入口与开关（--notify / --quiet / consent / checkupdate / list）"
+    },
+    {
+      "paths": [
+        "src/AssemblyInfo.cs"
+      ],
+      "cli": [
+        "A",
+        "S",
+        "P"
+      ],
+      "gui": [
+        "D"
+      ],
+      "note": "版本号：A03/S11 断言它、底栏与关于窗口显示它、发布说明也写它"
+    },
+    {
+      "paths": [
+        "build.ps1",
+        "tools/Make-Package.ps1",
+        "tools/Make-Icons.ps1",
+        "src/*.manifest"
+      ],
+      "cli": [
+        "A",
+        "P"
+      ],
+      "gui": [],
+      "note": "编译与打包：内嵌资源（清单/图标/条款）、发布包内容（P 组回读 zip 核对）"
+    },
+    {
+      "paths": [
+        "tests/*",
+        "tools/Test-*.ps1"
+      ],
+      "cli": [
+        "A",
+        "B",
+        "C",
+        "D",
+        "E",
+        "F",
+        "G",
+        "H",
+        "I",
+        "J",
+        "K",
+        "L",
+        "M",
+        "P",
+        "R",
+        "S"
+      ],
+      "gui": [
+        "B",
+        "B10",
+        "C",
+        "D",
+        "E",
+        "F",
+        "G",
+        "H",
+        "I",
+        "N"
+      ],
+      "note": "改测试自己 = 全套（挑组机制本身也可能被改坏）"
+    }
+  ]
+}

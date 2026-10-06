@@ -191,16 +191,24 @@ bin\Mxx1Toolbox.exe help
 ## 测试
 
 ```powershell
+powershell -File tools\Test-Quick.ps1        # 提交前闸门：只跑这次改动影响得到的组（约 10 秒-1 分钟）
 powershell -File tools\Test-Encoding.ps1     # 编码红线体检（BOM / 纯 ASCII / 硬编码本机路径）
 powershell -File tools\Test-InlineSyntax.ps1 # 内联脚本语法 + 清单 JSON + 每个 .ps1 的语法体检
 powershell -ExecutionPolicy Bypass -File tests\Test-All.ps1   # 全部（无桌面时加 -SkipGui）
-powershell -ExecutionPolicy Bypass -File tests\Test-Cli.ps1   # 命令行回归 206 项（本机 205 通过 + 1 跳过）
-powershell -ExecutionPolicy Bypass -File tests\Test-Gui.ps1   # 界面回归 150 项（要交互式桌面，无桌面返回 3 = 跳过）
+powershell -ExecutionPolicy Bypass -File tests\Test-Cli.ps1   # 命令行回归 207 项（本机 206 通过 + 1 跳过）
+powershell -ExecutionPolicy Bypass -File tests\Test-Gui.ps1   # 界面回归 151 项（要交互式桌面，无桌面返回 3 = 跳过）
+powershell -ExecutionPolicy Bypass -File tests\Test-Cli.ps1 -Only M,N   # 只跑 M、N 两组
+powershell -File tools\Sync-Skill.ps1        # 把 skill 的三份文件同步到三处副本（改完 skill 必跑）
 powershell -File tools\Make-Package.ps1       # 只打发布包（build.ps1 -Package 调的就是它）
 powershell -File tools\Make-Screenshots.ps1  # 重新拍 docs 里的截图（浅色 / 深色 / 系统工具页签）
 powershell -File tools\Make-Icons.ps1        # 重新生成 16x16 PNG 图标（先 build 再跑，改完还要再 build）
 powershell -File tools\Make-AppIcon.ps1      # 重新生成 assets\app.ico（程序自己的图标，改完还要再 build）
 ```
+
+> **改动一个功能不必跑全套回归**：两个套件都支持 `-Only` / `-Skip` 挑组（组标记就是源码里
+> `# ---- X 组：…` 的字母，前缀匹配），`tools\Test-Quick.ps1` 会按 `tests\test-map.json`
+> 把"这次改了哪些文件 → 该跑哪些组"算出来，并把**没跑的组逐条列出来**。
+> 分层与流程约定见 [`docs/DESIGN.md`](docs/DESIGN.md) §15。
 
 > 测试**必须用 Windows PowerShell 5.1 跑**（`powershell`，不是 `pwsh`），而且带上 `-ExecutionPolicy Bypass`：
 > 套件里有 `-Encoding Byte`（PS 7 换成了 `-AsByteStream`，跑一半会中断），而 `Bypass` 会让子进程继承

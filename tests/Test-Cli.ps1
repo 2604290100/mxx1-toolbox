@@ -16,11 +16,24 @@
       * 错误用法返回退出码 2
 
     用法: powershell -File tests\Test-Cli.ps1
+          powershell -File tests\Test-Cli.ps1 -Only M,N      # 只跑这几组
+          powershell -File tests\Test-Cli.ps1 -Skip P        # 除了这几组，别的都跑
     退出码: 0 = 全绿（含"环境不满足、跳过"）, 1 = 有失败
     环境不满足的项走 Skip()：打印 [SKIP]、计入跳过数，**不算失败**（在别人的机器上不会假红）。
+
+    挑组（-Only / -Skip）：组标记就是下面那些 `# ---- X 组：…` 注释里的字母，
+    前缀匹配（-Only A 会带上 A14 那种子块）。挑组跑完会在汇总里列出"没跑哪些组" ——
+    那一行要写进汇报与提交信息；发版前要清空这份欠账。映射表见 tests\test-map.json。
+    ⚠ B/C/F/H/I/K/M/P/S 这些组读 A 组跑出来的公共量（$status 等），挑组时**必须带上 A**
+    （tools\Test-Quick.ps1 会自动带上）。
 #>
 [CmdletBinding()]
-param()
+param(
+    # 只跑这几组（例：-Only M,N）
+    [string[]]$Only = @(),
+    # 除了这几组，别的都跑
+    [string[]]$Skip = @()
+)
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
@@ -28,7 +41,55 @@ $Exe = Join-Path $root 'bin\Mxx1Toolbox.exe'
 
 $script:Pass = 0
 $script:Fail = 0
-$script:Skip = 0
+# 注意：这里原来叫 $script:Skip —— 和上面那个 -Skip 参数（挑组用）**撞名**了（PowerShell 变量不区分
+# 大小写，`$script:Skip = 0` 会把参数里的数组覆盖成整数 0）。现在叫 SkipCount。
+$script:SkipCount = 0
+
+# ---------------------------------------------------------------- 挑组执行（-Only / -Skip）
+# 见文件开头那段说明与 docs\DESIGN.md §15。组标记就是这个文件里那些 `# ---- X 组：…` 注释。
+# 前缀匹配：-Only A 会连带跑 A14 那个子块。
+# ⚠ `powershell -File … -Only M,N` 传进来的是**一个字符串**（不是数组），所以要自己按 , ; 空格 拆开。
+$script:SelfPath = $MyInvocation.MyCommand.Path
+
+function Expand-GroupList {
+    param([string[]]$Items)
+    $out = @()
+    foreach ($it in @($Items)) {
+        if (-not $it) { continue }
+        foreach ($p in ($it -split '[,;\s]+')) { if ($p) { $out += $p.Trim().ToUpper() } }
+    }
+    return @($out | Sort-Object -Unique)
+}
+
+$script:OnlyGroups = @(Expand-GroupList $Only)
+$script:SkipGroups = @(Expand-GroupList $Skip)
+$script:RanGroups = @()
+$script:PickMode = (($script:OnlyGroups.Count -gt 0) -or ($script:SkipGroups.Count -gt 0))
+
+function Test-GroupSelected {
+    param([string]$Name)
+    $on = $true
+    $up = $Name.ToUpper()
+    if ($script:OnlyGroups.Count -gt 0) {
+        $on = $false
+        foreach ($p in $script:OnlyGroups) { if ($up -like ($p + '*')) { $on = $true; break } }
+    }
+    if ($on) {
+        foreach ($p in $script:SkipGroups) { if ($up -like ($p + '*')) { $on = $false; break } }
+    }
+    if ($on -and ($script:RanGroups -notcontains $Name)) { $script:RanGroups += $Name }
+    return $on
+}
+
+# 汇总时用：这个文件里一共有哪些组（读自己源码里的组标记，不维护第二份名单）
+function Get-AllGroups {
+    $all = @()
+    foreach ($line in (Get-Content -LiteralPath $script:SelfPath)) {
+        $m = [regex]::Match($line, '^# (?:-{4,}|={4,})\s*([A-Z][0-9]*)(?![0-9A-Za-z])')
+        if ($m.Success) { $all += $m.Groups[1].Value }
+    }
+    return @($all | Sort-Object -Unique)
+}
 
 function Check {
     param([string]$Name, [bool]$Ok, [string]$Detail = '')
@@ -42,7 +103,7 @@ function Check {
 # 在别人机器上（没有隔壁仓库、工具目录里已经放了 exe、没装 .NET 的 COM 等）会一片假红。
 function Skip {
     param([string]$Name, [string]$Reason = '')
-    $script:Skip++
+    $script:SkipCount++
     Write-Host ("  [SKIP] {0}{1}" -f $Name, $(if ($Reason) { "   ($Reason)" } else { '' }))
 }
 
@@ -172,6 +233,10 @@ Write-Host '=========================================================='
 Write-Host ' 萌新工具箱 · 命令行回归测试'
 Write-Host '=========================================================='
 Write-Host (' exe : ' + $Exe)
+if ($script:PickMode) {
+    Write-Host (' 挑组: 只跑 ' + $(if ($script:OnlyGroups.Count -gt 0) { $script:OnlyGroups -join ',' } else { '（全部）' }) +
+                $(if ($script:SkipGroups.Count -gt 0) { '，跳过 ' + ($script:SkipGroups -join ',') } else { '' }))
+}
 Write-Host ''
 
 # GUI 子系统程序：必须自己起进程、边跑边读，输出按 UTF-8 解
@@ -258,6 +323,7 @@ function Get-BackupHash {
 }
 
 # ---------------------------------------------------------------- A 组：status / list
+if (Test-GroupSelected 'A') {
 Write-Host 'A 组 · status 与 list'
 
 $status = Invoke-Exe 'status'
@@ -322,7 +388,10 @@ Check 'A11 右键增强 10 个按钮（9 个右键菜单 + 隔壁永久删除工
 Check 'A12 右键增强里的按钮是"真功能"（不带 placeholder 标记）' (-not ($rmList.Out -match 'placeholder')) ''
 Check 'A13 右键增强那个按钮叫「永久删除工具」' ($rmList.Out -match '永久删除工具') (($rmList.Out -split "`r?`n" | Where-Object { $_ -match "`t" }) -join '')
 
+}
+
 # ---- A14–A17：exe 自己那张图标（用户 2026-10-04 报「编译好的 Mxx1Toolbox.exe 没有图标」）----
+if (Test-GroupSelected 'A14') {
 # 根因：build.ps1 里那行 `/win32icon:assets\app.ico` 要的文件**根本不存在** —— 等于从来没写过。
 # 一条链上三个环节都得盯着：① app.ico 在且是真 ico；② build.ps1 真的把它交给 csc 了；
 # ③ 编出来的 exe 上真能取到那张图（蓝底 + 白方块，和工具箱自己的图标一样 —— .NET 那个默认图标
@@ -364,7 +433,10 @@ Check 'A17 exe 上真带着工具箱的图标（蓝底 + 白方块，不是 .NET
     (($iconBlue -gt 40) -and ($iconWhite -gt 40)) `
     ('opaque=' + $iconOpaque + ' blue=' + $iconBlue + ' white=' + $iconWhite)
 
+}
+
 # ---------------------------------------------------------------- B 组：灰色占位按钮
+if (Test-GroupSelected 'B') {
 Write-Host ''
 Write-Host 'B 组 · 灰色占位按钮（界面上禁止点击；命令行只解释、绝不执行）'
 
@@ -427,7 +499,10 @@ Check ('B05 日志里能看到「{0}」和""功能待接入""' -f $phName) `
     (@($logAfter | Select-Object -Last 40 | Where-Object { ($_ -match [regex]::Escape($phName)) -and ($_ -match '功能待接入') }).Count -ge 1) `
     ('最后一行=' + $newest.Trim())
 
+}
+
 # ---------------------------------------------------------------- C 组：真按钮（调隔壁 exe）
+if (Test-GroupSelected 'C') {
 Write-Host ''
 Write-Host 'C 组 · 「右键增强」那一个按钮（调隔壁 permanent-delete-menu，零改动集成）'
 
@@ -449,7 +524,10 @@ if ($permdel -eq '(未找到)' -or $permdel.Length -eq 0) {
         (($st.Out -split "`r?`n" | Where-Object { $_ -match '^installed=' }) -join '')
 }
 
+}
+
 # ---------------------------------------------------------------- D 组：系统工具
+if (Test-GroupSelected 'D') {
 Write-Host ''
 Write-Host 'D 组 · 「系统工具」25 个按钮（Windows 自带组件 + 修复/诊断，--dry 只解析不启动）'
 
@@ -509,7 +587,10 @@ Check 'D07 hosts 修改的参数展开成真的 hosts 路径' `
     (((Get-Key $hostsDry.Out 'command') -match 'drivers\\etc\\hosts$') -and ((Get-Key $hostsDry.Out 'command') -notmatch '%')) `
     (Get-Key $hostsDry.Out 'command')
 
+}
+
 # ---------------------------------------------------------------- F 组：工具目录（bin-tools）
+if (Test-GroupSelected 'F') {
 Write-Host ''
 Write-Host 'F 组 · 外部工具目录 bin-tools（外部工具丢进去就能用）'
 
@@ -579,7 +660,10 @@ if ($userTools.Length -gt 0 -and $toolDir.Length -gt 0) {
     Check 'F04 相对路径按工具目录解析（不再是进程当前目录）' $false 'status 没给出 userTools / toolDir'
 }
 
+}
+
 # ---------------------------------------------------------------- R 组：工具目录里的工具自动长出按钮
+if (Test-GroupSelected 'R') {
 Write-Host ''
 Write-Host 'R 组 · bin-tools 自动按钮（整个文件夹丢进去就有一个按钮，不用自己写清单）'
 # 用户 2026-10-04 问「bin-tools 里面的工具是不是应该自动加载一个按钮？」→ v1.5.3 实现，规则见 src\ToolFolders.cs：
@@ -702,7 +786,10 @@ if ($fixtureExe.Length -eq 0) {
         ([int](Get-Key $s4.Out 'autoButtons') -eq $autoBase) ('auto=' + (Get-Key $s4.Out 'autoButtons') + ' before=' + $autoBase)
 }
 
+}
+
 # ---------------------------------------------------------------- G 组：拖进来的东西变成什么按钮
+if (Test-GroupSelected 'G') {
 Write-Host ''
 Write-Host 'G 组 · 拖进来的东西会变成什么按钮（draft，用户报过快捷方式进来就失败）'
 
@@ -761,7 +848,10 @@ try {
     Remove-Item -LiteralPath $gTmp -Recurse -Force -ErrorAction SilentlyContinue
 }
 
+}
+
 # ---------------------------------------------------------------- E 组：用法与错误
+if (Test-GroupSelected 'E') {
 Write-Host ''
 Write-Host 'E 组 · 错误用法'
 
@@ -778,7 +868,10 @@ Check 'E04 checkupdate 只读、不下载（关掉联网时一个请求都不发
     (($chk.Code -eq 1) -and ($chk.Out -match 'update=disabled') -and ($chk.Out -match 'MXX1_NO_UPDATE')) `
     (($chk.Out -split "`r?`n" | Where-Object { $_ -match '^update=' }) -join '')
 
+}
+
 # ---------------------------------------------------------------- H 组：鼠标悬停说明
+if (Test-GroupSelected 'H') {
 Write-Host ''
 Write-Host 'H 组 · 悬停说明（用户 2026-10-04 报过「鼠标悬停的说明没有做好」）'
 
@@ -828,7 +921,10 @@ Check 'H07 要管理员权限的按钮写明了"会弹 UAC 窗口"' ($tipOne.Out
 $tipMissing = Invoke-Exe 'tip no.such.button'
 Check 'H08 tip 一个不存在的 id → 退出码 2' ($tipMissing.Code -eq 2) ('exit=' + $tipMissing.Code)
 
+}
+
 # ---------------------------------------------------------------- I 组：隐私设置页签
+if (Test-GroupSelected 'I') {
 Write-Host ''
 Write-Host 'I 组 · 隐私设置（成对开关 + 一键还原；写注册表之前的原值会被记下来）'
 
@@ -906,7 +1002,10 @@ Check 'I11 「隐私一键优化」--dry 解析成注册表动作，说明里点
     (((Get-Key $optDry.Out 'kind') -eq 'registry') -and ((Get-Key $optDry.Out 'target') -match '可一键还原')) `
     ('kind=' + (Get-Key $optDry.Out 'kind') + ' target=' + (Get-Key $optDry.Out 'target'))
 
+}
+
 # ---------------------------------------------------------------- J 组：应用管理页签
+if (Test-GroupSelected 'J') {
 Write-Host ''
 Write-Host 'J 组 · 应用管理（只读 + 单个卸载；不做批量、不碰 Edge）'
 
@@ -975,7 +1074,10 @@ Check 'J11 列表模式只列不卸（没有真的执行卸载）' `
     (($pick.Code -eq 0) -and (@(($pick.Out -split "`r?`n") | Where-Object { $_ -match '^(已卸载|卸载失败)：' }).Count -eq 0)) `
     ('exit=' + $pick.Code)
 
+}
+
 # ---------------------------------------------------------------- K 组：自助功能
+if (Test-GroupSelected 'K') {
 Write-Host ''
 Write-Host 'K 组 · 置顶 / 导入导出 / 提权状态 / 系统体检'
 
@@ -1041,7 +1143,10 @@ $need = @('系统：', '激活：', '内存：', '磁盘 ', '开机自启项', '
 $miss = @($need | Where-Object { $health.Out.IndexOf($_) -lt 0 })
 Check 'K11 体检报告包含系统/激活/内存/磁盘/自启项/hosts/管理员' ($miss.Count -eq 0) ('缺=' + ($miss -join ' '))
 
+}
+
 # ---------------------------------------------------------------- L 组：系统设置改动（sysreg）
+if (Test-GroupSelected 'L') {
 # 「常用设置」里那 6 对写注册表的按钮现在和隐私开关共用一套「记原值 + 读回核对 + 一键还原」的机制。
 Write-Host ''
 Write-Host 'L 组 · 系统设置改动（记原值 / 读回核对 / 一键还原；只读命令 + 自检）'
@@ -1092,7 +1197,10 @@ Check 'L12 sysreg 按钮 --dry 解析成注册表动作，说明里点明了可�
     (((Get-Key $srDry.Out 'kind') -eq 'registry') -and ((Get-Key $srDry.Out 'target') -match '可一键还原')) `
     ('kind=' + (Get-Key $srDry.Out 'kind') + ' target=' + (Get-Key $srDry.Out 'target'))
 
+}
+
 # ---------------------------------------------------------------- M 组：右键增强（HKCU 右键菜单）
+if (Test-GroupSelected 'M') {
 # 2026-10-04 用户定的方案（docs\DESIGN.md §14）：把「解除文件占用」和「常用功能」级联子菜单装进
 # Windows 右键菜单，只写 HKCU\Software\Classes（不要管理员、不装 shell 扩展 DLL、不起服务）。
 # 这一组盯五件事：
@@ -1652,7 +1760,10 @@ $rmRealIconAfter = @(Get-ChildItem -LiteralPath $rmRealIconDir -File -ErrorActio
 Check 'M23b 撤掉测试项没动用户真实那份图标目录（文件数不变）' `
     ($rmRealIconAfter -eq $rmRealIconsBefore) ('before=' + $rmRealIconsBefore + ' after=' + $rmRealIconAfter)
 
+}
+
 # ---------------------------------------------------------------- S 组：使用条款与更新检查
+if (Test-GroupSelected 'S') {
 Write-Host ''
 Write-Host 'S 组 · 使用条款（免责声明 / 服务协议 / 首次运行确认门）与更新检查'
 # 用户 2026-10-04 的要求：「缺少完整的检测更新功能/免责/服务协议，你看下 permanent-delete-menu 是怎么做的？」
@@ -1802,7 +1913,10 @@ $cAfter = Invoke-Exe 'consent'
 Check 'S26 条款状态已按测试前的样子复原' ($cAfter.Out -match ('(?m)^consent=' + $consentBefore)) `
     ('now=' + (Get-Key $cAfter.Out 'consent') + ' before=' + $consentBefore)
 
+}
+
 # ---------------------------------------------------------------- P 组：发布包里到底有什么
+if (Test-GroupSelected 'P') {
 Write-Host ''
 Write-Host 'P 组 · 发布包（build.ps1 -Package 打出来的 zip）'
 # 用户 2026-10-05 报：「bin-tools 里面只有 PermanentDeleteSetup.exe 进压缩包了，memreduct 没有进」。
@@ -1925,6 +2039,8 @@ Check 'P09 这一组只往临时目录打，没动 bin\ 里真正的发布包' (
     $(if ($realZipBefore -eq $realZipAfter) { 'zip 未改动' } else { 'zip 被改动了！before=' + $realZipBefore + ' after=' + $realZipAfter })
 Check 'P10 打包测试的临时目录收拾干净了（不留垃圾在 %TEMP%）' (-not (Test-Path -LiteralPath $pTmp)) $pTmp
 
+}
+
 # ---------------------------------------------------------------- 汇总
 Write-Host ''
 Write-Host '----------------------------------------------------------'
@@ -1932,7 +2048,19 @@ Write-Host '----------------------------------------------------------'
 if ($script:SyncHad) { $env:MXX1_NO_RIGHTMENU_SYNC = $script:SyncOld }
 else { Remove-Item Env:MXX1_NO_RIGHTMENU_SYNC -ErrorAction SilentlyContinue }
 Write-Host (" 命令行回归: 通过 {0} 项, 失败 {1} 项" -f $script:Pass, $script:Fail)
-if ($script:Skip -gt 0) { Write-Host (" （另有 {0} 项环境不满足，跳过 —— 不算失败，原因见上面 [SKIP] 那几行）" -f $script:Skip) }
+if ($script:SkipCount -gt 0) { Write-Host (" （另有 {0} 项环境不满足，跳过 —— 不算失败，原因见上面 [SKIP] 那几行）" -f $script:SkipCount) }
+
+# 挑组跑的时候，把"没跑哪些组"写在脸上：这份欠账要进汇报与提交信息，发版前要清空
+if ($script:PickMode) {
+    $allGroups = @(Get-AllGroups)
+    $notRun = @($allGroups | Where-Object { $script:RanGroups -notcontains $_ })
+    Write-Host (' 本次跑的组: ' + $(if ($script:RanGroups.Count -gt 0) { $script:RanGroups -join ',' } else { '（无）' }))
+    if ($notRun.Count -gt 0) {
+        Write-Host (' 本次没跑的组: ' + ($notRun -join ',') + '  ← 提交信息与汇报里要写出来；发版前要清空这份欠账')
+    } else {
+        Write-Host ' 本次没跑的组: （无，全跑了）'
+    }
+}
 Write-Host '----------------------------------------------------------'
 if ($script:UserToolsHad -and (Test-Path -LiteralPath $UserToolsPaused)) {
     if (Test-Path -LiteralPath $UserToolsJson) { Remove-Item -LiteralPath $UserToolsJson -Force }

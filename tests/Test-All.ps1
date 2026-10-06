@@ -12,12 +12,17 @@
     用法:
       powershell -File tests\Test-All.ps1
       powershell -File tests\Test-All.ps1 -SkipGui      # 无桌面环境（CI）用这个
+      powershell -File tests\Test-All.ps1 -Only M,N     # 两层回归都只跑这几组（其他组会列在"跳过"里）
 
     退出码: 0 = 全绿, 1 = 有失败
 #>
 [CmdletBinding()]
 param(
-    [switch]$SkipGui
+    [switch]$SkipGui,
+    # 挑组执行：只跑这几组（透传给两个套件，写法 -Only M,N）
+    [string[]]$Only = @(),
+    # 除了这几组，别的都跑
+    [string[]]$Skip = @()
 )
 
 $ErrorActionPreference = 'Stop'
@@ -74,14 +79,21 @@ Write-Host (' 工程: ' + $root)
 
 Invoke-Suite -Title '编码红线体检' -ScriptPath (Join-Path $root 'tools\Test-Encoding.ps1')
 Invoke-Suite -Title '内联脚本与清单体检' -ScriptPath (Join-Path $root 'tools\Test-InlineSyntax.ps1')
-Invoke-Suite -Title '命令行回归' -ScriptPath (Join-Path $root 'tests\Test-Cli.ps1')
+
+# 挑组：透传给两个套件（组标记各自独立，所以同一个 -Only 会同时作用在两层上；
+# 命令行那边的公共前置 A 组由 Test-Cli 自己说明、由 tools\Test-Quick.ps1 自动补）
+$groupArgs = @()
+if (@($Only | Where-Object { $_ }).Count -gt 0) { $groupArgs += @('-Only', (@($Only) -join ',')) }
+if (@($Skip | Where-Object { $_ }).Count -gt 0) { $groupArgs += @('-Skip', (@($Skip) -join ',')) }
+
+Invoke-Suite -Title '命令行回归' -ScriptPath (Join-Path $root 'tests\Test-Cli.ps1') -ExtraArgs $groupArgs
 if ($SkipGui) {
     Write-Host ''
     Write-Host '===== 界面回归 ====='
     Write-Host '  -SkipGui 指定了，跳过。'
     $script:Skipped += '界面回归'
 } else {
-    Invoke-Suite -Title '界面回归' -ScriptPath (Join-Path $root 'tests\Test-Gui.ps1')
+    Invoke-Suite -Title '界面回归' -ScriptPath (Join-Path $root 'tests\Test-Gui.ps1') -ExtraArgs $groupArgs
 }
 
 Write-Host ''

@@ -16,155 +16,25 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
 > **接手 / 新会话先做两件事**：读 `docs\DESIGN.md`（外观与行为的**唯一正本**）和本文件。
 > 设计一改先改 `DESIGN.md`，再同步本 skill —— 两份分叉就会出现"两套行为"。
 
-## 当前状态（2026-10-06，v1.5.4）
+## 当前状态（2026-10-06，v1.5.4 已发布）
 
-- ⚠️ **2026-10-06 补一轮（用户拿到 v1.5.4 之前的构建之后报的）**：一共三件事。
-  ① 原话 **「气泡没有正常弹出，而且弹出的位置要跟随鼠标」**。根因：提示走的是**系统托盘气泡**
-  （`NotifyIcon.ShowBalloonTip`）—— 能不能看见由**用户的系统通知设置**说了算（这台是精简版
-  Windows，通知平台被裁过；Win10 / Win11 关掉「通知」或开着专注助手同样看不到），
-  而且位置由系统钉在**右下角**、离鼠标很远。现在改成**自己画的一张卡片**
-  （`src\Balloon.cs` 的 `NoticeForm`）：位置在**鼠标旁边**（右下 18/22，贴边翻到另一侧并夹进
-  那块屏幕的工作区）、**鼠标动它跟着动**（60ms 一拍、挪够 8 像素才动）、默认 6 秒自己消失、
-  点一下就关、**不抢焦点**（`ShowWithoutActivation` + `WS_EX_NOACTIVATE`）、不占任务栏。
-  新增 `--notify=<毫秒>` 定显示多久。见 `docs\DESIGN.md` **§12.56**；
-  回归 **N21 / N21b / N21c / N21d**（末尾那条"卡片上真的有字"是抓 `PrintWindow` 像素数的墨迹
-  —— **"有窗口"不等于"看得见"**，用户报的就是"看不到"）。见坑 28。
-  ② 用户说 **「【关于】按钮里面的网址要点击后可以访问，主页改成官网」** → 关于窗口里那两行改成
-  **LinkLabel**（链接色跟主题、划不划线跟鼠标），「主页」→**「官网」**；「常用链接」里那条也跟着改。
-  打开网址只有**一个入口** `MainForm.OpenUrl`（顺手写一行日志），`MXX1_NO_OPEN=1` 时只写日志
-  不真打开 —— 回归 **D07d** 真发鼠标消息点一下、靠这行日志断言，测试不会在别人桌面上弹浏览器。
-  ③ **CI 抓到的真事故**：见坑 29 —— 「一键解除占用」原来靠进程名黑名单判断系统进程，
-  在 GitHub runner 上**真的结束了系统服务**；底线改成「看归属不看名字」，
-  回归 **M34**（失败信息带 `targets=`）+ **M39**（源码级看门狗）。见 `docs\DESIGN.md` §12.57。
-- ✅ **2026-10-05 那一轮（已随 v1.5.4 一起发）**：用户问
-  **「工具箱里面的解除文件占用功能还有没有优化的空间？或者出一个不弹出窗口的版本」**，
-  拍板时说的是 **「保留现有的功能的前提下加个不弹窗的一键解除，对应也要单独加 2 个按钮
-  一个添加右键一个撤销右键」**，按钮名由用户点名：**装上一键解除占用 / 撤掉一键解除占用**。
-  这一轮 = 两条治本 + 第三个右键项：
-  ① **小窗口在查的时候是死的**（实测右键一个 400 个文件的文件夹：窗口 184ms 出现、
-  612ms 起完全没响应，一直到 7093ms）→ 扫描挪到**后台线程** + 状态行念秒数 + 查的时候按钮禁用。
-  见 `docs\DESIGN.md` §12.54；回归 **N20**（最长没人应 < 500ms，修好后实测 **0ms**）。
-  ② **「是哪个文件被占着」在大文件夹里报不出来**（原来只查**前 60 个**文件，实测 400 个文件里
-  占的是第 200 个 → 只会说"没定位到"）→ 改成**二分定位**（9 层约 18 次查询就指名，还比原来快）。
-  见 §12.55。
-  ③ **新入口「一键解除占用」**（`rightmenu unlock --auto`，`src\AutoUnlock.cs` + `src\Balloon.cs`）：
-  **不弹窗口**，后台查到谁占着它就**直接结束那些程序**，鼠标旁边一张提示卡说结果；
-  装 / 撤是**单独一对按钮**（`rightmenu.auto.on` / `rightmenu.auto.off`，页签 8 → **10 个按钮**）。
-  底线比窗口那条更窄（系统关键进程 / explorer / 工具箱自己一律不动；没同意条款一个进程都不碰）。
-  见 §14.14；回归 **M30–M38** + 界面 **N19/N19b/N21\***。
-  顺手还修了 `Make-Icons.ps1` 会给 `bin-tools\` 自动按钮画图标并提交进仓库的问题（见坑 27）。
-- ✅ **测试 358 项全绿**（本机 357 通过 + 1 跳过）：命令行回归 **207**（A03b–A03d/D01 盯兼容、R 组 14 项盯 **bin-tools 自动按钮**、
-  P 组 10 项盯**发布包内容**、S 组 26 项盯**条款确认门 + 更新检查**、**M 组 39 项盯「右键增强」**、A14–A17 盯 **exe 自己的图标**）
-  + 界面回归 **151**（I 组 27 项把**条款确认窗口**真开起来点一遍（含 I10b/I10c）、**N 组 27 项**盯「解除文件占用」小窗口 +
-  「一键解除占用」不弹窗口 + 鼠标旁边的提示卡、D07d 盯关于窗口里那两个能点的网址）
-  （外加编码体检 186 个文件、内联脚本与清单体检 34 个脚本 / 7 个清单 + 每个 `.ps1` 的语法）。
-  产物 `bin\Mxx1Toolbox.exe`（786,432 字节单文件 / 约 768 KB），
-  七个 `tools.*.json` + 114 个 `icons.*.png` + **`Disclaimer.md`（改过两次：第三项与一键解除那几段 +
-  「鼠标旁边的小提示卡」那两处）** + `assets\app.ico` 那份程序图标 已内嵌。
-  ⚠️ **条款正文又改过了**（`docs\DISCLAIMER.md`，v1.5.4 两次）→ 指纹变了 → **所有人（包括用户自己）下次打开界面
-  会重新看到一次《使用条款确认》**，这是设计如此（想免打扰：`Mxx1Toolbox.exe consent --accept`）。
-  **跑法固定：`powershell -ExecutionPolicy Bypass -File tests\Test-All.ps1`**（必须 Windows PowerShell
-  5.1 —— 套件里有 `-Encoding Byte`，pwsh 7 改叫 `-AsByteStream`，跑到 M20 会当场中断；`Bypass`
-  还会让子进程继承执行策略，M14f 那个"父进程拉子进程"的现场靠它。见 `docs\DESIGN.md` §15）。
-  **环境不满足的项走 `Skip()`**（打印 `[SKIP]`，不算失败）：原来的写法是 `Check ... $false 'skipped'`，
-  那会把"没测到"记成"失败" —— 克隆仓库的人在 C/F/G/R 组会一片假红。
-- ⚠️ **发布当天（2026-10-05）用户拿到 Release 后又报了两个真 bug，都已修并重传了资产**：
-  ① **打包漏文件**（「bin-tools 里面只有 PermanentDeleteSetup.exe 进压缩包了，memreduct 没有进」）——
-  打包原来写在 `build.ps1` 里，`bin-tools\` 只硬编码拷隔壁那一个安装器；同一处 `Copy-Item` 带通配符拷目录
-  **不带 `-Recurse` 只建空目录**，于是 `assets\icons\` 一百多张图标在包里是**空的**。
-  现在独立成 **`tools\Make-Package.ps1`**（逐条列文件 + 拷整棵树 + **回读 zip 逐个核对**，少一个就失败），
-  由 `build.ps1 -Package` 调用，命令行回归 **P 组**盯着它。见 `docs\DESIGN.md` §12.52。
-  ② **同意记录被"关闭窗口"抹掉**（「使用条款确认 每次打开都弹」）—— 主窗口那份 `Settings` 是
-  **构造函数**里加载的（比 `OnLoad` 的确认门早），关窗口时 `Save()` 拿旧快照把刚写下的指纹覆盖成空。
-  修法：`Settings.Save()` 里同意记录**只认磁盘那份**（`ConsentTouched` 标记由 `Consent.Accept/Reset` 置上），
-  确认通过后顺手刷新快照。见 `docs\DESIGN.md` §12.53，回归 I10b/I10c。
-- ✅ **v1.5.3（2026-10-05）四件事**：① **`bin-tools\<工具>\` 自动长按钮**（用户问
-  「bin-tools 里面的工具是不是应该自动加载一个按钮？」）；② **完整的更新检查 + 免责声明与服务条款 +
-  首次运行确认门**（用户点名照隔壁 `permanent-delete-menu` 那套做）；
-  ③ **Win7 / Win10 / Win11 兼容**（用户：「兼容只需要考虑 win7 win10 win11 就行了」）；
-  ④ **建 GitHub 仓库并推送**（用户：「你做好以后就上传仓库吧，没有建仓库那就建一个」）。
-  细节见下面各节，设计正本 `docs\DESIGN.md` §13.7 / §16 / §17。
-- ⚠️ **发布当天抓到的真 bug：更新检查的接口地址被写成了网页地址**（`2604290100/mxx1-toolbox`）。
-  原来 `UpdateCheck.ReleasesApi/TagsApi` 是拿 `AboutForm.RepoUrl` 拼的 →
-  `https://github.com/<账号>/<仓库>/releases/latest` 是 **HTML 页面**，请求里带着
-  `Accept: application/vnd.github+json` 时 GitHub 回 **406**，用户那边永远「检查失败：http-406」。
-  现在从仓库地址现推接口根（`MakeApiBase()` → `https://api.github.com/repos/<账号>/<仓库>`）。
-  **为什么两套测试都没抓到**：S 组全程用 `MXX1_UPDATE_URL` 指到本机假接口，绕开了默认值 ——
-  补了 **S01b**（只看 `checkupdate` 打印的 `api=` 那一行，**不联网也能跑**）。
-  **教训：凡是"默认值只在真实环境生效"的东西，必须有一条不依赖外部服务的断言盯着它。**
-- ⚠️ **v1.5.2 收尾修的三件事**（用户当天第三轮反馈）：① **编出来的 exe 没有图标** ——
-  `build.ps1` 里 `/win32icon:assets\app.ico` 要的文件**从来不存在**（那行等于没写），
-  现在有了 `assets\app.ico`（`tools\Make-AppIcon.ps1` 生成，八尺寸）+ `src\AppIcon.cs`
-  （WinForms 窗口的标题栏 / 任务栏图标是**另一回事**，不设 `Form.Icon` 就是它自带的空白窗体图标）；
-  ② **「解除文件占用」小窗口高度不跟着内容变**（原来是 `210 + 行数 × 20`，上面几行文字换行没算，
-  正文长时被切）→ 现在逐块量出来相加；③ **界面文案不许写成"推理"**（用户原话
-  「那些提示不要做得太像AI了，明明都是固定的功能，非要说什么线索」）—— 详见"界面硬规则"里那条"用户可见文案一律直白"。
-- ✅ **v1.5.1 修的是用户当天报的两个问题**（装完 v1.5.0 之后）：
-  ① **「解除文件占用」右键文件夹扫不到占用** —— 原来只枚举文件夹**第一层**的文件，第一层全是
-  子文件夹时直接放弃，而"占用它的是子文件夹里的 Word / PDF"正是最常用的场景；
-  ② **右键菜单项没有图标** —— 注册表 `Icon` 指的 exe 从来没有 `/win32icon`（`assets\app.ico`
-  不存在），而 `Icon` 又不认 `.png`。两条的根因 / 修法 / 实测写在 `docs\DESIGN.md` §14.11。
-- ✅ **八个页签、112 个内置按钮，全部是真功能，灰色占位一个不剩**：`常用`（置顶 + 最近使用**最多 30 个**，
-  算出来的）/ `常用设置` 33 / `系统工具` 26 / `隐私设置` 29（11 组成对开关 + 4 个权限入口 +
-  状态/优化/还原）/ `应用管理` 5 / `清理优化` 8 / `右键增强` 8 / `我的工具` 3（新建 / 导出 / 导入，真）。
-  灰色规则本身还在（用户自己写 `placeholder:true` 会灰掉、点不动）：两套测试会**临时往用户层
-  注入一个占位按钮**来盯住它，跑完必删。
-- ✅ **灰色 = 功能还没接入 = 禁止点击**（用户 2026-10-04 改的规则）：2 个占位按钮 `Enabled=false`、
-  灰底灰字 + **置灰图标**（`IconFactory.GetMuted()`）—— 点不动、不能聚焦、不弹提示；
-  禁用控件不显示 tooltip，所以状态栏在有灰按钮的页面上带一句「灰色 N 个没接功能」。
-- ✅ **「系统工具」26 个 + 「清理优化」8 个 + 「常用设置」33 个都是真功能**；
-  `run <id> --dry` 能把它们的目标解析一遍（缺组件给整句说明，家庭版没有 gpedit）。
-- ✅ **「常用设置」里 12 个写注册表的开关都能一键还原**（v1.4.0）：全部走 `src\RegEngine.cs`
-  （和隐私设置**共用同一份**"记原值 → 写入 → 读回核对 → 还原"的实现），记录写在
-  `%LOCALAPPDATA%\mxx1-toolbox\sysreg-original.tsv`；另有「查看设置改动 / 还原设置改动」两个按钮。
-  6 组开关：任务栏合并方式 / 开始菜单对齐 / 驱动自动安装 / 内核隔离 HVCI /
-  Win10-Win11 资源管理器 / Win10-Win11 右键菜单。**命令行没有写入口**（Test-Cli 的 L07 盯着）。
-- ✅ **窗口默认固定尺寸**（v1.4.0，用户定的）：高度 620，宽度 = 4 × 列宽 + 24 并且**粘在
-  `settings.ini` 的 `WindowWidth` 上**（第一次量出来就写进去）；名字超长的按钮改用省略号
-  （悬停提示里是全名），**不许把窗口撑宽**。「高度跟随当前页签的内容」降级成设置里的选项。
-- ✅ **跑完必有反馈**（v1.4.0，用户报的「点击确认以后也没有成功或者失败的反馈」）：页签下面一条
-  绿/红结果条（8 秒后自动收，点它看日志）+ 有输出就开结果窗口（标题写「成功/失败（用时 X 秒）」）
-  + 底栏「运行中（已 X 秒）」。确认改用自家的 `src\ConfirmForm.cs`，不再用 `MessageBox` 甩命令。
-- ✅ **搜索跨全部八个页签**（结果按页签分块），页签顺序按使用频率排过（`常用` 在最前）。
-- ⚠️ **这台机器是精简版 Windows（2026-10-04 实测）**：Windows 安全中心 App 没装、Defender 组件被移除、
-  `SettingsPageVisibility` 策略藏了设置里的 `windowsdefender` 页、BitLocker 的 `BitLockerWizard.exe`
-  不在、`wf.msc` 不在、`netsh advfirewall` 不存在、`firewall.cpl` 与 `control.exe /name …` 打开是空的、
-  NetSecurity / NetAdapter 模块都没有。所以：
-  **凡是"打开某个官方界面"的按钮，一律先探测再打开，探测不到就说明原因**
-  （探测用 `Test-Path` / `Get-Command` / `Get-AppxPackage` / WMI，别用 `Get-NetAdapter` 当判据）。
-  安全类按钮（实时防护 / Defender / SmartScreen / 防火墙 / UAC / 更新）**只打开官方界面，绝不代关系统防线**。
-- ✅ **「右键增强」8 个按钮（v1.5.0 / v1.5.1）**：前 7 个是工具箱自己在 `HKCU\Software\Classes` 下装的两样东西
-  （「解除文件占用」verb + 「常用功能」级联子菜单）—— 装 / 撤 / 状态 / 重建 / 说明；第 8 个还是
-  「永久删除工具」（不带参数启动隔壁 `PermanentDeleteSetup.exe`，开它自己的窗口）。详见下面那一节。
-  v1.5.1 把两件事补上了：**右键文件夹会往下扫 4 层**（并指名是哪个文件被占着）、
-  **菜单项的图标**（装的时候把内嵌 PNG 转成 `.ico`，两个父项 + 子菜单每一项都有）。
-- ✅ **GitHub 仓库已建并发布**：<https://github.com/2604290100/mxx1-toolbox>（账号 `2604290100`，
-  2026-10-05 由用户拍板"建一个"之后建的；用户还选了"顺手打 tag 发 Release"）。
-  已打 tag **`v1.5.3`**（指向最终提交）并发 Release，附 `Mxx1Toolbox.exe` 与 `Mxx1Toolbox-package.zip`
-  （发布说明里带 SHA256）；CI 是绿的（编码体检 + 内联体检 + 编译 + 命令行回归）。
-  **推送前依然要先问用户**（原话："推送的时候不要每次都推送，太卡了要问过我才行"）。
-  ⚠️ **同一天用户拿到包之后报了两个 bug，已修并"原样重传"了 `v1.5.3` 的两个资产**
-  （用户 2026-10-05 的选择：不另开版本号，直接换掉；发布说明里的 SHA256 也换成了新的）。
-  流程：`build.ps1 -Package`（编 + 打 → `bin\Mxx1Toolbox-package.zip`）→
-  `gh release upload v1.5.3 bin\Mxx1Toolbox.exe bin\Mxx1Toolbox-package.zip --clobber` →
-  用 `Get-FileHash` 算新的 SHA256 更新说明（`gh release edit v1.5.3 --notes-file …`）。
-  **注意**：这样 tag 指向的那个提交不再等于资产的内容（zip 里的 `build.ps1` 是新的）——
-  用户明确选了这个做法；下次要避免这种错位就改版本号发新 tag。
-- ✅ 按钮图标：112 个 16×16 PNG 由 `tools\Make-Icons.ps1` 生成并内嵌（`icons.<id>.png`；
-  用户自建按钮的图标**不**生成，免得把别人机器上的东西提交进仓库），
-  全部经 `IconFactory.Normalize()` 归一化成 16×15 画布（见"界面硬规则"里那条）。
-  优先级：清单里的 `icon` > `assets\icons\<id>.png` > 内嵌 > 程序内实时画的占位图标。
-- ✅ **程序自己的图标**（v1.5.2 收尾）：`assets\app.ico` = `tools\Make-AppIcon.ps1` 生成的
-  圆角蓝底 + 2×2 白色方块（"一墙按钮"），**16/20/24/32/48/64/128/256 八个尺寸各画一遍**、
-  32 位 DIB 拼 ICO（不写 PNG 帧），374 KB；`build.ps1` 交给 csc 的 `/win32icon`，
-  缺文件时会 `Write-Warning` 喊一声。**窗口那一份另外算**：`src\AppIcon.cs` 里的
-  `LoadImage(hInstance, "#32512", IMAGE_ICON, cx, cy)` 按窗口要的尺寸取（标题栏 ICON_SMALL 16/20/24、
-  任务栏 ICON_BIG 32），全部 9 个窗口都从 `Mxx1Form` 派生（在 `AppIcon.cs` 里），句柄建好 + Shown 各装一次。
-- ✅ **外部工具目录 `bin-tools\` 已实现**（用户定的名字）：查找顺序里加一档、`build.ps1 -Package` 自动拷入、
-  设置 / 关于窗口有「打开工具目录」、`kind: exe` 的相对路径按「工具箱目录 → `bin-tools\`」解析。
-- ✅ **工具文件夹自动长按钮（v1.5.3，`src\ToolFolders.cs`）**：见下面「外部工具目录 `bin-tools\`」那节。
-  ⬜ 还没做的只剩「把 `bin-tools\` 里的 exe 内嵌进 exe 当兜底」（`docs\DESIGN.md` §13 方案 ②）。
-- ⬜ P1：剩下的都做完了，只有「Win10 / Win11 资源管理器」两个继续灰着（含义待用户定）、按钮排序 / 隐藏 / 固定到常用、多步 `macro`。
+- 版本 **1.5.4**（`src\AssemblyInfo.cs` 是唯一来源），已打 tag `v1.5.4` 并发 Release：
+  <https://github.com/2604290100/mxx1-toolbox/releases/tag/v1.5.4>（`Mxx1Toolbox.exe` 788,992 字节 +
+  `Mxx1Toolbox-package.zip` 1,124,644 字节，说明里带 SHA256）。CI 绿的。
+- 测试 **358 项** = 命令行 **207**（206 通过 + 1 项环境不满足跳过）+ 界面 **151**；
+  编码体检 191 个文件。本地实测：命令行 116 秒、界面 146 秒。
+- **测试可以挑组跑了**（`-Only M,N` / `-Skip P`）+ 提交前闸门 `tools\Test-Quick.ps1` +
+  映射表 `tests\test-map.json`；分层与流程约定见 `docs\DESIGN.md` **§15**。
+- 这一轮（2026-10-06）改的东西：① 「一键解除占用」不弹窗口那条路（鼠标旁边一张提示卡，
+  `src\AutoUnlock.cs` + `src\Balloon.cs`）；② 解锁窗口扫描不再卡界面 + 二分定位占用者；
+  ③ 关于窗口的「官网 / 仓库」能点开；④ **CI 抓到的安全修复**：底线从"看进程名"改成"看归属"
+  （见坑 29）；⑤ 挑组执行 + 闸门 + 映射表 + 本 skill 拆成三份。
+- **条款正文这一轮改了三次**（`docs\DISCLAIMER.md`）→ 同意指纹变了 → **所有人（包括用户自己）
+  下次打开界面会再看到一次《使用条款确认》**（想免打扰：`Mxx1Toolbox.exe consent --accept`）。
+- ⚠️ **欠账**：最后一次改动之后只跑了命令行回归 + 探针，**界面回归没复跑**
+  （用户当时开着工具箱，明确说不用跑）。下次方便时补一次，`-Only` 挑组也行。
+- 详细历史（每一轮的来龙去脉、当时的原话与实测数字）在 **`HISTORY.md`**；
+  30 条踩坑清单在 **`PITFALLS.md`** —— 这两个文件按需读，别再往这一页里堆。
 
 ## 结构
 
@@ -225,6 +95,11 @@ D:\萌新工具开发\toolbox\
   tools\*.json                     112 个按钮的内置定义（编译时内嵌，资源名 tools.<文件名>）；7 个文件 =
                                  common / system / privacy / apps / cleanup / rightmenu / mine
   tools\Test-Encoding.ps1          编码红线体检（-Fix 修 BOM）
+  tools\Test-Quick.ps1             **提交前闸门**：读 git 改动 → 查 tests\test-map.json → 跑
+                                   L0（编码 + 内联）+ 编译 + `Test-Cli.ps1 -Only <受影响的组>`；
+                                   `-List` 打映射表，`-Gui` 连界面组一起跑（要你没开着工具箱）
+  tools\Sync-Skill.ps1             skill 三份副本同步成一个字节（正本=仓库里那份；-Check 只核对）
+  tests\test-map.json              **改哪块 → 跑哪些组**的映射表（给 Test-Quick.ps1 用；也当文档看）
   tools\Make-Screenshots.ps1       拍 docs\gui-shot.png / dark-shot.png / system-shot.png（PrintWindow）
   tools\Make-Icons.ps1             批量画图标（先从 exe 的 list 读清单，所以**先 build 再跑它**）
   tools\Make-AppIcon.ps1           画 assets\app.ico（程序自己的图标，八尺寸；改完要重新 build）
@@ -232,7 +107,7 @@ D:\萌新工具开发\toolbox\
                                    少一个文件就失败 —— 见"打包"那条坑）
   assets\icons\*.png               112 个按钮图标（编译时内嵌成 icons.<id>.png）
   assets\app.ico                   程序图标（`/win32icon` 用的就是它）
-  tests\Test-All.ps1               一条命令跑完全部
+  tests\Test-All.ps1               一条命令跑完全部（也支持 `-Only` / `-Skip` 透传给两个套件）
   tools\Test-InlineSyntax.ps1      内联脚本语法 + 清单 JSON + **每个 .ps1 的语法**体检（34 个内联 / 7 个清单）
   tests\Test-Cli.ps1               命令行回归 207 项（A03b–A03d/D01 盯兼容、A14–A17 盯 exe 图标、
                                    L 组 12 项盯 sysreg、J09–J11 盯卸载窗口的列表、M 组盯右键增强、
@@ -694,8 +569,25 @@ powershell -File tools\Make-AppIcon.ps1       # 重生成 assets\app.ico（改�
 
 ## 测试怎么用
 
-- **一律 `powershell -ExecutionPolicy Bypass -File tests\Test-All.ps1`**（Windows PowerShell **5.1**，
-  **不是 pwsh**）。两个坑都是 2026-10-04 用 pwsh 跑时踩的：① 套件里有 `Get-Content -Encoding Byte`
+- **别每次都跑全套**（2026-10-06 用户拍板：「单独改一个功能或者添加一个功能不应该影响到其他功能，
+  那其他功能就不用测试」）。分层跑法（正本 `docs\DESIGN.md` **§15**）：
+
+  | 层 | 跑什么 | 耗时 | 什么时候 |
+  | --- | --- | --- | --- |
+  | L0 | 编码体检 + 内联体检 | 约 5 秒 | **每次改完都跑，不商量**（BOM 掉了 / 清单坏了只有这两关能拦） |
+  | L1 | 映射到的命令行组（`-Only`） | 4 - 60 秒 | 提交前：`powershell -File tools\Test-Quick.ps1` |
+  | L2 | 映射到的界面组 | 约 2 分钟 | 涉及界面 / 互操作，且**你没开着工具箱** |
+  | L3 | 命令行全套 207 项 | 116 秒 | 推上去之后 CI 跑（在你机器之外） |
+  | L4 | 全套（命令行 207 + 界面 151） | 约 4.5 分钟 | **发版前一次** |
+
+- **挑组**：两个套件都支持 `-Only M,N` / `-Skip P`（组标记就是源码里 `# ---- X 组：…` 那行的字母，
+  前缀匹配）。**命令行挑组必须带上 A 组**（B/C/F/H/I/K/M/P/S 都读 A 跑出来的 `$status` 等公共量；
+  `Test-Quick.ps1` 会自动加）。汇总里会打 `本次没跑的组: …` —— **那一行要写进提交信息与汇报**，
+  **发版前要清空这份欠账**（v1.5.4 就是带着"界面回归没复跑"发出去的，那之后才定的这条规矩）。
+- **必须先确认工具箱没开着**（`Get-Process Mxx1Toolbox` 空）：两个套件都会写 `settings.ini` /
+  暂停用户 `tools.json`，正跑着的那个实例会把内存状态写回去 → 一整套假红。**不要杀用户的进程。**
+- **一律 `powershell -ExecutionPolicy Bypass -File …`**（Windows PowerShell **5.1**，**不是 pwsh**）。
+  两个坑都是 2026-10-04 用 pwsh 跑时踩的：① 套件里有 `Get-Content -Encoding Byte`
   （PS 7 改成了 `-AsByteStream`）→ 跑到 M20 当场抛 `'Byte' is not a supported encoding name`
   并**中断整个套件**（那一次用户的 `tools.json` 就留在暂停状态了，见 §12 坑 12）；
   ② `-ExecutionPolicy Bypass` 会设 `PSExecutionPolicyPreference` 环境变量、**子进程继承** ——
@@ -714,159 +606,10 @@ powershell -File tools\Make-AppIcon.ps1       # 重生成 assets\app.ico（改�
   按钮清单**从 `Mxx1Toolbox.exe list` 读**，两边必须一致（别在测试里写死名单）。
 - `tests\Test-Cli.ps1` 里 `run <id> --dry` 会把 12 个系统工具全解析一遍（不许真的开 12 个窗口），
   并且直接问隔壁 `PermanentDeleteSetup.exe status` 拿 `installed=` —— "找得到 + 真能跑"都证明一次。
-- 容易写错的断言（本仓库都踩过）：
-  1. **灰按钮是禁用的**（`Enabled=false`）：要断言"点不动"就读 `IsWindowEnabled`，
-     **别用 `PostMessage(BM_CLICK)` 证明** —— 直接投递的消息不一定被禁用状态挡住（踩过，见 DESIGN §12 坑 18）；
-  2. WinForms `Label` 是有窗口句柄的（`STATIC` 类），所以"标签压按钮"能被枚举出来；
-  3. 读 `status` 的 `key=value` 时**别让行尾 `\r` 混进值里**（`([^\r\n]*)` + `Trim()`），
-     否则 `Test-Path` 会报"路径含非法字符"；
-  4. "按钮/文字被裁"这类问题**用 `GetParent` + 矩形包含**来判（D01b），别靠肉眼看截图；
-  5. "文字超长"这类问题用**测量**来判（B06b / D01d / E07），别等用户截图来报；
-  6. 验证"点击后有没有跳动"直接**读点击过程中的控件文字**（E05），别做像素 diff；
-  7. **"文字被裁了没有 / 图标居中不居中 / 灰按钮真灰不灰"只有渲染结果能判**：
-     `PrintWindow(PW_RENDERFULLCONTENT)` 抓像素 → `LockBits` 拿 `byte[]` →
-     背景 = 内区出现最多的颜色 → 按行数墨迹判定。
-     判据：图标是**亮而饱和**（`max-min > 60 && max > 140`）**或明显比底色暗**（`mx < bgMax - 45`）
-     的色块（第二条是为了**灰图标**，只认第一条时灰图标会被当成背景，文字行数会算进图标 → 15 行）；
-     文字是暗墨迹。灰度判定用"最暗墨迹"：**真按钮 26、灰按钮 77**（禁用控件画字会描 1px 深影，
-     所以不再是纯灰的 138）→ 判据"真 ≤ 80、灰 ≥ 60、差 ≥ 30"。
-  8. **判"有没有弹窗"要按窗口类 `#32770`**：WinForms 的 `ToolTip` 也是顶层窗口
-     （`tooltips_class32`、标题空），按"除主窗口外的可见窗口"判会把 tooltip 当成弹窗；
-  9. **`function f { return @(单个对象) }` 会被解包成单值**，而单个 `PSCustomObject` **没有 `.Count`**，
-     所以 `$x.Count -gt 0` 恒为 False —— 调用处再包一层 `@(f ...)`；
-  10. **界面回归不能依赖用户的 `settings.ini`**：一开头先写一份已知设置（浅色 / 单击 / 二次确认开 /
-      日志面板关），跑完在"现场复原"里按原样写回。用户开着日志面板时 B08 会假红（踩过一次）。
-  11. **跨进程往输入框填字要用 `WM_SETTEXT`，而且 `DllImport` 必须写 `ExactSpelling = true`**：
-      `CharSet = CharSet.Unicode` 会把 `W` 追加到**入口点**上（不只是方法名），写法不对就抛
-      `EntryPointNotFoundException`。填完**一定要回读**（`[TBGui]::Text`）再往下走 ——
-      填不进去就点不动「创建按钮」，**模态窗口一直开着会把主窗口压成禁用**，后面每一组检查全部连带失败，
-      看着像"测试卡死"（2026-10-04 真卡了一次）。
-      开过模态窗口的测试，**每条分支出口都要关掉它**：`Close-StrayDialogs` 收尾 + C16 专门盯残留。
-  12. **测试对用户真实数据是"临时占用"**：为了数按钮数会把用户的 `tools.json` 改名成 `.paused-by-*`。
-      中途被 Ctrl+C / 卡死，这个"放回来"就永远不执行 → 用户看到"我建的按钮没了"。
-      所以**开工先自愈**（发现 `.paused-by-*` 在而正式文件不在，先搬回去），
-      `settings.ini` 另留一份 `.before-test` 备份，收尾成功才删。
-      **两道防线缺一不可**（2026-10-04 又踩了一次）：① **两个套件都要挂脚本级 `trap`**
-      （Test-Gui 早就有，Test-Cli 原来是裸的 —— 它一样会暂停用户文件，脚本级错误一来收尾就没了）；
-      ② **"把暂停文件放回去"这件事不许依赖 JSON 解析成功**：用户 `tools.json` 的 `_comment` 里
-      有不合法转义（`\*`，JSON 里 `\` 后面只允许 `" \ / b f n r t u`）时 `ConvertFrom-Json` 直接抛错，
-      三道闸整段被跳过 → 连搬回文件都做不成。现在解析前先跑 `Repair-JsonEscapes`（把这类转义补成
-      合法的，只影响解析、不动用户文件），`_comment` 里写的也是合法的 `tools\\*.json`。
-  13. **函数定义必须放在第一次调用之前**：PowerShell 边解析边执行，`Switch-Tab` 定义在第 735 行、
-      第 566 行就调用 → `CommandNotFoundException` 当场终止脚本，**收尾那段"把用户 tools.json 放回来"
-      根本没跑**（2026-10-04 真发生：用户的按钮文件被留在 `.paused-by-gui-test` 状态）。
-      除了把定义提前，还要在脚本开头挂**脚本级 `trap`** 调 `Restore-UserLayer`（复原设置 / 用户
-      `tools.json` / 杀掉 `$script:Procs` 里自己拉起来的界面进程）**只杀自己起的进程**。
-  14. **改 `settings.ini` 之前必须先关掉那个正在跑的窗口**：窗口关闭时会把**当前停留的页签**写回
-      `LastTab`，先写设置再关窗口 = 被覆盖 → 下一个实例开在别的页签上，后面一组检查全假红
-      （深色组 G03/G05 就是这么红的）。顺序：**先关窗口 → 再写设置 → 再 Start-Gui**。
-  15. **改完清单要"严格"校验 JSON**：`Json.cs` 严格解析，多一个逗号整份清单被丢掉（105 → 73），
-      而 PS 7 的 `ConvertFrom-Json` 对尾随逗号很宽容、验不出来。用
-      `[System.Text.Json.JsonDocument]::Parse(...)` 或直接 `Mxx1Toolbox.exe list --tab <页签>` 数一遍。
-  16. **H 组注入长名字按钮时，要把原来的占位按钮一起留着**：`$commonNames` 是带着占位按钮读出来的，
-      换掉它会让 H05 数按钮数少一个而假红。
-  17. **悬停检查（B10/B11）是真动系统鼠标**：`SetCursorPos` + 读 `ToolTip` 窗口文字。用户自己开着另一个
-      工具箱实例时，两个窗口叠在一起、鼠标被上面那个接走 → 假红"没找到说明"（2026-10-04 真踩过）。
-      所以测试实例写 `settings.ini` 前会先枚举屏幕上的工具箱窗口，挑一个不相交的角落放自己；悬停重试 3 次；
-      失败信息里带 `[TBGui]::WindowAt(x,y)` 与 `Foreground()`，一眼能看出是不是环境问题。
-  18. **按钮增减会连累一批"写死数量"的老断言**：v1.5.0 加 7 个按钮，Test-Cli 里 A04/A07/A09/A10/A11/H02
-      六项全红（都是 105 / 右键 1 这种硬编码），Test-Gui 那边因为名字是 `list` 读出来的反而没事。
-      v1.5.4 又加 2 个（一键解除那一对）→ 同样这六项 + M03/M05/M07/M08 一起红（112 → 114、右键 8 → 10）。
-      **加按钮时按顺序搜：`112`（现在是 114）、`右键增强 8`、`'rightmenu' = 8`、`ok=8/8`、`菜单图标 8 个`**
-      —— 页签分布那串数字（0/33/3/26/8/29/5/10）也在两处。
-  19. **悬停说明（`hint`）别超过 110 字**：`ToolTip` 不换行，太长会顶出屏幕（H05 盯着）。
-      长说明写进「右键增强说明」那种窗口里，`hint` 只留一句话。
-      ⚠️ v1.5.4 又踩一次：改 `rightmenu.auto.on` 的 hint 补了"提示卡 / 看归属"那两句，
-      变成 **127 字**，本地没跑命令行回归、**CI 上 H05 当场红**。
-      **改完 hint 就量一下**（`tip <id>` 每行都 ≤110 字，`tip` 是 winexe，要
-      `Start-Process -Wait -RedirectStandardOutput`）。
-  20. **`& bin\Mxx1Toolbox.exe …` 在命令行里读输出会读串**：它是 `/target:winexe`，PowerShell
-      **不等待** GUI 子系统程序 —— `$LASTEXITCODE` 是空的、`$o = & $exe …` 是 `$null`、
-      几次调用的输出还会挤在一起冒出来（2026-10-04 排查"RM 查不查得到占用"时被骗过一次：
-      把上一次调用的输出当成了这一次的结论）。**一律 `Start-Process -Wait
-      -RedirectStandardOutput`**（`Invoke-Exe` 就是这么做）。
-  21. **GDI+ 的 `Image.FromStream` 要那个流活到图片用完**：`using (ms) { img = Image.FromStream(ms) }`
-      之后再画会抛"参数无效"（惰性解码）。`.ico` 也别指望 PNG-in-ICO，自己拼 32 位 DIB
-      （`BITMAPINFOHEADER` + 自下而上的 BGRA + 全 0 的 AND 掩码）。
-  22. **编码体检会拦"绝对路径"**：测试里造"旧版菜单"的假命令时写了 `C:\old\Mxx1Toolbox.exe`，
-      `Test-Encoding.ps1` 立刻报 `FAIL abs path`。用 `'"' + $Exe + '" …'` 拼，别写字面量。
-  23. **打包（`Copy-Item` 拷目录必须带 `-Recurse`）**：2026-10-05 用户报「bin-tools 里面只有
-      PermanentDeleteSetup.exe 进压缩包了，memreduct 没有进」—— 而翻 zip 时还发现 `assets\icons\`
-      在包里是个**空目录**（112 张按钮图标一张没进；`Copy-Item (Join-Path $root 'assets\*') $dst`
-      不带 `-Recurse` 时，目录**只建目录、不拷文件**，还不报错）。现在打包在
-      **`tools\Make-Package.ps1`**：逐条列文件 + 拷整棵树 + **回读 zip 逐个核对**（少一个就失败）。
-      **教训：批处理式的"打包 / 拷贝"一定要有一句"打完自己读回来核对"**，否则错误只能等用户翻包。
-      回归：Test-Cli 的 **P 组**（P03 盯图标、P04/P05 盯工具目录、P08 盯失败路径、P09 盯"没碰真包"）。
-  24. **别用旧快照覆盖"另有一条权威写入路径"的字段**：2026-10-05 用户报「使用条款确认 每次打开都弹」。
-      主窗口的 `_settings` 是**构造函数**里 `Load()` 的，确认门在 `OnLoad` —— 快照比同意早，
-      关窗口 `Save()` 就把刚写下的指纹盖成空。修法：`Settings.Save()` 里同意记录**只认磁盘那份**
-      （`ConsentTouched` 由 `Consent.Accept/Reset` 置上），主窗口确认通过后顺手刷新快照。
-      同类字段以后还会遇到（注册表原值、安装状态…）：**要么别放进这个对象，要么保存前合并**。
-      回归：Test-Gui **I10b**（关窗口后记录还在）/ **I10c**（重开不再弹）——
-      原来的 I09 是窗口**还开着**时查的，所以这个 bug 从测试里溜过去了。
-  25. **"这一步要几秒"就不能放在界面线程上**：解锁窗口原来在 `Shown` 里同步调 `FileLock.Scan()`
-      （实测右键一个 400 个文件的文件夹：窗口 184ms 出现、**612ms 起完全没响应，一直到 7093ms**，
-      拖不动、关不掉、任务栏写"无响应"）。而那个扫描**最坏十几秒**（时间 90% 花在系统的
-      `RmGetList` 上，工具自己的代码只占 0.8 秒），**慢不慢还取决于系统对那批路径的心情**
-      （同样的文件换个文件夹 6.1 秒 → 0.23 秒），代码里根本预判不了 → 只能挪到后台线程。
-      判据也别用"窗口还在不在"（窗口一直在，只是不回消息）：用
-      `SendMessageTimeout(WM_NULL, SMTO_ABORTIFHUNG)` 量"最长一次没人应的时长"，回归 **N20**
-      （修好后实测 **0ms**）。**这招拆小批次救不了**（400 个一批 5620ms vs 50 个一批查 8 次 5461ms）。
-      连带两个小教训：**扫描期间那三个按钮要禁用**（查完恢复）—— 于是测试点按钮前必须等它 `Enabled`，
-      否则点了禁用按钮会什么都不发生，然后假红成"没弹出确认框"（N09 真踩过）；
-      状态行上的秒数由界面线程的 `Timer` 改，**它还在动就说明界面没被堵住**。
-  26. **"挨着问前 N 个"不等于"定位到了"**：原来"是哪个文件被占着"是拿文件夹里**前 60 个**文件
-      挨着问一遍 —— 400 个文件里被占的是第 200 个时，只会得到一句"查到了占用的程序，但没定位到
-      是文件夹里哪个文件"（而这是 v1.5.1 专门做出来的东西）。改成**二分定位**：整批已经知道
-      "有人占着"，就劈成两半各问一次，哪半有人占着继续劈 —— 靠的是 RM **全有或全无**的性质。
-      400 个文件里 1 个被占：**9 层约 18 次查询**（原来 60 次，还找不到），**又快又准**。
-      查询次数要留预算（`MaxAttributeQueries = 64`；System32 那种被占很多的文件夹会撑大二分树）。
-  27. **`Make-Icons.ps1` 会给 `bin-tools\` 里的工具画图标并提交进仓库**：实测跑一次多出
-      `assets\icons\mine.memreduct.png`（那是我这台机器 `bin-tools\memreduct\` 自动长出来的按钮，
-      id 还是从文件夹名推的）。现在它连**自动按钮**一起跳过（读 `status` 的 `autoButton=` 行）——
-      注意 `Mxx1Toolbox.exe` 是 winexe，**必须 `Start-Process -Wait -RedirectStandardOutput`** 才读得到
-      输出（就是坑 20），`& $exe status` 拿到的是空数组，跳过的名单会静默变成空的。
-  28. **"让系统替你弹提示"= 把"能不能看见"交给了用户的系统设置**：用户 2026-10-06 报
-      **「气泡没有正常弹出，而且弹出的位置要跟随鼠标」** —— 原来那条路用的是
-      `NotifyIcon.ShowBalloonTip`，它 ① 能不能看见由用户的**通知设置 / 专注助手**说了算
-      （这台还是精简版 Windows，通知平台被裁过），② 位置由系统钉在**右下角**，离鼠标很远。
-      现在改成**自己画的卡片**（`src\Balloon.cs` 的 `NoticeForm`）：位置在鼠标旁边（右下 18/22，
-      贴边翻到另一侧并夹进那块屏幕的工作区）、鼠标动它跟着动、几秒自消、点一下就关，
-      而且要 `ShowWithoutActivation` + `WS_EX_NOACTIVATE`（**不许抢焦点**：正在打字时字照样
-      打进原来那个窗口）+ `WS_EX_TOOLWINDOW`（不进 Alt+Tab）。
-      位置实测（`GetCursorPos` + `GetWindowRect` 对着量）：鼠标 700,300 → 卡片 718,322（dx=18,dy=22）；
-      鼠标 1880,1020 → 卡片 1603,940（右下放不下，翻到左上）。
-      连带两条：① **"有窗口"不等于"看得见"** —— 回归 **N21d** 抓 `PrintWindow` 的像素数墨迹才算验过；
-      ② N21 要**真动鼠标**（`SetCursorPos`），所以先存原来的位置、跑完放回去（和 B10/B11 一个规矩），
-      而且采样几次取最贴的一次（卡片跟鼠标有 ≤60ms 的滞后，用户也可能正在动鼠标）。
-  29. **"进程名黑名单"拦不住系统进程 —— 看"归属"才拦得住**（2026-10-06 **CI 抓到的真事故**，
-      不是自己发现的）：v1.5.4 推上去之后 GitHub runner 上 **M34 红了**，而且是真出事了 ——
-      `[FAIL] M34 … (auto=killed killed=2 占用者 3→1)`：**「一键解除占用」在别的机器上真的结束了
-      系统服务**（那台机器上我们正好是管理员，"结束失败"这层保险也没兜住）。
-      根因：底线原来是一张**进程名黑名单**（`CriticalNames`：svchost / lsass / wininit…），
-      名字来自 `Process.GetProcessById(pid).ProcessName` —— **权限不够时读不出来**，
-      代码退回 `RmGetProcessInfo` 报的**友好名**（"Windows Event Log" 这种服务名），
-      黑名单一条都对不上，于是它就动手了。
-      **教训：名字是别人给的、随时可能读不到；归属是系统给的、读不到就拒绝。**
-      修法（`FileLock.AutoUnlockTarget` 现在是「归属 + 来源 + 名字」三层，任何一层不确定就拒绝）：
-      ① `NotMine` —— 进程令牌里的用户 SID 和当前进程不一样（SYSTEM / 别的账户 / TrustedInstaller）；
-      ② `IsService` —— `RM_APP_INFO.ApplicationType == RmService`；
-      ③ `NameUnread` —— `ExeNameOf(pid)` 空（手里只有友好名，名单无效）。
-      **读不到就当成"不是自己的"**（fail closed）。窗口那条路一个字没改。
-      本机实测：系统事件日志 `killed=0 targets=`（一个都没挑中）；自己开的 powershell 独占的文件
-      `killed=2 targets=powershell.exe`（照结束）。回归 **M34**（失败信息带 `targets=`）
-      + **M39**（源码级看门狗：盯住那三条拒绝还在 —— 真造"系统服务占着文件"的现场要管理员 +
-      计划任务，造不出来只能 Skip，那等于没测）。见 `docs\DESIGN.md` §12.57。
-      连带一个调试小习惯：**"挑中了谁"要能看见**（`targets=`）—— 出事时第一句要问的就是它。
-  30. **给 `LinkLabel` 发 PostMessage 不会触发 `LinkClicked`，只有真鼠标才会**：用户 2026-10-06 要
-      「关于里面的网址点一下能打开」，回归 D07d 一开始写的是发 `WM_MOUSEMOVE` +
-      `WM_LBUTTONDOWN` + `WM_LBUTTONUP`（窗口已经 `SetForegroundWindow`、坐标就是控件正中间）——
-      **一条日志都不写**；换成 `SetCursorPos` + `mouse_event`（真鼠标）**立刻**就写了
-      「打开链接 https://mxx1.cn」。所以"能不能点"这种事只能真点（`TBGui.RealClick`）。
-      连带两条：① 真点之前先用 `WindowFromPoint` 确认鼠标底下**就是那个控件**
-      （`TBGui.HandleAt`，别用 `WindowAt` —— 那个会往上找顶层窗口），不是就跳过，别误点用户别的窗口；
-      ② 真点之前把鼠标位置存下来、跑完放回去（和 B10/B11 一个规矩）；
-      ③ 链接类控件跨进程看**类名没用**（LinkLabel 底下还是 `STATIC`），只能靠"点一下有没有反应"验。
+> **30 条坑已挪到 `PITFALLS.md`**（`skill\mxx1-toolbox\PITFALLS.md`）。
+> 里面是"容易写错的断言 / 哪些做法踩过"那 30 条，逐条写清楚了根因与判据 ——
+> 改测试、改界面探针、改文案之前**按需读一次**，别在没读的情况下照着直觉写。
+
 - **别在 PowerShell 里按像素调函数**：一个 `Get-Pixel` 每像素调一次，几万次调用要几分钟，
   看起来像卡死（踩过一次）。要么 `LockBits` 取一次 `byte[]` 再纯数组循环（`Get-InkRows` 的写法），
   要么用 csc 编个临时小工具（`local\InkDiag.cs` 那种）。
@@ -899,6 +642,18 @@ powershell -File tools\Make-AppIcon.ps1       # 重生成 assets\app.ico（改�
 5. P1 的范围（先接哪个页签的真功能）要问用户，别自己挑。
 6. 图标要改样式就动 `tools\Make-Icons.ps1` 的关键词映射 / 配色，然后按
    `build.ps1 → Make-Icons.ps1 → 删孤儿 → build.ps1` 的顺序跑。
-7. skill 三处同步：`D:\萌新工具开发\.dsh\skills\mxx1-toolbox\SKILL.md`、
-   仓库内 `toolbox\skill\mxx1-toolbox\SKILL.md`、`%USERPROFILE%\.dsh\skills\mxx1-toolbox\SKILL.md`
-   （**三份必须字节一致**，用 SHA256 核对）。
+7. skill 三处同步（现在是**三份文件 × 三处 = 九份**：`SKILL.md` / `PITFALLS.md` / `HISTORY.md`）：
+   `D:\萌新工具开发\.dsh\skills\mxx1-toolbox\`、仓库内 `toolbox\skill\mxx1-toolbox\`、
+   `%USERPROFILE%\.dsh\skills\mxx1-toolbox\`。**别手工拷**，跑
+   `powershell -File tools\Sync-Skill.ps1`（`-Check` 只核对，会逐个比 SHA256）。
+   正本是**仓库里那份**；工作区级与用户级那两份是给 DSH 加载用的。
+8. **流程约定（2026-10-06 用户拍板，正本 `docs\DESIGN.md` §15.4）**：
+   ① 本地随便提交，**push / 发版要用户点头**（原话"本地推送可以线上推送得经过我点头"）；
+   ② 每次向用户汇报**带一行「未推送提交」**（`git log origin/main..HEAD --oneline` 的真实输出，
+   别手写状态）；③ 提交信息写四段：改了什么 / 为什么 / 我验了什么 / 我没验什么；
+   ④ 提交前跑 `tools\Test-Quick.ps1`，汇报里指名跳过了哪些组；⑤ **发版前清空"没跑的测试"欠账**。
+9. ⚠️ **界面回归的欠账**（2026-10-06 晚）：v1.5.4 发版前没复跑，之后补跑了两次 ——
+   一次 150 通过 + 1 失败（N21b，环境：鼠标挪不动，现在会走 `[SKIP]`），
+   一次 149 通过 + 2 失败（B10/B11，环境：用户当时开着自己的工具箱，现在会走 `[SKIP]`）。
+   **这两条已经改成"环境不满足就 Skip"，但改完还没在"工具箱关着"的条件下复跑过完整 151 项** ——
+   下次方便时（用户关掉工具箱）补一次：`powershell -File tests\Test-Gui.ps1`。

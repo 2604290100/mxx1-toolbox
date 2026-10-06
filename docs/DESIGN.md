@@ -441,7 +441,7 @@ CLI：`list [--tab <id>]` / `run <id> [--admin] [--dry]` / `status` / `checkupda
 
 - `build.ps1` 一次通过，产出单文件 `bin\Mxx1Toolbox.exe`（788,992 字节，含 114 个内嵌按钮图标 +
   `assets\app.ico` 那份程序图标），无警告
-- `tools\Test-Encoding.ps1` 全绿（186 个文件）
+- `tools\Test-Encoding.ps1` 全绿（191 个文件）
 - `tools\Test-InlineSyntax.ps1` 全绿（34 个内联脚本 + 7 个清单 + **仓库里每个 `.ps1` 也真解析一遍**）
 - `tools\Make-Package.ps1` 独立可跑：189 个文件进包、回读 zip 逐个核对、`bin-tools\` 里的工具一个不少
 - `tests\Test-Cli.ps1` **207 项**（206 通过 + 1 跳过）：中文不乱码、按钮数 114（用户层暂停）、八个页签分布 0/33/3/26/8/29/5/10、
@@ -475,6 +475,9 @@ CLI：`list [--tab <id>]` / `run <id> [--admin] [--dry]` / `status` / `checkupda
   **I10c 重开不再弹** —— §12.53 那个 bug 的回归）
 - `tests\Test-All.ps1` 合计 **358 项全绿**（命令行 207 + 界面 151，外加编码体检与内联脚本体检）
   —— 注意**要用 `powershell -ExecutionPolicy Bypass` 跑**，理由见 §15
+- 提交前闸门 `tools\Test-Quick.ps1` 能按改动挑组跑完（本机实测 `-Changed tools/cleanup.json` → 9.2 秒：
+  编码 + 内联 + 编译 + `Test-Cli -Only A,B,H` 全过，并把"没跑的组"逐条列出来），
+  映射表 `tests\test-map.json` 里的组名对着套件里真实的组标记校验（写错就当场失败）—— 见 §15.3
 - 截图：`docs\gui-shot.png`（浅色 628×505）、`docs\dark-shot.png`（深色 628×505）、
   `docs\system-shot.png`（系统工具页签 628×541）
 
@@ -1704,11 +1707,14 @@ auto=locked  killed=0
 `--notify=0` 和 `--quiet` 都是**不要提示卡**（`MXX1_NO_NOTIFY=1` 也行）。
 回归测试一律带 `--quiet`；只有 N21 那四条故意不带，它用 `--notify=3000` 把等待时间压到 3 秒。
 
-## 15 测试怎么跑（2026-10-04 补：别用 pwsh 跑）
+## 15 测试怎么跑（2026-10-04 补：别用 pwsh 跑；2026-10-06 补：分层与挑组）
 
 ```
-powershell -NoProfile -ExecutionPolicy Bypass -File tests\Test-All.ps1        # 全套
-powershell -NoProfile -ExecutionPolicy Bypass -File tests\Test-Cli.ps1        # 只跑命令行回归
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\Test-Quick.ps1       # 提交前闸门（只跑受影响的组）
+powershell -NoProfile -ExecutionPolicy Bypass -File tests\Test-All.ps1         # 全套
+powershell -NoProfile -ExecutionPolicy Bypass -File tests\Test-Cli.ps1         # 只跑命令行回归
+powershell -NoProfile -ExecutionPolicy Bypass -File tests\Test-Cli.ps1 -Only M,N   # 只跑 M、N 两组
+powershell -NoProfile -ExecutionPolicy Bypass -File tests\Test-Gui.ps1 -Skip P     # 除了 P 组都跑
 ```
 
 - **必须用 Windows PowerShell（5.1）跑，而且要带 `-ExecutionPolicy Bypass`**。两个理由都是真踩过的：
@@ -1719,6 +1725,71 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tests\Test-Cli.ps1        # 
   子进程 `-File child.ps1` 直接被拒 → `child=0` 假红。
 - 两个套件都会把用户的 `%LOCALAPPDATA%\mxx1-toolbox\tools.json` **暂停**到 `.paused-by-*` 再复原；
   现在两边都挂了**脚本级 `trap`**（Test-Cli 原来没有），任何脚本级错误都会先把用户文件放回去。
+
+### 15.1 分层：不是每次都要全量（2026-10-06 定的）
+
+用户 2026-10-06 的原话：「**单独改一个功能或者添加一个功能不应该影响到其他功能，那其他功能就不用测试**」。
+这个前提在按钮墙这套架构上成立（一个按钮 = 一条清单 + 一条启动路径，页签之间不共享代码），
+所以"只测改动"站得住 —— 但**跨切面的体检不能省**，它们抓的正是"静默毁功能"，而且代价接近 0：
+
+| 层 | 跑什么 | 耗时（本机实测） | 什么时候 |
+| --- | --- | --- | --- |
+| L0 | 编码红线体检 + 内联脚本与清单体检 | 约 5 秒 | **每次改完都跑，不商量** |
+| L1 | 命令行回归里"这次改动影响得到"的组 | 4 秒 - 60 秒（看组） | 每次提交前（`tools\Test-Quick.ps1`） |
+| L2 | 界面回归里映射到的组 | 约 2 分钟 | 涉及界面 / 互操作，且你没开着工具箱 |
+| L3 | 命令行回归全套（207 项） | 116 秒 | 推上去之后由 CI 在 GitHub runner 上跑 |
+| L4 | 全套（命令行 207 + 界面 151）+ 人眼清单 | 约 4.5 分钟 | **发版前一次** |
+
+两条纪律：
+
+1. **L0 永不省**：BOM 掉了中文变乱码、清单 JSON 坏了整页按钮消失 —— 这两类错误没有别的关卡能拦。
+2. **没跑的组要指名写出来**（不是笼统的"没测全"），而且**发版前必须清空这份欠账**。
+   2026-10-06 的 v1.5.4 就是在"界面回归没复跑"的状态下发的；那次之后才把这条写成规矩，
+   并在两个套件的汇总里加了 `本次没跑的组: …` 这一行。
+
+### 15.2 挑组执行（`-Only` / `-Skip`）
+
+两个套件都支持 `-Only A,B` / `-Skip P`：组标记就是各自源码里那些 `# ---- X 组：…` 注释里的字母，
+**前缀匹配**（`-Only A` 会带上 `A14` 那种子块）。实现是每个组外面包一层
+`if (Test-GroupSelected 'A') { … }`，没选中的组整段不执行 —— 连夹具、真起进程那部分也不跑，
+所以挑组是真省时间：`-Only A,E` 实测 **4 秒** vs 全套 **116 秒**。
+
+- **公共前置**：命令行的 B/C/F/H/I/K/M/P/S 都读 A 组跑出来的 `$status` / `$WinName` 这些量，
+  所以挑任何组都要带上 A（`tools\Test-Quick.ps1` 自动加，`Test-Cli.ps1` 文件头也写着）。
+  界面那边的夹具都在「准备」段里（分组之前），不需要前置组。
+- **`-Only` 只影响中间的检查组**：界面套件的「准备」段与「现场复原」段照旧总会跑
+  （不然测试实例起不来、用户的设置也复原不了）。
+- 汇总里会打印 `本次跑的组: …` 与 `本次没跑的组: …`（组名单是读自己源码里的标记得出的，
+  不维护第二份名单）。挑组**不许**把真断言改成"跳过" —— 只是不跑。
+
+**做这件事时踩到的两个坑**（都是实测出来的，教训写在代码注释里）：
+
+1. `powershell -File x.ps1 -Only M,N` 传进来的是**一个字符串 `"M,N"`**，不是数组 ——
+   第一次实测就是"挑了 A,E 却一组都没跑"（`本次跑的组:（无）`）。现在两个套件都按 `, ; 空格` 自己拆。
+2. `param([string[]]$Skip)` 和 Test-Cli 里原有的**跳过计数器 `$script:Skip`** 撞名了
+   （PowerShell 变量不区分大小写，`$script:Skip = 0` 把参数里的数组直接覆盖成整数 0）——
+   表现是横幅打出"跳过 0"。计数器改名 `$script:SkipCount`。
+   教训：**给测试脚本加参数之前先 grep 一遍同名变量**（大小写不敏感）。
+
+### 15.3 映射表与闸门
+
+- **映射表 `tests\test-map.json`**：`改哪块（路径通配） → 跑哪些组`。它既是数据也是文档：
+  `powershell -File tools\Test-Quick.ps1 -List` 会把整张表打成人话（含每组盯什么）。
+- **闸门 `tools\Test-Quick.ps1`**（约 1 分钟）：读 git 里的改动 → 查映射表 → 跑
+  L0 + 编译 + `Test-Cli.ps1 -Only <组>`；界面组默认**不跑**（要你没开着工具箱），
+  加 `-Gui` 才跑映射到的那几组（开着工具箱时它只打印警告，不会硬跑出一片假红）。
+- 兜底规矩两条：**没命中任何规则的改动 = 跑全套**（宁多勿少）；**改测试自己 = 全套**
+  （挑组机制本身也可能被改坏）。
+- 映射表里写错组名 = 那一组**永远不跑**（静默漏洞），所以 `Test-Quick.ps1` 会拿套件里真实的组标记
+  校验一遍，对不上直接失败。
+
+### 15.4 流程约定（2026-10-06 用户拍板）
+
+1. **本地随便提交，推送要用户点头**（原话：「本地推送可以线上推送得经过我点头」）。
+2. **每次汇报带一行「未推送提交」**（`git log origin/main..HEAD --oneline` 的真实输出，别手写状态）。
+3. 提交信息写四段：**改了什么 / 为什么 / 我验了什么 / 我没验什么**。
+4. 提交前跑 `tools\Test-Quick.ps1`（L0 + 受影响的组）；汇报里指名跳过了哪些组。
+5. **发版前**：不带参数跑一次 `Test-All.ps1`（L4），把欠账清空，再打 tag / 发 Release。
 
 ## 16 兼容性与发布环境（Win7 / Win10 / Win11）
 

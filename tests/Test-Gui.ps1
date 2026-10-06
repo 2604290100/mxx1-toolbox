@@ -12,17 +12,78 @@
     按钮清单不写死：从 `Mxx1Toolbox.exe list` 里读，两边必须一致。
 
     没有交互式桌面时返回退出码 3（跳过，不是失败）。
+    ⚠ 跑之前必须确认工具箱没开着（`Get-Process Mxx1Toolbox` 是空的）：它会写 settings.ini，
+    正跑着的那个实例关闭时会把内存里的状态写回去 → 整套假红。**不要杀用户的进程。**
 
     用法: powershell -File tests\Test-Gui.ps1
+          powershell -File tests\Test-Gui.ps1 -Only N,I     # 只跑这几组
+          powershell -File tests\Test-Gui.ps1 -Skip D07d   # 前缀匹配：-Skip D 会跳过 D 那一整组
     退出码: 0 = 全绿, 1 = 有失败, 3 = 环境不满足（跳过）
+
+    挑组（-Only / -Skip）：组标记就是那些 `# ---- X 组：…` 注释里的字母，前缀匹配
+    （-Only B 会带上 B10 那个子块）。它前面的「准备」段和后面的「现场复原」段**总会跑**
+    （起测试实例、把用户的设置原样复原），跳过的只是中间的检查组。跑完汇总里会列出"没跑哪些组"。
+    映射表见 tests\test-map.json。
 #>
 [CmdletBinding()]
-param()
+param(
+    # 只跑这几组（例：-Only N,I）
+    [string[]]$Only = @(),
+    # 除了这几组，别的都跑
+    [string[]]$Skip = @()
+)
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $Exe = Join-Path $root 'bin\Mxx1Toolbox.exe'
 $SettingsIni = Join-Path $env:LOCALAPPDATA 'mxx1-toolbox\settings.ini'
+
+# ---------------------------------------------------------------- 挑组执行（-Only / -Skip）
+# 见文件开头那段说明与 docs\DESIGN.md §15。组标记就是那些 `# ---- X 组：…` 注释，前缀匹配。
+# 注意：这个开关只影响"中间的检查组"；前面的「准备」段与后面的「现场复原」段照旧总会跑
+# （否则测试实例起不来、用户的设置也复原不了）。
+$script:SelfPath = $MyInvocation.MyCommand.Path
+
+# ⚠ `powershell -File … -Only N,I` 传进来的是**一个字符串**（不是数组），所以要自己按 , ; 空格 拆开。
+function Expand-GroupList {
+    param([string[]]$Items)
+    $out = @()
+    foreach ($it in @($Items)) {
+        if (-not $it) { continue }
+        foreach ($p in ($it -split '[,;\s]+')) { if ($p) { $out += $p.Trim().ToUpper() } }
+    }
+    return @($out | Sort-Object -Unique)
+}
+
+$script:OnlyGroups = @(Expand-GroupList $Only)
+$script:SkipGroups = @(Expand-GroupList $Skip)
+$script:RanGroups = @()
+$script:PickMode = (($script:OnlyGroups.Count -gt 0) -or ($script:SkipGroups.Count -gt 0))
+
+function Test-GroupSelected {
+    param([string]$Name)
+    $on = $true
+    $up = $Name.ToUpper()
+    if ($script:OnlyGroups.Count -gt 0) {
+        $on = $false
+        foreach ($p in $script:OnlyGroups) { if ($up -like ($p + '*')) { $on = $true; break } }
+    }
+    if ($on) {
+        foreach ($p in $script:SkipGroups) { if ($up -like ($p + '*')) { $on = $false; break } }
+    }
+    if ($on -and ($script:RanGroups -notcontains $Name)) { $script:RanGroups += $Name }
+    return $on
+}
+
+# 汇总时用：这个文件里一共有哪些组（读自己源码里的组标记，不维护第二份名单）
+function Get-AllGroups {
+    $all = @()
+    foreach ($line in (Get-Content -LiteralPath $script:SelfPath)) {
+        $m = [regex]::Match($line, '^# (?:-{4,}|={4,})\s*([A-Z][0-9]*)(?![0-9A-Za-z])')
+        if ($m.Success) { $all += $m.Groups[1].Value }
+    }
+    return @($all | Sort-Object -Unique)
+}
 
 # 主窗口启动时会顺手"修补"已经装过的右键菜单（Mxx1* 自己那几个键）。用户真装着菜单的时候，
 # 那就是在改他的注册表 —— 界面回归测试反复起主窗口，不该干这个。所以这里关掉：
@@ -55,12 +116,22 @@ function Measure-Width([string]$Text) {
 
 $script:Pass = 0
 $script:Fail = 0
+$script:SkipCount = 0
 
 function Check {
     param([string]$Name, [bool]$Ok, [string]$Detail = '')
     if ($Ok) { $script:Pass++ } else { $script:Fail++ }
     $flag = 'PASS'; if (-not $Ok) { $flag = 'FAIL' }
     Write-Host ("  [{0}] {1}{2}" -f $flag, $Name, $(if ($Detail) { "   ($Detail)" } else { '' }))
+}
+
+# 环境不满足的项走这里（和 Test-Cli.ps1 同一套口径）：打印 [SKIP]、单独计数，**不算失败**。
+# 典型场景：真动鼠标那几条在"用户正在用鼠标 / 输入桌面被占"的时候做不了 —— 那是环境问题，
+# 记成失败会变成假红（2026-10-06 的 N21b 就是这么红的）。**但真的断言失败绝不许走这里。**
+function Skip {
+    param([string]$Name, [string]$Reason = '')
+    $script:SkipCount++
+    Write-Host ("  [SKIP] {0}{1}" -f $Name, $(if ($Reason) { "   ($Reason)" } else { '' }))
 }
 
 if (-not (Test-Path -LiteralPath $Exe)) { throw ('找不到 exe（先跑 build.ps1）: ' + $Exe) }
@@ -70,6 +141,10 @@ Write-Host '=========================================================='
 Write-Host ' 萌新工具箱 · 界面回归测试'
 Write-Host '=========================================================='
 Write-Host (' exe : ' + $Exe)
+if ($script:PickMode) {
+    Write-Host (' 挑组: 只跑 ' + $(if ($script:OnlyGroups.Count -gt 0) { $script:OnlyGroups -join ',' } else { '（全部）' }) +
+                $(if ($script:SkipGroups.Count -gt 0) { '，跳过 ' + ($script:SkipGroups -join ',') } else { '' }))
+}
 Write-Host ''
 
 if (-not [Environment]::UserInteractive) {
@@ -687,11 +762,16 @@ trap {
 # 所以先看看屏幕上已经有哪些工具箱窗口，挑一个没被占的角落放自己。
 $script:TestWinX = -1
 $script:TestWinY = -1
+# 屏幕上还有没有**别的**工具箱窗口（用户自己开的那个）。B10/B11 是真动鼠标去悬停，鼠标会被
+# 上面那个窗口接走 → 假红（2026-10-04 踩过、2026-10-06 又踩一次）。所以把这个数记下来，
+# 悬停那两条检查据此自己走 Skip。
+$script:OtherToolboxCount = 0
 try {
     $taken = @()
     foreach ($p in @(Get-Process -Name Mxx1Toolbox -ErrorAction SilentlyContinue)) {
         if ($p.MainWindowHandle -ne 0) { $taken += ,([TBGui]::Rect($p.MainWindowHandle)) }
     }
+    $script:OtherToolboxCount = $taken.Count
     $wa = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
     $spots = @(
         @{ X = $wa.Left + 16;  Y = $wa.Top + 16 },
@@ -952,6 +1032,7 @@ $payloadNote = Join-Path (Split-Path -Parent $Exe) 'bin-tools\说明.txt'
 Check 'A09 工具目录 bin-tools 建好了，里面有一份说明.txt' (Test-Path -LiteralPath $payloadNote) $payloadNote
 
 # ---------------------------------------------------------------- B 组：按钮墙
+if (Test-GroupSelected 'B') {
 Write-Host ''
 Write-Host 'B 组 · 按钮墙（对照 CLI 的按钮清单）'
 
@@ -1064,7 +1145,18 @@ if ($shot -eq $null -or $gridProbe.Count -eq 0 -or $refProbe.Count -eq 0) {
     Check 'B09 占位按钮是灰的（最暗墨迹 >= 60）' ($dark -ge 60) ('最暗=' + $dark + ' 按钮=' + $gridProbe[0].Text)
 }
 
+}
+
 # ---------------------------------------------------------------- B10：鼠标悬停的说明
+if (Test-GroupSelected 'B10') {
+if ($script:OtherToolboxCount -gt 0) {
+    # 环境不满足：屏幕上已经有别的工具箱窗口，悬停的鼠标会被它接走 —— 这一条测不了。
+    # （2026-10-06 实测：用户自己开着工具箱时 B10/B11 双红，报的是"说明为空"，
+    #  而"途中见过的"里是用户那个实例当前页签的按钮说明，一眼能看出是环境而不是功能坏了。）
+    Skip 'B10 鼠标停在按钮上会弹出说明，第一行就是这个按钮的名字' `
+        ('屏幕上有 ' + $script:OtherToolboxCount + ' 个别的工具箱窗口，真悬停会被它接走；关掉它再跑这一条就能测')
+    Skip 'B11 悬停说明里不再摊开内联脚本正文' '同上（屏幕上有别的工具箱窗口）'
+} else {
 # 用户 2026-10-04 报过「鼠标悬停的说明没有做好」：说明以前是「按钮名 · 直接可跑的那条命令」，
 # 内联脚本按钮于是把整段 PowerShell 摊成一行（「一键清理垃圾」700 多字），而写给人的那句 hint
 # 反而不显示。这条只有真把鼠标停上去才测得到，所以这里用 SetCursorPos 真悬停一次；
@@ -1108,8 +1200,12 @@ Check 'B10 鼠标停在按钮上会弹出说明，第一行就是这个按钮的
     ('按钮=' + $hoverBtn.Text + ' 说明=' + $hoverFlat + ' 途中见过的=' + $hoverSeenFlat + '  鼠标(' + $hoverX + ',' + $hoverY + ')底下=' + $hoverUnder + '  前台=' + $hoverFront)
 Check 'B11 悬停说明里不再摊开内联脚本正文' `
     (($hoverTip.Length -gt 0) -and ($hoverTip -notmatch 'powershell -Command|EncodedCommand')) $hoverFlat
+}
+
+}
 
 # ---------------------------------------------------------------- C 组：翻页签
+if (Test-GroupSelected 'C') {
 Write-Host ''
 Write-Host 'C 组 · 页签切换'
 # 注：Switch-Tab 定义在文件开头的探针辅助区（必须在第一次调用之前，见那里的注释）。
@@ -1264,7 +1360,10 @@ if (-not (Close-StrayDialogs -ProcessId $proc.Id -Main $main)) {
     Check 'C16 C 组收尾时没有残留的模态窗口' $true ''
 }
 
+}
+
 # ---------------------------------------------------------------- D 组：底部条与日志
+if (Test-GroupSelected 'D') {
 Write-Host ''
 Write-Host 'D 组 · 底部条 · 搜索 · 日志'
 
@@ -1475,7 +1574,10 @@ if ($aboutButton.Count -gt 0) {
     Check 'D07d 官网 / 仓库 是能点的链接（点一下真的去打开），而且「主页」改叫「官网」' $false 'skipped'
 }
 
+}
+
 # ---------------------------------------------------------------- E 组：真按钮能跑 / 灰色按钮点不动
+if (Test-GroupSelected 'E') {
 Write-Host ''
 Write-Host 'E 组 · 真按钮真的在跑，灰色按钮禁止点击'
 
@@ -1578,7 +1680,10 @@ if ($probeBtn.Count -gt 0) {
     Check 'E09 跑完出现一条结果条（完成 / 失败 + 点它看日志）' $false 'skipped'
 }
 
+}
+
 # ---------------------------------------------------------------- F 组：危险按钮的确认框
+if (Test-GroupSelected 'F') {
 Write-Host ''
 Write-Host 'F 组 · 危险按钮必须先确认'
 
@@ -1633,7 +1738,10 @@ if ($dialog.Count -gt 0) {
     Check 'F03 取消后确认框关掉了' $false 'skipped'
 }
 
+}
+
 # ---------------------------------------------------------------- G 组：深色主题
+if (Test-GroupSelected 'G') {
 Write-Host ''
 Write-Host 'G 组 · 深色主题'
 
@@ -1667,7 +1775,10 @@ if ($procDark -ne $null -and -not $procDark.HasExited -and $procDark.MainWindowH
     Check 'G05 深色下分段标题还在' $false 'skipped'
 }
 
+}
+
 # ---------------------------------------------------------------- H 组：窗口尺寸默认固定
+if (Test-GroupSelected 'H') {
 # 用户 2026-10-04 定下的规矩：**默认固定尺寸**（高度固定、宽度也固定），想让它跟着内容变得
 # 自己去设置里勾。这一组把 WindowAutoSize 这个键**故意不写**（= 走默认值），验证：
 # ① 换页签窗口不动 ② 加一个名字很长的按钮窗口也不变宽。
@@ -1745,7 +1856,10 @@ try {
     Start-Sleep -Milliseconds 500
 }
 
+}
+
 # ---------------------------------------------------------------- N 组：右键「解除文件占用」的小窗口
+if (Test-GroupSelected 'N') {
 # 资源管理器右键点「解除文件占用」时，工具箱是以 `rightmenu unlock "<路径>"` 起来的：**只开一个小窗口、
 # 不开主界面**（用户 2026-10-04 定的方案，见 docs\DESIGN.md §14.2）。这一组真起一个那样的进程：
 # 自己锁一个文件 → 看它认不认（认出来 = 窗口里那句"查到 N 个程序"）→ 看排版是不是没重叠 → 关掉。
@@ -2318,9 +2432,17 @@ try {
             $dxc = $c1[0] - $c0[0]; $dyc = $c1[1] - $c0[1]
             $dxr = $r1[0] - $r0[0]; $dyr = $r1[1] - $r0[1]
             $after = [Math]::Abs(($r1[0] - $c1[0]) - 18) + [Math]::Abs(($r1[1] - $c1[1]) - 22)
-            Check 'N21b 鼠标一动，卡片跟着动（不是落在角落里不管）' `
-                (($dxc -ge 150) -and ([Math]::Abs($dxr - $dxc) -le 80) -and ([Math]::Abs($dyr - $dyc) -le 80) -and ($after -le 30)) `
-                ('鼠标挪=' + $dxc + ',' + $dyc + ' 卡片挪=' + $dxr + ',' + $dyr + ' 挪完偏差=' + $after)
+            # 夹具自检：鼠标根本没动起来的时候，这一条测不了（SetCursorPos 没生效 —— 用户正在用鼠标 /
+            # 输入桌面被占 / 屏幕锁着都会这样）。2026-10-06 实测过一次：`鼠标挪=0,0`，卡片本身好好的，
+            # 记成失败就是假红。但"鼠标动了、卡片没跟着动"必须照旧算失败（那才是真 bug）。
+            if (($dxc -eq 0) -and ($dyc -eq 0)) {
+                Skip 'N21b 鼠标一动，卡片跟着动（不是落在角落里不管）' `
+                    ('鼠标挪不动（SetCursorPos 没生效），这一条测不了；卡片仍在 ' + ($r0 -join ',') + '，鼠标 ' + ($c0 -join ','))
+            } else {
+                Check 'N21b 鼠标一动，卡片跟着动（不是落在角落里不管）' `
+                    (($dxc -ge 150) -and ([Math]::Abs($dxr - $dxc) -le 80) -and ([Math]::Abs($dyr - $dyc) -le 80) -and ($after -le 30)) `
+                    ('鼠标挪=' + $dxc + ',' + $dyc + ' 卡片挪=' + $dxr + ',' + $dyr + ' 挪完偏差=' + $after)
+            }
 
             # 到点自己关（没人去点它），进程也跟着退出
             $ngone = $false
@@ -2383,7 +2505,10 @@ try {
     if (Test-Path -LiteralPath $unlockDir) { Remove-Item -LiteralPath $unlockDir -Recurse -Force -ErrorAction SilentlyContinue }
 }
 
+}
+
 # ================================================================ I 组：使用条款确认门 / 更新检查 / 免责窗口
+if (Test-GroupSelected 'I') {
 Write-Host ''
 Write-Host 'I 组：首次运行的使用条款确认门 · 更新检查 · 免责声明窗口'
 # 用户 2026-10-04：「缺少完整的检测更新功能/免责/服务协议，你看下 permanent-delete-menu 是怎么做的？」
@@ -2680,6 +2805,8 @@ try {
     if ($procU -and -not $procU.HasExited) { try { $procU.Kill() } catch { } }
 }
 
+}
+
 # ---------------------------------------------------------------- 现场复原
 Restore-UserLayer
 
@@ -2694,6 +2821,19 @@ else { Remove-Item Env:MXX1_NO_OPEN -ErrorAction SilentlyContinue }
 Write-Host ''
 Write-Host '----------------------------------------------------------'
 Write-Host (" 界面回归: 通过 {0} 项, 失败 {1} 项" -f $script:Pass, $script:Fail)
+if ($script:SkipCount -gt 0) { Write-Host (" （另有 {0} 项环境不满足，跳过 —— 不算失败，原因见上面 [SKIP] 那几行）" -f $script:SkipCount) }
+
+# 挑组跑的时候，把"没跑哪些组"写在脸上：这份欠账要进汇报与提交信息，发版前要清空
+if ($script:PickMode) {
+    $allGroups = @(Get-AllGroups)
+    $notRun = @($allGroups | Where-Object { $script:RanGroups -notcontains $_ })
+    Write-Host (' 本次跑的组: ' + $(if ($script:RanGroups.Count -gt 0) { $script:RanGroups -join ',' } else { '（无）' }))
+    if ($notRun.Count -gt 0) {
+        Write-Host (' 本次没跑的组: ' + ($notRun -join ',') + '  ← 提交信息与汇报里要写出来；发版前要清空这份欠账')
+    } else {
+        Write-Host ' 本次没跑的组: （无，全跑了）'
+    }
+}
 Write-Host '----------------------------------------------------------'
 if ($script:Fail -gt 0) { exit 1 }
 exit 0

@@ -405,8 +405,51 @@
     },
     {
       "paths": [
-        "tests/*",
-        "tools/Test-*.ps1"
+        "tests/Test-Cli.ps1"
+      ],
+      "cli": [
+        "A",
+        "B",
+        "C",
+        "D",
+        "E",
+        "F",
+        "G",
+        "H",
+        "I",
+        "J",
+        "K",
+        "L",
+        "M",
+        "P",
+        "R",
+        "S"
+      ],
+      "gui": [],
+      "note": "改了命令行套件**自己** = 命令行全套（挑组机制本身也可能被改坏）；界面那半一行都没动，所以不跟着跑"
+    },
+    {
+      "paths": [
+        "tests/Test-Gui.ps1"
+      ],
+      "cli": [],
+      "gui": [
+        "B",
+        "B10",
+        "C",
+        "D",
+        "E",
+        "F",
+        "G",
+        "H",
+        "I",
+        "N"
+      ],
+      "note": "改了界面套件自己 = 界面全套；命令行那半不受影响（原来两条挤在一起，改一个界面测试白跑 115 秒命令行）"
+    },
+    {
+      "paths": [
+        "tests/Test-All.ps1"
       ],
       "cli": [
         "A",
@@ -438,7 +481,27 @@
         "I",
         "N"
       ],
-      "note": "改测试自己 = 全套（挑组机制本身也可能被改坏）"
+      "note": "聚合入口（它自己就是「跑全套」那条命令的入口，而且负责把 -Only/-Skip 透传给两个套件）"
+    },
+    {
+      "paths": [
+        "tests/test-map.json",
+        "tools/Test-Quick.ps1",
+        "tools/Test-InlineSyntax.ps1",
+        "tools/Test-Encoding.ps1"
+      ],
+      "cli": [],
+      "gui": [],
+      "note": "L0 那一层自己（映射表 / 闸门 / 内联体检 / 编码体检）：套件验不出它们的错（它们不读映射表），逼着跑全套纯属浪费；回归靠闸门的两道自检 + Test-InlineSyntax 的假 git 自检"
+    },
+    {
+      "paths": [
+        "tools/Sync-Skill.ps1",
+        "tools/Make-Screenshots.ps1"
+      ],
+      "cli": [],
+      "gui": [],
+      "note": "只写 skill 副本 / 文档截图，不碰 exe 也不碰套件（Sync-Skill 自己的 -Check 就是它的核对）"
     }
   ]
 }

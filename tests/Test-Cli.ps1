@@ -1396,10 +1396,26 @@ try {
             (($autoSysRun.Code -eq 0) -and ((Get-Key $autoSysRun.Out 'killed') -eq '0') -and `
              ([int](Get-Key $autoSysQ1.Out 'lockers') -ge 1) -and `
              ((Get-Key $autoSysQ1.Out 'lockers') -eq (Get-Key $autoSysQ2.Out 'lockers'))) `
-            ('auto=' + (Get-Key $autoSysRun.Out 'auto') + ' killed=' + (Get-Key $autoSysRun.Out 'killed') + ' 占用者 ' + (Get-Key $autoSysQ1.Out 'lockers') + '→' + (Get-Key $autoSysQ2.Out 'lockers'))
+            ('auto=' + (Get-Key $autoSysRun.Out 'auto') + ' killed=' + (Get-Key $autoSysRun.Out 'killed') + `
+             ' 挑中的目标=[' + (Get-Key $autoSysRun.Out 'targets') + '] 占用者 ' + (Get-Key $autoSysQ1.Out 'lockers') + '→' + (Get-Key $autoSysQ2.Out 'lockers'))
     } else {
         Skip 'M34 不许动系统关键进程' '这台机器上没有系统事件日志文件'
     }
+
+    # 2026-10-06 在 CI 上抓到的**真事故**：一键解除原来靠一张**进程名黑名单**（svchost / lsass…）
+    # 判断"这是不是系统进程"，可是进程名权限不够时**读不出来**，代码就退回系统报的友好名
+    # （"Windows Event Log" 这种）—— 黑名单一条都对不上，于是它在 GitHub runner 上真的结束了
+    # **系统服务**（M34 当场红：auto=killed killed=2、占用者 3→1）。修法是**看归属不看名字**。
+    # 这一条是**源码级看门狗**（和 A16 看 build.ps1 那行一个性质）：那三条拒绝就是这条路的底线，
+    # 谁把它们删了这里立刻红。为什么不直接造现场：要造"别的账户 / 系统服务占着一个文件"得是管理员
+    # 加计划任务（`schtasks /ru SYSTEM`），造不出来就只能 Skip —— 那等于没测。
+    $flSrc = Get-Content -LiteralPath (Join-Path $root 'src\FileLock.cs') -Encoding UTF8 -Raw
+    $fnBody = ''
+    $mFn = [regex]::Match($flSrc, '(?s)public static bool AutoUnlockTarget\(FileLocker f\).*?\n        \}')
+    if ($mFn.Success) { $fnBody = $mFn.Value }
+    $guards = @($(if ($fnBody -match 'f\.NotMine') { 'NotMine' }), $(if ($fnBody -match 'f\.IsService') { 'IsService' }), $(if ($fnBody -match 'f\.NameUnread') { 'NameUnread' }))
+    Check 'M39 自动那条路的底线看"归属"不看名字（不属于当前用户 / 服务 / 名字读不出来都拒绝）' `
+        ($guards.Count -eq 3) ('拦到的底线=' + ($guards -join ','))
 
     # ③ 条款门：这条路没有窗口可以弹《使用条款确认》，所以"没同意"= 一个进程都不碰。
     $autoConsent0 = 'unknown'

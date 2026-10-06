@@ -105,6 +105,7 @@ namespace Mxx1Toolbox
                 Console.WriteLine("auto=" + state);
                 Console.WriteLine("killed=0");
                 Console.WriteLine("failed=0");
+                Console.WriteLine("targets=");          // 一个都没挑中（测试据此看"为什么没动"）
                 Console.WriteLine("summary=" + summary);
                 if (notify)
                 {
@@ -137,6 +138,7 @@ namespace Mxx1Toolbox
             Console.WriteLine("auto=" + ((failed == 0) ? "killed" : "partial"));
             Console.WriteLine("killed=" + killed.ToString(CultureInfo.InvariantCulture));
             Console.WriteLine("failed=" + failed.ToString(CultureInfo.InvariantCulture));
+            Console.WriteLine("targets=" + Names(chosen));   // 挑中了谁（名字；测试和排查都看它）
             Console.WriteLine("summary=" + text);
             if (notify)
             {
@@ -162,8 +164,9 @@ namespace Mxx1Toolbox
             }
             if (notTouched > 0)
             {
-                return "占着它的都是不能自动结束的（系统关键进程 / 资源管理器 / 工具箱自己），"
-                    + "这些一律没动 —— 想看清楚是谁，用带窗口那个「" + RightMenu.UnlockTitle + "」。";
+                return "占着它的都是不能自动结束的（系统关键进程、系统服务、不是你自己账户的程序、"
+                    + "资源管理器、工具箱自己），这些一律没动 —— 想看清楚是谁，"
+                    + "用带窗口那个「" + RightMenu.UnlockTitle + "」。";
             }
             if (r.VerdictLocked)
             {
@@ -171,6 +174,19 @@ namespace Mxx1Toolbox
                     + "没能解锁 —— 用带窗口那个「" + RightMenu.UnlockTitle + "」看详细情况。";
             }
             return "没有可以自动结束的程序 —— 用带窗口那个「" + RightMenu.UnlockTitle + "」看详细情况。";
+        }
+
+        /// <summary>挑中的那些程序的名字（纯逗号分隔，`targets=` 那一行用）。
+        /// 和 `Who` 分开：那个是给卡片看的一句话，会截断成三个加「等 N 个」。</summary>
+        private static string Names(List<FileLocker> chosen)
+        {
+            StringBuilder sb = new StringBuilder();
+            foreach (FileLocker f in chosen)
+            {
+                if (sb.Length > 0) { sb.Append(","); }
+                sb.Append(f.Exe);
+            }
+            return sb.ToString();
         }
 
         /// <summary>气泡里那串程序名（最多三个，太长了气泡显示不全）。</summary>

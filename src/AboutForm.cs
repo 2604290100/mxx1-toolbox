@@ -66,8 +66,10 @@ namespace Mxx1Toolbox
             AddRow("版本", "v" + VersionText);
             AddRow("作者", AuthorName + "　·　" + AuthorSite);
             AddRow("许可证", License);
-            AddRow("主页", AuthorUrl);
-            AddRow("仓库", RepoUrl);
+            // 用户 2026-10-06 要的：「关于」里面的网址点一下就要能打开，而且「主页」这个词改叫「官网」。
+            // 这两行是 LinkLabel（不是死文本），点一下走 MainForm.OpenUrl（注册表默认浏览器）。
+            AddLinkRow("官网", AuthorUrl);
+            AddLinkRow("仓库", RepoUrl);
 
             // 更新状态行：这是个**动的东西**，不是一个写死的字符串 —— 用户 2026-10-04 要求
             // "补上完整的检测更新功能"。值由 StartCheck / SetUpdateText 更新。
@@ -240,6 +242,35 @@ namespace Mxx1Toolbox
             v.AutoSize = true;
             v.Text = value;
             v.Margin = new Padding(2, 3, 2, 3);
+            _root.Controls.Add(l);
+            _root.Controls.Add(v);
+        }
+
+        /// <summary>一行「标签 + **能点的网址**」（用户 2026-10-06 要的）。
+        ///
+        /// 为什么用 LinkLabel 而不是按钮：这里是"文本里的一行字"，做成按钮会跟下面那排动作按钮
+        /// 混在一起（那些是"打开工具目录 / 检查更新"这种动作，这是"这个网址在这儿"）。
+        /// 链接色跟随主题（浅色 `#0078D7` / 深色 `#4CA0E8`），**划不划线跟着鼠标**：
+        /// 一眼能看出"这是可以点的"，又不会让关于窗口变成一排下划线。
+        /// 点一下交给 `MainForm.OpenUrl`（同一个入口，日志里也记得下）。</summary>
+        private void AddLinkRow(string label, string url)
+        {
+            Label l = new Label();
+            l.AutoSize = true;
+            l.Text = label;
+            l.Margin = new Padding(2, 3, 12, 3);
+
+            LinkLabel v = new LinkLabel();
+            v.AutoSize = true;
+            v.Text = url;
+            v.Margin = new Padding(2, 3, 2, 3);
+            v.LinkColor = _theme.TabActiveUnderline;
+            v.ActiveLinkColor = _theme.TabActiveUnderline;      // 点下去不变色（本来就够显眼了）
+            v.VisitedLinkColor = _theme.TabActiveUnderline;     // 看过一次也还是链接色，别变成紫色
+            v.LinkBehavior = LinkBehavior.HoverUnderline;
+            v.Cursor = Cursors.Hand;
+            v.LinkClicked += delegate { MainForm.OpenUrl(url); };
+
             _root.Controls.Add(l);
             _root.Controls.Add(v);
         }

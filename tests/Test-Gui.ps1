@@ -38,6 +38,13 @@ $script:UpdateHad = Test-Path Env:MXX1_NO_UPDATE
 $script:UpdateOld = $env:MXX1_NO_UPDATE
 $env:MXX1_NO_UPDATE = '1'
 
+# 关于窗口里那两个网址（官网 / 仓库）是**能点的**，D07d 要真去点一下验它 —— 而测试不该在别人
+# 桌面上弹出浏览器，所以让工具箱"只记一行日志、不真打开"（MainForm.OpenUrl 里读这个开关）。
+# 断言的就是那行日志（点一次 = 日志里多一行带那个网址的记录）。
+$script:NoOpenHad = Test-Path Env:MXX1_NO_OPEN
+$script:NoOpenOld = $env:MXX1_NO_OPEN
+$env:MXX1_NO_OPEN = '1'
+
 # 量文字宽度要用同一套渲染器，才能判断"文字装不装得下"
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
@@ -237,6 +244,29 @@ public class TBGui
     public static bool Enabled(IntPtr h) { return IsWindowEnabled(h); }
     public static bool Alive(IntPtr h) { return IsWindow(h); }
     public static bool Click(IntPtr h) { return PostMessageW(h, 0x00F5, IntPtr.Zero, IntPtr.Zero); }
+
+    // 真鼠标点一下（B10/B11 也是这么动鼠标的，跑完要把鼠标放回去）。
+    // **为什么 D07d 不能用 PostMessage**：实测过 —— 给 LinkLabel 发
+    // WM_MOUSEMOVE / WM_LBUTTONDOWN / WM_LBUTTONUP（窗口已经在前台、坐标也是控件正中间）
+    // **不触发 LinkClicked**，一条日志都不写；换成真鼠标（SetCursorPos + mouse_event）
+    // 立刻就写了「打开链接 https://mxx1.cn」。所以"能不能点"这种事只能真点。
+    [DllImport("user32.dll")] private static extern void mouse_event(uint flags, uint dx, uint dy, uint data, IntPtr extra);
+    public static void RealClick(int x, int y)
+    {
+        SetCursorPos(x, y);
+        System.Threading.Thread.Sleep(80);
+        mouse_event(0x0002, 0, 0, 0, IntPtr.Zero);      // LEFTDOWN
+        System.Threading.Thread.Sleep(60);
+        mouse_event(0x0004, 0, 0, 0, IntPtr.Zero);      // LEFTUP
+    }
+
+    // 鼠标底下那个**具体控件**（WindowAt 会往上找顶层窗口，这里要的就是子控件本身）：
+    // 真点之前先确认这一格是我们那个链接，别点到用户别的窗口上去。
+    public static IntPtr HandleAt(int x, int y)
+    {
+        POINT p; p.X = x; p.Y = y;
+        return WindowFromPoint(p);
+    }
 
     // WM_SETTEXT (0x000C) across processes: used to type into the 新建按钮 window's fields.
     // ExactSpelling matters here: without it the runtime looks the entry point up as
@@ -1376,18 +1406,73 @@ if ($aboutButton.Count -gt 0) {
         # 关于窗口里那句"灰色按钮点一下只会写日志"是旧行为，早就改成禁用控件了 —— 别再写回来
         $noteOk = @($aboutTexts | Where-Object { $_ -match '点一下只会写日志' }).Count -eq 0
         Check 'D07c 关于窗口里没有过时的"灰按钮点一下只会写日志"说明' $noteOk ''
+        # 用户 2026-10-06 要的：「关于」里面的网址**点一下就能访问**，而且「主页」改叫「官网」。
+        # 这一条真去点那个链接：测试进程带着 MXX1_NO_OPEN=1（见文件开头），所以点下去只会多一行
+        # 日志、不会在别人桌面上弹浏览器 —— 断言的就是"日志里真的多了一行那个网址"。
+        # 判据不看截图、也不看控件类名（LinkLabel 底下就是 STATIC），只看"点了有没有反应"。
+        $siteLabels = @($aboutTexts | Where-Object { $_ -eq '官网' })
+        $oldLabels = @($aboutTexts | Where-Object { $_ -eq '主页' })
+        $linkCtls = @(Get-ChildControls -RootHandle $aboutWin[0].H | Where-Object { $_.Text -match '^https?://' })
+        $logPath = ''
+        $statusNow = Invoke-Exe 'status'
+        if ($statusNow -match '(?m)^log=([^\r\n]+)') { $logPath = $Matches[1].Trim() }
+        $logHad = 0
+        if (($logPath.Length -gt 0) -and (Test-Path -LiteralPath $logPath)) {
+            $logHad = @(Get-Content -LiteralPath $logPath -Encoding UTF8 -ErrorAction SilentlyContinue).Count
+        }
+        $logLine = ''
+        $clicked = $false
+        $clickNote = '（窗口里没有网址链接）'
+        if ($linkCtls.Count -gt 0) {
+            $lc = $linkCtls[0]
+            $lr = [TBGui]::Rect($lc.H)
+            $lx = [int]($lr[0] + ($lr[2] - $lr[0]) / 2)
+            $ly = [int]($lr[1] + ($lr[3] - $lr[1]) / 2)
+            $savedCursor = [TBGui]::CursorAt()
+            try {
+                [void][TBGui]::Focus($aboutWin[0].H)
+                for ($k = 0; $k -lt 3; $k++) {
+                    # 真点之前先确认鼠标底下就是那个链接控件（别的窗口压在上面时不点，免得误伤）
+                    if ([TBGui]::HandleAt($lx, $ly) -ne $lc.H) {
+                        $clickNote = '（鼠标底下不是那个链接，被别的窗口压着）'
+                        Start-Sleep -Milliseconds 400
+                        continue
+                    }
+                    $clickNote = ''
+                    [TBGui]::RealClick($lx, $ly)
+                    $clicked = $true
+                    for ($i = 0; $i -lt 10; $i++) {
+                        Start-Sleep -Milliseconds 200
+                        if (($logPath.Length -eq 0) -or -not (Test-Path -LiteralPath $logPath)) { break }
+                        $lines = @(Get-Content -LiteralPath $logPath -Encoding UTF8 -ErrorAction SilentlyContinue)
+                        $fresh = @($lines | Select-Object -Skip $logHad | Where-Object { $_ -match 'https?://' })
+                        if ($fresh.Count -gt 0) { $logLine = [string]$fresh[0]; break }
+                    }
+                    if ($logLine.Length -gt 0) { break }
+                }
+            } finally {
+                [void][TBGui]::MoveCursor($savedCursor[0], $savedCursor[1])
+            }
+        }
+        Check 'D07d 官网 / 仓库 是能点的链接（点一下真的去打开），而且「主页」改叫「官网」' `
+            (($siteLabels.Count -ge 1) -and ($oldLabels.Count -eq 0) -and ($linkCtls.Count -ge 2) -and `
+             $clicked -and ($logLine.IndexOf('http') -ge 0)) `
+            ('官网=' + $siteLabels.Count + ' 还叫主页=' + $oldLabels.Count + ' 链接控件=' + $linkCtls.Count + `
+             ' 点了=' + $clicked + ' 日志新行=' + $logLine + $clickNote)
         [void][TBGui]::CloseWindow($aboutWin[0].H)
         Start-Sleep -Milliseconds 600
     } else {
         Check 'D07 关于窗口里有「打开工具目录」入口' $false 'skipped'
         Check 'D07b 关于窗口里列出了快捷键（Ctrl+F / Ctrl+N / Alt+1~9）' $false 'skipped'
         Check 'D07c 关于窗口里没有过时的"灰按钮点一下只会写日志"说明' $false 'skipped'
+        Check 'D07d 官网 / 仓库 是能点的链接（点一下真的去打开），而且「主页」改叫「官网」' $false 'skipped'
     }
 } else {
     Check 'D06 点底栏「关于」打开关于窗口' $false '底栏没有关于按钮'
     Check 'D07 关于窗口里有「打开工具目录」入口' $false 'skipped'
     Check 'D07b 关于窗口里列出了快捷键（Ctrl+F / Ctrl+N / Alt+1~9）' $false 'skipped'
     Check 'D07c 关于窗口里没有过时的"灰按钮点一下只会写日志"说明' $false 'skipped'
+    Check 'D07d 官网 / 仓库 是能点的链接（点一下真的去打开），而且「主页」改叫「官网」' $false 'skipped'
 }
 
 # ---------------------------------------------------------------- E 组：真按钮能跑 / 灰色按钮点不动
@@ -2603,6 +2688,8 @@ if ($script:SyncHad) { $env:MXX1_NO_RIGHTMENU_SYNC = $script:SyncOld }
 else { Remove-Item Env:MXX1_NO_RIGHTMENU_SYNC -ErrorAction SilentlyContinue }
 if ($script:UpdateHad) { $env:MXX1_NO_UPDATE = $script:UpdateOld }
 else { Remove-Item Env:MXX1_NO_UPDATE -ErrorAction SilentlyContinue }
+if ($script:NoOpenHad) { $env:MXX1_NO_OPEN = $script:NoOpenOld }
+else { Remove-Item Env:MXX1_NO_OPEN -ErrorAction SilentlyContinue }
 
 Write-Host ''
 Write-Host '----------------------------------------------------------'

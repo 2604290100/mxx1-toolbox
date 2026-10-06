@@ -1620,11 +1620,22 @@ namespace Mxx1Toolbox
             });
         }
 
-        private static void OpenUrl(string url)
+        /// <summary>在浏览器里打开一个网址。**全工具唯一的入口**（关于窗口的官网 / 仓库、
+        /// 更新检查的「打开发布页」都走它），所以"点一下就能访问"只有这一处要保证。
+        ///
+        /// 回归测试要验"点了真的会去打开"：那种检查不能让测试机真弹出浏览器，所以
+        /// `MXX1_NO_OPEN=1` 时**只写一行日志、不真打开** —— 测试点完去读日志，两边都干净。
+        /// 日志照写（不管是哪种模式）：用户点了哪个网址，查日志时看得到。</summary>
+        internal static void OpenUrl(string url)
         {
             try
             {
                 if (string.IsNullOrEmpty(url)) { return; }
+                Logger.Write("打开链接", url);
+
+                string off = Environment.GetEnvironmentVariable("MXX1_NO_OPEN");
+                if (off != null && off.Trim() == "1") { return; }
+
                 System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url)
                 {
                     UseShellExecute = true

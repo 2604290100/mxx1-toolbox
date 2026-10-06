@@ -18,8 +18,8 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
 
 ## 当前状态（2026-10-06，v1.5.4）
 
-- ⚠️ **2026-10-06 补一轮（用户拿到 v1.5.4 之前的构建之后报的）**：原话
-  **「气泡没有正常弹出，而且弹出的位置要跟随鼠标」**。根因：提示走的是**系统托盘气泡**
+- ⚠️ **2026-10-06 补一轮（用户拿到 v1.5.4 之前的构建之后报的）**：一共三件事。
+  ① 原话 **「气泡没有正常弹出，而且弹出的位置要跟随鼠标」**。根因：提示走的是**系统托盘气泡**
   （`NotifyIcon.ShowBalloonTip`）—— 能不能看见由**用户的系统通知设置**说了算（这台是精简版
   Windows，通知平台被裁过；Win10 / Win11 关掉「通知」或开着专注助手同样看不到），
   而且位置由系统钉在**右下角**、离鼠标很远。现在改成**自己画的一张卡片**
@@ -29,6 +29,13 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
   新增 `--notify=<毫秒>` 定显示多久。见 `docs\DESIGN.md` **§12.56**；
   回归 **N21 / N21b / N21c / N21d**（末尾那条"卡片上真的有字"是抓 `PrintWindow` 像素数的墨迹
   —— **"有窗口"不等于"看得见"**，用户报的就是"看不到"）。见坑 28。
+  ② 用户说 **「【关于】按钮里面的网址要点击后可以访问，主页改成官网」** → 关于窗口里那两行改成
+  **LinkLabel**（链接色跟主题、划不划线跟鼠标），「主页」→**「官网」**；「常用链接」里那条也跟着改。
+  打开网址只有**一个入口** `MainForm.OpenUrl`（顺手写一行日志），`MXX1_NO_OPEN=1` 时只写日志
+  不真打开 —— 回归 **D07d** 真发鼠标消息点一下、靠这行日志断言，测试不会在别人桌面上弹浏览器。
+  ③ **CI 抓到的真事故**：见坑 29 —— 「一键解除占用」原来靠进程名黑名单判断系统进程，
+  在 GitHub runner 上**真的结束了系统服务**；底线改成「看归属不看名字」，
+  回归 **M34**（失败信息带 `targets=`）+ **M39**（源码级看门狗）。见 `docs\DESIGN.md` §12.57。
 - ✅ **2026-10-05 那一轮（已随 v1.5.4 一起发）**：用户问
   **「工具箱里面的解除文件占用功能还有没有优化的空间？或者出一个不弹出窗口的版本」**，
   拍板时说的是 **「保留现有的功能的前提下加个不弹窗的一键解除，对应也要单独加 2 个按钮
@@ -46,10 +53,10 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
   底线比窗口那条更窄（系统关键进程 / explorer / 工具箱自己一律不动；没同意条款一个进程都不碰）。
   见 §14.14；回归 **M30–M38** + 界面 **N19/N19b/N21\***。
   顺手还修了 `Make-Icons.ps1` 会给 `bin-tools\` 自动按钮画图标并提交进仓库的问题（见坑 27）。
-- ✅ **测试 356 项全绿**（本机 355 通过 + 1 跳过）：命令行回归 **206**（A03b–A03d/D01 盯兼容、R 组 14 项盯 **bin-tools 自动按钮**、
-  P 组 10 项盯**发布包内容**、S 组 26 项盯**条款确认门 + 更新检查**、**M 组 38 项盯「右键增强」**、A14–A17 盯 **exe 自己的图标**）
-  + 界面回归 **150**（I 组 27 项把**条款确认窗口**真开起来点一遍（含 I10b/I10c）、**N 组 27 项**盯「解除文件占用」小窗口 +
-  「一键解除占用」不弹窗口 + 鼠标旁边的提示卡）
+- ✅ **测试 358 项全绿**（本机 357 通过 + 1 跳过）：命令行回归 **207**（A03b–A03d/D01 盯兼容、R 组 14 项盯 **bin-tools 自动按钮**、
+  P 组 10 项盯**发布包内容**、S 组 26 项盯**条款确认门 + 更新检查**、**M 组 39 项盯「右键增强」**、A14–A17 盯 **exe 自己的图标**）
+  + 界面回归 **151**（I 组 27 项把**条款确认窗口**真开起来点一遍（含 I10b/I10c）、**N 组 27 项**盯「解除文件占用」小窗口 +
+  「一键解除占用」不弹窗口 + 鼠标旁边的提示卡、D07d 盯关于窗口里那两个能点的网址）
   （外加编码体检 186 个文件、内联脚本与清单体检 34 个脚本 / 7 个清单 + 每个 `.ps1` 的语法）。
   产物 `bin\Mxx1Toolbox.exe`（786,432 字节单文件 / 约 768 KB），
   七个 `tools.*.json` + 114 个 `icons.*.png` + **`Disclaimer.md`（改过两次：第三项与一键解除那几段 +
@@ -167,7 +174,10 @@ D:\萌新工具开发\toolbox\
   bin\Mxx1Toolbox.exe              交付物：单文件 GUI+CLI（不入仓）
   src\Program.cs                   CLI 入口（list / run [--dry|--confirm] / draft / status / tip / privacy /
                                    sysreg / rightmenu / ui / pin / export / import / checkupdate / help）
-  src\MainForm.cs                  主窗口：页签 + 四列网格 + 底栏 + 搜索 + 日志面板 + 键盘
+  src\MainForm.cs                  主窗口：页签 + 四列网格 + 底栏 + 搜索 + 日志面板 + 键盘；
+                                   **`MainForm.OpenUrl` 是全工具唯一"打开网址"的入口**
+                                   （关于窗口那两行链接、更新检查的「打开发布页」都走它；
+                                   `MXX1_NO_OPEN=1` 时只写日志不真打开 —— 回归 D07d 靠它断言）
   src\ToolButton.cs                紧凑按钮（Flat + 主题配色 + 16×15 图标画布 + 灰色占位 + Flash/SetBusy）
   src\IconFactory.cs               图标：有 PNG 用 PNG，没有就实时画；一律 Normalize 成 16×15；GetMuted 出灰版
   src\ToolItem.cs / ToolRegistry.cs 按钮模型 + 读内嵌 tools\*.json + 用户层 tools.json（只认 tools 数组）
@@ -203,11 +213,13 @@ D:\萌新工具开发\toolbox\
   src\DisclaimerForm.cs            **v1.5.3**：窗口显示 docs\DISCLAIMER.md（编译时内嵌，唯一正本）
   src\UpdateCheck.cs               **v1.5.3**：只读更新检查（GitHub releases → tags；不下载不替换）
   src\NewToolForm.cs               图形化「新建按钮 / 编辑按钮」窗口（4 种类型）
-  src\LinksForm.cs                 「常用链接」窗口（项目主页/仓库/几个 ms-settings 入口）
+  src\LinksForm.cs                 「常用链接」窗口（官网/仓库/几个 ms-settings 入口）
   src\Json.cs                      自带的小 JSON 解析器（不依赖 Newtonsoft / System.Web）
   src\Theme.cs / Native.cs         浅深主题配色（含灰色占位三色）+ DWM 深色标题栏 / 滚动条
   src\Settings.cs / Logger.cs / AppPaths.cs
-  src\AboutForm.cs                 署名、站点、仓库、许可证常量的唯一来源
+  src\AboutForm.cs                 署名、站点、仓库、许可证常量的唯一来源；**关于窗口里官网 / 仓库那两行
+                                   是 LinkLabel**（点了走 `MainForm.OpenUrl`，v1.5.4 用户要的：
+                                   「网址要点击后可以访问，主页改成官网」）
   src\LogForm.cs / OutputForm.cs   程序内日志窗口（最新在最上）/ 命令输出窗口
   src\SettingsForm.cs              设置窗口
   tools\*.json                     112 个按钮的内置定义（编译时内嵌，资源名 tools.<文件名>）；7 个文件 =
@@ -222,12 +234,12 @@ D:\萌新工具开发\toolbox\
   assets\app.ico                   程序图标（`/win32icon` 用的就是它）
   tests\Test-All.ps1               一条命令跑完全部
   tools\Test-InlineSyntax.ps1      内联脚本语法 + 清单 JSON + **每个 .ps1 的语法**体检（34 个内联 / 7 个清单）
-  tests\Test-Cli.ps1               命令行回归 206 项（A03b–A03d/D01 盯兼容、A14–A17 盯 exe 图标、
+  tests\Test-Cli.ps1               命令行回归 207 项（A03b–A03d/D01 盯兼容、A14–A17 盯 exe 图标、
                                    L 组 12 项盯 sysreg、J09–J11 盯卸载窗口的列表、M 组盯右键增强、
                                    R 组 14 项盯 bin-tools 自动按钮、P 组 10 项盯发布包内容、
                                    S 组 26 项盯条款门 + 更新检查；
                                    环境不满足的项走 Skip()，打印 [SKIP] 不算失败）
-  tests\Test-Gui.ps1               界面回归 150 项（要交互式桌面，无桌面返回 3 = 跳过；A04b 盯窗口图标、
+  tests\Test-Gui.ps1               界面回归 151 项（要交互式桌面，无桌面返回 3 = 跳过；A04b 盯窗口图标、
                                    H 组盯固定尺寸、E04b 盯窗口位置、A09 盯 bin-tools 说明、
                                    N 组 27 项盯解除占用小窗口（含 N14/N15/N17/N18 的高度自适应、
                                    N19/N19b「一键解除占用（--quiet）一个窗口都不弹」、N20/N20b「扫描期间窗口一直活着」、
@@ -499,9 +511,13 @@ powershell -File tools\Make-AppIcon.ps1       # 重生成 assets\app.ico（改�
   一个撤销右键」** → **窗口版一个字节都没改**，这是另外一条入口；装 / 撤用**单独那对按钮**
   （`rightmenu.auto.on` / `rightmenu.auto.off`），和「装上 / 撤掉解除占用」互不影响。
 - 查占用 / 结束进程**复用同一份实现**（`FileLock.Scan` / `FileLock.Kill`），区别只有"要不要问"。
-- **底线更窄，而且只有一处**（`FileLock.AutoUnlockTarget`，测试 M34 盯着）：只结束
-  **真占着文件的**（`lock`）和**它自己在运行的**（`run`）；系统关键进程 / `pid ≤ 4` / `svchost` /
-  `lsass`…、`explorer.exe`、工具箱自己 —— **一律不动**；"窗口里开着它"（`open`）不动。
+- **底线更窄，而且只有一处**（`FileLock.AutoUnlockTarget`，测试 M34/M39 盯着）：只结束
+  **真占着文件的**（`lock`）和**它自己在运行的**（`run`）；"窗口里开着它"（`open`）不动。
+  拒绝清单 = 老的那套（`Protected`：系统关键进程 / `pid ≤ 4` / `svchost` / `lsass`…、`explorer.exe`、
+  工具箱自己）+ **2026-10-06 补的三条结构性规矩**（⚠️ 靠"进程名黑名单"是**拦不住**的，见坑 29）：
+  **不是当前用户自己的进程**（`NotMine`：比进程令牌里的用户 SID）、**系统报的类型是"服务"**（`IsService`）、
+  **连进程名都读不出来**（`NameUnread`，这时手里的名字是系统报的友好名，名单对它无效）。
+  任何一条不确定就**不动**（fail closed）。窗口那条路（有确认框）**一个字没改**。
 - **没同意过使用条款 = 一个进程都不碰**（这条路没有窗口可以弹确认框，规矩是"不同意就不动手"，
   只写一行日志）。回归 **M35** 就是盯这条。
 - 结果用**鼠标旁边一张提示卡**说一句（`src\Balloon.cs` 的 `NoticeForm`）—— 不弹窗口，但也不能一声不吭
@@ -511,10 +527,11 @@ powershell -File tools\Make-AppIcon.ps1       # 重生成 assets\app.ico（改�
   卡片显示多久用 `--notify=<毫秒>` 定（默认 6 秒）；测试一律 `--quiet` / `--notify=0` /
   `MXX1_NO_NOTIFY=1`：**别在别人桌面上弹东西**（只有 N21 那四条故意开着它量位置）。
 - 命令行输出是给测试读的：`auto=killed|partial|none|locked|skipped-consent|error` / `killed=` /
-  `failed=` / `summary=`；退出码 0 = 正常跑完、2 = 没给路径、1 = 查询本身出错。
-- **实测**（写测试之前端到端跑过）：锁一个文件 → `auto=killed killed=2`（连 conhost 子进程一起），
-  再查 `lockers=0 candelete=yes`；系统事件日志那个永远被 4 个 `svchost` 占着的文件 →
-  `auto=locked killed=0`，占用者一个没少。
+  `failed=` / `targets=`（挑中了谁，逗号分隔，排查"为什么没动"就看它）/ `summary=`；
+  退出码 0 = 正常跑完、2 = 没给路径、1 = 查询本身出错。
+- **实测**（写测试之前端到端跑过）：锁一个文件 → `auto=killed killed=2 targets=powershell.exe`
+  （连 conhost 子进程一起），再查 `lockers=0 candelete=yes`；系统事件日志那个永远被几个 `svchost`
+  占着的文件 → `auto=locked killed=0 targets=`（一个都没挑中），占用者一个没少。
 
 - **「解除文件占用」**（`src\FileLock.cs`）：用 **Windows 自带的 Restart Manager**（`rstrtmgr.dll`
   的 `RmStartSession` → `RmRegisterResources` → `RmGetList`）查"谁占着这个文件"，**不装 handle.exe、
@@ -818,6 +835,25 @@ powershell -File tools\Make-AppIcon.ps1       # 重生成 assets\app.ico（改�
       连带两条：① **"有窗口"不等于"看得见"** —— 回归 **N21d** 抓 `PrintWindow` 的像素数墨迹才算验过；
       ② N21 要**真动鼠标**（`SetCursorPos`），所以先存原来的位置、跑完放回去（和 B10/B11 一个规矩），
       而且采样几次取最贴的一次（卡片跟鼠标有 ≤60ms 的滞后，用户也可能正在动鼠标）。
+  29. **"进程名黑名单"拦不住系统进程 —— 看"归属"才拦得住**（2026-10-06 **CI 抓到的真事故**，
+      不是自己发现的）：v1.5.4 推上去之后 GitHub runner 上 **M34 红了**，而且是真出事了 ——
+      `[FAIL] M34 … (auto=killed killed=2 占用者 3→1)`：**「一键解除占用」在别的机器上真的结束了
+      系统服务**（那台机器上我们正好是管理员，"结束失败"这层保险也没兜住）。
+      根因：底线原来是一张**进程名黑名单**（`CriticalNames`：svchost / lsass / wininit…），
+      名字来自 `Process.GetProcessById(pid).ProcessName` —— **权限不够时读不出来**，
+      代码退回 `RmGetProcessInfo` 报的**友好名**（"Windows Event Log" 这种服务名），
+      黑名单一条都对不上，于是它就动手了。
+      **教训：名字是别人给的、随时可能读不到；归属是系统给的、读不到就拒绝。**
+      修法（`FileLock.AutoUnlockTarget` 现在是「归属 + 来源 + 名字」三层，任何一层不确定就拒绝）：
+      ① `NotMine` —— 进程令牌里的用户 SID 和当前进程不一样（SYSTEM / 别的账户 / TrustedInstaller）；
+      ② `IsService` —— `RM_APP_INFO.ApplicationType == RmService`；
+      ③ `NameUnread` —— `ExeNameOf(pid)` 空（手里只有友好名，名单无效）。
+      **读不到就当成"不是自己的"**（fail closed）。窗口那条路一个字没改。
+      本机实测：系统事件日志 `killed=0 targets=`（一个都没挑中）；自己开的 powershell 独占的文件
+      `killed=2 targets=powershell.exe`（照结束）。回归 **M34**（失败信息带 `targets=`）
+      + **M39**（源码级看门狗：盯住那三条拒绝还在 —— 真造"系统服务占着文件"的现场要管理员 +
+      计划任务，造不出来只能 Skip，那等于没测）。见 `docs\DESIGN.md` §12.57。
+      连带一个调试小习惯：**"挑中了谁"要能看见**（`targets=`）—— 出事时第一句要问的就是它。
 - **别在 PowerShell 里按像素调函数**：一个 `Get-Pixel` 每像素调一次，几万次调用要几分钟，
   看起来像卡死（踩过一次）。要么 `LockBits` 取一次 `byte[]` 再纯数组循环（`Get-InkRows` 的写法），
   要么用 csc 编个临时小工具（`local\InkDiag.cs` 那种）。
@@ -841,8 +877,9 @@ powershell -File tools\Make-AppIcon.ps1       # 重生成 assets\app.ico（改�
    以及"发布工具"—— Release 的说明文字与截图要他点头）。要发就：
    `build.ps1 -Package` → 打 tag `v1.5.4` → 发 Release（附 `Mxx1Toolbox.exe` + zip + SHA256）。
 4. 条款正文（`docs\DISCLAIMER.md`）**改一个字就会让所有人下次打开重新确认一次**（记的是正文指纹）。
-   **v1.5.4 这一轮改过两次**（① 补第三项与「一键解除占用」的行为 / 底线 / 风险；
-   ② 把"右下角气泡"改成"鼠标旁边的小提示卡"），所以用户下次打开会再看到一次《使用条款确认》
+   **v1.5.4 这一轮改过三次**（① 补第三项与「一键解除占用」的行为 / 底线 / 风险；
+   ② 把"右下角气泡"改成"鼠标旁边的小提示卡"；③ 底线里加上"不是你自己账户的程序也一律不动"
+   —— 就是坑 29 那个 CI 事故的修法），所以用户下次打开会再看到一次《使用条款确认》
    —— **已经跟他说明过**；想免打扰：`bin\Mxx1Toolbox.exe consent --accept`。以后再改正文同样要先说一声。
 5. P1 的范围（先接哪个页签的真功能）要问用户，别自己挑。
 6. 图标要改样式就动 `tools\Make-Icons.ps1` 的关键词映射 / 配色，然后按

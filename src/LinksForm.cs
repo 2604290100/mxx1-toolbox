@@ -23,7 +23,7 @@ namespace Mxx1Toolbox
 
         private static readonly Link[] Links = new Link[]
         {
-            Make("项目主页", AboutForm.AuthorUrl, "网页"),
+            Make("官网", AboutForm.AuthorUrl, "网页"),
             Make("工具箱仓库", AboutForm.RepoUrl, "网页"),
             Make("永久删除工具", "https://github.com/2604290100/permanent-delete-menu", "网页"),
             Make("Windows 更新", "ms-settings:windowsupdate", "系统设置"),

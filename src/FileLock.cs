@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Security.Principal;
 using System.Text;
 
 namespace Mxx1Toolbox
@@ -31,6 +32,19 @@ namespace Mxx1Toolbox
         public bool Protected;         // 禁止结束
         public string Why = "";        // 为什么禁止 / 该注意什么
         public bool Checked = true;    // 默认勾不勾
+
+        /// <summary>**不是当前用户的**进程（系统服务 / SYSTEM / 别的账户 / TrustedInstaller）。
+        /// 「一键解除占用」一律不碰它 —— 名字叫什么已经不重要了（见 `IsOwnedByCurrentUser`）。</summary>
+        public bool NotMine;
+
+        /// <summary>连进程名都读不出来（权限不够）。这时 `Exe` 里装的是系统报的**友好名**
+        /// （"Windows Event Log" 这种），禁止名单根本对不上 —— 所以自动那条路必须拒绝：
+        /// 不能拿一个"猜出来的名字"去判断它安不安全。</summary>
+        public bool NameUnread;
+
+        /// <summary>系统报的类型就是「服务」。自动那条路一律不碰（服务多半是系统组件，
+        /// 而且用户自己的程序不会被系统当成服务报出来）。</summary>
+        public bool IsService;
 
         /// <summary>这条是怎么查出来的：lock / run / open（见上面的常量）。</summary>
         public string Source = SourceLock;
@@ -710,7 +724,12 @@ namespace Mxx1Toolbox
             f.Pid = pid;
             f.AppName = (pi.strAppName == null) ? "" : pi.strAppName;
             f.Exe = ExeNameOf(pid);
-            if (f.Exe.Length == 0) { f.Exe = (f.AppName.Length > 0) ? f.AppName : ("PID " + pid.ToString(CultureInfo.InvariantCulture)); }
+            // 进程名读不出来（权限不够）时只能拿系统报的友好名顶上 —— 这个标记很重要：
+            // 禁止名单是对着"进程名"写的，拿友好名去比一条都对不上（见 AutoUnlockTarget）。
+            f.NameUnread = (f.Exe.Length == 0);
+            if (f.NameUnread) { f.Exe = (f.AppName.Length > 0) ? f.AppName : ("PID " + pid.ToString(CultureInfo.InvariantCulture)); }
+            f.IsService = (pi.ApplicationType == RM_APP_TYPE.RmService);
+            f.NotMine = !IsOwnedByCurrentUser(pid);
 
             switch (pi.ApplicationType)
             {
@@ -768,12 +787,20 @@ namespace Mxx1Toolbox
         /// 允许：真占着文件的（lock）和"它自己在运行"的（run）—— 后者正是"文件夹里放着一个
         /// 正在跑的安装包"那种最常见的删不掉，一键解除不管它就没用了。
         /// 不许：「窗口里开着它」的（根本没锁文件，结束它纯属误伤）、系统关键进程与 pid ≤ 4、
-        /// 工具箱自己（就是当前进程）、以及 explorer.exe（结束它 = 桌面重启一次，
-        /// 无声无息地干这个会把用户吓一跳）。</summary>
+        /// 工具箱自己（就是当前进程）、explorer.exe（结束它 = 桌面重启一次，无声无息地干这个
+        /// 会把用户吓一跳），以及 2026-10-06 补的三条**结构性**规矩（都是从 CI 那次的真事故里
+        /// 学来的，见 `IsOwnedByCurrentUser`）：
+        ///   ① 进程名读不出来的一律不碰（`NameUnread`）；
+        ///   ② 系统报的类型是「服务」的一律不碰（`IsService`）；
+        ///   ③ **不是当前用户自己的进程**一律不碰（`NotMine`）—— 这一条才是关键：
+        ///      靠名字列黑名单永远列不全，看"归属"才拦得住。</summary>
         public static bool AutoUnlockTarget(FileLocker f)
         {
             if (f == null) { return false; }
             if (f.Protected) { return false; }
+            if (f.NameUnread) { return false; }
+            if (f.IsService) { return false; }
+            if (f.NotMine) { return false; }
             if (f.Source != FileLocker.SourceLock && f.Source != FileLocker.SourceRun) { return false; }
             if (IsSelf(f.Pid)) { return false; }
             string bare = (f.Exe == null) ? "" : f.Exe.Trim().ToLowerInvariant();
@@ -790,6 +817,93 @@ namespace Mxx1Toolbox
             string bare = exe.Trim().ToLowerInvariant();
             if (bare.EndsWith(".exe", StringComparison.Ordinal)) { bare = bare.Substring(0, bare.Length - 4); }
             return NameIn(CriticalNames, bare);
+        }
+
+        // ------------------------------------------------------------------ 这个进程属于谁
+
+        // OpenProcess / CloseHandle 这个文件下面（句柄表那一段）已经声明过了，这里**不再写第二份**
+        // （写重复了会 CS0111）；PROCESS_QUERY_LIMITED_INFORMATION 也只有一个常量。
+        private const uint TokenQuery = 0x0008;
+        private const int TokenUserClass = 1;
+
+        [DllImport("advapi32.dll", SetLastError = true)]
+        private static extern bool OpenProcessToken(IntPtr process, uint access, out IntPtr token);
+
+        [DllImport("advapi32.dll", SetLastError = true)]
+        private static extern bool GetTokenInformation(IntPtr token, int infoClass, IntPtr info,
+            int infoLength, out int returnLength);
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct SidAndAttributes
+        {
+            public IntPtr Sid;
+            public uint Attributes;
+        }
+
+        /// <summary>这个进程是不是**当前用户自己的**（进程令牌里的用户 SID 和当前进程一样）。
+        ///
+        /// 为什么要有它（2026-10-06 GitHub CI 上抓到的真事故）：「一键解除占用」原来靠
+        /// **一张进程名黑名单**（svchost / lsass / wininit…）判断"这是不是系统进程"。而进程名是
+        /// `Process.GetProcessById(pid).ProcessName` 读出来的 —— **权限不够时读不到**，代码就退回
+        /// 系统报的友好名（"Windows Event Log" 这种）。于是黑名单一条都对不上，
+        /// 一键解除在 CI 的 runner 上真的去结束了**系统服务**：`auto=killed killed=2`，
+        /// 系统事件日志文件的占用者从 3 个掉到 1 个（M34 当场红）。那台机器上我们正好是管理员，
+        /// 所以"结束失败"这最后一层保险也没兜住。
+        ///
+        /// 现在改成看**归属**：SID 和当前进程不一样（SYSTEM / 别的账户 / TrustedInstaller）
+        /// 一律不许自动结束 —— 名字叫什么已经不重要了。窗口那条路不受影响（它本来就让人自己勾、
+        /// 还有确认框），这条规矩只加在**没有确认框**的自动路上。
+        ///
+        /// **读不到就当"不是自己的"**（fail closed）：这条路没有确认框，宁可这一次不解锁，
+        /// 也不能拿猜出来的东西去结束别人的进程。</summary>
+        public static bool IsOwnedByCurrentUser(int pid)
+        {
+            string mine = MySid();
+            if (mine.Length == 0) { return false; }
+            string who = SidOfProcess(pid);
+            return (who.Length > 0) && string.Equals(mine, who, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string MySid()
+        {
+            try
+            {
+                WindowsIdentity me = WindowsIdentity.GetCurrent();
+                if (me == null || me.User == null) { return ""; }
+                return me.User.Value;
+            }
+            catch { return ""; }
+        }
+
+        /// <summary>那个进程令牌里的用户 SID（读不到返回空串）。</summary>
+        private static string SidOfProcess(int pid)
+        {
+            IntPtr process = IntPtr.Zero;
+            IntPtr token = IntPtr.Zero;
+            IntPtr buffer = IntPtr.Zero;
+            try
+            {
+                process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
+                if (process == IntPtr.Zero) { return ""; }
+                if (!OpenProcessToken(process, TokenQuery, out token)) { return ""; }
+
+                int need;
+                GetTokenInformation(token, TokenUserClass, IntPtr.Zero, 0, out need);   // 只为问长度
+                if (need <= 0) { return ""; }
+                buffer = Marshal.AllocHGlobal(need);
+                if (!GetTokenInformation(token, TokenUserClass, buffer, need, out need)) { return ""; }
+
+                SidAndAttributes sa = (SidAndAttributes)Marshal.PtrToStructure(buffer, typeof(SidAndAttributes));
+                if (sa.Sid == IntPtr.Zero) { return ""; }
+                return new SecurityIdentifier(sa.Sid).Value;      // S-1-5-21-…
+            }
+            catch { return ""; }
+            finally
+            {
+                if (buffer != IntPtr.Zero) { Marshal.FreeHGlobal(buffer); }
+                if (token != IntPtr.Zero) { CloseHandle(token); }
+                if (process != IntPtr.Zero) { CloseHandle(process); }
+            }
         }
 
         private static string ExeNameOf(int pid)
@@ -1166,12 +1280,14 @@ namespace Mxx1Toolbox
             return false;
         }
 
-        /// <summary>系统关键进程 / explorer / 装箱自己：列出来但不许随便结束（和 RM 那批一个规矩）。</summary>
+        /// <summary>系统关键进程 / explorer / 装箱自己：列出来但不许随便结束（和 RM 那批一个规矩）。
+        /// 「不是当前用户的进程」也在这里标上（自动那条路要看它）。</summary>
         private static void Guard(FileLocker f)
         {
             string bare = f.Exe.ToLowerInvariant();
             if (bare.EndsWith(".exe")) { bare = bare.Substring(0, bare.Length - 4); }
 
+            f.NotMine = !IsOwnedByCurrentUser(f.Pid);
             if (f.Pid <= 4) { f.Protected = true; f.Checked = false; f.Why = "系统进程，不能结束"; }
             else if (NameIn(CriticalNames, bare)) { f.Protected = true; f.Checked = false; f.Why = "系统关键程序，不能结束"; }
             else if (string.Equals(bare, "explorer", StringComparison.OrdinalIgnoreCase))

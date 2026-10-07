@@ -261,12 +261,12 @@ namespace Mxx1Toolbox
             Console.WriteLine("                                                        （右键菜单里的「" + RightMenu.AutoTitle + "」用的就是它）");
             Console.WriteLine("                                                        提示卡 5 秒自动关闭（点一下也能提前关），--notify=<毫秒> 定它多久自己走");
             Console.WriteLine("                                                        （--notify=0 / --quiet 连提示卡也不要）");
-            Console.WriteLine("  Mxx1Toolbox.exe copypath <文件…> [--relative] [--base=<目录>]   把路径复制进剪贴板（一行一个）");
-            Console.WriteLine("                                                        默认**不带引号**；--relative = 相对路径（基准默认是当前目录）");
-            Console.WriteLine("                                                        （右键菜单里的「" + RightMenu.CopyRelTitle + "」/「" + RightMenu.CopyAbsTitle + "」用的就是它）");
+            Console.WriteLine("  Mxx1Toolbox.exe copypath <文件…> [--name] [--relative] [--base=<目录>]   把名字 / 路径复制进剪贴板（一行一个）");
+            Console.WriteLine("                                                        默认**不带引号**；--name = 只取名字（报告.txt）；--relative = 相对路径（基准默认是当前目录）");
+            Console.WriteLine("                                                        （右键菜单里的「" + RightMenu.CopyNameTitle + "」用 --name，「" + RightMenu.CopyPathTitle + "」不用开关）");
             Console.WriteLine("  Mxx1Toolbox.exe terminal [<目录>] [--wt|--ps|--cmd]   在某个目录里开一个终端");
             Console.WriteLine("                                                        （默认挑 Windows Terminal → PowerShell → cmd；三个开关各钉死一个）");
-            Console.WriteLine("                                                        （右键菜单里的「" + RightMenu.TerminalCmdTitle + "」/「" + RightMenu.TerminalPsTitle + "」用的就是它）");
+            Console.WriteLine("                                                        （右键菜单里的「" + RightMenu.TerminalTitle + "」子菜单那两行用的就是它）");
             Console.WriteLine("                                                        （--dry 只打印会跑哪条命令，不起窗口）");
             Console.WriteLine("  Mxx1Toolbox.exe ui [log|settings]    打开界面并直接看日志 / 设置（右键子菜单的固定入口用它）");
             Console.WriteLine("  Mxx1Toolbox.exe pin <id> / unpin <id>  把按钮置顶 / 取消置顶（排在这一页最前面）");
@@ -369,9 +369,9 @@ namespace Mxx1Toolbox
             return matched ? 0 : 1;
         }
 
-        /// <summary>`copypath &lt;文件…&gt; [--relative] [--base=&lt;目录&gt;] [--quote] [--print] [--no-wait]`
-        /// —— 把路径复制进剪贴板（一行一个）。右键菜单里那**两个**菜单项用的就是它：
-        /// 「复制相对路径」= `copypath --relative "%1"`、「复制绝对路径」= `copypath "%1"`
+        /// <summary>`copypath &lt;文件…&gt; [--name] [--relative] [--base=&lt;目录&gt;] [--quote] [--print] [--no-wait]`
+        /// —— 把名字 / 路径复制进剪贴板（一行一个）。右键菜单里那**两个**菜单项用的就是它：
+        /// 「复制文件名」= `copypath --name "%1"`、「复制文件路径」= `copypath "%1"`
         /// —— 两条都**不带引号**（用户 2026-10-06 晚六：「复制出来的路径两边都不可以带有引号」）。
         /// 实现与"多选怎么合批"的来龙去脉见 `src\CopyPath.cs`。
         ///
@@ -381,10 +381,12 @@ namespace Mxx1Toolbox
         {
             List<string> paths = new List<string>();
             bool relative = false;
+            bool nameOnly = false;
             string baseDir = "";
             for (int i = 1; i < args.Length; i++)
             {
                 if (args[i] == null) { continue; }
+                if (string.Equals(args[i], "--name", StringComparison.OrdinalIgnoreCase)) { nameOnly = true; continue; }
                 if (string.Equals(args[i], "--relative", StringComparison.OrdinalIgnoreCase)) { relative = true; continue; }
                 if (args[i].StartsWith("--base=", StringComparison.OrdinalIgnoreCase))
                 {
@@ -394,7 +396,7 @@ namespace Mxx1Toolbox
                 if (args[i].StartsWith("--")) { continue; }
                 paths.Add(args[i]);
             }
-            return CopyPath.Run(paths, HasFlag(args, "--quote"), relative, baseDir,
+            return CopyPath.Run(paths, HasFlag(args, "--quote"), relative, baseDir, nameOnly,
                 HasFlag(args, "--no-wait"), HasFlag(args, "--print"), NotifyWanted(args), NotifyMs(args));
         }
 
@@ -516,9 +518,11 @@ namespace Mxx1Toolbox
                     Console.WriteLine(loc.Id + "\t" + loc.Label + "\t" + loc.Key);
                 }
                 Console.WriteLine("titles=" + RightMenu.UnlockTitle + " / " + RightMenu.AutoTitle + " / "
-                    + RightMenu.CommonTitle + " / " + RightMenu.CopyRelTitle + " / " + RightMenu.CopyAbsTitle
-                    + " / " + RightMenu.TerminalCmdTitle + " / " + RightMenu.TerminalPsTitle);
+                    + RightMenu.CommonTitle + " / " + RightMenu.CopyNameTitle + " / " + RightMenu.CopyPathTitle
+                    + " / " + RightMenu.TerminalTitle);
+                Console.WriteLine("children=" + RightMenu.TerminalCmdName + " / " + RightMenu.TerminalPsName);
                 Console.WriteLine("shared=" + RightMenu.SharedKey);
+                Console.WriteLine("trees=" + RightMenu.SharedKey + " / " + RightMenu.TerminalTreeKey + " / " + RightMenu.TerminalBgTreeKey);
                 Console.WriteLine("root=" + RightMenu.RootLabel);
                 return 0;
             }

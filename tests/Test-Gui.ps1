@@ -1323,22 +1323,37 @@ if ($rightProbe.Count -eq 0 -or $rightShot -eq $null) {
 }
 
 # C01e：右键增强页的段序（用户 2026-10-06 晚六：「【状态与修补】这个说明栏和里面的按钮
-#   应该放到底部才对」→ 放到**倒数第一**）。这一页现在有 7 段，段标题是一个个 STATIC 标签，
+#   应该放到底部才对」→ 放到**倒数第一**）。这一页现在有 8 段，段标题是一个个 STATIC 标签，
 #   按屏幕上的 Top 排一遍就是页面顺序。这条断言把**整页顺序**钉住：以后谁把段号调回去，
 #   或者新加一段插错地方，这里当场红。
 # ⚠ 第一条为什么是「隔壁工具」而不是「解除文件占用」：**置顶的按钮排在本页最前**
 #   （MainForm 装载清单时先按 pinned 排一遍，见那里的注释；permdel.gui 在清单里就带 pinned:true），
 #   段号管不了它。第一次按段号顺序写这条断言，实测就是这个项排在最上面。
+# ⚠ 「复制文件名」和「复制文件路径」是**两段**（两对按钮）：用户 2026-10-06 晚六最后定的
+#   「各配一对，共 16 个按钮」，所以这里必须看到它们各自成段 —— 谁把两段并回一段这里就红。
 $wantRightCaps = @('隔壁工具（永久删除）',
                    '右键菜单 · 解除文件占用', '右键菜单 · 一键解除占用', '右键菜单 · 常用功能',
-                   '右键菜单 · 复制文件路径（相对 / 绝对）',
+                   '右键菜单 · 复制文件名', '右键菜单 · 复制文件路径',
                    '右键菜单 · 在此处打开终端（cmd / PowerShell）',
                    '状态与修补')
 $gotRightCaps = @(Get-ChildControls -RootHandle $main |
     Where-Object { $wantRightCaps -contains $_.Text } | Sort-Object Top | ForEach-Object { $_.Text })
-Check ('C01e 右键增强页的段序：7 段，最后一段是「状态与修补」（共 {0} 段）' -f $wantRightCaps.Count) `
+Check ('C01e 右键增强页的段序：8 段，最后一段是「状态与修补」（共 {0} 段）' -f $wantRightCaps.Count) `
     (($gotRightCaps -join ' | ') -eq ($wantRightCaps -join ' | ')) `
     ('实际=' + ($gotRightCaps -join ' | '))
+
+# C01f：这一页的按钮数 = 16（6 对装 / 撤 + 隔壁工具 1 + 状态与修补 3）。用户 2026-10-06 晚六
+#   明确要「记得加上安装和卸载按钮」，所以两对复制按钮必须都在**同一页**上、而且是真按钮。
+$rightBtns = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*BUTTON*' })
+$wantRightBtns = @('永久删除工具', '装上解除占用', '撤掉解除占用', '装上一键解除占用', '撤掉一键解除占用',
+                   '装上常用功能', '撤掉常用功能', '装上复制文件名', '撤掉复制文件名',
+                   '装上复制文件路径', '撤掉复制文件路径', '装上在此处打开终端', '撤掉在此处打开终端',
+                   '右键菜单状态', '重建常用功能', '右键增强说明')
+$gotRightBtns = @($rightBtns | Where-Object { $wantRightBtns -contains $_.Text } | ForEach-Object { $_.Text })
+Check ('C01f 右键增强页 16 个按钮都在（两对复制各一对 = {0} 个）' -f $wantRightBtns.Count) `
+    (($gotRightBtns.Count -eq $wantRightBtns.Count) -and `
+     (@($gotRightBtns | Sort-Object) -join '|') -eq (@($wantRightBtns | Sort-Object) -join '|')) `
+    ('实际=' + ($gotRightBtns -join ' | '))
 
 Check ('C02 点「清理优化」→ {0} 个按钮' -f $cleanNames.Count) (Switch-Tab -Handle $main -TabName '清理优化' -ExpectNames $cleanNames) ''
 Check ('C03 点「系统工具」→ {0} 个按钮' -f $sysNames.Count) (Switch-Tab -Handle $main -TabName '系统工具' -ExpectNames $sysNames) ''

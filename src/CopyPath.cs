@@ -9,13 +9,16 @@ using System.Windows.Forms;
 
 namespace Mxx1Toolbox
 {
-    /// <summary>「复制文件路径」—— 把选中文件 / 文件夹的路径复制进剪贴板（一行一个）。
+    /// <summary>「复制文件名」/「复制文件路径」—— 把选中文件 / 文件夹的**名字**或**完整路径**
+    /// 复制进剪贴板（一行一个）。
     ///
-    /// 谁在用：① 右键菜单里那**两个**菜单项（`src\RightMenu.cs` 的 CopyRelVerb / CopyAbsVerb，
-    /// 命令分别是 `"<工具箱 exe>" copypath --relative "%1"` 和 `"<工具箱 exe>" copypath "%1"`）；
-    /// ② 命令行 `copypath <文件…> [--relative] [--base=<目录>] [--quote]`。
-    /// 用户 2026-10-06 晚六要的是"多选：一个相对、一个绝对"，而且**复制出来的路径两边都不带引号**
-    /// —— 所以菜单里那条命令不传 `--quote`（`--quote` 只留作命令行的一个可选开关）。
+    /// 谁在用：① 右键菜单里那**两个**菜单项（`src\RightMenu.cs` 的 CopyNameVerb / CopyPathVerb），
+    /// 命令分别是 `"<工具箱 exe>" copypath --name "%1"` 和 `"<工具箱 exe>" copypath "%1"`；
+    /// ② 命令行 `copypath <文件…> [--name] [--relative] [--base=<目录>] [--quote]`。
+    /// 用户 2026-10-06 晚六要的是"两条菜单项：一个文件名、一个完整路径"，而且**两边都不带引号**
+    /// —— 所以菜单里那两条命令都不传 `--quote`（`--quote` 只留作命令行的一个可选开关）。
+    /// （原来那条「相对路径」菜单项已经撤掉：右键时的工作目录**就是**文件所在的文件夹，
+    /// 折出来正好等于文件名 —— `--relative` 作为命令行开关留着，菜单不用它。）
     ///
     /// **多选那件事这里自己做了一遍**（`AppendBatch` / `SettleMs` / `JoinMs`，别删）：
     /// 右键菜单里那一项写的是 `MultiSelectModel=Player`，按微软文档 legacy verb 的 Player 模型
@@ -28,6 +31,8 @@ namespace Mxx1Toolbox
     ///     · 自己就是最后一个 → 把整批路径一起复制出去。
     /// 于是"一次全传进来"和"每个文件一次"这两种情况**都是对的**（多进程并发有测试：O 组）。
     /// 代价写在 DESIGN 里：两次独立的复制挨得比 `JoinMs`（1.5 秒）还近时会被合成一批。
+    /// ⚠️ 模式（文件名 / 相对 / 绝对）也记在批次文件的头一行：**模式对不上就不并批** ——
+    /// 两条菜单项就是两个模式，合成一批会把文件名折成路径（或反过来）。
     ///
     /// 底线：**只读**（不移动、不改名、不删除任何文件）、不联网；路径里有空格 / 中文 / `&` 都照原样复制
     /// （剪贴板里的文本不做任何转义，`--quote` 那种加引号也是"照 Windows 自己那个「复制为路径」的写法"）。
@@ -36,6 +41,7 @@ namespace Mxx1Toolbox
     /// 还失败就如实说"剪贴板忙"——不谎报"已复制"。</summary>
     internal static class CopyPath
     {
+        /// <summary>日志里那个标签。两种模式共用（日志正文里会写明是名字还是路径）。</summary>
         public const string LogTag = "复制文件路径";
 
         /// <summary>批次文件"安静"多久之后才认"我是最后一个"（毫秒）。**别改成固定 sleep**：
@@ -68,22 +74,23 @@ namespace Mxx1Toolbox
 
         /// <summary>跑一次。返回退出码：0 = 成功（含"别人收尾，我什么都不用做"），2 = 用法错 / 剪贴板写不进去。
         ///
+        /// `nameOnly` = 复制**名字**（最后一段：文件 `报告.txt`、文件夹 `2026`）—— 右键菜单第一条菜单项。
         /// `relative` = 复制**相对路径**（相对 `baseDir`；`baseDir` 空 = 自己按规矩挑一个基准，
-        /// 见 ResolveBase）。相对那两个菜单项之外，别的调用者都给 false。</summary>
-        public static int Run(List<string> rawPaths, bool quote, bool relative, string baseDir,
+        /// 见 ResolveBase）。`nameOnly` 和 `relative` 同时给时以 `nameOnly` 为准。</summary>
+        public static int Run(List<string> rawPaths, bool quote, bool relative, string baseDir, bool nameOnly,
             bool noWait, bool print, bool notify, int notifyMs)
         {
             List<string> paths = Normalize(rawPaths);
             if (paths.Count == 0)
             {
-                Console.Error.WriteLine("用法: copypath <文件…> [--relative] [--base=<目录>] [--quote] [--print] [--no-wait]");
-                Console.Error.WriteLine("      路径里可以有空格和中文；--relative 复制相对路径（基准 = --base，没给就用当前目录）");
+                Console.Error.WriteLine("用法: copypath <文件…> [--name] [--relative] [--base=<目录>] [--quote] [--print] [--no-wait]");
+                Console.Error.WriteLine("      路径里可以有空格和中文；--name 只取名字（报告.txt）；--relative 复制相对路径（基准 = --base，没给就用当前目录）");
                 Console.Error.WriteLine("      默认**不带引号**；--quote 是每行加上英文引号（可选，给要粘进命令行的场合）");
                 return 2;
             }
 
             string baseFull = "";
-            if (relative)
+            if (relative && !nameOnly)
             {
                 string baseError = ResolveBase(paths[0], baseDir, out baseFull);
                 if (baseError.Length > 0)
@@ -96,8 +103,9 @@ namespace Mxx1Toolbox
 
             Console.WriteLine("input=" + paths.Count.ToString(System.Globalization.CultureInfo.InvariantCulture));
             Console.WriteLine("quoted=" + (quote ? "yes" : "no"));
+            Console.WriteLine("name=" + (nameOnly ? "yes" : "no"));
             Console.WriteLine("relative=" + (relative ? "yes" : "no"));
-            if (relative) { Console.WriteLine("base=" + baseFull); }
+            if (relative && !nameOnly) { Console.WriteLine("base=" + baseFull); }
 
             // 多个路径 = 资源管理器一次全传进来了（或者用户自己一次给了好几个），不用猜也不用等
             bool batch = (!noWait && paths.Count == 1);
@@ -106,7 +114,7 @@ namespace Mxx1Toolbox
             int waited = 0;
             if (batch)
             {
-                Append(paths[0], relative, baseFull);
+                Append(paths[0], relative, nameOnly, baseFull);
                 // 轮询到"批次文件不再变、而且最后一条就是我"为止 —— 见 QuietMs 的说明
                 DateTime t0 = DateTime.UtcNow;
                 finalList = null;
@@ -118,7 +126,7 @@ namespace Mxx1Toolbox
                     List<string> now;
                     using (BatchLock gate = new BatchLock())
                     {
-                        now = ReadBatchLocked(JoinMs, relative, baseFull);
+                        now = ReadBatchLocked(JoinMs, relative, nameOnly, baseFull);
                         last = (now.Count > 0) && Same(now[now.Count - 1], paths[0]);
                         if (last && (QuietAgeMs() >= QuietMs)) { finalList = now; }
                     }
@@ -154,13 +162,13 @@ namespace Mxx1Toolbox
                 role = "closer";
             }
 
-            // 剪贴板里最终写什么：绝对模式原样，相对模式把每一行折成相对路径（跨盘符那一行会退回完整路径）。
-            // 折完还要去一次重：绝对路径和相对路径指着同一个文件时会折成同一行（命令行上混着给才会出现，
-            // 右键菜单不会 —— 但"复制出两行一模一样的"就是坏的，顺手挡掉）。
+            // 剪贴板里最终写什么：文件名模式取最后一段；相对模式把每一行折成相对路径（跨盘符那一行会退回
+            // 完整路径）；绝对模式原样。折完还要去一次重：绝对路径和相对路径指着同一个文件时会折成同一行
+            // （命令行上混着给才会出现，右键菜单不会 —— 但"复制出两行一模一样的"就是坏的，顺手挡掉）。
             List<string> shown = new List<string>();
             foreach (string p in finalList)
             {
-                string s = relative ? RelativeOne(p, baseFull) : p;
+                string s = nameOnly ? NameOf(p) : (relative ? RelativeOne(p, baseFull) : p);
                 if (!Contains(shown, s)) { shown.Add(s); }
             }
 
@@ -199,19 +207,26 @@ namespace Mxx1Toolbox
             if (error.Length > 0)
             {
                 Logger.Write(LogTag, "剪贴板写不进去：" + error);
-                if (notify) { Balloon.Show("复制文件路径 · 失败", "剪贴板被别的程序占着，复制没成功（过一会儿再试一次）。", notifyMs, NoticeKind.Fail); }
+                if (notify) { Balloon.Show(TitleOf(nameOnly) + " · 失败", "剪贴板被别的程序占着，复制没成功（过一会儿再试一次）。", notifyMs, NoticeKind.Fail); }
                 Console.Error.WriteLine("剪贴板写不进去：" + error);
                 return 2;
             }
 
             Logger.Write(LogTag, "复制了 " + shown.Count.ToString(System.Globalization.CultureInfo.InvariantCulture)
-                + " 个路径（" + (relative ? "相对路径、" : "") + (quote ? "带引号" : "不带引号") + "）："
+                + " 个" + (nameOnly ? "名字" : "路径")
+                + "（" + (nameOnly ? "只取文件名、" : (relative ? "相对路径、" : "")) + (quote ? "带引号" : "不带引号") + "）："
                 + string.Join(" | ", shown.ToArray()));
             if (notify)
             {
-                Balloon.Show("复制文件路径", Summary(shown, quote), notifyMs, NoticeKind.Ok);
+                Balloon.Show(TitleOf(nameOnly), Summary(shown, quote, nameOnly), notifyMs, NoticeKind.Ok);
             }
             return 0;
+        }
+
+        /// <summary>提示卡 / 日志里那个名字（两种模式各一个，用户 2026-10-06 晚六定的那两个菜单项）。</summary>
+        private static string TitleOf(bool nameOnly)
+        {
+            return nameOnly ? "复制文件名" : "复制文件路径";
         }
 
         /// <summary>去掉没给全的开关，并把"路径里混着引号"这件事挡掉：Windows 文件名里**不可能**有
@@ -430,46 +445,56 @@ namespace Mxx1Toolbox
             return rest.Split(new char[] { '\\', '/' }, StringSplitOptions.RemoveEmptyEntries);
         }
 
+        /// <summary>一个路径的**名字**（最后一段）：文件 `报告.txt`、文件夹 `2026`。
+        /// 取不到名字时原样返回（比如盘符根 `D:\`，`GetFileName` 给的是空串）。</summary>
+        private static string NameOf(string target)
+        {
+            string p = (target == null) ? "" : target;
+            string n = "";
+            try { n = Path.GetFileName(TrimTail(p)); }
+            catch { }
+            return (n.Length > 0) ? n : p;
+        }
+
         /// <summary>卡片上那两行话（名字取路径最后一段，整条路径太长了）。</summary>
-        private static string Summary(List<string> paths, bool quote)
+        private static string Summary(List<string> paths, bool quote, bool nameOnly)
         {
             List<string> names = new List<string>();
             for (int i = 0; i < paths.Count && i < 4; i++)
             {
-                string n = "";
-                try { n = Path.GetFileName(paths[i].TrimEnd('\\', '/')); }
-                catch { }
-                names.Add((n.Length > 0) ? n : paths[i]);
+                names.Add(NameOf(paths[i]));
             }
             string joined = string.Join("、", names.ToArray());
             if (paths.Count > names.Count)
             {
                 joined += " 等 " + paths.Count.ToString(System.Globalization.CultureInfo.InvariantCulture) + " 个";
             }
-            return paths.Count.ToString(System.Globalization.CultureInfo.InvariantCulture) + " 个路径已经复制好（一行一个"
-                + (quote ? "，带引号" : "") + "）：" + joined;
+            return paths.Count.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                + (nameOnly ? " 个文件名" : " 个路径")
+                + "已经复制好（一行一个" + (quote ? "，带引号" : "") + "）：" + joined;
         }
 
         // ------------------------------------------------------------------ 批次（多选）
 
         /// <summary>把这一次的路径记进批次文件。已经在里面的（同一批里资源管理器重复调用）就不再记。
         ///
-        /// 文件第一行是**模式头**（`#abs` 或 `#rel &lt;基准目录&gt;`）：相对模式的那几条必须同一批、
-        /// 同一基准才并到一起 —— 模式或基准对不上就当"上一批已经过去了"，从头写一份新的。
+        /// 文件第一行是**模式头**（`#abs` / `#name` / `#rel &lt;基准目录&gt;`）：同一个模式的几条才能并成
+        /// 一批（"复制文件名"和"复制文件路径"是两条菜单项，合成一批就会把文件名折成路径），
+        /// 相对模式还要求基准也一样。模式或基准对不上就当"上一批已经过去了"，从头写一份新的。
         /// 这样收尾的那个进程只要按自己的模式处理就行，不会把绝对路径当成相对路径去折。
         /// （`#` 开头的一行不可能是路径：Windows 路径要么从盘符开头，要么从 `\\` 开头。）</summary>
-        private static void Append(string path, bool relative, string baseDir)
+        private static void Append(string path, bool relative, bool nameOnly, string baseDir)
         {
             using (BatchLock gate = new BatchLock())
             {
-                List<string> list = ReadBatchLocked(JoinMs, relative, baseDir);
+                List<string> list = ReadBatchLocked(JoinMs, relative, nameOnly, baseDir);
                 if (!Contains(list, path)) { list.Add(path); }
                 if (list.Count > MaxBatch) { list.RemoveRange(0, list.Count - MaxBatch); }
                 try
                 {
                     AppPaths.EnsureBase();
                     StringBuilder sb = new StringBuilder();
-                    sb.Append(HeaderOf(relative, baseDir)).Append("\r\n");
+                    sb.Append(HeaderOf(relative, nameOnly, baseDir)).Append("\r\n");
                     foreach (string s in list) { sb.Append(s).Append("\r\n"); }
                     File.WriteAllText(BatchFile, sb.ToString(), new UTF8Encoding(false));
                 }
@@ -483,8 +508,9 @@ namespace Mxx1Toolbox
 
         /// <summary>批次文件的模式头。基准目录里的制表符 / 换行会让这一行坏掉，
         /// 那种路径（理论上有、实际上没见过）走不带基准的写法，收尾时自己再挑一次基准。</summary>
-        private static string HeaderOf(bool relative, string baseDir)
+        private static string HeaderOf(bool relative, bool nameOnly, string baseDir)
         {
+            if (nameOnly) { return "#name"; }
             if (!relative) { return "#abs"; }
             string b = (baseDir == null) ? "" : baseDir;
             if ((b.IndexOf('\t') >= 0) || (b.IndexOf('\r') >= 0) || (b.IndexOf('\n') >= 0)) { b = ""; }
@@ -494,7 +520,7 @@ namespace Mxx1Toolbox
         /// <summary>读这一批（**调用方必须已经拿着 BatchLock**）。`joinMs` 之前的批次（隔得太久）
         /// 当成"已经过去的那一批"，返回空 —— 不能把用户上一次复制的东西并进来。
         /// 模式头跟这次对不上（模式不同、或相对模式但基准不同）也返回空。</summary>
-        private static List<string> ReadBatchLocked(int joinMs, bool relative, string baseDir)
+        private static List<string> ReadBatchLocked(int joinMs, bool relative, bool nameOnly, string baseDir)
         {
             List<string> list = new List<string>();
             try
@@ -507,7 +533,7 @@ namespace Mxx1Toolbox
                 }
                 string[] lines = File.ReadAllLines(BatchFile, Encoding.UTF8);
                 if ((lines.Length == 0) || !lines[0].StartsWith("#")) { return list; }
-                if (!string.Equals(lines[0].TrimEnd(), HeaderOf(relative, baseDir), StringComparison.OrdinalIgnoreCase))
+                if (!string.Equals(lines[0].TrimEnd(), HeaderOf(relative, nameOnly, baseDir), StringComparison.OrdinalIgnoreCase))
                 {
                     return list;    // 上一批是另一种模式 / 另一个基准：不并进来
                 }

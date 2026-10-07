@@ -21,7 +21,7 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
 - 版本 **1.5.4**（`src\AssemblyInfo.cs` 是唯一来源），已打 tag `v1.5.4` 并发 Release：
   <https://github.com/2604290100/mxx1-toolbox/releases/tag/v1.5.4>（`Mxx1Toolbox.exe` 788,992 字节 +
   `Mxx1Toolbox-package.zip` 1,124,644 字节，说明里带 SHA256）。CI 绿的。
-- 测试 **431 项** = 命令行 **266**（265 通过 + 1 项环境不满足跳过）+ 界面 **165**；
+- 测试 **446 项** = 命令行 **280**（279 通过 + 1 项环境不满足跳过）+ 界面 **166**；
   编码体检 201 个文件。本地实测：命令行约 2 分钟（挑组 `-Only T` 只要 2.9 秒）、界面约 2.5 分钟。
 - **测试可以挑组跑了**（`-Only M,N` / `-Skip P`）+ 提交前闸门 `tools\Test-Quick.ps1` +
   映射表 `tests\test-map.json`；分层与流程约定见 `docs\DESIGN.md` **§15**。
@@ -51,33 +51,38 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
   wt → powershell → cmd，**如实报用的是哪个**；"真的落在那个目录里"用**自己那条句柄表命令**
   （`rightmenu handles <目录>`）验的 —— 正本 **§12.62**。
   计数：命令行 **259** + 界面 **164** = **423 项**；右键增强从 10 个按钮 → **14 个**（5 对装 / 撤）。
-- **2026-10-06 晚六（最新一轮）**：用户三句话 ——「**【在此处打开终端】要求多选 一个是cmd
-  另外一个是powershell**」、「**【复制文件路径】要求多选 一个是相对路径 另外一个是绝对路径。
-  复制出来的路径两边都不可以带有引号**」、「**右键增强哪里这 【状态与修补】这个说明栏和里面的
-  按钮应该放底部才对**」（问了一句放哪儿，答「**放到倒数第一**」）。落地：
-  ① 后两对**各拆成两个菜单项**（菜单里 5 项 → **7 项**；界面按钮还是 14 个 / 5 对，点一次装两条）：
-  `copy.rel` `Mxx1CopyPathRel`（`copypath --relative "%1"`）/ `copy.abs` `Mxx1CopyPathAbs`（`copypath "%1"`）
-  / `terminal.cmd` `Mxx1TerminalCmd`（`terminal --cmd "%1"`）/ `terminal.ps` `Mxx1TerminalPs`
-  （`terminal --ps "%1"`）。**`--quote` 从右键命令里去掉了**（用户不要引号，它只留作命令行开关）。
-  ② **相对路径的基准** = `--base` → **当前工作目录**（右键菜单靠这一条：资源管理器起的进程，
-  工作目录就是你浏览的那个文件夹；还要"目标确实在它下面"才用）→ 目标自己所在的目录；
-  **跨盘符退回完整路径**；**手算**（.NET Framework 4.x 没有 `Path.GetRelativePath`，
-  `Uri.MakeRelativeUri` 会把空格转义成 `%20`）。
-  ③ **上一版那两条旧键**（`Mxx1CopyPath` / `Mxx1Terminal`）装上 / 撤掉时顺手清、启动修补也认
-  （先写新的一对再删旧的）；别人写的同名键一个字不动（M45）。
-  ④ **「状态与修补」段排到最底下**（段号 7），界面回归 **C01e** 把这一页 7 段的整页顺序钉住。
-  ⚠️ 那条断言第一次写就红了：**置顶按钮排在本页最前**（`permdel.gui` 带 `pinned: true`），
-  所以屏幕上的第一段永远是「隔壁工具（永久删除）」——
-  **段号决定不了置顶项的位置**（坑 36）。
-  ⑤ 顺手修了「只有盘符的路径」（`D:`）—— `"D:\"` 在命令行里那个反斜杠会把引号吃掉（坑 37）。
-  正本 `docs\DESIGN.md` **§12.63**；计数：命令行 **266** + 界面 **165** = **431 项**。
+- **2026-10-06 晚六（最新一轮）**：用户**同一晚改了四遍口径**，最后一遍才是最终稿（别再翻回去）。
+  三句话起头：「**【在此处打开终端】要求多选 一个是cmd 另外一个是powershell**」、
+  「**【复制文件路径】要求多选 一个是相对路径 另外一个是绝对路径。复制出来的路径两边都不可以带有引号**」、
+  「**右键增强哪里这 【状态与修补】这个说明栏和里面的按钮应该放底部才对**」（问了一句放哪儿，
+  答「**放到倒数第一**」）；随后「**是要你做成子菜单**」、「**相对路径不要了，或者新增按钮复制文件名
+  就好了**」；**最后**发来一张他画的菜单效果图 +「**我要这个效果，然后记得加上安装和卸载按钮**」，
+  再问他两句，他选「**终端保持子菜单一条**」+「**复制各配一对，共 16 个按钮**」。落地：
+  ① **复制 = 两条平铺的一级项**：`copyname` `Mxx1CopyName`（`copypath --name "%1"`，只取名字）+
+  `copypath` `Mxx1CopyPath`（`copypath "%1"`，完整路径），**各一对装 / 撤按钮**（界面 14 → **16 个 /
+  6 对**）；两条命令**都不带 `--quote`**（用户不要引号；它只留作命令行开关）。
+  ② **终端 = 一个子菜单父项** `Mxx1Terminal` + **两棵子项树**（`Mxx1Toolbox.Terminal` = `%1` 那棵 /
+  `Mxx1Toolbox.Terminal.bg` = `%V` 那棵），每棵 2 行（cmd / PowerShell 各钉死一个）——
+  ⚠️ **子项命令里的占位符是跟着父项所在的右键位置替换的**，`%1` 和 `%V` **不能共用一棵树**。
+  ③ `copypath` 新增 **`--name`**；批次文件的模式头变成三种（`#abs` / `#name` / `#rel <基准>`），
+  **模式对不上就不并批**（否则两条菜单项互相串味）。`--relative` 只留作命令行开关，菜单不用了。
+  ④ **上一版那两个同名键就地改写**（`Mxx1CopyPath` 去掉 `--quote`、`Mxx1Terminal` 变成子菜单父项，
+  启动修补 `SyncIfInstalled` 会做）；**新加的 `Mxx1CopyName` 不会自己冒出来**（新功能要用户自己点一次）。
+  晚六前两稿那四个 verb（`Mxx1CopyPathRel`/`Abs`、`Mxx1TerminalCmd`/`Ps`）装 / 撤 / 启动修补时顺手清。
+  ⑤ **「状态与修补」段排到最底下**（段号 8），界面回归 **C01e** 钉整页 8 段的顺序、**C01f** 钉 16 个
+  按钮的名单。⚠️ C01e 第一次写就红了：**置顶按钮排在本页最前**（`permdel.gui` 带 `pinned: true`），
+  所以屏幕上的第一段永远是「隔壁工具（永久删除）」—— **段号决定不了置顶项的位置**（坑 36）。
+  ⑥ 顺手修了「只有盘符的路径」（`D:`）—— `"D:\"` 在命令行里那个反斜杠会把引号吃掉（坑 37）。
+  ⚠️ 还抓到一个**测试自己的假绿**：原来的 M45 造的夹具键名跟代码真用的那个对不上，"别人的同名键
+  不许动"那条断言其实是空的（见 `PITFALLS.md` 第 38 条）。
+  正本 `docs\DESIGN.md` **§12.63**；计数：命令行 **280**（279 通过 + 1 跳过）+ 界面 **166** = **446 项**（完整两套都跑过：0 失败）。
 - **2026-10-06 晚**：主窗口标题栏加了**最小化**（用户："给工具箱右上角添加一个最小化，目前很影响体验，
   只有关闭的情况下"）。只开最小化、不开最大化，所以标题栏会有一个**灰掉的最大化方框**（系统标准画法，
   用户拍板留着）—— 取舍与实测见 `docs\DESIGN.md` **§12.58**；界面回归补了 A03/A03b/A03c。
 - **条款正文这一轮改了三次**（`docs\DISCLAIMER.md`）→ 同意指纹变了 → **所有人（包括用户自己）
   下次打开界面会再看到一次《使用条款确认》**（想免打扰：`Mxx1Toolbox.exe consent --accept`）。
 - 详细历史（每一轮的来龙去脉、当时的原话与实测数字）在 **`HISTORY.md`**；
-  35 条踩坑清单在 **`PITFALLS.md`** —— 这两个文件按需读，别再往这一页里堆。
+  **38 条**踩坑清单在 **`PITFALLS.md`** —— 这两个文件按需读，别再往这一页里堆。
 
 ## 结构
 
@@ -121,17 +126,24 @@ D:\萌新工具开发\toolbox\
                                    （解占用 / 复制文件路径 / 在此处打开终端）**共用这一段实现**。
                                    `--quiet` / `--notify=0` / `MXX1_NO_NOTIFY=1` 关掉它（测试一律关，只有 N21 那组
                                    故意开着量位置）。改动的来龙去脉与实测见 **DESIGN §12.60**
-  src\CopyPath.cs                  「复制文件路径」（CLI `copypath [--relative] [--base=<目录>] [--quote]`；
-                                   右键菜单里**两个**菜单项：`Mxx1CopyPathRel`（相对）/ `Mxx1CopyPathAbs`（绝对），
-                                   **都不带 `--quote`** —— 用户 2026-10-06 晚六要的"多选 + 不要引号"）。
+  src\CopyPath.cs                  「复制文件名 / 复制文件路径」（CLI `copypath [--name] [--relative] [--base=<目录>] [--quote]`；
+                                   右键菜单里是**两条平铺的一级项**：`Mxx1CopyName`（`copypath --name "%1"`，只取名字）
+                                   / `Mxx1CopyPath`（`copypath "%1"`，完整路径），**都不带 `--quote`**，
+                                   **各一对装 / 撤按钮** —— 用户 2026-10-06 晚六最终稿的效果图就是这样）。
                                    难点是"多选会被调用几次"（Player 模型没在真实资源管理器里实测过）→
                                    **单个路径先记进批次文件、轮询到安静才由最后一个进程复制整批**，
                                    两种调用模型都对。⚠️ 别改回"死等固定毫秒"（实测会把一批切成两批、丢文件）。
-                                   `--relative` 的基准 = `--base` → **当前工作目录** → 目标所在目录；
-                                   **跨盘符退回完整路径**；相对路径是**手算**的（.NET Framework 4.x 没有
-                                   `Path.GetRelativePath`）。设计正本 **DESIGN §12.61 / §12.63**；回归 = 命令行 O 组
+                                   ⚠️ 批次文件的**模式头**分三种（`#abs` / `#name` / `#rel <基准>`）：
+                                   模式对不上就不并批（两条菜单项是两个模式，串味 = 随机坏掉）。
+                                   `--relative` 只留作命令行开关（菜单不用）：基准 = `--base` → **当前工作目录**
+                                   → 目标所在目录；**跨盘符退回完整路径**；相对路径是**手算**的
+                                   （.NET Framework 4.x 没有 `Path.GetRelativePath`）。
+                                   设计正本 **DESIGN §12.61 / §12.63**；回归 = 命令行 O 组
   src\Terminal.cs                  「在此处打开终端」（CLI `terminal [--wt|--ps|--cmd] [--dry]`；
-                                   右键菜单里**两个**菜单项：`Mxx1TerminalCmd` / `Mxx1TerminalPs`，各钉死一个终端）。
+                                   右键菜单里是**一个子菜单父项** `Mxx1Terminal` + **两棵子项树**
+                                   （`Mxx1Toolbox.Terminal` / `.Terminal.bg`），每棵 2 行：cmd / PowerShell 各钉死一个）。
+                                   ⚠️ **子项命令里的占位符跟着父项所在的右键位置替换**，`%1` 与 `%V`
+                                   **不能共用一棵树**（见 `RightMenu.TreeKeyOf`）。
                                    命令行不给开关时照旧 wt → powershell → cmd，**如实报用的是哪个**；
                                    `--dry` 只打印命令；不提权；目录不存在就退出码 2。
                                    设计正本 **DESIGN §12.62 / §12.63**；回归 = 命令行 Q 组
@@ -160,7 +172,7 @@ D:\萌新工具开发\toolbox\
                                    「网址要点击后可以访问，主页改成官网」）
   src\LogForm.cs / OutputForm.cs   程序内日志窗口（最新在最上）/ 命令输出窗口
   src\SettingsForm.cs              设置窗口
-  tools\*.json                     119 个按钮的内置定义（编译时内嵌，资源名 tools.<文件名>）；7 个文件 =
+  tools\*.json                     121 个按钮的内置定义（编译时内嵌，资源名 tools.<文件名>）；7 个文件 =
                                  common / system / privacy / apps / cleanup / rightmenu / mine
   tools\Test-Encoding.ps1          编码红线体检（-Fix 修 BOM）
   tools\Test-Quick.ps1             **提交前闸门**：读 git 改动 → 查 tests\test-map.json → 跑
@@ -176,18 +188,18 @@ D:\萌新工具开发\toolbox\
   tools\Make-AppIcon.ps1           画 assets\app.ico（程序自己的图标，八尺寸；改完要重新 build）
   tools\Make-Package.ps1           打发布包 zip（build.ps1 -Package 调它；**回读 zip 逐个核对**，
                                    少一个文件就失败 —— 见"打包"那条坑）
-  assets\icons\*.png               119 个按钮图标（编译时内嵌成 icons.<id>.png）
+  assets\icons\*.png               121 个按钮图标（编译时内嵌成 icons.<id>.png）
   assets\app.ico                   程序图标（`/win32icon` 用的就是它）
   tests\Test-All.ps1               一条命令跑完全部（也支持 `-Only` / `-Skip` 透传给两个套件）
   tools\Test-InlineSyntax.ps1      内联脚本语法 + 清单 JSON + **每个 .ps1 的语法**体检（34 个内联 / 7 个清单）
                                    + 闸门"读 git 改动"那段的**真跑自检**（假 git 往 stderr 写一行 warning，
                                    必须仍读得出文件名；见 DESIGN §15.3）
-  tests\Test-Cli.ps1               命令行回归 266 项（A03b–A03d/D01 盯兼容、A14–A17 盯 exe 图标、
-                                   L 组 12 项盯 sysreg、J09–J11 盯卸载窗口的列表、M 组盯右键增强、
+  tests\Test-Cli.ps1               命令行回归 280 项（A03b–A03d/D01 盯兼容、A14–A17 盯 exe 图标、
+                                   L 组 12 项盯 sysreg、J09–J11 盯卸载窗口的列表、M 组盯右键增强（M40/M41 复制文件路径 / M41b/M41c 复制文件名 / M42–M43c 终端子菜单 / M44 升级清理 / M45+M45b 别人的键 + 补装 / M21b 各装各撤）、
                                    R 组 14 项盯 bin-tools 自动按钮、P 组 10 项盯发布包内容、
                                    S 组 26 项盯条款门 + 更新检查；
                                    环境不满足的项走 Skip()，打印 [SKIP] 不算失败）
-  tests\Test-Gui.ps1               界面回归 165 项（要交互式桌面，无桌面返回 3 = 跳过；A04b 盯窗口图标、
+  tests\Test-Gui.ps1               界面回归 166 项（要交互式桌面，无桌面返回 3 = 跳过；A04b 盯窗口图标、
                                    A03 盯"主窗口有最小化方框、没有最大化方框"、A03b/A03c 真发一次
                                    最小化再还原（位置尺寸一字不差）、
                                    H 组盯固定尺寸、E04b 盯窗口位置、A09 盯 bin-tools 说明、
@@ -196,7 +208,7 @@ D:\萌新工具开发\toolbox\
                                    N21/N21d「提示卡就在鼠标旁边、卡片上有字」、**N21b 卡片不跟着鼠标跑**、
                                    N21c 给了 `--notify` 还是到点自己消失、
                                    **N21e/N21f/N21g「不给 --notify 时 1 秒还在、5 秒自己关掉 + 点一下立刻关 + 新卡顶掉上一张」**）、
-                                   I 组 27 项把条款确认窗口真开起来点一遍，含 I10b/I10c）
+                                   I 组 27 项把条款确认窗口真开起来点一遍，含 I10b/I10c；C01e 钉右键增强页 8 段段序、C01f 钉那 16 个按钮的名单）
   docs\DESIGN.md                   设计正本（含"踩过的坑"清单 + §13.7 自动按钮 + §16 兼容性 + §17 条款门）
   docs\DISCLAIMER.md               免责声明与服务条款正本（**编译时内嵌进 exe**，窗口显示的就是它）
   assets\app.manifest              清单：asInvoker + supportedOS（Win7/8/8.1/10）+ System DPI + longPathAware
@@ -447,31 +459,35 @@ powershell -File tools\Make-AppIcon.ps1       # 重生成 assets\app.ico（改�
 - 全是只读查看：**不加 `danger` / `runAsAdmin` / 二次确认**。
 - 想加一个系统工具：在 `SystemTargets` 数组里加一行 + `tools\system.json` 里加一条同 `action` 的按钮。
 
-## 「右键增强」怎么点（14 个按钮 = 13 个右键菜单按钮（5 对装 / 撤 + 状态 / 重建 / 说明）+ 隔壁工具）
+## 「右键增强」怎么点（16 个按钮 = 15 个右键菜单按钮（6 对装 / 撤 + 状态 / 重建 / 说明）+ 隔壁工具）
 
-**用户 2026-10-04 定的方案**（设计正本 `docs\DESIGN.md` §14）：工具箱自己往 Windows 右键菜单里装
-**七样**东西（= 五件事，后两件各两个菜单项）—— **只写 `HKCU\Software\Classes`**，不要管理员、
+**用户 2026-10-04 定的方案**（设计正本 `docs\DESIGN.md` §14，晚六最终口径见 **§12.63**）：
+工具箱自己往 Windows 右键菜单里装 **六样**东西 —— **只写 `HKCU\Software\Classes`**，不要管理员、
 不装 shell 扩展 DLL、不起服务、不加开机启动
 （微软文档写明在这个根下注册子动词不需要提升权限；实测也是真的不用）。四个位置：任意文件 /
-文件夹 / 文件夹里的空白处（= 当前文件夹）/ 桌面空白处 —— **但后加的两对只装适合自己的那几个位置**
-（`RightMenu.LocationsOf`：复制文件路径要有选中的东西、打开终端要一个能代表目录的位置）。
+文件夹 / 文件夹里的空白处（= 当前文件夹）/ 桌面空白处 —— **但后加的那几项只装适合自己的那几个位置**
+（`RightMenu.LocationsOf`：两条复制要有选中的东西、打开终端要一个能代表目录的位置）。
 
 | 装什么 | 键（都在 HKCU\Software\Classes 下） | 点了做什么 |
 | --- | --- | --- |
 | 解除文件占用 | `*\shell\Mxx1Unlock` 等 4 个 verb | `"<exe>" rightmenu unlock "%1"` → 开一个小窗口列出谁占着它 |
 | **一键解除占用**（v1.5.4） | `*\shell\Mxx1AutoUnlock` 等 4 个 verb | `"<exe>" rightmenu unlock --auto "%1"` → **不弹窗口**，直接结束占着它的程序，鼠标旁边一张提示卡说结果 |
 | 常用功能（级联子菜单） | `*\shell\Mxx1Common` + 共用子项键 `Mxx1Toolbox.Common` | 子项 = 「常用」页的镜像，命令是 `"<exe>" run <id>` |
-| **复制文件路径 = 两条**（晚六拆开） | `Mxx1CopyPathRel` / `Mxx1CopyPathAbs` ×（`*\shell` + `Directory\shell`）= **4 个键** | `copypath --relative "%1"` / `copypath "%1"` → 进剪贴板，一行一个，**不带引号** |
-| **在此处打开终端 = 两条**（晚六拆开） | `Mxx1TerminalCmd` / `Mxx1TerminalPs` ×（文件夹 + 两个背景位置）= **6 个键** | `terminal --cmd "%1"` / `terminal --ps "%1"` → 在那个目录里开指定终端 |
+| **复制文件名**（晚六最终稿） | `Mxx1CopyName` ×（`*\shell` + `Directory\shell`）= **2 个键** | `copypath --name "%1"` → 只取名字（`报告.txt` / `2026`）进剪贴板，**不带引号** |
+| **复制文件路径**（晚六最终稿） | `Mxx1CopyPath` ×（同上）= **2 个键** | `copypath "%1"` → 完整路径进剪贴板，一行一个，**不带引号** |
+| **在此处打开终端（级联子菜单）** | `Mxx1Terminal` ×（文件夹 + 两个背景位置）= **3 个键** + 两棵子项树（`Mxx1Toolbox.Terminal` = `%1` / `.Terminal.bg` = `%V`） | 子项 2 行：`terminal --cmd "%1"` / `terminal --ps "%1"`（背景位置是 `%V`）→ 在那个目录里开指定终端 |
 
-**五对的装 / 撤都是成对的独立按钮**（`rightmenu.<item>.on` / `.off`），互不影响；后两对**点一次装两条**
-（`Launcher.Ones(a, b)` 一次把两个 item 传进 `Install`）。
-`RightMenu.AllItems` 是唯一那份名单（现在是 7 项），`Install` / `Uninstall` / `Status` / `Help` /
+**六对的装 / 撤都是成对的独立按钮**（`rightmenu.<item>.on` / `.off`），互不影响 ——
+**两条复制各写自己的键、各一对按钮**（用户晚六原话「记得加上安装和卸载按钮」；M21b 盯着
+"撤掉复制文件名之后复制文件路径还在"）。
+`RightMenu.AllItems` 是唯一那份名单（现在是 **6 项**），`Install` / `Uninstall` / `Status` / `Help` /
 图标核对 / 残留检测都遍历它 —— **加一项只要动 id、标题、图标、命令、位置表这几处，别在别处另写名单**。
-上一版那两项（`Mxx1CopyPath` / `Mxx1Terminal`，"一项一个键"）要认得出、清得掉：
-`CleanLegacy` 在装上 / 撤掉时顺手清，`SyncIfInstalled` 先写新的一对再删旧的（见 §12.63）。
-**段序**：五个功能段 → 隔壁工具 → **状态与修补放最底下**；⚠️ 置顶的「永久删除工具」永远排在页面最前
-（C01e 盯着整页顺序）。
+晚六前两稿那四个 verb（`Mxx1CopyPathRel` / `Abs` / `Mxx1TerminalCmd` / `Ps`）没发布过，
+但装 / 撤 / 启动修补都会顺手清掉（`CleanSuperseded`）；上一版的
+`Mxx1CopyPath`（去掉 `--quote`）与 `Mxx1Terminal`（变成子菜单父项）是**同名就地改写**，
+启动时 `SyncIfInstalled` 会做（见 §12.63）。
+**段序**：六个功能段 → 隔壁工具 → **状态与修补放最底下**（共 8 段）；⚠️ 置顶的「永久删除工具」
+永远排在页面最前（C01e 盯着整页顺序、C01f 盯着 16 个按钮的名单）。
 
 **第三项「一键解除占用」**（`src\AutoUnlock.cs`，用户 2026-10-05 点名要的"不弹窗版本"）：
 
@@ -689,8 +705,8 @@ powershell -File tools\Make-AppIcon.ps1       # 重生成 assets\app.ico（改�
   | L0 | 编码体检 + 内联体检 | 约 5 秒 | **每次改完都跑，不商量**（BOM 掉了 / 清单坏了只有这两关能拦） |
   | L1 | 映射到的命令行组（`-Only`） | 4 - 60 秒 | 提交前：`powershell -File tools\Test-Quick.ps1` |
   | L2 | 映射到的界面组 | 约 2 分钟 | 涉及界面 / 互操作，且**你没开着工具箱** |
-  | L3 | 命令行全套 266 项 | 约 2 分钟 | 推上去之后 CI 跑（在你机器之外） |
-  | L4 | 全套（命令行 266 + 界面 165） | 约 5 分钟 | **发版前一次** |
+  | L3 | 命令行全套 280 项 | 约 2 分钟 | 推上去之后 CI 跑（在你机器之外） |
+  | L4 | 全套（命令行 280 + 界面 166） | 约 5 分钟 | **发版前一次** |
 
 - **挑组**：两个套件都支持 `-Only M,N` / `-Skip P`（组标记就是源码里 `# ---- X 组：…` 那行的字母，
   前缀匹配）。**命令行挑组必须带上 A 组**（B/C/F/H/I/K/M/P/S 都读 A 跑出来的 `$status` 等公共量；

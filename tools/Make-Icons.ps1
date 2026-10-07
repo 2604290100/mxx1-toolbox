@@ -49,6 +49,10 @@ function Get-Shape {
         @('rightmenu.common.on',  'list'),
         @('rightmenu.common.off', 'minus'),
         # 2026-10-06 晚五加的两项：复制文件路径 = 叠起来的两张纸，在此处打开终端 = 终端窗口 + 提示符
+        # 晚六「复制」拆成两条平铺的菜单项，所以又多了「复制文件名」那一对；两张纸的图形两对共用
+        # （同一个功能的两条，看菜单文字分得清），撤掉还是减号。
+        @('rightmenu.copyname.on', 'copy'),
+        @('rightmenu.copyname.off','minus'),
         @('rightmenu.copy.on',     'copy'),
         @('rightmenu.copy.off',    'minus'),
         @('rightmenu.terminal.on', 'terminal'),

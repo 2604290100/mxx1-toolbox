@@ -66,14 +66,27 @@ namespace Mxx1Toolbox
         public const string UnlockVerb = "Mxx1Unlock";
         public const string AutoVerb = "Mxx1AutoUnlock";
         public const string CommonVerb = "Mxx1Common";
+        public const string CopyVerb = "Mxx1CopyPath";
+        public const string TerminalVerb = "Mxx1Terminal";
         public const string SharedKey = "Mxx1Toolbox.Common";
         public const string UnlockTitle = "解除文件占用";
         public const string AutoTitle = "一键解除占用";
         public const string CommonTitle = "常用功能";
+        public const string CopyTitle = "复制文件路径";
+        public const string TerminalTitle = "在此处打开终端";
         public const string ItemUnlock = "unlock";
         public const string ItemAuto = "auto";
         public const string ItemCommon = "common";
+        public const string ItemCopy = "copy";
+        public const string ItemTerminal = "terminal";
         public const string BackupName = "rightmenu-installed.tsv";
+
+        /// <summary>五个菜单项（顺序 = 界面上的顺序，也 = 报告里的顺序）。
+        /// 装 / 撤 / 状态 / 说明都遍历它，别在别处另写一份名单。</summary>
+        public static readonly string[] AllItems = new string[]
+        {
+            ItemUnlock, ItemAuto, ItemCommon, ItemCopy, ItemTerminal,
+        };
 
         /// <summary>命令里给"右键选中的那个路径"的占位：Explorer 会把它换成真实路径。</summary>
         public const string SelectedPlaceholder = "%1";
@@ -81,43 +94,77 @@ namespace Mxx1Toolbox
         /// <summary>背景位置（文件夹里的空白处 / 桌面空白处）要用 %V：那里 Explorer 不替换 %1。</summary>
         public const string BackgroundPlaceholder = "%V";
 
-        /// <summary>三项菜单项各自的图标源（都是工具箱自己的按钮图标，装的时候转成 .ico）。
+        /// <summary>五项菜单项各自的图标源（都是工具箱自己的按钮图标，装的时候转成 .ico）。
         /// 名字必须是**真实存在的按钮 id**（`assets\icons\<id>.png` 是 Make-Icons.ps1 按 id 生成的；
         /// 2026-10-05 写成 rightmenu.unlock.auto 这种不存在的 id 时，图标会静默缺失 —— M20a 盯着）。</summary>
         public const string UnlockIconId = "rightmenu.unlock.on";
         public const string AutoIconId = "rightmenu.auto.on";
         public const string CommonIconId = "rightmenu.common.on";
+        public const string CopyIconId = "rightmenu.copy.on";
+        public const string TerminalIconId = "rightmenu.terminal.on";
 
-        // ------------------------------------------------------------------ item（unlock / auto / common）
+        // ------------------------------------------------------------------ item（unlock / auto / common / copy / terminal）
         //
         // 2026-10-05 加第三项「一键解除占用」（用户要的：保留原来那个弹窗口的，另外单独给一个
         // 不弹窗、直接结束占用它的程序的一键版 + 单独一对装 / 撤按钮）。
-        // 三项共用同一张位置表、同一套"写前记原值 → 写后读回核对 → 只删自己那几个键"的规矩，
-        // 所以下面这几个小映射函数是唯一的"项目 → 键名 / 标题 / 图标 / 命令"的出处。
+        // 2026-10-06 晚五加第四、五项「复制文件路径」和「在此处打开终端」（用户原话：
+        // 「复制文件路径 / 在此处打开终端 这2个功能做一下」）—— 同样各一对装 / 撤按钮。
+        // 五项共用同一张位置表、同一套"写前记原值 → 写回读回核对 → 只删自己那几个键"的规矩，
+        // 所以下面这几个小映射函数是唯一的"项目 → 键名 / 标题 / 图标 / 命令 / 装哪几个位置"的出处。
 
         private static string VerbOf(string item)
         {
             if (item == ItemAuto) { return AutoVerb; }
-            return (item == ItemCommon) ? CommonVerb : UnlockVerb;
+            if (item == ItemCommon) { return CommonVerb; }
+            if (item == ItemCopy) { return CopyVerb; }
+            if (item == ItemTerminal) { return TerminalVerb; }
+            return UnlockVerb;
         }
 
         private static string TitleOf(string item)
         {
             if (item == ItemAuto) { return AutoTitle; }
-            return (item == ItemCommon) ? CommonTitle : UnlockTitle;
+            if (item == ItemCommon) { return CommonTitle; }
+            if (item == ItemCopy) { return CopyTitle; }
+            if (item == ItemTerminal) { return TerminalTitle; }
+            return UnlockTitle;
         }
 
         private static string IconOf(string item)
         {
             if (item == ItemAuto) { return AutoIconId; }
-            return (item == ItemCommon) ? CommonIconId : UnlockIconId;
+            if (item == ItemCommon) { return CommonIconId; }
+            if (item == ItemCopy) { return CopyIconId; }
+            if (item == ItemTerminal) { return TerminalIconId; }
+            return UnlockIconId;
         }
 
-        /// <summary>点这个菜单项跑什么命令。unlock = 开那个结果窗口；auto = 不弹窗，直接解锁。</summary>
+        /// <summary>点这个菜单项跑什么命令。unlock = 开那个结果窗口；auto = 不弹窗，直接解锁；
+        /// copy = 把完整路径复制进剪贴板（带引号，和 Windows 自己的「复制为路径」一个写法）；
+        /// terminal = 在当前这个目录里开终端。</summary>
         private static string CommandOf(string item, string placeholder)
         {
             if (item == ItemAuto) { return QuoteExe() + " rightmenu unlock --auto \"" + placeholder + "\""; }
+            if (item == ItemCopy) { return QuoteExe() + " copypath --quote \"" + placeholder + "\""; }
+            if (item == ItemTerminal) { return QuoteExe() + " terminal \"" + placeholder + "\""; }
             return QuoteExe() + " rightmenu unlock \"" + placeholder + "\"";
+        }
+
+        /// <summary>这一项装在哪几个位置。解锁那三项四个位置都有；**「复制文件路径」只装在
+        /// "有选中东西"的两个位置**（任意文件 / 文件夹）—— 背景位置没有选中项，装上去点了一下
+        /// 只会得到一句"路径不存在"；「在此处打开终端」反过来：**背景那两个位置才是重点**
+        /// （"在这个文件夹里开终端"），加上右键文件夹那一个。</summary>
+        private static RightMenuLocation[] LocationsOf(string item)
+        {
+            List<RightMenuLocation> list = new List<RightMenuLocation>();
+            foreach (RightMenuLocation loc in Table)
+            {
+                bool take = true;
+                if (item == ItemCopy) { take = (loc.Id == "files") || (loc.Id == "folder"); }
+                else if (item == ItemTerminal) { take = (loc.Id == "folder") || (loc.Id == "folderbg") || (loc.Id == "desktop"); }
+                if (take) { list.Add(loc); }
+            }
+            return list.ToArray();
         }
 
         private static readonly RightMenuLocation[] Table = new RightMenuLocation[]
@@ -172,48 +219,46 @@ namespace Mxx1Toolbox
 
         // ------------------------------------------------------------------ 装 / 撤
 
-        /// <summary>装上（或修复）右键项。unlock / auto / common 至少选一个。已装过 = 覆盖成当前版本
-        /// （exe 路径可能搬过家），所以这个按钮同时也是"修复"。</summary>
-        public static string Install(bool unlock, bool auto, bool common, out bool ok)
+        /// <summary>装上（或修复）右键项。传要装哪几项（`AllItems` 里的 id，至少一项）。
+        /// 已装过 = 覆盖成当前版本（exe 路径可能搬过家），所以这个按钮同时也是"修复"。</summary>
+        public static string Install(List<string> items, out bool ok)
         {
             StringBuilder sb = new StringBuilder();
             sb.AppendLine("把工具箱装进 Windows 右键菜单");
             if (IsTestRoot) { sb.AppendLine("（测试根：" + RootLabel + " —— 没有碰真实的右键菜单）"); }
             sb.AppendLine();
 
-            List<string> simple = new List<string>();
-            if (unlock) { simple.Add(ItemUnlock); }
-            if (auto) { simple.Add(ItemAuto); }
-
             int done = 0;
             int skipped = 0;
-            foreach (RightMenuLocation loc in Table)
+            foreach (string item in items)
             {
-                foreach (string item in simple)
+                if (item == ItemCommon) { continue; }       // 「常用功能」是级联菜单，另走一遍（见下）
+                foreach (RightMenuLocation loc in LocationsOf(item))
                 {
                     bool wrote;
                     string error = InstallSimpleVerb(loc, item, out wrote);
                     if (wrote) { done++; sb.Append("  √ ").Append(TitleOf(item)).Append(" · ").Append(loc.Label).AppendLine(); }
                     else if (error.Length > 0) { skipped++; sb.Append("  × ").Append(loc.Label).Append("  ").Append(error).AppendLine(); }
                 }
-                if (common)
+            }
+
+            bool common = Contains(items, ItemCommon);
+            if (common)
+            {
+                foreach (RightMenuLocation loc in LocationsOf(ItemCommon))
                 {
                     bool wrote;
                     string error = InstallCommonVerb(loc, out wrote);
                     if (wrote) { done++; sb.Append("  √ ").Append(CommonTitle).Append(" · ").Append(loc.Label).AppendLine(); }
                     else if (error.Length > 0) { skipped++; sb.Append("  × ").Append(loc.Label).Append("  ").Append(error).AppendLine(); }
                 }
-            }
-
-            if (common)
-            {
-                string error;
-                string report = WriteSharedTree(out error);
+                string treeError;
+                string report = WriteSharedTree(out treeError);
                 sb.AppendLine();
-                if (error.Length > 0)
+                if (treeError.Length > 0)
                 {
                     skipped++;
-                    sb.Append("  × ").Append(CommonTitle).Append(" 的子项没写成：").Append(error).AppendLine();
+                    sb.Append("  × ").Append(CommonTitle).Append(" 的子项没写成：").Append(treeError).AppendLine();
                 }
                 else
                 {
@@ -228,9 +273,9 @@ namespace Mxx1Toolbox
                   .Append(" 处都写进去并读回核对过了。").AppendLine();
                 sb.Append("  菜单图标：从工具箱自带的按钮图标生成 .ico 写在 ").Append(MenuIcons.Dir)
                   .AppendLine("，");
-                sb.AppendLine("  右键里那两项（以及「常用功能」子菜单的每一项）都会显示图标 —— 注册表的 Icon");
+                sb.AppendLine("  右键里那几项（以及「常用功能」子菜单的每一项）都会显示图标 —— 注册表的 Icon");
                 sb.AppendLine("  只能指向 exe/dll 或 .ico，指 .png 是没用的，所以这里要先转一道。");
-                string names = NamesOf(unlock, auto, common);
+                string names = NamesOf(items);
                 sb.AppendLine("  怎么用：在资源管理器里右键一个文件 / 文件夹（或文件夹里的空白处）就能看到"
                     + names + "。").AppendLine();
                 sb.Append("  反悔就点「撤掉…」或者「装…」旁边那两个按钮，它们只删工具箱自己写的键。");
@@ -243,17 +288,18 @@ namespace Mxx1Toolbox
             }
             ok = (skipped == 0 && done > 0);
             Logger.Write("右键增强", (ok ? "完成 · " : "部分失败 · ") + "装右键菜单（"
-                + NamesOf(unlock, auto, common) + "）");
+                + NamesOf(items) + "）");
             return sb.ToString();
         }
 
-        /// <summary>报告里那串名字（「解除文件占用」+「一键解除占用」+「常用功能」）。</summary>
-        private static string NamesOf(bool unlock, bool auto, bool common)
+        /// <summary>报告里那串名字（「解除文件占用」、「一键解除占用」和「复制文件路径」…）。</summary>
+        private static string NamesOf(List<string> items)
         {
             List<string> parts = new List<string>();
-            if (unlock) { parts.Add("「" + UnlockTitle + "」"); }
-            if (auto) { parts.Add("「" + AutoTitle + "」"); }
-            if (common) { parts.Add("「" + CommonTitle + "」"); }
+            foreach (string item in items)
+            {
+                parts.Add("「" + TitleOf(item) + "」");
+            }
             if (parts.Count == 0) { return "什么都没选"; }
             if (parts.Count == 1) { return parts[0]; }
             StringBuilder sb = new StringBuilder();
@@ -266,7 +312,7 @@ namespace Mxx1Toolbox
         }
 
         /// <summary>撤掉：按记录删，只删工具箱自己写的键。</summary>
-        public static string Uninstall(bool unlock, bool auto, bool common, out bool ok)
+        public static string Uninstall(List<string> items, out bool ok)
         {
             StringBuilder sb = new StringBuilder();
             sb.AppendLine("把工具箱从 Windows 右键菜单里撤掉（只删工具箱自己写的键）");
@@ -277,13 +323,15 @@ namespace Mxx1Toolbox
             int removed = 0;
             int kept = 0;
 
-            foreach (RightMenuLocation loc in Table)
+            foreach (string item in items)
             {
-                if (unlock) { RemoveVerb(sb, records, ItemUnlock, loc.Key + "\\" + UnlockVerb, loc.Label + " · " + UnlockTitle, ref removed, ref kept); }
-                if (auto) { RemoveVerb(sb, records, ItemAuto, loc.Key + "\\" + AutoVerb, loc.Label + " · " + AutoTitle, ref removed, ref kept); }
-                if (common) { RemoveVerb(sb, records, ItemCommon, loc.Key + "\\" + CommonVerb, loc.Label + " · " + CommonTitle, ref removed, ref kept); }
+                foreach (RightMenuLocation loc in LocationsOf(item))
+                {
+                    RemoveVerb(sb, records, item, loc.Key + "\\" + VerbOf(item),
+                        loc.Label + " · " + TitleOf(item), ref removed, ref kept);
+                }
             }
-            if (common)
+            if (Contains(items, ItemCommon))
             {
                 string full = RootKey + "\\" + SharedKey;
                 if (KeyExists(full))
@@ -297,10 +345,7 @@ namespace Mxx1Toolbox
             List<RightMenuRecord> keep = new List<RightMenuRecord>();
             foreach (RightMenuRecord r in records)
             {
-                bool drop = (r.Item == ItemUnlock && unlock)
-                    || (r.Item == ItemAuto && auto)
-                    || (r.Item == ItemCommon && common);
-                if (!drop) { keep.Add(r); }
+                if (!Contains(items, r.Item)) { keep.Add(r); }
             }
             string saveError = SaveRecords(keep);
 
@@ -322,8 +367,13 @@ namespace Mxx1Toolbox
                 sb.Append("  记录文件没写回去：").Append(saveError).AppendLine();
                 sb.Append("  （" + BackupName + " 里的记录可能不准了，下次装会重新记）");
             }
-            // 三项都撤掉了：生成出来的 .ico 也没用了，删掉（留着一个空目录也只是碍眼）。
-            if (!IsInstalled(ItemUnlock) && !IsInstalled(ItemAuto) && !IsInstalled(ItemCommon))
+            // 五项都撤掉了：生成出来的 .ico 也没用了，删掉（留着一个空目录也只是碍眼）。
+            bool anyLeft = false;
+            foreach (string item in AllItems)
+            {
+                if (IsInstalled(item)) { anyLeft = true; break; }
+            }
+            if (!anyLeft)
             {
                 MenuIcons.RemoveAll();
                 sb.AppendLine();
@@ -331,7 +381,7 @@ namespace Mxx1Toolbox
             }
             ok = (kept == 0);
             Logger.Write("右键增强", (ok ? "完成 · " : "部分失败 · ") + "撤右键菜单（"
-                + NamesOf(unlock, auto, common) + "）");
+                + NamesOf(items) + "）");
             return sb.ToString();
         }
 
@@ -413,24 +463,26 @@ namespace Mxx1Toolbox
         {
             try
             {
-                bool unlock = IsInstalled(ItemUnlock);
-                bool auto = IsInstalled(ItemAuto);
-                bool common = IsInstalled(ItemCommon);
-                if (!unlock && !auto && !common) { return; }
+                List<string> installed = new List<string>();
+                foreach (string item in AllItems)
+                {
+                    if (IsInstalled(item)) { installed.Add(item); }
+                }
+                if (installed.Count == 0) { return; }
                 if (SyncDisabled) { return; }
 
-                if (unlock || auto)
+                foreach (string item in installed)
                 {
-                    foreach (RightMenuLocation loc in Table)
+                    if (item == ItemCommon) { continue; }
+                    foreach (RightMenuLocation loc in LocationsOf(item))
                     {
                         bool wrote;
-                        if (unlock) { InstallSimpleVerb(loc, ItemUnlock, out wrote); }   // 内部有 ForeignReason 把关：别人的键不动
-                        if (auto) { InstallSimpleVerb(loc, ItemAuto, out wrote); }
+                        InstallSimpleVerb(loc, item, out wrote);   // 内部有 ForeignReason 把关：别人的键不动
                     }
                 }
-                if (common)
+                if (Contains(installed, ItemCommon))
                 {
-                    foreach (RightMenuLocation loc in Table)
+                    foreach (RightMenuLocation loc in LocationsOf(ItemCommon))
                     {
                         bool wrote;
                         InstallCommonVerb(loc, out wrote);
@@ -665,7 +717,7 @@ namespace Mxx1Toolbox
             if (IsTestRoot) { sb.AppendLine("（测试根：" + RootLabel + "）"); }
             sb.AppendLine();
 
-            foreach (string item in new string[] { ItemUnlock, ItemAuto, ItemCommon })
+            foreach (string item in AllItems)
             {
                 sb.Append("  ").Append(RegEngine.PadCjk(TitleOf(item), 16));
                 List<string> where = InstalledLocations(item);
@@ -682,6 +734,14 @@ namespace Mxx1Toolbox
                 else if (item == ItemAuto)
                 {
                     sb.Append("　点了不弹窗口：查到占用就直接结束那些程序").AppendLine();
+                }
+                else if (item == ItemCopy)
+                {
+                    sb.Append("　点了不弹窗口：把完整路径复制进剪贴板（多选就是一行一个）").AppendLine();
+                }
+                else if (item == ItemTerminal)
+                {
+                    sb.Append("　点了不弹窗口：在那个目录里开一个终端").AppendLine();
                 }
                 else
                 {
@@ -718,7 +778,7 @@ namespace Mxx1Toolbox
             int iconBad = 0;
             foreach (RightMenuLocation loc in Table)
             {
-                foreach (string verb in new string[] { UnlockVerb, AutoVerb, CommonVerb })
+                foreach (string verb in AllVerbs())
                 {
                     string key = RootKey + "\\" + loc.Key + "\\" + verb;
                     if (!KeyExists(key)) { continue; }
@@ -789,7 +849,7 @@ namespace Mxx1Toolbox
             StringBuilder sb = new StringBuilder();
             sb.AppendLine("右键增强是什么");
             sb.AppendLine();
-            sb.AppendLine("  工具箱能往你的右键菜单里装三样东西，三样都只写当前用户（HKCU\\Software\\Classes），");
+            sb.AppendLine("  工具箱能往你的右键菜单里装五样东西，五样都只写当前用户（HKCU\\Software\\Classes），");
             sb.AppendLine("  不要管理员权限、不装 shell 扩展 DLL、不起服务、不加开机启动：");
             sb.AppendLine();
             sb.AppendLine("  1. " + UnlockTitle + " —— 右键一个文件 / 文件夹，看到是谁占着它，勾一下就能把");
@@ -808,21 +868,30 @@ namespace Mxx1Toolbox
             sb.AppendLine("     风险写在确认框里：句柄被突然关掉，那个程序可能报错 / 存不上盘；");
             sb.AppendLine("     系统进程和内核驱动的句柄关不掉（谁做的都一样，得靠内核驱动）。");
             sb.AppendLine("  2. " + AutoTitle + " —— 不弹窗口的一键版：右键一下，它在后台查谁占着它，");
-            sb.AppendLine("     查到就直接把那些程序结束掉，然后右下角冒一个气泡说结果。");
+            sb.AppendLine("     查到就直接把那些程序结束掉，然后鼠标旁边一张小卡片说结果（5 秒自动关闭）。");
             sb.AppendLine("     适合「我只想让这个文件能删掉、别问我」的场合。代价是没有确认框：");
             sb.AppendLine("     那些程序里没保存的东西会丢。系统关键进程、explorer.exe、工具箱自己，它一律不动。");
             sb.AppendLine("     拿不准的时候用上面那个「" + UnlockTitle + "」（它会先列出来让你勾）。");
             sb.AppendLine("  3. " + CommonTitle + " —— 右键里多一个子菜单，里面是你工具箱「常用」页的东西：");
             sb.AppendLine("     置顶的按钮 + 最近用过的按钮（最多 " + UserTools.RecentLimit.ToString(CultureInfo.InvariantCulture)
                 + " 个）+ 打开工具箱 / 运行日志 / 设置。");
+            sb.AppendLine("  4. " + CopyTitle + " —— 右键一个文件 / 文件夹，把它的完整路径复制进剪贴板");
+            sb.AppendLine("     （一行一个；带引号，和 Windows 自己那个「复制为路径」一个写法）。");
+            sb.AppendLine("     一次选中好几个也可以：几个路径就复制几行。**只读**，不移动、不改名、不删除任何文件。");
+            sb.AppendLine("  5. " + TerminalTitle + " —— 右键一个文件夹（或文件夹里的空白处、桌面空白处），");
+            sb.AppendLine("     在那个目录里开一个终端：有 Windows Terminal 就用它（`wt -d <目录>`），");
+            sb.AppendLine("     没装就用 PowerShell，再没有就用 cmd。**不申请管理员权限**。");
             sb.AppendLine();
             sb.AppendLine("装在哪些位置");
             sb.AppendLine();
             sb.AppendLine("  任意文件 / 文件夹 / 文件夹里的空白处（= 当前这个文件夹）/ 桌面空白处。");
+            sb.AppendLine("  其中「" + CopyTitle + "」装在**有选中东西**的两个位置（任意文件 / 文件夹）；");
+            sb.AppendLine("  「" + TerminalTitle + "」装在**能代表一个目录**的三个位置（文件夹 / 文件夹里的空白处 / 桌面空白处）。");
             sb.AppendLine();
             sb.AppendLine("怎么卸干净");
             sb.AppendLine();
-            sb.AppendLine("  点「撤掉解除占用」「撤掉一键解除占用」「撤掉常用功能」即可 —— 只删工具箱自己写的 Mxx1* 键，");
+            sb.AppendLine("  点「撤掉…」那一排按钮即可（撤掉解除占用 / 一键解除占用 / 常用功能 / 复制文件路径 / 在此处打开终端）");
+            sb.AppendLine("  —— 只删工具箱自己写的 Mxx1* 键，");
             sb.AppendLine("  别的键（包括隔壁「永久删除」那套）一个都不碰。装之前会记现场，写在");
             sb.AppendLine("  " + BackupFile);
             sb.AppendLine("  「右键菜单状态」会念给你听：装了几个位置、子菜单现在几项、有没有残留。");
@@ -934,7 +1003,7 @@ namespace Mxx1Toolbox
                 if (root == null) { return list; }
                 foreach (RightMenuLocation loc in Table)
                 {
-                    foreach (string verb in new string[] { UnlockVerb, CommonVerb })
+                    foreach (string verb in AllVerbs())
                     {
                         string id = loc.Key + "|" + verb;
                         object raw;
@@ -942,7 +1011,7 @@ namespace Mxx1Toolbox
                         Dictionary<string, object> item = Json.AsObject(raw);
                         if (item == null) { continue; }
                         if (!Json.GetBool(item, flag, false)) { continue; }
-                        list.Add(((verb == UnlockVerb) ? UnlockTitle : CommonTitle) + "（" + loc.Label + "）");
+                        list.Add(TitleOfVerb(verb) + "（" + loc.Label + "）");
                     }
                 }
             }
@@ -1102,12 +1171,29 @@ namespace Mxx1Toolbox
             List<string> list = new List<string>();
             foreach (RightMenuLocation loc in Table)
             {
-                list.Add(loc.Key + "\\" + UnlockVerb);
-                list.Add(loc.Key + "\\" + AutoVerb);
-                list.Add(loc.Key + "\\" + CommonVerb);
+                foreach (string verb in AllVerbs())
+                {
+                    list.Add(loc.Key + "\\" + verb);
+                }
             }
             list.Add(SharedKey);
             return list;
+        }
+
+        /// <summary>五个 verb 名（图标核对 / 残留检测 / 菜单管理器那几处都遍历它）。</summary>
+        private static string[] AllVerbs()
+        {
+            return new string[] { UnlockVerb, AutoVerb, CommonVerb, CopyVerb, TerminalVerb };
+        }
+
+        /// <summary>verb 名 → 给人看的标题（菜单管理器那个状态文件里是按 verb 记的）。</summary>
+        private static string TitleOfVerb(string verb)
+        {
+            if (verb == AutoVerb) { return AutoTitle; }
+            if (verb == CommonVerb) { return CommonTitle; }
+            if (verb == CopyVerb) { return CopyTitle; }
+            if (verb == TerminalVerb) { return TerminalTitle; }
+            return UnlockTitle;
         }
 
         // ------------------------------------------------------------------ 注册表小工具
@@ -1129,9 +1215,11 @@ namespace Mxx1Toolbox
         {
             if (string.Equals(relativeKey, SharedKey, StringComparison.OrdinalIgnoreCase)) { return true; }
             string text = ReadText(fullKey, "MUIVerb");
-            return string.Equals(text, UnlockTitle, StringComparison.Ordinal)
-                || string.Equals(text, AutoTitle, StringComparison.Ordinal)
-                || string.Equals(text, CommonTitle, StringComparison.Ordinal);
+            foreach (string item in AllItems)
+            {
+                if (string.Equals(text, TitleOf(item), StringComparison.Ordinal)) { return true; }
+            }
+            return false;
         }
 
         /// <summary>不是我们的就返回一句人话（用来跳过，绝不覆盖别人写的东西）。</summary>

@@ -25,15 +25,17 @@ namespace Mxx1Toolbox
     /// 实测**根本看不到**（这台是精简版 Windows，通知平台被裁过；Win10 / Win11 的专注助手、
     /// 通知设置关掉时同样看不到），而且气泡落在右下角、**离用户正看着的地方很远**。
     ///
-    /// 用户 2026-10-06 晚**改口**（原话：「**哪个弹框弹出以后不要跟随鼠标和 3 秒自动消失**」）——
-    /// v1.5.4 那张卡是"跟着鼠标走 + 到点自己消失"，他自己用起来发现那两条恰恰是毛病：
-    ///   ① **跟着鼠标跑 = 点不到它**：他要去点掉卡片的时候，鼠标一动卡片先跑了
-    ///      （"跟随鼠标"和"点一下关"天生打架）；
-    ///   ② **几秒不够读**：卡片上写的是「已解锁：结束了 3 个程序（a.exe、b.exe、c.exe 等 5 个）」，
-    ///      还得看清都是谁，一闪而过等于没看清。
-    /// 所以现在：**位置钉在弹出来的地方，之后不再动**；**不写 `--notify` 就一直留着**，点一下才关
-    /// （常驻时卡片右下角写着「点一下关闭」）。`--notify=<毫秒>` 照旧 —— 测试和"想让它自己走"的
-    /// 场合用它（`--notify=0` / `--quiet` / `MXX1_NO_NOTIFY=1` = 干脆不显示）。
+    /// 用户 2026-10-06 晚**改口过两次**，最后定下来的规矩是第三条（三轮都记在这里，别再翻回去）：
+    ///   ① v1.5.4：位置**跟着鼠标走** + 几秒自己消失；
+    ///   ② 晚四（原话「哪个弹框弹出以后不要跟随鼠标和 3 秒自动消失」）：位置只算一次 + **一直留着**
+    ///      （点一下才关）—— 他自己用起来发现"跟着鼠标跑"确实点不到它，但常驻又变成"关不掉的东西"；
+    ///   ③ **晚五（现行）**：「**改成 5 秒自动关闭，保留点击关闭**」—— 位置仍然只算一次、
+    ///      到点自己消失（默认 **5 秒**）、点一下可以提前关掉（右下角那句「点一下关闭」留着，
+    ///      因为"点一下就能关"这件事得让人看得见）。
+    /// 三轮里只有"跟着鼠标跑"这条被彻底否掉了：**它和"点一下关掉"天生打架**
+    /// （你要去点它的那一瞬间，它先跑了）。
+    /// `--notify=<毫秒>` 可以改显示多久（夹在 800ms - 60s；测试与"想让它多看一会儿"的场合同它），
+    /// `--notify=0` / `--quiet` / `MXX1_NO_NOTIFY=1` = 干脆不显示。
     ///
     /// 三条规矩（别改，改了就成了"抢焦点 / 挡路"）：
     ///   ① **不许抢焦点**：`ShowWithoutActivation` + `WS_EX_NOACTIVATE` —— 正在打字时它弹出来，
@@ -41,8 +43,9 @@ namespace Mxx1Toolbox
     ///   ② **不占任务栏、不进 Alt+Tab**（`ShowInTaskbar=false` + `WS_EX_TOOLWINDOW`）；
     ///   ③ 位置永远夹在**鼠标所在那块屏幕的工作区**里（多显示器 / 鼠标贴边也不会跑到屏幕外）。
     ///
-    /// 另外**同时只留一张卡**：窗口标题固定是「一键解除占用」（`NoticeForm.WindowTitle`），
-    /// 新卡起来之前先把上一张关掉 —— 卡片变成常驻之后，"点几次攒一摞关不掉的卡片"才是真麻烦。
+    /// 另外**同时只留一张卡**：窗口标题固定是「一键解除占用」（`NoticeForm.WindowTitle`，
+    /// 这个标题是**看不见的**，只用来按名字找窗口）——「复制文件路径」「在此处打开终端」那两张卡
+    /// 也用它，所以随时桌面上只有一张卡，新卡起来之前先把上一张关掉。
     ///
     /// 前置条件：STA + `Application.EnableVisualStyles()`（Program.Main 开头已经做了）。</summary>
     internal static class Balloon
@@ -64,8 +67,10 @@ namespace Mxx1Toolbox
             }
         }
 
-        /// <summary>弹一张提示卡（信息级）。`ms > 0` 到点自己消失，`ms <= 0` **一直留着**（点一下才关）。
-        /// 等它关掉（或者被点掉）才返回 —— 常驻那一档会一直等下去，这是有意的。</summary>
+        /// <summary>弹一张提示卡（信息级）。`ms` 是显示多久（毫秒）；`ms &lt;= 0` 这种写法已经没有了
+        /// ——"一直留着"那一档用户 2026-10-06 晚五撤掉了（改成 5 秒自动关闭 + 点一下也能关），
+        /// 调用方在 `ms == 0` 时**根本不调用这里**（`--notify=0` / `--quiet` = 不要卡片）。
+        /// 卡片关掉（到点自己走 / 被点掉 / 被下一张顶掉）之后才返回。</summary>
         public static void Show(string title, string text, int ms)
         {
             Show(title, text, ms, NoticeKind.Info);
@@ -127,8 +132,7 @@ namespace Mxx1Toolbox
 
         private readonly string _title;
         private readonly string _body;
-        private readonly int _lifeMs;           // <= 0 = 常驻（点一下才关）
-        private readonly bool _stays;
+        private readonly int _lifeMs;           // 显示多久（毫秒），到点自己关；点一下也能提前关
         private readonly Font _titleFont;
         private readonly Font _bodyFont;
         private readonly Color _titleColor;
@@ -140,7 +144,7 @@ namespace Mxx1Toolbox
         private readonly int _iconW;
         private readonly int _iconH;
         private readonly int _titleHeight;
-        private readonly int _hintTop;          // 常驻那行提示的 y（不常驻 = 0）
+        private readonly int _hintTop;          // 「点一下关闭」那行提示的 y
         private readonly int _hintHeight;
 
         private readonly Timer _life = new Timer();
@@ -152,8 +156,7 @@ namespace Mxx1Toolbox
         {
             _title = (title == null) ? "" : title;
             _body = Clip(text, 300);
-            _stays = (ms <= 0);
-            _lifeMs = _stays ? 0 : ((ms < MinLifeMs) ? MinLifeMs : ms);
+            _lifeMs = (ms < MinLifeMs) ? MinLifeMs : ms;
 
             _titleFont = new Font("Microsoft YaHei", 9f, FontStyle.Bold, GraphicsUnit.Point);
             _bodyFont = new Font("Microsoft YaHei", 9f, FontStyle.Regular, GraphicsUnit.Point);
@@ -176,13 +179,11 @@ namespace Mxx1Toolbox
                 TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine);
             Size bodySize = TextRenderer.MeasureText(_body, _bodyFont, new Size(MaxBodyWidth, 1000),
                 TextFormatFlags.NoPrefix | TextFormatFlags.WordBreak);
-            Size hintSize = _stays
-                ? TextRenderer.MeasureText(DismissHint, _bodyFont, new Size(MaxBodyWidth, 1000),
-                    TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine)
-                : Size.Empty;
+            Size hintSize = TextRenderer.MeasureText(DismissHint, _bodyFont, new Size(MaxBodyWidth, 1000),
+                TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine);
             _titleHeight = Math.Max(titleSize.Height, _iconH);
             _hintTop = PadY + _titleHeight + TitleGap + bodySize.Height + HintGap;
-            _hintHeight = _stays ? hintSize.Height : 0;
+            _hintHeight = hintSize.Height;
 
             int contentW = bodySize.Width;
             int titleW = titleSize.Width + ((_iconW > 0) ? (_iconW + IconGap) : 0);
@@ -203,7 +204,7 @@ namespace Mxx1Toolbox
             Text = WindowTitle;                  // 固定标题：上一张卡靠它被找到（回归 N21 也按它找）
             BackColor = theme.InputBack;
             ClientSize = new Size(contentW + PadX * 2,
-                PadY * 2 + _titleHeight + TitleGap + bodySize.Height + (_stays ? (HintGap + _hintHeight) : 0));
+                PadY * 2 + _titleHeight + TitleGap + bodySize.Height + HintGap + _hintHeight);
         }
 
         /// <summary>只显示、不抢焦点：WinForms 会照这个用 SW_SHOWNOACTIVATE 显示窗口。</summary>
@@ -232,13 +233,11 @@ namespace Mxx1Toolbox
             _anchor = Cursor.Position;
             PlaceAt(_anchor);
 
-            // 常驻那一档**不起计时器**：一直留着，直到用户点一下（或者被下一张卡关掉）
-            if (_lifeMs > 0)
-            {
-                _life.Interval = _lifeMs;
-                _life.Tick += delegate { _life.Stop(); Close(); };
-                _life.Start();
-            }
+            // 到点自己关（用户 2026-10-06 晚五要的 5 秒；默认值在 Program.NotifyMs 里）。
+            // 点一下也能提前关（`OnMouseDown`）—— 两条路都留着。
+            _life.Interval = _lifeMs;
+            _life.Tick += delegate { _life.Stop(); Close(); };
+            _life.Start();
         }
 
         protected override void OnFormClosed(FormClosedEventArgs e)
@@ -276,7 +275,7 @@ namespace Mxx1Toolbox
             Location = new Point(x, y);
         }
 
-        /// <summary>点一下就关（常驻那一档就靠它，不然卡片得挂在那儿谁也赶不走）。</summary>
+        /// <summary>点一下就关（5 秒自动关闭之外，还留这条"提前关掉"的路）。</summary>
         protected override void OnMouseDown(MouseEventArgs e)
         {
             base.OnMouseDown(e);
@@ -307,17 +306,14 @@ namespace Mxx1Toolbox
 
             int bodyTop = PadY + _titleHeight + TitleGap;
             TextRenderer.DrawText(g, _body, _bodyFont,
-                new Rectangle(PadX, bodyTop, w - PadX * 2, h - bodyTop - PadY - (_stays ? (HintGap + _hintHeight) : 0)),
+                new Rectangle(PadX, bodyTop, w - PadX * 2, h - bodyTop - PadY - HintGap - _hintHeight),
                 _bodyColor, TextFormatFlags.NoPrefix | TextFormatFlags.WordBreak);
 
-            // 常驻时把"怎么关掉"写在卡片上 —— 不然用户会以为它关不掉（用户 2026-10-06 晚要的就是
-            // "别自己消失"，那"怎么让它消失"就必须看得见）
-            if (_stays)
-            {
-                TextRenderer.DrawText(g, DismissHint, _bodyFont,
-                    new Rectangle(PadX, _hintTop, w - PadX * 2, _hintHeight), _hintColor,
-                    TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine | TextFormatFlags.Right);
-            }
+            // 把"怎么关掉"写在卡片上：卡片只有 5 秒，可它**点一下就能提前关** ——
+            // 这件事不写出来没人会去试（用户 2026-10-06 晚五：5 秒自动关闭 + 保留点击关闭）
+            TextRenderer.DrawText(g, DismissHint, _bodyFont,
+                new Rectangle(PadX, _hintTop, w - PadX * 2, _hintHeight), _hintColor,
+                TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine | TextFormatFlags.Right);
         }
 
         private static Color AccentOf(NoticeKind kind, bool dark)

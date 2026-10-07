@@ -13,6 +13,9 @@
       * 条款确认门与更新检查（S 组）：disclaimer / consent / checkupdate，用本机假接口不碰外网
       * 文件哈希校验（T 组）：算出来的校验码与 PowerShell 的 Get-FileHash 交叉验证 +
         「功能说明」那三层文案（tip = 悬停一句、tip --full = 说明窗口的整段正文）
+      * 复制文件路径（O 组）：只读 / 引号 / 多选合批（三个进程并发 → 剪贴板三行）/ 剪贴板真写进去
+      * 在此处打开终端（Q 组）：挑终端（wt → powershell → cmd）/ 引号 / **真开一次并验它落在那个目录**
+        （用自己那条句柄表命令认）/ 目录不存在就退出码 2
       * 兼容性（A03b–A03d / D01）：按这台机器是哪一版 Windows 分叉断言（见 docs\DESIGN.md §16）
       * 输出必须是 UTF-8（中文按钮名不能变成乱码）
       * 错误用法返回退出码 2
@@ -363,13 +366,13 @@ foreach ($line in ($status.Out -split "`r?`n")) {
     }
 }
 
-Check ('A04 按钮总数 115 + 工具目录里自动加载的 {0} 个（测试期间用户层的按钮会暂停：常用 33 + 系统工具 27 + 隐私 29 + 应用 5 + 清理 8 + 右键 10 + 我的 3）' -f $autoBase) `
-    ((Get-Key $status.Out 'buttons') -eq [string](115 + $autoBase)) (Get-Key $status.Out 'buttons')
+Check ('A04 按钮总数 119 + 工具目录里自动加载的 {0} 个（测试期间用户层的按钮会暂停：常用 33 + 系统工具 27 + 隐私 29 + 应用 5 + 清理 8 + 右键 14 + 我的 3）' -f $autoBase) `
+    ((Get-Key $status.Out 'buttons') -eq [string](119 + $autoBase)) (Get-Key $status.Out 'buttons')
 Check 'A05 内置清单里没有灰色占位按钮了（两个「资源管理器」也接上了真功能；灰规则改由 B 组注入验证）' ((Get-Key $status.Out 'placeholders') -eq '0') (Get-Key $status.Out 'placeholders')
 Check 'A06 危险按钮 3 个' ((Get-Key $status.Out 'dangerous') -eq '3') (Get-Key $status.Out 'dangerous')
 
 # 「常用」页签是合成的（置顶 + 最近使用），清单里没有它的按钮，所以是 0
-$tabExpect = @{ 'recent' = 0; 'common' = 33; 'mine' = 3; 'system' = 27; 'cleanup' = 8; 'privacy' = 29; 'apps' = 5; 'rightmenu' = 10 }
+$tabExpect = @{ 'recent' = 0; 'common' = 33; 'mine' = 3; 'system' = 27; 'cleanup' = 8; 'privacy' = 29; 'apps' = 5; 'rightmenu' = 14 }
 $tabOk = $true
 $tabDetail = @()
 foreach ($k in $tabExpect.Keys) {
@@ -377,16 +380,16 @@ foreach ($k in $tabExpect.Keys) {
     $tabDetail += ($k + '=' + $v)
     if ($v -ne [string]([int]$tabExpect[$k] + [int]$autoByTab[$k])) { $tabOk = $false }
 }
-Check 'A07 八个页签的按钮数正确（0/33/3/27/8/29/5/10，加上自动按钮）' $tabOk ($tabDetail -join ' ')
+Check 'A07 八个页签的按钮数正确（0/33/3/27/8/29/5/14，加上自动按钮）' $tabOk ($tabDetail -join ' ')
 
 $list = Invoke-Exe 'list'
 Check 'A08 list 退出码 0' ($list.Code -eq 0) ('exit=' + $list.Code)
-Check 'A09 list 报的按钮数一致' ((Get-Key $list.Out 'buttons') -eq [string](115 + $autoBase)) (Get-Key $list.Out 'buttons')
+Check 'A09 list 报的按钮数一致' ((Get-Key $list.Out 'buttons') -eq [string](119 + $autoBase)) (Get-Key $list.Out 'buttons')
 $lines = @($list.Out -split "`r?`n" | Where-Object { $_ -match "`t" })
-Check ('A10 list 打出 {0} 行按钮' -f (115 + $autoBase)) ($lines.Count -eq (115 + $autoBase)) ('lines=' + $lines.Count)
+Check ('A10 list 打出 {0} 行按钮' -f (119 + $autoBase)) ($lines.Count -eq (119 + $autoBase)) ('lines=' + $lines.Count)
 
 $rmList = Invoke-Exe 'list --tab rightmenu'
-Check 'A11 右键增强 10 个按钮（9 个右键菜单 + 隔壁永久删除工具）' ((Get-Key $rmList.Out 'shown') -eq [string](10 + [int]$autoByTab['rightmenu'])) (Get-Key $rmList.Out 'shown')
+Check 'A11 右键增强 14 个按钮（13 个右键菜单 + 隔壁永久删除工具）' ((Get-Key $rmList.Out 'shown') -eq [string](14 + [int]$autoByTab['rightmenu'])) (Get-Key $rmList.Out 'shown')
 Check 'A12 右键增强里的按钮是"真功能"（不带 placeholder 标记）' (-not ($rmList.Out -match 'placeholder')) ''
 Check 'A13 右键增强那个按钮叫「永久删除工具」' ($rmList.Out -match '永久删除工具') (($rmList.Out -split "`r?`n" | Where-Object { $_ -match "`t" }) -join '')
 
@@ -882,7 +885,7 @@ Write-Host 'H 组 · 悬停说明（用户 2026-10-04 报过「鼠标悬停的�
 # tip 命令打印的就是界面塞给 ToolTip 的那个字符串，所以这里能直接断言，不用去动真鼠标。
 $tipsAll = Invoke-Exe 'tip'
 Check 'H01 tip 退出码 0' ($tipsAll.Code -eq 0) ('exit=' + $tipsAll.Code)
-Check ('H02 tip 覆盖了每个按钮（114 + 自动 {0} 个）' -f $autoBase) ((Get-Key $tipsAll.Out 'tips') -eq [string](115 + $autoBase)) (Get-Key $tipsAll.Out 'tips')
+Check ('H02 tip 覆盖了每个按钮（119 + 自动 {0} 个）' -f $autoBase) ((Get-Key $tipsAll.Out 'tips') -eq [string](119 + $autoBase)) (Get-Key $tipsAll.Out 'tips')
 
 $blocks = @{}
 $curId = ''
@@ -1219,24 +1222,26 @@ $rmItems = Invoke-Exe 'rightmenu items'
 Check 'M01 rightmenu items 退出码 0（只读）' ($rmItems.Code -eq 0) ('exit=' + $rmItems.Code)
 $rmLoc = @($rmItems.Out -split "`r?`n" | Where-Object { $_ -match "`t" })
 Check 'M02 装 4 个位置（任意文件 / 文件夹 / 文件夹里的空白处 / 桌面空白处）' ($rmLoc.Count -eq 4) ('数=' + $rmLoc.Count)
-Check 'M03 三项的名字对得上（解除文件占用 / 一键解除占用 / 常用功能）' `
-    (($rmItems.Out.IndexOf('解除文件占用') -ge 0) -and ($rmItems.Out.IndexOf('一键解除占用') -ge 0) -and ($rmItems.Out.IndexOf('常用功能') -ge 0)) ''
+Check 'M03 五项的名字对得上（解除文件占用 / 一键解除占用 / 常用功能 / 复制文件路径 / 在此处打开终端）' `
+    (($rmItems.Out.IndexOf('解除文件占用') -ge 0) -and ($rmItems.Out.IndexOf('一键解除占用') -ge 0) -and ($rmItems.Out.IndexOf('常用功能') -ge 0) -and `
+     ($rmItems.Out.IndexOf('复制文件路径') -ge 0) -and ($rmItems.Out.IndexOf('在此处打开终端') -ge 0)) ''
 
 $rmList = Invoke-Exe 'list --tab rightmenu'
 $rmBtns = @($rmList.Out -split "`r?`n" | Where-Object { $_ -match '^rightmenu\.' })
-Check 'M04 「右键增强」页签新增 9 个按钮（加上隔壁永久删除工具 = 10 个）' ($rmBtns.Count -eq 9) ('新按钮=' + $rmBtns.Count)
-$rmOnOff = @($rmBtns | Where-Object { $_ -match 'rightmenu/(unlock|auto|common)\.(on|off)' })
-Check 'M05 装 / 撤是成对的（解除占用一对 + 一键解除一对 + 常用功能一对）' ($rmOnOff.Count -eq 6) ('数=' + $rmOnOff.Count)
+Check 'M04 「右键增强」页签新增 13 个按钮（加上隔壁永久删除工具 = 14 个）' ($rmBtns.Count -eq 13) ('新按钮=' + $rmBtns.Count)
+$rmOnOff = @($rmBtns | Where-Object { $_ -match 'rightmenu/(unlock|auto|common|copy|terminal)\.(on|off)' })
+Check 'M05 装 / 撤是成对的（解除占用 + 一键解除 + 常用功能 + 复制文件路径 + 在此处打开终端 共 5 对）' ($rmOnOff.Count -eq 10) ('数=' + $rmOnOff.Count)
 
 $rmStatus = Invoke-Exe 'rightmenu status'
 Check 'M06 rightmenu status 退出码 0（只读）' ($rmStatus.Code -eq 0) ('exit=' + $rmStatus.Code)
-$rmNeed = @('解除文件占用', '一键解除占用', '常用功能 子菜单', '菜单里的 exe', '最近使用最多留 30 个')
+$rmNeed = @('解除文件占用', '一键解除占用', '常用功能 子菜单', '复制文件路径', '在此处打开终端', '菜单里的 exe', '最近使用最多留 30 个')
 $rmMiss = @($rmNeed | Where-Object { $rmStatus.Out.IndexOf($_) -lt 0 })
-Check 'M07 状态里念了：三项装没装 / 子菜单几项 / 菜单里的 exe / 最近使用上限 30' ($rmMiss.Count -eq 0) ('缺=' + ($rmMiss -join ' '))
+Check 'M07 状态里念了：五项装没装 / 子菜单几项 / 菜单里的 exe / 最近使用上限 30' ($rmMiss.Count -eq 0) ('缺=' + ($rmMiss -join ' '))
 
 $rmHelp = Invoke-Exe 'rightmenu help'
 Check 'M08 说明里写清了怎么卸干净 + 底线（系统关键进程不能结束 / 一键解除没有确认框）' `
-    (($rmHelp.Code -eq 0) -and ($rmHelp.Out.IndexOf('怎么卸干净') -ge 0) -and ($rmHelp.Out.IndexOf('系统关键进程') -ge 0) -and ($rmHelp.Out.IndexOf('没有确认框') -ge 0)) ('exit=' + $rmHelp.Code)
+    (($rmHelp.Code -eq 0) -and ($rmHelp.Out.IndexOf('怎么卸干净') -ge 0) -and ($rmHelp.Out.IndexOf('系统关键进程') -ge 0) -and `
+     ($rmHelp.Out.IndexOf('没有确认框') -ge 0) -and ($rmHelp.Out.IndexOf('复制文件路径') -ge 0) -and ($rmHelp.Out.IndexOf('不申请管理员权限') -ge 0)) ('exit=' + $rmHelp.Code)
 
 $rmWrite = Invoke-Exe 'rightmenu install'
 Check 'M09 命令行没有"直接装右键菜单"的入口（退出码 2）' ($rmWrite.Code -eq 2) ('exit=' + $rmWrite.Code)
@@ -1615,6 +1620,40 @@ try {
          ("$($rmAutoProp.'(default)')" -eq '') -and ($rmAutoPlaces.Count -eq 4)) `
         ('MUIVerb=' + $rmAutoProp.MUIVerb + ' 占位符对的=' + ($rmAutoPlaces -join ','))
 
+    # ---- 第四 / 第五项（2026-10-06 晚五加的，用户原话「复制文件路径 / 在此处打开终端 这2个功能做一下」）----
+    # 这两项**不装在全部四个位置**，是这次特意分开的：
+    #   · 「复制文件路径」只装在"有选中东西"的两个位置（任意文件 / 文件夹）—— 空白处没有选中项，
+    #     装上去点一下只会得到一句"路径不存在"；
+    #   · 「在此处打开终端」反过来装在能代表一个目录的三个位置（文件夹 / 文件夹里的空白处 / 桌面空白处）。
+    # 所以下面不只数个数，还断言**不该有的位置真的没有**。
+    $rmInsCopy = Invoke-Exe 'run rightmenu.copy.on' 60 $Exe $rmEnv
+    $rmCopyLines = @($rmInsCopy.Out -split "`r?`n" | Where-Object { $_ -match '√ 复制文件路径' })
+    Check 'M40 装上「复制文件路径」：只装在"有选中东西"的 2 个位置（文件 / 文件夹）' `
+        (($rmInsCopy.Code -eq 0) -and ($rmCopyLines.Count -eq 2)) ('exit=' + $rmInsCopy.Code + ' √=' + $rmCopyLines.Count)
+    $rmCopyCmd = "$((Get-ItemProperty -LiteralPath (Join-Path $rmTestRoot '*\shell\Mxx1CopyPath\command') -ErrorAction SilentlyContinue).'(default)')"
+    $rmCopyProp = Get-ItemProperty -LiteralPath (Join-Path $rmTestRoot '*\shell\Mxx1CopyPath') -ErrorAction SilentlyContinue
+    $rmCopyBg = Test-Path -LiteralPath (Join-Path $rmTestRoot 'Directory\Background\shell\Mxx1CopyPath')
+    $rmCopyDesk = Test-Path -LiteralPath (Join-Path $rmTestRoot 'DesktopBackground\Shell\Mxx1CopyPath')
+    Check 'M41 复制文件路径的 verb：copypath --quote "%1"，而且背景那两个位置**没有**它' `
+        (($rmCopyProp.MUIVerb -eq '复制文件路径') -and ($rmCopyCmd -match 'copypath --quote "%1"$') -and `
+         (-not $rmCopyBg) -and (-not $rmCopyDesk)) `
+        ('MUIVerb=' + $rmCopyProp.MUIVerb + ' cmd=' + $rmCopyCmd + ' 背景有它=' + $rmCopyBg + ' 桌面有它=' + $rmCopyDesk)
+
+    $rmInsTerm = Invoke-Exe 'run rightmenu.terminal.on' 60 $Exe $rmEnv
+    $rmTermLines = @($rmInsTerm.Out -split "`r?`n" | Where-Object { $_ -match '√ 在此处打开终端' })
+    Check 'M42 装上「在此处打开终端」：3 个位置（文件夹 / 文件夹里的空白处 / 桌面空白处）' `
+        (($rmInsTerm.Code -eq 0) -and ($rmTermLines.Count -eq 3)) ('exit=' + $rmInsTerm.Code + ' √=' + $rmTermLines.Count)
+    $rmTermPlaces = @()
+    foreach ($rmP in @(@('Directory\shell', '%1'), @('Directory\Background\shell', '%V'), @('DesktopBackground\Shell', '%V'))) {
+        $rmPc = "$((Get-ItemProperty -LiteralPath (Join-Path $rmTestRoot ($rmP[0] + '\Mxx1Terminal\command')) -ErrorAction SilentlyContinue).'(default)')"
+        if ($rmPc -match ('terminal "' + [regex]::Escape($rmP[1]) + '"$')) { $rmTermPlaces += $rmP[1] }
+    }
+    $rmTermProp = Get-ItemProperty -LiteralPath (Join-Path $rmTestRoot 'Directory\shell\Mxx1Terminal') -ErrorAction SilentlyContinue
+    $rmTermOnFiles = Test-Path -LiteralPath (Join-Path $rmTestRoot '*\shell\Mxx1Terminal')
+    Check 'M43 在此处打开终端的 verb：terminal "<位置>"，占位符按位置（背景用 %V），**不装在任意文件上**' `
+        (($rmTermProp.MUIVerb -eq '在此处打开终端') -and ($rmTermPlaces.Count -eq 3) -and (-not $rmTermOnFiles)) `
+        ('MUIVerb=' + $rmTermProp.MUIVerb + ' 占位符对的=' + ($rmTermPlaces -join ',') + ' 文件位置有它=' + $rmTermOnFiles)
+
     $rmIns2 = Invoke-Exe 'run rightmenu.common.on' 60 $Exe $rmEnv
     Check 'M17 装上「常用功能」：级联子菜单的子项写出来了' `
         (($rmIns2.Code -eq 0) -and ($rmIns2.Out -match '子菜单写了 \d+ 项')) ('exit=' + $rmIns2.Code)
@@ -1645,6 +1684,12 @@ try {
             $rmIconKeys += (Join-Path $rmTestRoot ($rmR + '\' + $rmVerbName))
         }
     }
+    # 复制文件路径只装在文件 / 文件夹，在此处打开终端只装在文件夹 / 两个空白处 ⇒ 4*3 + 2 + 3 = 17
+    $rmIconKeys += (Join-Path $rmTestRoot '*\shell\Mxx1CopyPath')
+    $rmIconKeys += (Join-Path $rmTestRoot 'Directory\shell\Mxx1CopyPath')
+    $rmIconKeys += (Join-Path $rmTestRoot 'Directory\shell\Mxx1Terminal')
+    $rmIconKeys += (Join-Path $rmTestRoot 'Directory\Background\shell\Mxx1Terminal')
+    $rmIconKeys += (Join-Path $rmTestRoot 'DesktopBackground\Shell\Mxx1Terminal')
     $rmIconOk = 0
     $rmIconBad = @()
     foreach ($rmK in $rmIconKeys) {
@@ -1656,8 +1701,8 @@ try {
             } else { $rmIconBad += $rmIcon }
         } else { $rmIconBad += ($rmK + ' -> ' + $rmIcon) }
     }
-    Check 'M20a 三项的图标：Icon 指向真实存在的 .ico（不是没有图标资源的 exe，也不是 .png）' `
-        (($rmIconOk -eq 12) -and ($rmIconBad.Count -eq 0)) ('ok=' + $rmIconOk + '/12 坏=' + ($rmIconBad -join ' '))
+    Check 'M20a 五项的图标：Icon 指向真实存在的 .ico（不是没有图标资源的 exe，也不是 .png）' `
+        (($rmIconOk -eq 17) -and ($rmIconBad.Count -eq 0)) ('ok=' + $rmIconOk + '/17 坏=' + ($rmIconBad -join ' '))
 
     $rmSubIcons = @($rmShared | Where-Object { "$((Get-ItemProperty -LiteralPath $_.PSPath -ErrorAction SilentlyContinue).Icon)".Length -gt 0 })
     Check 'M20b 「常用功能」子菜单每一项也有图标（子项自己带 Icon）' `
@@ -1679,12 +1724,12 @@ try {
     # 一起删掉（2026-10-04 真踩，见 MenuIcons.Dir 的注释）
     $rmInTestDir = @($rmIconKeys | Where-Object { "$((Get-ItemProperty -LiteralPath $_ -ErrorAction SilentlyContinue).Icon)" -like ($rmTestIconDir + '\*') })
     Check 'M20b2 测试装的图标写在 rightmenu-icons-test 里（和用户真实那份分开）' `
-        ($rmInTestDir.Count -eq 12) ('在 test 目录里的=' + $rmInTestDir.Count)
+        ($rmInTestDir.Count -eq 17) ('在 test 目录里的=' + $rmInTestDir.Count)
 
     # 状态里要能念出"图标在不在"（文件被清理软件删掉时，用户能从状态里看出来要点一次装上）
     $rmStat = Invoke-Exe 'rightmenu status' 60 $Exe $rmEnv
-    Check 'M20d 状态里念得出菜单图标都在（12 个）' `
-        (($rmStat.Code -eq 0) -and ($rmStat.Out -match '菜单图标\s*12 个都在')) `
+    Check 'M20d 状态里念得出菜单图标都在（17 个）' `
+        (($rmStat.Code -eq 0) -and ($rmStat.Out -match '菜单图标\s*17 个都在')) `
         ('exit=' + $rmStat.Code + ' ' + (@($rmStat.Out -split "`r?`n" | Where-Object { $_ -match '菜单图标' }) -join ' '))
 
     # ---- 自动修补：旧版装出来的键（背景位置写 %1、Icon 指着一个没有图标资源的 exe）应该在
@@ -1714,11 +1759,15 @@ try {
     $rmOff = Invoke-Exe 'run rightmenu.common.off' 60 $Exe $rmEnv
     $rmOff2 = Invoke-Exe 'run rightmenu.unlock.off' 60 $Exe $rmEnv
     $rmOff3 = Invoke-Exe 'run rightmenu.auto.off' 60 $Exe $rmEnv
-    Check 'M21 撤掉三项：自己写的键全删了（两个 verb + 共用子项键）' `
+    $rmOff4 = Invoke-Exe 'run rightmenu.copy.off' 60 $Exe $rmEnv
+    $rmOff5 = Invoke-Exe 'run rightmenu.terminal.off' 60 $Exe $rmEnv
+    Check 'M21 撤掉五项：自己写的键全删了（四个 verb + 共用子项键）' `
         (((Test-Path -LiteralPath (Join-Path $rmTestRoot '*\shell\Mxx1Unlock')) -eq $false) -and `
          ((Test-Path -LiteralPath (Join-Path $rmTestRoot '*\shell\Mxx1AutoUnlock')) -eq $false) -and `
+         ((Test-Path -LiteralPath (Join-Path $rmTestRoot '*\shell\Mxx1CopyPath')) -eq $false) -and `
+         ((Test-Path -LiteralPath (Join-Path $rmTestRoot 'Directory\shell\Mxx1Terminal')) -eq $false) -and `
          ((Test-Path -LiteralPath (Join-Path $rmTestRoot 'Mxx1Toolbox.Common')) -eq $false)) `
-        ('off=' + $rmOff.Code + '/' + $rmOff2.Code + '/' + $rmOff3.Code)
+        ('off=' + $rmOff.Code + '/' + $rmOff2.Code + '/' + $rmOff3.Code + '/' + $rmOff4.Code + '/' + $rmOff5.Code)
     $rmRealAfter = @(Get-ChildItem -LiteralPath $rmRealShell -ErrorAction SilentlyContinue | Select-Object -ExpandProperty PSChildName)
     $rmRealMine = @($rmRealAfter | Where-Object { $_ -match 'Mxx1' })
     # 判据是"这次测试一个字都没改用户的真实菜单"，**不是**"用户的菜单里不许有我们的键"：
@@ -1761,6 +1810,227 @@ Check 'M23 收尾干净：测试根删掉了、用户的原值记录按原样放
 $rmRealIconAfter = @(Get-ChildItem -LiteralPath $rmRealIconDir -File -ErrorAction SilentlyContinue).Count
 Check 'M23b 撤掉测试项没动用户真实那份图标目录（文件数不变）' `
     ($rmRealIconAfter -eq $rmRealIconsBefore) ('before=' + $rmRealIconsBefore + ' after=' + $rmRealIconAfter)
+
+}
+
+# ---------------------------------------------------------------- O 组：复制文件路径（copypath）
+if (Test-GroupSelected 'O') {
+# 用户 2026-10-06 晚五：「复制文件路径 / 在此处打开终端 这2个功能做一下」。
+# 这一组盯四件事：
+#   ① 只读：不移动 / 不改名 / 不删除任何文件（跑完文件数一个字都没变）；
+#   ② 路径照原样进去（空格 / 中文 / & 都不转义），--quote 就是每行加一对英文引号
+#      （和 Windows 自己那个「复制为路径」一个写法）；
+#   ③ **多选那件事**：右键菜单那一项写的是 MultiSelectModel=Player，可"资源管理器到底调几次"
+#      我们在真实菜单里没实测过（DESIGN §14.10 挂着人眼确认）。所以这里按**两个进程并发**模拟
+#      "每个文件起一个进程"那种最坏情况：三个进程同时跑，剪贴板里必须是**三行**、一行一个。
+#   ④ 不给路径 = 退出码 2，而且**不动剪贴板**（先放一个哨兵值，跑完还是它）。
+# ⚠ 这一组会**动用户的剪贴板**（剪贴板工具没办法不碰它）：跑之前把文字内容存下来，跑完放回去。
+Write-Host ''
+Write-Host 'O 组 · 复制文件路径（copypath：多选合批 / 引号 / 剪贴板 / 只读）'
+
+$cpDir = Join-Path $env:TEMP 'mxx1-copypath'
+if (Test-Path -LiteralPath $cpDir) { Remove-Item -LiteralPath $cpDir -Recurse -Force }
+New-Item -ItemType Directory -Path $cpDir | Out-Null
+$cpSpace = Join-Path $cpDir '报告 final.txt'          # 空格 + 中文
+$cpAmp = Join-Path $cpDir 'b & c.txt'                 # & （粘进命令行最容易出事的那种）
+$cpPlain = Join-Path $cpDir 'third.txt'
+foreach ($f in @($cpSpace, $cpAmp, $cpPlain)) { Set-Content -LiteralPath $f -Value 'x' -Encoding UTF8 }
+$cpBefore = @(Get-ChildItem -LiteralPath $cpDir -File | Select-Object -ExpandProperty Name)
+
+# 剪贴板：存下文字内容 → 跑完放回（PS 5.1 的 Get-Clipboard 在剪贴板空 / 只有非文字内容时返回 $null）
+Add-Type -AssemblyName System.Windows.Forms
+$cpClipHad = $true
+$cpClipOld = ''
+try { $cpClipOld = [System.Windows.Forms.Clipboard]::GetText() } catch { $cpClipHad = $false }
+try {
+    # ---- ① 只打印（--print）：不碰剪贴板、也不弹卡片，专门用来验拼装结果
+    $cp1 = Invoke-Exe ('copypath --print --quiet "' + $cpSpace + '"')
+    Check 'O01 copypath --print 只打印不动剪贴板（count=1 / clipboard=skipped）' `
+        (($cp1.Code -eq 0) -and ((Get-Key $cp1.Out 'count') -eq '1') -and ((Get-Key $cp1.Out 'clipboard') -eq 'skipped')) `
+        ('exit=' + $cp1.Code + ' count=' + (Get-Key $cp1.Out 'count') + ' clipboard=' + (Get-Key $cp1.Out 'clipboard'))
+
+    $cp2 = Invoke-Exe ('copypath --print --quiet "' + $cpSpace + '"')
+    Check 'O02 路径里有空格和中文也照原样进去（不转义、不截断）' `
+        ($cp2.Out.IndexOf('copied=' + $cpSpace) -ge 0) ('copied=' + (Get-Key $cp2.Out 'copied'))
+
+    $cp3 = Invoke-Exe ('copypath --print --quote --quiet "' + $cpSpace + '"')
+    Check 'O03 --quote 每行加一对英文引号（和 Windows 自己的「复制为路径」一样）' `
+        (($cp3.Code -eq 0) -and ((Get-Key $cp3.Out 'quoted') -eq 'yes') -and `
+         ($cp3.Out.IndexOf('copied="' + $cpSpace + '"') -ge 0)) `
+        ('quoted=' + (Get-Key $cp3.Out 'quoted') + ' copied=' + (Get-Key $cp3.Out 'copied'))
+
+    # ---- ② 一次给好几个路径 = 直接复制（不用等"同批"）；& 不能被当成命令分隔符
+    $cp4 = Invoke-Exe ('copypath --print --quiet "' + $cpAmp + '" "' + $cpPlain + '"')
+    $cp4Paths = @($cp4.Out -split "`r?`n" | Where-Object { $_ -like 'copied=*' })
+    Check 'O04 一次给两个路径：mode=direct、两行都在（& 没被拆开）' `
+        (($cp4.Code -eq 0) -and ((Get-Key $cp4.Out 'mode') -eq 'direct') -and ((Get-Key $cp4.Out 'count') -eq '2') -and `
+         ($cp4Paths.Count -eq 2) -and (($cp4Paths -join ' ') -match [regex]::Escape('b & c.txt'))) `
+        ('mode=' + (Get-Key $cp4.Out 'mode') + ' count=' + (Get-Key $cp4.Out 'count') + ' 行=' + ($cp4Paths -join ' | '))
+
+    # ---- ③ 真写剪贴板（一个文件那一档走"合批"）：写完读回来必须一模一样
+    $cp5 = Invoke-Exe ('copypath --quote --quiet "' + $cpSpace + '"')
+    $cpClip5 = ''
+    try { $cpClip5 = [System.Windows.Forms.Clipboard]::GetText() } catch { }
+    Check 'O05 真写剪贴板：clipboard=ok，剪贴板里的内容就是那行带引号的路径' `
+        (($cp5.Code -eq 0) -and ((Get-Key $cp5.Out 'clipboard') -eq 'ok') -and ($cpClip5 -eq ('"' + $cpSpace + '"'))) `
+        ('clipboard=' + (Get-Key $cp5.Out 'clipboard') + ' 剪贴板=[' + $cpClip5 + ']')
+
+    # ---- ④ 多选（最坏情况）：三个进程并发，剪贴板里必须是三行
+    #   这一条是这次真踩出来的：第一版写的是"追加完死等 400ms 再看自己是不是最后一个"，
+    #   实测三个进程**被切成两批**（后两个才刚冷启动起来）→ 剪贴板里只剩两行。现在是
+    #   "轮询到批次文件不再变为止"（QuietMs / MaxWaitMs，见 src\CopyPath.cs）。
+    $cpBatchFile = Join-Path $env:LOCALAPPDATA 'mxx1-toolbox\copypath-batch.txt'
+    if (Test-Path -LiteralPath $cpBatchFile) { Remove-Item -LiteralPath $cpBatchFile -Force -ErrorAction SilentlyContinue }
+    try { [System.Windows.Forms.Clipboard]::SetText('MXX1-SENTINEL') } catch { }
+    $cpProcs = @()
+    foreach ($f in @($cpSpace, $cpAmp, $cpPlain)) {
+        $si3 = New-Object System.Diagnostics.ProcessStartInfo
+        $si3.FileName = $Exe
+        $si3.Arguments = 'copypath --quiet "' + $f + '"'
+        $si3.UseShellExecute = $false
+        $si3.RedirectStandardOutput = $true
+        $si3.RedirectStandardError = $true
+        $si3.CreateNoWindow = $true
+        $si3.StandardOutputEncoding = New-Object System.Text.UTF8Encoding($false)
+        $cpProcs += [System.Diagnostics.Process]::Start($si3)
+    }
+    $cpOuts = @()
+    foreach ($p in $cpProcs) {
+        $o3 = $p.StandardOutput.ReadToEnd()
+        [void]$p.WaitForExit(60000)
+        $cpOuts += $o3
+    }
+    $cpClosers = @($cpOuts | Where-Object { $_ -match '(?m)^role=closer' })
+    $cpMerged = 0
+    foreach ($o3 in $cpClosers) { $cpMerged = [Math]::Max($cpMerged, [int](Get-Key $o3 'count')) }
+    Check 'O06 三个进程并发（模拟多选）：最后只有一个收尾，它手里是完整的 3 条' `
+        (($cpClosers.Count -eq 1) -and ($cpMerged -eq 3)) ('收尾的=' + $cpClosers.Count + ' 条数=' + $cpMerged)
+
+    $cpClip6 = ''
+    try { $cpClip6 = [System.Windows.Forms.Clipboard]::GetText() } catch { }
+    $cpLines = @($cpClip6 -split "`r?`n" | Where-Object { $_.Trim().Length -gt 0 })
+    Check 'O07 剪贴板里真有三行，一行一个路径（多选没被丢掉）' `
+        (($cpLines.Count -eq 3) -and (($cpLines -join ' ') -match [regex]::Escape($cpSpace)) -and `
+         (($cpLines -join ' ') -match [regex]::Escape($cpAmp)) -and (($cpLines -join ' ') -match [regex]::Escape($cpPlain))) `
+        ('行数=' + $cpLines.Count + ' 内容=' + ($cpLines -join ' || '))
+
+    Check 'O08 批次文件写在 %LOCALAPPDATA%\mxx1-toolbox 里（不是满世界乱放）' `
+        ((Get-Key $cp5.Out 'batchfile') -eq $cpBatchFile) ('batchfile=' + (Get-Key $cp5.Out 'batchfile'))
+
+    # ---- ⑤ 不给路径：退出码 2，而且**不要动剪贴板**（哨兵值必须还在）
+    try { [System.Windows.Forms.Clipboard]::SetText('MXX1-SENTINEL-2') } catch { }
+    $cp9 = Invoke-Exe 'copypath --quiet'
+    $cpClip9 = ''
+    try { $cpClip9 = [System.Windows.Forms.Clipboard]::GetText() } catch { }
+    Check 'O09 不给路径：退出码 2，而且没碰剪贴板（哨兵值还在）' `
+        (($cp9.Code -eq 2) -and ($cpClip9 -eq 'MXX1-SENTINEL-2')) ('exit=' + $cp9.Code + ' 剪贴板=[' + $cpClip9 + ']')
+
+    # ---- ⑥ 只读：跑完目录里的文件一个不多一个不少
+    $cpAfter = @(Get-ChildItem -LiteralPath $cpDir -File | Select-Object -ExpandProperty Name)
+    Check 'O10 只读：跑完文件一个不多一个不少（不移动、不改名、不删除）' `
+        ((($cpBefore -join ',') -eq ($cpAfter -join ',')) -and ($cpAfter.Count -eq 3)) `
+        ('before=' + ($cpBefore -join ',') + ' after=' + ($cpAfter -join ','))
+} finally {
+    # 剪贴板按原样放回（原来是空的就清空）
+    try {
+        if ($cpClipHad) { [System.Windows.Forms.Clipboard]::SetText($cpClipOld) }
+        else { [System.Windows.Forms.Clipboard]::Clear() }
+    } catch { }
+    if (Test-Path -LiteralPath $cpDir) { Remove-Item -LiteralPath $cpDir -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
+}
+
+# ---------------------------------------------------------------- Q 组：在此处打开终端（terminal）
+if (Test-GroupSelected 'Q') {
+# 用户 2026-10-06 晚五要的第二个功能。这一组盯四件事：
+#   ① **起了哪个终端**：wt → powershell → cmd 的顺序（这台机器没装 wt 就落到 PowerShell）；
+#      `--wt` 点名要却不给"偷偷换成别的"（找不到就退出码 2）；
+#   ② **引号**：路径里有空格 / 中文 / & / 单引号都要正确传下去（`--dry` 只打印会跑哪条命令，
+#      所以可以在不弹一堆黑窗口的前提下逐条断言）；
+#   ③ **真开一次**：`--cmd` 起一个真 cmd，然后**用我们自己的句柄表那条命令**验证它确实落在那
+#      个目录里（`rightmenu handles <目录>` 会报出持有该目录句柄的 pid）—— 光"起来了"不够，
+#      "起来在错的目录"等于没做；跑完把它杀掉；
+#   ④ 目录不存在 = 退出码 2（不硬开、不退到上一层）。
+Write-Host ''
+Write-Host 'Q 组 · 在此处打开终端（terminal：挑终端 / 引号 / 真落在那个目录 / 不硬开）'
+
+$tmDir = Join-Path $env:TEMP "mxx1-terminal\a b & 中文'x"       # 空格 + & + 中文 + 单引号，一次凑齐
+if (Test-Path -LiteralPath (Join-Path $env:TEMP 'mxx1-terminal')) { Remove-Item -LiteralPath (Join-Path $env:TEMP 'mxx1-terminal') -Recurse -Force }
+New-Item -ItemType Directory -Path $tmDir -Force | Out-Null
+Set-Content -LiteralPath (Join-Path $tmDir 'marker.txt') -Value 'x' -Encoding UTF8
+
+$tmDry = Invoke-Exe ('terminal --dry --quiet "' + $tmDir + '"')
+$tmKind = Get-Key $tmDry.Out 'terminal'
+Check 'Q01 --dry 只打印不起窗口（started=dry、没有 pid=）' `
+    (($tmDry.Code -eq 0) -and ((Get-Key $tmDry.Out 'started') -eq 'dry') -and ((Get-Key $tmDry.Out 'pid') -eq '')) `
+    ('exit=' + $tmDry.Code + ' started=' + (Get-Key $tmDry.Out 'started') + ' pid=' + (Get-Key $tmDry.Out 'pid'))
+Check 'Q02 自动挑的顺序是 wt → powershell（这台机器上挑出来的必须是这两个之一，不是 cmd）' `
+    (($tmKind -eq 'wt') -or ($tmKind -eq 'powershell')) ('terminal=' + $tmKind + ' 名字=' + (Get-Key $tmDry.Out 'terminalname'))
+Check 'Q03 挑出来的那个 exe 真的在磁盘上' `
+    (Test-Path -LiteralPath (Get-Key $tmDry.Out 'exe')) ('exe=' + (Get-Key $tmDry.Out 'exe'))
+
+$tmCmd = Invoke-Exe ('terminal --dry --cmd --quiet "' + $tmDir + '"')
+Check 'Q04 --cmd：命令是 cmd /K cd /d "<目录>"（引号把空格和 & 都包住）' `
+    (((Get-Key $tmCmd.Out 'terminal') -eq 'cmd') -and ((Get-Key $tmCmd.Out 'args') -eq ('/K cd /d "' + $tmDir + '"'))) `
+    ('terminal=' + (Get-Key $tmCmd.Out 'terminal') + ' args=' + (Get-Key $tmCmd.Out 'args'))
+
+$tmPs = Invoke-Exe ('terminal --dry --ps --quiet "' + $tmDir + '"')
+$tmPsArgs = Get-Key $tmPs.Out 'args'
+Check 'Q05 --ps：Set-Location -LiteralPath 用单引号包路径，路径里的单引号写成两个' `
+    (((Get-Key $tmPs.Out 'terminal') -eq 'powershell') -and ($tmPsArgs -match 'Set-Location -LiteralPath') -and `
+     ($tmPsArgs -match [regex]::Escape("''x'"))) ('args=' + $tmPsArgs)
+
+# --wt 点名要：这台机器上没有就必须**如实报错**，不许偷偷换成 powershell
+$tmWtPath = Join-Path $env:LOCALAPPDATA 'Microsoft\WindowsApps\wt.exe'
+$tmWt = Invoke-Exe ('terminal --dry --wt --quiet "' + $tmDir + '"')
+if (Test-Path -LiteralPath $tmWtPath) {
+    Check 'Q06 --wt 点名要：装了 Windows Terminal 就用它' `
+        (($tmWt.Code -eq 0) -and ((Get-Key $tmWt.Out 'terminal') -eq 'wt') -and ((Get-Key $tmWt.Out 'args') -eq ('-d "' + $tmDir + '"'))) `
+        ('exit=' + $tmWt.Code + ' args=' + (Get-Key $tmWt.Out 'args'))
+} else {
+    Check 'Q06 --wt 点名要：这台机器上没装就如实报错（退出码 2，不偷偷换成 powershell）' `
+        (($tmWt.Code -eq 2) -and ((Get-Key $tmWt.Out 'terminal') -eq '')) `
+        ('exit=' + $tmWt.Code + ' terminal=' + (Get-Key $tmWt.Out 'terminal'))
+}
+
+$tmBad = Invoke-Exe ('terminal --dry --quiet "' + (Join-Path $tmDir 'nope') + '"')
+Check 'Q07 目录不存在：退出码 2、如实说没有这个文件夹（不退到上一层也不硬开）' `
+    (($tmBad.Code -eq 2) -and ($tmBad.Out -match '没有这个文件夹')) ('exit=' + $tmBad.Code + ' out=' + (Get-Key $tmBad.Out 'error'))
+
+# 不给目录 = 当前目录（命令行用；右键菜单那三个位置永远会传目录进来）
+$tmHere = Invoke-Exe 'terminal --dry --quiet'
+Check 'Q08 不给目录就用当前目录（dir= 不是空的）' `
+    (($tmHere.Code -eq 0) -and ((Get-Key $tmHere.Out 'dir').Length -gt 3)) ('dir=' + (Get-Key $tmHere.Out 'dir'))
+
+# ---- 真开一次：起来了 + **确实落在那个目录里**（用句柄表验证，见组说明）----
+$tmProc = $null
+try {
+    $tmReal = Invoke-Exe ('terminal --cmd --quiet "' + $tmDir + '"') 60
+    $tmPid2 = 0
+    if ((Get-Key $tmReal.Out 'pid') -match '^(\d+)$') { $tmPid2 = [int]$Matches[1] }
+    Check 'Q09 真开一个 cmd：started=yes、拿到了 pid' `
+        (($tmReal.Code -eq 0) -and ((Get-Key $tmReal.Out 'started') -eq 'yes') -and ($tmPid2 -gt 0)) `
+        ('exit=' + $tmReal.Code + ' started=' + (Get-Key $tmReal.Out 'started') + ' pid=' + $tmPid2)
+    if ($tmPid2 -gt 0) {
+        $tmProc = Get-Process -Id $tmPid2 -ErrorAction SilentlyContinue
+        $tmInDir = $false
+        for ($i = 0; $i -lt 12; $i++) {
+            Start-Sleep -Milliseconds 600
+            $tmH = Invoke-Exe ('rightmenu handles "' + $tmDir + '"')
+            if ($tmH.Out -match ('pid=' + $tmPid2 + '\b')) { $tmInDir = $true; break }
+        }
+        Check 'Q10 起来的那个终端**真的在那个目录里**（它持有该目录的句柄，不是只开了个窗口）' `
+            $tmInDir ('pid=' + $tmPid2 + ' 第 ' + ($i + 1) + ' 次查到 目录=' + $tmDir)
+    } else {
+        Skip 'Q10 起来的那个终端真的在那个目录里' '上一条没拿到 pid'
+    }
+} finally {
+    if ($tmProc -and -not $tmProc.HasExited) { Stop-Process -Id $tmProc.Id -Force -ErrorAction SilentlyContinue }
+    $tmLeft = @(Get-ChildItem -LiteralPath $tmDir -File -ErrorAction SilentlyContinue)
+    Check 'Q11 只读：那个目录里的文件一个没变（开终端不改用户的文件）' ($tmLeft.Count -eq 1) ('文件数=' + $tmLeft.Count)
+    if (Test-Path -LiteralPath (Join-Path $env:TEMP 'mxx1-terminal')) { Remove-Item -LiteralPath (Join-Path $env:TEMP 'mxx1-terminal') -Recurse -Force -ErrorAction SilentlyContinue }
+}
 
 }
 

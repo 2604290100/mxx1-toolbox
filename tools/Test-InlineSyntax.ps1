@@ -165,12 +165,28 @@ if (-not (Test-Path -LiteralPath $quickPath)) {
     } else {
         $mockDir = Join-Path $env:TEMP 'mxx1-gitmock-selfcheck'
         $probeOk = $false
+        $probeOkCjk = $false
         $probeDetail = ''
         try {
             if (Test-Path -LiteralPath $mockDir) { Remove-Item -LiteralPath $mockDir -Recurse -Force }
             [void][System.IO.Directory]::CreateDirectory($mockDir)
-            # 假 git：stderr 一行 warning（照抄 git 在 CRLF 差异下的真实输出），stdout 一个文件名
-            $mockCmd = "@echo off`r`necho warning: in the working copy of 'x.md', CRLF will be replaced by LF the next time Git touches it 1>&2`r`necho src/MainForm.cs`r`nexit /b 0`r`n"
+            # 假 git 干两件事，各对应一条真实踩过的坑：
+            #   ① stderr 一行 warning（照抄 git 在 CRLF 差异下的真实输出）—— 闸门那段必须仍然读得出改动；
+            #   ② stdout **按 git 的样子写原始 UTF-8 字节**，其中一个是中文名文件 —— 闸门必须读出原名
+            #      （2026-10-06 晚五实测：git 默认把非 ASCII 路径输出成 `"docs/\345\276\205…"`，
+            #      闸门既匹配不上规则、又拿这个串去 Test-Path → `Illegal characters in path` **当场崩**）。
+            #      这里故意**不用 cmd 的 echo**（那玩意按控制台代码页写字节，测不出编码）：直接
+            #      `[Console]::OpenStandardOutput()` 写 UTF-8 字节，跨代码页都稳。
+            $mockPs1 = @'
+[Console]::Error.WriteLine("warning: in the working copy of 'x.md', CRLF will be replaced by LF the next time Git touches it")
+$utf8 = New-Object System.Text.UTF8Encoding($false)
+$bytes = $utf8.GetBytes("src/MainForm.cs`ndocs/待做的新工具任务书.md`n")
+$so = [Console]::OpenStandardOutput()
+$so.Write($bytes, 0, $bytes.Length)
+$so.Flush()
+'@
+            [System.IO.File]::WriteAllText((Join-Path $mockDir 'mockgit.ps1'), $mockPs1, (New-Object System.Text.UTF8Encoding($true)))
+            $mockCmd = "@echo off`r`npowershell -NoProfile -ExecutionPolicy Bypass -File `"%~dp0mockgit.ps1`"`r`nexit /b %ERRORLEVEL%`r`n"
             [System.IO.File]::WriteAllText((Join-Path $mockDir 'git.cmd'), $mockCmd, [System.Text.Encoding]::ASCII)
             # 注意 $root 不能写成盘符开头的字面路径：编码体检查"绝对路径"（闸门只用它拼 git 命令，
             # 而 git 已经是假的了，所以这里随便给个相对名字就行）。
@@ -185,17 +201,18 @@ if (-not (Test-Path -LiteralPath $quickPath)) {
             $out = @(& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $mockDir 'probe.ps1') 2>&1)
             $outText = (@($out | ForEach-Object { [string]$_ }) -join ' / ')
             $probeOk = ($outText -match 'NAME=src/MainForm\.cs')
+            $probeOkCjk = ($outText -match 'NAME=docs/待做的新工具任务书\.md')
             $probeDetail = $outText
         } catch {
             $probeDetail = ('自检自己出错：' + $_.Exception.Message)
         } finally {
             if (Test-Path -LiteralPath $mockDir) { Remove-Item -LiteralPath $mockDir -Recurse -Force -ErrorAction SilentlyContinue }
         }
-        if ($probeOk) {
-            Write-Host '  （闸门读 git 的自检：假 git 往 stderr 写了一行 warning，改动文件名照样读出来了）'
+        if ($probeOk -and $probeOkCjk) {
+            Write-Host '  （闸门读 git 的自检：假 git 往 stderr 写了一行 warning + 报了一个**中文名**文件，两个名字都原样读出来了）'
         } else {
             $problems++
-            Report-Problem 'Test-Quick.ps1' 'Get-ChangedPaths' ('假 git 往 stderr 写一行 warning 之后就读不出改动了 —— 闸门会静默退回全套跑（EAP 那道防线没了？）  实测输出: ' + $probeDetail)
+            Report-Problem 'Test-Quick.ps1' 'Get-ChangedPaths' ('假 git 写了 stderr warning / 报中文名文件之后读不出改动 —— 闸门会静默退回全套跑、甚至当场崩（EAP 防线或 UTF-8 解码那道没了？）  实测输出: ' + $probeDetail)
         }
     }
 }

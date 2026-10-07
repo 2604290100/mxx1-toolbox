@@ -357,6 +357,10 @@ namespace Mxx1Toolbox
                         if (a == "auto.off") { return "把「" + RightMenu.AutoTitle + "」从右键菜单里撤掉（只删工具箱自己写的键）"; }
                         if (a == "common.on") { return "把「" + RightMenu.CommonTitle + "」子菜单装进右键菜单（内容 = 「常用」页：置顶 + 最近使用）"; }
                         if (a == "common.off") { return "把「" + RightMenu.CommonTitle + "」子菜单撤掉（只删工具箱自己写的键）"; }
+                        if (a == "copy.on") { return "把「" + RightMenu.CopyTitle + "」装进右键菜单（右键文件 / 文件夹 → 完整路径进剪贴板）"; }
+                        if (a == "copy.off") { return "把「" + RightMenu.CopyTitle + "」从右键菜单里撤掉（只删工具箱自己写的键）"; }
+                        if (a == "terminal.on") { return "把「" + RightMenu.TerminalTitle + "」装进右键菜单（右键文件夹 / 空白处 → 在那个目录里开终端）"; }
+                        if (a == "terminal.off") { return "把「" + RightMenu.TerminalTitle + "」从右键菜单里撤掉（只删工具箱自己写的键）"; }
                         if (a == "status") { return "只读：列出右键菜单里装了什么、子菜单现在几项"; }
                         if (a == "rebuild") { return "重写「" + RightMenu.CommonTitle + "」子菜单的内容（置顶 / 最近使用变了之后手动兜底）"; }
                         if (a == "help") { return "一页说明：装在哪、怎么卸干净、右键里看不到怎么办"; }
@@ -705,12 +709,16 @@ namespace Mxx1Toolbox
             bool ok;
             string report;
             string a = t.Action.ToLowerInvariant();
-            if (a == "unlock.on") { report = RightMenu.Install(true, false, false, out ok); }
-            else if (a == "unlock.off") { report = RightMenu.Uninstall(true, false, false, out ok); }
-            else if (a == "auto.on") { report = RightMenu.Install(false, true, false, out ok); }
-            else if (a == "auto.off") { report = RightMenu.Uninstall(false, true, false, out ok); }
-            else if (a == "common.on") { report = RightMenu.Install(false, false, true, out ok); }
-            else if (a == "common.off") { report = RightMenu.Uninstall(false, false, true, out ok); }
+            if (a == "unlock.on") { report = RightMenu.Install(One(RightMenu.ItemUnlock), out ok); }
+            else if (a == "unlock.off") { report = RightMenu.Uninstall(One(RightMenu.ItemUnlock), out ok); }
+            else if (a == "auto.on") { report = RightMenu.Install(One(RightMenu.ItemAuto), out ok); }
+            else if (a == "auto.off") { report = RightMenu.Uninstall(One(RightMenu.ItemAuto), out ok); }
+            else if (a == "common.on") { report = RightMenu.Install(One(RightMenu.ItemCommon), out ok); }
+            else if (a == "common.off") { report = RightMenu.Uninstall(One(RightMenu.ItemCommon), out ok); }
+            else if (a == "copy.on") { report = RightMenu.Install(One(RightMenu.ItemCopy), out ok); }
+            else if (a == "copy.off") { report = RightMenu.Uninstall(One(RightMenu.ItemCopy), out ok); }
+            else if (a == "terminal.on") { report = RightMenu.Install(One(RightMenu.ItemTerminal), out ok); }
+            else if (a == "terminal.off") { report = RightMenu.Uninstall(One(RightMenu.ItemTerminal), out ok); }
             else if (a == "status") { report = RightMenu.Status(); ok = true; }
             else if (a == "rebuild") { report = RightMenu.Rebuild(out ok); }
             else if (a == "help") { report = RightMenu.Help(); ok = true; }
@@ -721,6 +729,12 @@ namespace Mxx1Toolbox
             r.Message = ok ? "右键增强已处理" : "有地方没成功（细节见报告）";
             Logger.Write(t.Name, report);
             return r;
+        }
+
+        /// <summary>装 / 撤只要一项时的小包装（`RightMenu.Install` 收的是"要动哪几项"的清单）。</summary>
+        private static System.Collections.Generic.List<string> One(string item)
+        {
+            return new System.Collections.Generic.List<string>(new string[] { item });
         }
 
         /// <summary>「需要管理员」的统一做法：把自己以管理员身份再起一遍，命令是 `run &lt;id&gt; --admin`。

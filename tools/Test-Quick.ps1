@@ -160,14 +160,27 @@ function Get-ChangedPaths {
     $ErrorActionPreference = 'Continue'
     $script:GitNote = ''
     $names = @()
+    # ⚠️ 第二个坑（2026-10-06 晚五实测踩到，**闸门当场崩**）：git 默认 `core.quotePath=true`，
+    # 路径里有非 ASCII 字符时会输出成 `"docs/\345\276\205..."` 这种带引号的八进制转义形式 ——
+    # 于是 ① `docs/*` 这种规则**匹配不上**（前缀多了一个引号）、② 后面 `Test-Path -LiteralPath`
+    # 直接抛 `Illegal characters in path`，**整个闸门挂掉**（不是"退回全套跑"，是真的崩）。
+    # 触发条件很平常：改一个中文名文件（这一轮改的是 `docs\待做的新工具任务书.md`）。
+    # 修法两条一起上：`-c core.quotePath=false` 让 git 输出原样的 UTF-8 路径（git 2.1+），
+    # 再临时把 `[Console]::OutputEncoding` 设成 UTF-8 —— PS 5.1 读原生命令的 stdout 用的是
+    # **控制台输出编码**（这台机器上是 GBK），不换的话中文会读成乱码。
+    # 自检在 tools\Test-InlineSyntax.ps1 末尾（假 git 回一个**中文名**文件，读不出原名就 FAIL）。
+    $oldOut = [Console]::OutputEncoding
     try {
-        $names += @(& git -C $root diff --name-only $Since 2>$null)
+        try { [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false) } catch { }
+        $names += @(& git -C $root -c core.quotePath=false diff --name-only $Since 2>$null)
         $diffExit = $LASTEXITCODE
-        $names += @(& git -C $root ls-files --others --exclude-standard 2>$null)
+        $names += @(& git -C $root -c core.quotePath=false ls-files --others --exclude-standard 2>$null)
         $lsExit = $LASTEXITCODE
     } catch {
         $script:GitNote = $_.Exception.Message
         return @()
+    } finally {
+        try { [Console]::OutputEncoding = $oldOut } catch { }
     }
     if ($diffExit -ne 0 -or $lsExit -ne 0) {
         $script:GitNote = ('git 退出码 diff=' + $diffExit + ' ls-files=' + $lsExit)
@@ -175,12 +188,22 @@ function Get-ChangedPaths {
     }
     if (@($names | Where-Object { $_ }).Count -eq 0) {
         # 工作区是干净的 → 用"还没推到远端的提交"当改动集（提交之后才发现问题的那种跑法）
-        $names += @(& git -C $root log --name-only --pretty=format: 'origin/main..HEAD' 2>$null)
+        $oldOut2 = [Console]::OutputEncoding
+        try {
+            try { [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false) } catch { }
+            $names += @(& git -C $root -c core.quotePath=false log --name-only --pretty=format: 'origin/main..HEAD' 2>$null)
+        } finally {
+            try { [Console]::OutputEncoding = $oldOut2 } catch { }
+        }
         if (@($names | Where-Object { $_ }).Count -gt 0) {
             Write-Host '（工作区是干净的，按"还没推到远端的提交"算改动）'
         }
     }
-    return @($names | Where-Object { $_ } | ForEach-Object { $_.Trim() } | Where-Object { $_ } | Sort-Object -Unique)
+    # 兜底：万一还是有引号包着的（老 git 不认 quotePath=false 时），把最外层那对引号剥掉。
+    # 只剥一层、只剥成对的，别碰路径里合法的字符。
+    return @($names | Where-Object { $_ } | ForEach-Object { $_.Trim() } |
+        ForEach-Object { if ($_.Length -ge 2 -and $_.StartsWith('"') -and $_.EndsWith('"')) { $_.Substring(1, $_.Length - 2) } else { $_ } } |
+        Where-Object { $_ } | Sort-Object -Unique)
 }
 
 # ---------------------------------------------------------------- "改了套件自己"到底该跑哪几组
@@ -384,7 +407,11 @@ function Get-SuiteFingerprint {
     $lines = New-Object System.Collections.ArrayList
     foreach ($p in @($changedPaths | Sort-Object)) {
         $full = Join-Path $root ($p -replace '/', '\')
-        if (Test-Path -LiteralPath $full -PathType Leaf) {
+        # 这一句**不许让它把闸门带走**：路径里真出现怪字符（老 git 的引号转义、临时文件被删）
+        # 时，`Test-Path -LiteralPath` 会抛 `Illegal characters in path` —— 2026-10-06 晚五就这么崩过一次。
+        $isLeaf = $false
+        try { $isLeaf = Test-Path -LiteralPath $full -PathType Leaf } catch { $isLeaf = $false }
+        if ($isLeaf) {
             $fi = Get-Item -LiteralPath $full
             [void]$lines.Add($p + '|' + $fi.Length + '|' + $fi.LastWriteTimeUtc.Ticks)
         } else {

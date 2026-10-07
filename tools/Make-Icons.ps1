@@ -48,6 +48,11 @@ function Get-Shape {
         @('rightmenu.auto.off',   'minus'),
         @('rightmenu.common.on',  'list'),
         @('rightmenu.common.off', 'minus'),
+        # 2026-10-06 晚五加的两项：复制文件路径 = 叠起来的两张纸，在此处打开终端 = 终端窗口 + 提示符
+        @('rightmenu.copy.on',     'copy'),
+        @('rightmenu.copy.off',    'minus'),
+        @('rightmenu.terminal.on', 'terminal'),
+        @('rightmenu.terminal.off','minus'),
         @('rightmenu.rebuild',    'refresh'),
         @('rightmenu.help',       'doc'),
         @('update-cache',   'trash'),
@@ -229,6 +234,25 @@ function Draw-Shape {
             $G.DrawEllipse($Pen, 3, 3, 10, 10)
             $G.DrawEllipse($Pen, 6.2, 3, 3.6, 10)
             $G.DrawLine($Pen, 3, 8, 13, 8)
+        }
+        'copy' {
+            # 「复制文件路径」：两张错开叠在一起的纸（最直白的"复制"图形）
+            $G.DrawRectangle($Pen, 3, 3, 7.6, 8.4)
+            $G.DrawLine($Pen, 6.4, 11.4, 6.4, 12.6)
+            $G.DrawLine($Pen, 6.4, 12.6, 13, 12.6)
+            $G.DrawLine($Pen, 13, 12.6, 13, 5)
+            $G.DrawLine($Pen, 13, 5, 11.6, 5)
+        }
+        'terminal' {
+            # 「在此处打开终端」：一个终端窗口 + 里面的命令提示符（> 加一条下划线光标）
+            $G.DrawRectangle($Pen, 2.5, 3.5, 11, 9)
+            $G.DrawLine($Pen, 2.5, 5.8, 13.5, 5.8)
+            $G.DrawLines($Pen, @(
+                (New-Object System.Drawing.PointF(4.6, 8.0)),
+                (New-Object System.Drawing.PointF(6.4, 9.8)),
+                (New-Object System.Drawing.PointF(4.6, 11.2))
+            ))
+            $G.DrawLine($Pen, 7.6, 11.4, 11.2, 11.4)
         }
         'plus' {
             $G.FillRectangle($Brush, 7.1, 4, 1.8, 8)

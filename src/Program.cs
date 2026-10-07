@@ -121,6 +121,8 @@ namespace Mxx1Toolbox
                     case "status": return Status();
                     case "tip": return Tip(args);
                     case "hash": return HashCommand(args);
+                    case "copypath": return CopyPathCommand(args);
+                    case "terminal": return TerminalCommand(args);
                     case "privacy": return PrivacyCommand(args);
                     case "sysreg": return SysRegCommand(args);
                     case "rightmenu": return RightMenuCommand(args);
@@ -257,8 +259,12 @@ namespace Mxx1Toolbox
             Console.WriteLine("  Mxx1Toolbox.exe rightmenu unlock --query-only <路径>   只查谁占着这个文件，不弹窗不结束进程");
             Console.WriteLine("  Mxx1Toolbox.exe rightmenu unlock --auto <路径>         一键解除占用：不弹窗口，直接结束占用它的程序");
             Console.WriteLine("                                                        （右键菜单里的「" + RightMenu.AutoTitle + "」用的就是它）");
-            Console.WriteLine("                                                        不写就一直留着（点一下卡片才关），--notify=<毫秒> 定它多久自己走");
+            Console.WriteLine("                                                        提示卡 5 秒自动关闭（点一下也能提前关），--notify=<毫秒> 定它多久自己走");
             Console.WriteLine("                                                        （--notify=0 / --quiet 连提示卡也不要）");
+            Console.WriteLine("  Mxx1Toolbox.exe copypath <文件…> [--quote]            把完整路径复制进剪贴板（一行一个；--quote 每行加引号）");
+            Console.WriteLine("                                                        （右键菜单里的「" + RightMenu.CopyTitle + "」用的就是它）");
+            Console.WriteLine("  Mxx1Toolbox.exe terminal [<目录>] [--wt|--cmd]        在某个目录里开一个终端（默认 Windows Terminal → PowerShell → cmd）");
+            Console.WriteLine("                                                        （右键菜单里的「" + RightMenu.TerminalTitle + "」用的就是它；--dry 只打印会跑哪条命令，不起窗口）");
             Console.WriteLine("  Mxx1Toolbox.exe ui [log|settings]    打开界面并直接看日志 / 设置（右键子菜单的固定入口用它）");
             Console.WriteLine("  Mxx1Toolbox.exe pin <id> / unpin <id>  把按钮置顶 / 取消置顶（排在这一页最前面）");
             Console.WriteLine("  Mxx1Toolbox.exe export <文件>        把「我的工具」导出成一个文件");
@@ -360,6 +366,48 @@ namespace Mxx1Toolbox
             return matched ? 0 : 1;
         }
 
+        /// <summary>`copypath &lt;文件…&gt; [--quote] [--print] [--no-wait]` —— 把完整路径复制进剪贴板
+        /// （一行一个）。右键菜单里的「复制文件路径」用的就是它（命令里带 `--quote`，和 Windows 自己
+        /// 那个「复制为路径」一样带引号）。实现与"多选怎么合批"的来龙去脉见 `src\CopyPath.cs`。
+        ///
+        /// 退出码：0 = 复制好了（含"同一批里别人收尾"），2 = 用法错 / 剪贴板写不进去。
+        /// 只读：不碰任何文件；`--print` 连剪贴板都不碰（测试与排查用）。</summary>
+        private static int CopyPathCommand(string[] args)
+        {
+            List<string> paths = new List<string>();
+            for (int i = 1; i < args.Length; i++)
+            {
+                if (args[i] == null || args[i].StartsWith("--")) { continue; }
+                paths.Add(args[i]);
+            }
+            return CopyPath.Run(paths, HasFlag(args, "--quote"), HasFlag(args, "--no-wait"),
+                HasFlag(args, "--print"), NotifyWanted(args), NotifyMs(args));
+        }
+
+        /// <summary>`terminal [&lt;目录&gt;] [--wt|--ps|--cmd] [--dry]` —— 在某个目录里开一个终端
+        /// （wt → powershell → cmd 的顺序，见 `src\Terminal.cs`）。右键菜单里的「在此处打开终端」
+        /// 用的就是它（文件夹 / 文件夹空白处 / 桌面空白处三个位置）。
+        ///
+        /// 退出码：0 = 起来了（`--dry` = 打印完了），2 = 目录不存在 / 这个终端没有 / 起不来。
+        /// **不提权**、不改任何设置；`--dry` 不起窗口（回归测试靠它验引号）。</summary>
+        private static int TerminalCommand(string[] args)
+        {
+            string dir = "";
+            string want = Terminal.Auto;
+            for (int i = 1; i < args.Length; i++)
+            {
+                string a = args[i];
+                if (a == null) { continue; }
+                if (string.Equals(a, "--wt", StringComparison.OrdinalIgnoreCase)) { want = Terminal.Wt; continue; }
+                if (string.Equals(a, "--ps", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(a, "--powershell", StringComparison.OrdinalIgnoreCase)) { want = Terminal.PowerShell; continue; }
+                if (string.Equals(a, "--cmd", StringComparison.OrdinalIgnoreCase)) { want = Terminal.Cmd; continue; }
+                if (a.StartsWith("--")) { continue; }
+                if (dir.Length == 0) { dir = a; }
+            }
+            return Terminal.Run(dir, want, HasFlag(args, "--dry"), NotifyWanted(args), NotifyMs(args));
+        }
+
         private static string TipText(ToolItem t, Settings settings)
         {
             return MainForm.TipFor(t, settings);
@@ -453,7 +501,8 @@ namespace Mxx1Toolbox
                 {
                     Console.WriteLine(loc.Id + "\t" + loc.Label + "\t" + loc.Key);
                 }
-                Console.WriteLine("titles=" + RightMenu.UnlockTitle + " / " + RightMenu.AutoTitle + " / " + RightMenu.CommonTitle);
+                Console.WriteLine("titles=" + RightMenu.UnlockTitle + " / " + RightMenu.AutoTitle + " / "
+                    + RightMenu.CommonTitle + " / " + RightMenu.CopyTitle + " / " + RightMenu.TerminalTitle);
                 Console.WriteLine("shared=" + RightMenu.SharedKey);
                 Console.WriteLine("root=" + RightMenu.RootLabel);
                 return 0;
@@ -509,8 +558,9 @@ namespace Mxx1Toolbox
             return !(env != null && env.Trim() == "1");
         }
 
-        /// <summary>提示卡显示多久（毫秒）。**不写 = 一直留着**（返回 -1，点一下卡片才关）——
-        /// 用户 2026-10-06 晚原话「不要跟随鼠标和 3 秒自动消失」：几秒里读不完"结束了哪几个程序"。
+        /// <summary>提示卡显示多久（毫秒）。**不写 = 5 秒自动关闭**（用户 2026-10-06 晚五原话：
+        /// 「一键解除占用改成 5 秒自动关闭，保留点击关闭」—— 上一轮他要的是"一直留着"，用了一晚
+        /// 又改回来了；"点一下也能提前关"那条留着）。
         /// `--notify=<毫秒>` 写多少就多少（界面回归要用短的，不然一条检查就要等它自己消失），
         /// 0 = 不显示；给的数夹在 800ms - 60s：再短看不见，再长就成了"赖着不走"。</summary>
         private static int NotifyMs(string[] args)
@@ -529,8 +579,12 @@ namespace Mxx1Toolbox
                 if (ms > 60000) { return 60000; }
                 return ms;
             }
-            return -1;      // 没写 --notify：常驻（点一下才关）
+            return DefaultNotifyMs;     // 没写 --notify：5 秒后自己走（点一下也能提前关）
         }
+
+        /// <summary>不给 `--notify` 时提示卡显示多久 —— **5 秒**，用户 2026-10-06 晚五拍的数字。
+        /// 只在这里写一次：卡片本身（src\Balloon.cs）拿的是"显示多久"这个数，不自己定默认值。</summary>
+        public const int DefaultNotifyMs = 5000;
 
         /// <summary>只读：谁手里有这个文件 / 文件夹的**句柄**（全系统句柄表，像火绒那样）。
         /// 命令行只提供"查"，**不提供"关"** —— 抽句柄是危险动作，只能从界面点（还要过确认框）。
@@ -567,7 +621,7 @@ namespace Mxx1Toolbox
             if (HasFlag(args, "--auto"))
             {
                 int notifyMs = NotifyMs(args);
-                // notifyMs <= 0 时 Balloon 那张卡**一直留着**（点一下才关），见 Program.NotifyMs
+                // notifyMs == 0 时不弹卡片；给了数就显示那么久（不给 = 5 秒，见 Program.NotifyMs）
                 return AutoUnlock.Run(all.ToArray(), NotifyWanted(args), notifyMs);
             }
 

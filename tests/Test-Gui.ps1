@@ -320,8 +320,9 @@ public class TBGui
     public static bool Alive(IntPtr h) { return IsWindow(h); }
     public static bool Click(IntPtr h) { return PostMessageW(h, 0x00F5, IntPtr.Zero, IntPtr.Zero); }
 
-    // N21f: the notice card closes on a real mouse-down anywhere on it (that is the ONLY way out of a
-    // card that never times out). Click() above sends BM_CLICK, which only button controls answer.
+    // N21f: the notice card closes on a real mouse-down anywhere on it (it also times out after 5s by
+    // default, but clicking it must close it AT ONCE). Click() above sends BM_CLICK, which only button
+    // controls answer.
     public static bool MouseDown(IntPtr h, int x, int y)
     {
         IntPtr lp = (IntPtr)((y << 16) | (x & 0xFFFF));
@@ -1066,22 +1067,27 @@ Check 'A05 窗口可缩放（有 WS_THICKFRAME）' (($style -band 0x00040000) -n
 $rect = [TBGui]::Rect($main)
 Check 'A06 窗口尺寸合理（宽 >= 460, 高 >= 380）' (($rect[2] - $rect[0]) -ge 460 -and ($rect[3] - $rect[1]) -ge 380) (('w={0} h={1}' -f ($rect[2] - $rect[0]), ($rect[3] - $rect[1])))
 
-# 窗口高度跟着当前页签的内容走：「右键增强」只有 1 个按钮，不该撑着一个 700px 的空窗口
+# 窗口高度跟着当前页签的内容走：小页不该撑着一个 700px 的空窗口
 # （用户 2026-10-04 让从体验角度复核时发现：固定 700px 高，某些页 89% 是空白）。
+# ⚠ 这里原来比的是「右键增强」比「常用设置」矮。2026-10-06 晚五「右键增强」从 10 个按钮 / 5 段
+#    长到 14 个按钮 / 7 段之后，它反而比「常用设置」高了 24px —— 因为**分段标题那一行比按钮行还高**
+#    （9 行按钮的页 vs 4 行按钮 + 7 段标题的页）。那次红不是 bug，是这条断言选错了参照物：
+#    判据改成**页签里最小的那一页**（「我的工具」：1~2 段、1 行按钮），同样证明"高度跟着内容走"，
+#    而且以后哪个功能多加了按钮也不会被带红。
 $heightCommon = $rect[3] - $rect[1]
-if (Switch-Tab -Handle $main -TabName '右键增强' -ExpectNames @()) {
+if (Switch-Tab -Handle $main -TabName '我的工具' -ExpectNames $mineNames) {
     Start-Sleep -Milliseconds 600
     $rectSmall = [TBGui]::Rect($main)
     $heightSmall = $rectSmall[3] - $rectSmall[1]
-    Check 'A07 窗口高度跟着内容走（右键增强页比常用设置页矮）' ($heightSmall -lt $heightCommon) `
-        ('常用设置=' + $heightCommon + 'px 右键增强=' + $heightSmall + 'px')
+    Check 'A07 窗口高度跟着内容走（「我的工具」那页比「常用设置」矮）' ($heightSmall -lt $heightCommon) `
+        ('常用设置=' + $heightCommon + 'px 我的工具=' + $heightSmall + 'px')
     [void](Switch-Tab -Handle $main -TabName '常用设置' -ExpectNames $commonNames)
     Start-Sleep -Milliseconds 400
     $rectBack = [TBGui]::Rect($main)
     Check 'A08 切回常用设置后窗口又变回来（高度跟着内容）' ((($rectBack[3] - $rectBack[1]) -ge $heightCommon - 4)) `
         ('切回后=' + ($rectBack[3] - $rectBack[1]) + 'px 原=' + $heightCommon + 'px')
 } else {
-    Check 'A07 窗口高度跟着内容走（右键增强页比常用设置页矮）' $false '切不到「右键增强」页签'
+    Check 'A07 窗口高度跟着内容走（「我的工具」那页比「常用设置」矮）' $false '切不到「我的工具」页签'
     Check 'A08 切回常用设置后窗口又变回来（高度跟着内容）' $false 'skipped'
 }
 
@@ -2469,11 +2475,12 @@ try {
     # 气泡（NotifyIcon.ShowBalloonTip）—— 这台精简版 Windows 上**根本看不到**（Win10 / Win11 把
     # 「通知」或专注助手关掉时同样看不到），而且它的位置由系统定死在右下角，离用户正看着的地方很远。
     # 现在改成自己画的卡片（src\Balloon.cs 的 NoticeForm）。
-    # **同一天晚上用户又改口**（原话：「哪个弹框弹出以后不要跟随鼠标和 3 秒自动消失」）：v1.5.4 那张卡
-    # 是"跟着鼠标走 + 6 秒自己消失"，他自己用起来发现两样都碍事 —— 跟着鼠标跑，他要去点掉卡片的时候
-    # 卡片先跑了；6 秒也读不完"结束了哪几个程序"。规矩于是改成 **位置钉住不动 + 不给 --notify 就一直
-    # 留着（点一下才关）**；N21b 因此**反了过来**（原来是"鼠标动卡片跟着动"，现在是"卡片不许动"），
-    # 常驻那一段在 N21e / N21f / N21g。
+    # 这一张卡用户 2026-10-06 一晚上改了两次口（三轮都记在 docs\DESIGN.md §12.60 与 src\Balloon.cs）：
+    #   ① v1.5.4：「位置要跟随鼠标」+ 6 秒自己消失；
+    #   ② 晚四：「不要跟随鼠标和 3 秒自动消失」→ 位置钉住 + 不给 --notify 就一直留着（点一下才关）；
+    #   ③ **晚五（现行）**：「改成 5 秒自动关闭，保留点击关闭」→ 位置仍然钉住、**默认 5 秒自己走**、
+    #      点一下可以提前关。所以下面第一段验"钉住 + 到点自己走"，第二段验"**5 秒**这个默认值"和
+    #      "点一下提前关"，第三段验"新卡顶掉上一张"（常驻那一段去掉了）。
     # 它要真动鼠标，所以先存下原来的位置、跑完放回去（和 B10/B11 一个规矩）。
     $noticeRoot = Join-Path $env:TEMP 'mxx1-notice-gui'
     if (Test-Path -LiteralPath $noticeRoot) { Remove-Item -LiteralPath $noticeRoot -Recurse -Force }
@@ -2489,8 +2496,8 @@ try {
         [void][TBGui]::MoveCursor([int]($nwa.Left + $nwa.Width / 2), [int]($nwa.Top + $nwa.Height / 3))
         Start-Sleep -Milliseconds 300
 
-        # --notify=3000：这条只等 3 秒（默认 6 秒，时间全花在等它自己消失上）
-        $noticeProc = Start-Process -FilePath $Exe -PassThru -ArgumentList @('rightmenu', 'unlock', '--auto', '--notify=3000', $noticeFile)
+        # --notify=6000：这一条要量位置、抓像素、还要挪鼠标，给它 6 秒；N21c 再等它自己走
+        $noticeProc = Start-Process -FilePath $Exe -PassThru -ArgumentList @('rightmenu', 'unlock', '--auto', '--notify=6000', $noticeFile)
         [void]$script:Procs.Add($noticeProc)
         $noticeWin = @()
         for ($i = 0; $i -lt 60; $i++) {
@@ -2501,7 +2508,7 @@ try {
         if ($noticeWin.Count -eq 0) {
             foreach ($n in @(
                 'N21 提示卡真画得出来，而且就在鼠标旁边（不抢焦点、不占任务栏）',
-                'N21b 鼠标一动，卡片跟着动（不是落在角落里不管）',
+                'N21b 卡片不跟着鼠标跑（钉在弹出来的地方，才点得到它）',
                 'N21c 到点自己消失（没人点它，进程也跟着退出）',
                 'N21d 卡片上真的有字（不是一张空白窗口）')) {
                 Check $n $false 'skipped（卡片没起来）'
@@ -2598,12 +2605,13 @@ try {
             Check 'N21c 到点自己消失（没人点它，进程也跟着退出）' ($ngone -and $noticeProc.HasExited) `
                 ('卡片还在=' + (-not $ngone) + ' 进程退出=' + $noticeProc.HasExited)
 
-            # ---- 用户 2026-10-06 晚改口之后的第二段：**不给 --notify 就一直留着**（点一下才关）-----
-            # 原话：「哪个弹框弹出以后不要跟随鼠标和 3 秒自动消失」。v1.5.4 那张卡是"跟着鼠标走 +
-            # 6 秒自己消失"，他实际用起来两样都不对：跟着鼠标跑就点不到它，6 秒也读不完"结束了哪几个
-            # 程序"。这一段验三件事：① 不给 --notify 时卡片一直在（旧版 6 秒就没了）；
-            # ② 真点一下它必须关掉（常驻卡片唯一的出口，也是"别自己消失"的代价）；
-            # ③ 又点一次时上一张卡自己关掉（不然点几次就攒一摞关不掉的卡）。
+            # ---- 第二段（用户 2026-10-06 晚五定的现行规矩）：**不给 --notify 就是 5 秒**自动关闭，
+            #      而且**点一下能提前关**（原话：「一键解除占用改成 5 秒自动关闭，保留点击关闭」）。
+            #      这一段验三件事：
+            #      ① 不给 --notify 时卡片撑得住（1 秒时还在）→ 到点自己消失，**实测秒数落在 5 秒附近**
+            #         （不许再变成"3 秒一闪而过"，也不许变回常驻 —— 两头都要卡住）；
+            #      ② 真点一下必须**立刻**关（不是等 5 秒到），进程跟着退出；
+            #      ③ 又点一次时上一张卡自己关掉（不然点几次就攒一摞卡）。
             $stayProc = Start-Process -FilePath $Exe -PassThru -ArgumentList @('rightmenu', 'unlock', '--auto', $noticeFile)
             [void]$script:Procs.Add($stayProc)
             $stayWin = @()
@@ -2614,35 +2622,57 @@ try {
             }
             if ($stayWin.Count -eq 0) {
                 foreach ($n in @(
-                    'N21e 不给 --notify 就一直留着（旧版 6 秒自己消失，现在点一下才关）',
-                    'N21f 点一下卡片就关掉（常驻卡片唯一的出口），进程跟着退出',
+                    'N21e 不给 --notify 时 5 秒自己关掉（实测秒数 3.5-9 秒之间）',
+                    'N21f 等不及就点一下：立刻关掉，进程跟着退出（点一下关闭保留着）',
                     'N21g 再点一次时上一张卡自己关掉（同时只有一张卡）')) {
                     Check $n $false 'skipped（卡片没起来）'
                 }
             } else {
                 $sh = $stayWin[0].H
+                Start-Sleep -Milliseconds 1000
+                $stillAlive1s = [TBGui]::Alive($sh)      # 1 秒时必须还在（不然就是"闪一下就没"）
                 $st = Get-Date
-                Start-Sleep -Seconds 9        # 默认原来是 6 秒：撑过 6 秒还活着，才算真的"不自己消失"
-                $stayProc.Refresh()
-                $stillThere = [TBGui]::Alive($sh)
-                Check 'N21e 不给 --notify 就一直留着（旧版 6 秒自己消失，现在点一下才关）' `
-                    ($stillThere -and (-not $stayProc.HasExited)) `
-                    ('等了 ' + [int]((Get-Date) - $st).TotalSeconds + ' 秒：卡片还在=' + $stillThere + ' 进程还在=' + (-not $stayProc.HasExited))
-
-                # 真点一下（卡片自己的 OnMouseDown 里就是 Close()）—— 常驻之后这是唯一的出口
-                # 注意 [TBGui]::Rect 返回的是 [左, 上, 右, 下]，点中间要用差值算
-                $sr = [TBGui]::Rect($sh)
-                $clicked = [TBGui]::MouseDown($sh, [int](($sr[2] - $sr[0]) / 2), [int](($sr[3] - $sr[1]) / 2))
                 $sgone = $false
-                for ($i = 0; $i -lt 40; $i++) {
+                for ($i = 0; $i -lt 80; $i++) {          # 最多等 16 秒
                     if (-not [TBGui]::Alive($sh)) { $sgone = $true; break }
+                    Start-Sleep -Milliseconds 200
+                }
+                $secs = [Math]::Round(((Get-Date) - $st).TotalSeconds + 1.0, 1)   # +1 秒是上面那 1 秒的观察
+                for ($i = 0; $i -lt 30; $i++) { $stayProc.Refresh(); if ($stayProc.HasExited) { break }; Start-Sleep -Milliseconds 100 }
+                $stayProc.Refresh()
+                Check 'N21e 不给 --notify 时 5 秒自己关掉（实测秒数 3.5-9 秒之间）' `
+                    ($stillAlive1s -and $sgone -and $stayProc.HasExited -and ($secs -ge 3.5) -and ($secs -le 9.0)) `
+                    ('1 秒时还在=' + $stillAlive1s + ' 自己关掉用了=' + $secs + ' 秒 卡片没了=' + $sgone + ' 进程退出=' + $stayProc.HasExited)
+
+                # 真点一下（卡片自己的 OnMouseDown 里就是 Close()）：**提前**关掉，不等 5 秒
+                # 注意 [TBGui]::Rect 返回的是 [左, 上, 右, 下]，点中间要用差值算
+                $stayProc = Start-Process -FilePath $Exe -PassThru -ArgumentList @('rightmenu', 'unlock', '--auto', $noticeFile)
+                [void]$script:Procs.Add($stayProc)
+                $stayWin = @()
+                for ($i = 0; $i -lt 60; $i++) {
+                    $stayWin = @((Get-TopWindows -ProcessId $stayProc.Id) | Where-Object { $_.Visible -and $_.Text -eq '一键解除占用' })
+                    if ($stayWin.Count -gt 0) { break }
                     Start-Sleep -Milliseconds 100
+                }
+                $clicked = $false
+                $clickMs = -1
+                if ($stayWin.Count -gt 0) {
+                    $sh = $stayWin[0].H
+                    Start-Sleep -Milliseconds 400
+                    $sr = [TBGui]::Rect($sh)
+                    $ct = Get-Date
+                    $clicked = [TBGui]::MouseDown($sh, [int](($sr[2] - $sr[0]) / 2), [int](($sr[3] - $sr[1]) / 2))
+                    for ($i = 0; $i -lt 40; $i++) {
+                        if (-not [TBGui]::Alive($sh)) { break }
+                        Start-Sleep -Milliseconds 30
+                    }
+                    $clickMs = [int](((Get-Date) - $ct).TotalMilliseconds)
                 }
                 for ($i = 0; $i -lt 30; $i++) { $stayProc.Refresh(); if ($stayProc.HasExited) { break }; Start-Sleep -Milliseconds 100 }
                 $stayProc.Refresh()
-                Check 'N21f 点一下卡片就关掉（常驻卡片唯一的出口），进程跟着退出' `
-                    ($clicked -and $sgone -and $stayProc.HasExited) `
-                    ('发出点击=' + $clicked + ' 卡片没了=' + $sgone + ' 进程退出=' + $stayProc.HasExited)
+                Check 'N21f 等不及就点一下：立刻关掉，进程跟着退出（点一下关闭保留着）' `
+                    ($clicked -and (-not [TBGui]::Alive($sh)) -and ($clickMs -le 1500) -and $stayProc.HasExited) `
+                    ('发出点击=' + $clicked + ' 点完到关掉用了=' + $clickMs + 'ms 进程退出=' + $stayProc.HasExited)
 
                 # 再起一张：上一张必须被新卡自己关掉（它按固定窗口标题找上一张，见 Balloon.ClosePrevious）
                 $stay2Proc = Start-Process -FilePath $Exe -PassThru -ArgumentList @('rightmenu', 'unlock', '--auto', $noticeFile)

@@ -257,7 +257,8 @@ namespace Mxx1Toolbox
             Console.WriteLine("  Mxx1Toolbox.exe rightmenu unlock --query-only <路径>   只查谁占着这个文件，不弹窗不结束进程");
             Console.WriteLine("  Mxx1Toolbox.exe rightmenu unlock --auto <路径>         一键解除占用：不弹窗口，直接结束占用它的程序");
             Console.WriteLine("                                                        （右键菜单里的「" + RightMenu.AutoTitle + "」用的就是它）");
-            Console.WriteLine("                                                        加 --notify=<毫秒> 定提示卡显示多久，--quiet 连提示卡也不要");
+            Console.WriteLine("                                                        不写就一直留着（点一下卡片才关），--notify=<毫秒> 定它多久自己走");
+            Console.WriteLine("                                                        （--notify=0 / --quiet 连提示卡也不要）");
             Console.WriteLine("  Mxx1Toolbox.exe ui [log|settings]    打开界面并直接看日志 / 设置（右键子菜单的固定入口用它）");
             Console.WriteLine("  Mxx1Toolbox.exe pin <id> / unpin <id>  把按钮置顶 / 取消置顶（排在这一页最前面）");
             Console.WriteLine("  Mxx1Toolbox.exe export <文件>        把「我的工具」导出成一个文件");
@@ -508,9 +509,10 @@ namespace Mxx1Toolbox
             return !(env != null && env.Trim() == "1");
         }
 
-        /// <summary>提示卡显示多久（毫秒）。`--notify=<毫秒>` 写多少就多少（界面回归要用短的，
-        /// 不然一条检查就要等 6 秒），0 = 不显示；不写是一张卡片看 6 秒的量。
-        /// 夹在 800ms - 60s：再短看不见，再长就成了"赖着不走"。</summary>
+        /// <summary>提示卡显示多久（毫秒）。**不写 = 一直留着**（返回 -1，点一下卡片才关）——
+        /// 用户 2026-10-06 晚原话「不要跟随鼠标和 3 秒自动消失」：几秒里读不完"结束了哪几个程序"。
+        /// `--notify=<毫秒>` 写多少就多少（界面回归要用短的，不然一条检查就要等它自己消失），
+        /// 0 = 不显示；给的数夹在 800ms - 60s：再短看不见，再长就成了"赖着不走"。</summary>
         private static int NotifyMs(string[] args)
         {
             foreach (string a in args)
@@ -527,7 +529,7 @@ namespace Mxx1Toolbox
                 if (ms > 60000) { return 60000; }
                 return ms;
             }
-            return 6000;
+            return -1;      // 没写 --notify：常驻（点一下才关）
         }
 
         /// <summary>只读：谁手里有这个文件 / 文件夹的**句柄**（全系统句柄表，像火绒那样）。
@@ -565,7 +567,8 @@ namespace Mxx1Toolbox
             if (HasFlag(args, "--auto"))
             {
                 int notifyMs = NotifyMs(args);
-                return AutoUnlock.Run(all.ToArray(), NotifyWanted(args) && notifyMs > 0, notifyMs);
+                // notifyMs <= 0 时 Balloon 那张卡**一直留着**（点一下才关），见 Program.NotifyMs
+                return AutoUnlock.Run(all.ToArray(), NotifyWanted(args), notifyMs);
             }
 
             string path = (all.Count > 0) ? all[0] : "";

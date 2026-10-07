@@ -320,6 +320,16 @@ public class TBGui
     public static bool Alive(IntPtr h) { return IsWindow(h); }
     public static bool Click(IntPtr h) { return PostMessageW(h, 0x00F5, IntPtr.Zero, IntPtr.Zero); }
 
+    // N21f: the notice card closes on a real mouse-down anywhere on it (that is the ONLY way out of a
+    // card that never times out). Click() above sends BM_CLICK, which only button controls answer.
+    public static bool MouseDown(IntPtr h, int x, int y)
+    {
+        IntPtr lp = (IntPtr)((y << 16) | (x & 0xFFFF));
+        bool a = PostMessageW(h, 0x0201, (IntPtr)1, lp);          // WM_LBUTTONDOWN
+        bool b = PostMessageW(h, 0x0202, IntPtr.Zero, lp);        // WM_LBUTTONUP
+        return a && b;
+    }
+
     // A03b: really iconify once and bring it back -- WM_SYSCOMMAND (0x0112) with SC_MINIMIZE
     // (0xF020), then SW_RESTORE (9). A style bit alone proves nothing: a window can carry
     // WS_MINIMIZEBOX and still refuse to go down.
@@ -2454,12 +2464,16 @@ try {
         if (Test-Path -LiteralPath $slowRoot) { Remove-Item -LiteralPath $slowRoot -Recurse -Force -ErrorAction SilentlyContinue }
     }
 
-    # ---- N21 / N21b / N21c / N21d：提示卡"真画得出来 + 就在鼠标旁边 + 跟着鼠标走 + 到点自己消失" ----
+    # ---- N21 / N21b / N21c / N21d：提示卡"真画得出来 + 就在鼠标旁边 + 不跟着鼠标跑 + 有个出口" ----
     # 用户 2026-10-06 报：「气泡没有正常弹出，而且弹出的位置要跟随鼠标」。原来那条路用的是系统托盘
     # 气泡（NotifyIcon.ShowBalloonTip）—— 这台精简版 Windows 上**根本看不到**（Win10 / Win11 把
     # 「通知」或专注助手关掉时同样看不到），而且它的位置由系统定死在右下角，离用户正看着的地方很远。
-    # 现在改成自己画的卡片（src\Balloon.cs 的 NoticeForm）。四条规矩这条检查全盯住：
-    # 不抢焦点（WS_EX_NOACTIVATE）、跟着鼠标、到点自己关、而且**只此一张卡**（不是又弹回那个窗口）。
+    # 现在改成自己画的卡片（src\Balloon.cs 的 NoticeForm）。
+    # **同一天晚上用户又改口**（原话：「哪个弹框弹出以后不要跟随鼠标和 3 秒自动消失」）：v1.5.4 那张卡
+    # 是"跟着鼠标走 + 6 秒自己消失"，他自己用起来发现两样都碍事 —— 跟着鼠标跑，他要去点掉卡片的时候
+    # 卡片先跑了；6 秒也读不完"结束了哪几个程序"。规矩于是改成 **位置钉住不动 + 不给 --notify 就一直
+    # 留着（点一下才关）**；N21b 因此**反了过来**（原来是"鼠标动卡片跟着动"，现在是"卡片不许动"），
+    # 常驻那一段在 N21e / N21f / N21g。
     # 它要真动鼠标，所以先存下原来的位置、跑完放回去（和 B10/B11 一个规矩）。
     $noticeRoot = Join-Path $env:TEMP 'mxx1-notice-gui'
     if (Test-Path -LiteralPath $noticeRoot) { Remove-Item -LiteralPath $noticeRoot -Recurse -Force }
@@ -2468,6 +2482,8 @@ try {
     Set-Content -LiteralPath $noticeFile -Value 'x' -Encoding UTF8
     $noticeSaved = [TBGui]::CursorAt()
     $noticeProc = $null
+    $stayProc = $null
+    $stay2Proc = $null
     try {
         $nwa = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
         [void][TBGui]::MoveCursor([int]($nwa.Left + $nwa.Width / 2), [int]($nwa.Top + $nwa.Height / 3))
@@ -2539,26 +2555,32 @@ try {
             }
             Check 'N21d 卡片上真的有字（不是一张空白窗口）' ($ink -gt 60) $shotNote
 
-            # 跟着鼠标走：把鼠标挪一段，卡片必须挪同样一段（不许留在原地、也不许跑到角落去）
+            # **不许跟着鼠标跑**（用户 2026-10-06 晚改口）：把鼠标挪一段，卡片必须一动不动 ——
+            # 卡片跟着鼠标走的时候，用户要去点掉它、鼠标一动它就先跑了（v1.5.4 就是这么被用户否掉的）。
             $c0 = [TBGui]::CursorAt()
             $r0 = [TBGui]::Rect($nh)
-            [void][TBGui]::MoveCursor(($c0[0] + 200), ($c0[1] + 120))
-            Start-Sleep -Milliseconds 700
-            $c1 = [TBGui]::CursorAt()
+            $c1 = $c0
+            for ($nmv = 0; $nmv -lt 3; $nmv++) {
+                # 挪不动就再试两次：SetCursorPos 会被"用户正在用鼠标"这类现场吃掉。
+                # 2026-10-06 实测过一次：一次就判 -> [SKIP]，等于这一条没测（而它正是用户要的那条）。
+                [void][TBGui]::MoveCursor(($c0[0] + 200), ($c0[1] + 120))
+                Start-Sleep -Milliseconds 900        # 原来跟鼠标的节拍是 60ms，900 毫秒足够它挪过去了
+                $c1 = [TBGui]::CursorAt()
+                if (([Math]::Abs($c1[0] - $c0[0]) -ge 150) -or ([Math]::Abs($c1[1] - $c0[1]) -ge 150)) { break }
+            }
             $r1 = [TBGui]::Rect($nh)
             $dxc = $c1[0] - $c0[0]; $dyc = $c1[1] - $c0[1]
             $dxr = $r1[0] - $r0[0]; $dyr = $r1[1] - $r0[1]
-            $after = [Math]::Abs(($r1[0] - $c1[0]) - 18) + [Math]::Abs(($r1[1] - $c1[1]) - 22)
             # 夹具自检：鼠标根本没动起来的时候，这一条测不了（SetCursorPos 没生效 —— 用户正在用鼠标 /
             # 输入桌面被占 / 屏幕锁着都会这样）。2026-10-06 实测过一次：`鼠标挪=0,0`，卡片本身好好的，
-            # 记成失败就是假红。但"鼠标动了、卡片没跟着动"必须照旧算失败（那才是真 bug）。
-            if (($dxc -eq 0) -and ($dyc -eq 0)) {
-                Skip 'N21b 鼠标一动，卡片跟着动（不是落在角落里不管）' `
-                    ('鼠标挪不动（SetCursorPos 没生效），这一条测不了；卡片仍在 ' + ($r0 -join ',') + '，鼠标 ' + ($c0 -join ','))
+            # 记成失败就是假红。但"鼠标动了、卡片跟着挪了"必须照旧算失败（那才是真 bug）。
+            if (([Math]::Abs($dxc) -lt 150) -and ([Math]::Abs($dyc) -lt 150)) {
+                Skip 'N21b 卡片不跟着鼠标跑（钉在弹出来的地方，才点得到它）' `
+                    ('鼠标挪不动（SetCursorPos 没生效，试了 3 次），这一条测不了；卡片仍在 ' + ($r0 -join ',') + '，鼠标 ' + ($c0 -join ','))
             } else {
-                Check 'N21b 鼠标一动，卡片跟着动（不是落在角落里不管）' `
-                    (($dxc -ge 150) -and ([Math]::Abs($dxr - $dxc) -le 80) -and ([Math]::Abs($dyr - $dyc) -le 80) -and ($after -le 30)) `
-                    ('鼠标挪=' + $dxc + ',' + $dyc + ' 卡片挪=' + $dxr + ',' + $dyr + ' 挪完偏差=' + $after)
+                Check 'N21b 卡片不跟着鼠标跑（钉在弹出来的地方，才点得到它）' `
+                    (($dxr -eq 0) -and ($dyr -eq 0)) `
+                    ('鼠标挪=' + $dxc + ',' + $dyc + ' 卡片挪=' + $dxr + ',' + $dyr)
             }
 
             # 到点自己关（没人去点它），进程也跟着退出
@@ -2575,10 +2597,74 @@ try {
             $noticeProc.Refresh()
             Check 'N21c 到点自己消失（没人点它，进程也跟着退出）' ($ngone -and $noticeProc.HasExited) `
                 ('卡片还在=' + (-not $ngone) + ' 进程退出=' + $noticeProc.HasExited)
+
+            # ---- 用户 2026-10-06 晚改口之后的第二段：**不给 --notify 就一直留着**（点一下才关）-----
+            # 原话：「哪个弹框弹出以后不要跟随鼠标和 3 秒自动消失」。v1.5.4 那张卡是"跟着鼠标走 +
+            # 6 秒自己消失"，他实际用起来两样都不对：跟着鼠标跑就点不到它，6 秒也读不完"结束了哪几个
+            # 程序"。这一段验三件事：① 不给 --notify 时卡片一直在（旧版 6 秒就没了）；
+            # ② 真点一下它必须关掉（常驻卡片唯一的出口，也是"别自己消失"的代价）；
+            # ③ 又点一次时上一张卡自己关掉（不然点几次就攒一摞关不掉的卡）。
+            $stayProc = Start-Process -FilePath $Exe -PassThru -ArgumentList @('rightmenu', 'unlock', '--auto', $noticeFile)
+            [void]$script:Procs.Add($stayProc)
+            $stayWin = @()
+            for ($i = 0; $i -lt 60; $i++) {
+                $stayWin = @((Get-TopWindows -ProcessId $stayProc.Id) | Where-Object { $_.Visible -and $_.Text -eq '一键解除占用' })
+                if ($stayWin.Count -gt 0) { break }
+                Start-Sleep -Milliseconds 100
+            }
+            if ($stayWin.Count -eq 0) {
+                foreach ($n in @(
+                    'N21e 不给 --notify 就一直留着（旧版 6 秒自己消失，现在点一下才关）',
+                    'N21f 点一下卡片就关掉（常驻卡片唯一的出口），进程跟着退出',
+                    'N21g 再点一次时上一张卡自己关掉（同时只有一张卡）')) {
+                    Check $n $false 'skipped（卡片没起来）'
+                }
+            } else {
+                $sh = $stayWin[0].H
+                $st = Get-Date
+                Start-Sleep -Seconds 9        # 默认原来是 6 秒：撑过 6 秒还活着，才算真的"不自己消失"
+                $stayProc.Refresh()
+                $stillThere = [TBGui]::Alive($sh)
+                Check 'N21e 不给 --notify 就一直留着（旧版 6 秒自己消失，现在点一下才关）' `
+                    ($stillThere -and (-not $stayProc.HasExited)) `
+                    ('等了 ' + [int]((Get-Date) - $st).TotalSeconds + ' 秒：卡片还在=' + $stillThere + ' 进程还在=' + (-not $stayProc.HasExited))
+
+                # 真点一下（卡片自己的 OnMouseDown 里就是 Close()）—— 常驻之后这是唯一的出口
+                # 注意 [TBGui]::Rect 返回的是 [左, 上, 右, 下]，点中间要用差值算
+                $sr = [TBGui]::Rect($sh)
+                $clicked = [TBGui]::MouseDown($sh, [int](($sr[2] - $sr[0]) / 2), [int](($sr[3] - $sr[1]) / 2))
+                $sgone = $false
+                for ($i = 0; $i -lt 40; $i++) {
+                    if (-not [TBGui]::Alive($sh)) { $sgone = $true; break }
+                    Start-Sleep -Milliseconds 100
+                }
+                for ($i = 0; $i -lt 30; $i++) { $stayProc.Refresh(); if ($stayProc.HasExited) { break }; Start-Sleep -Milliseconds 100 }
+                $stayProc.Refresh()
+                Check 'N21f 点一下卡片就关掉（常驻卡片唯一的出口），进程跟着退出' `
+                    ($clicked -and $sgone -and $stayProc.HasExited) `
+                    ('发出点击=' + $clicked + ' 卡片没了=' + $sgone + ' 进程退出=' + $stayProc.HasExited)
+
+                # 再起一张：上一张必须被新卡自己关掉（它按固定窗口标题找上一张，见 Balloon.ClosePrevious）
+                $stay2Proc = Start-Process -FilePath $Exe -PassThru -ArgumentList @('rightmenu', 'unlock', '--auto', $noticeFile)
+                [void]$script:Procs.Add($stay2Proc)
+                $stay2Win = @()
+                for ($i = 0; $i -lt 60; $i++) {
+                    $stay2Win = @((Get-TopWindows -ProcessId $stay2Proc.Id) | Where-Object { $_.Visible -and $_.Text -eq '一键解除占用' })
+                    if ($stay2Win.Count -gt 0) { break }
+                    Start-Sleep -Milliseconds 100
+                }
+                Start-Sleep -Milliseconds 800
+                $stayProc.Refresh()
+                Check 'N21g 再点一次时上一张卡自己关掉（同时只有一张卡）' `
+                    (($stay2Win.Count -eq 1) -and (-not [TBGui]::Alive($sh)) -and $stayProc.HasExited) `
+                    ('新卡片=' + $stay2Win.Count + ' 第一张还在=' + [TBGui]::Alive($sh) + ' 第一个进程退出=' + $stayProc.HasExited)
+            }
         }
     } finally {
         [void][TBGui]::MoveCursor($noticeSaved[0], $noticeSaved[1])
         if ($noticeProc -and -not $noticeProc.HasExited) { try { $noticeProc.Kill() } catch { } }
+        if ($stayProc -and -not $stayProc.HasExited) { try { $stayProc.Kill() } catch { } }
+        if ($stay2Proc -and -not $stay2Proc.HasExited) { try { $stay2Proc.Kill() } catch { } }
         if (Test-Path -LiteralPath $noticeRoot) { Remove-Item -LiteralPath $noticeRoot -Recurse -Force -ErrorAction SilentlyContinue }
     }
 

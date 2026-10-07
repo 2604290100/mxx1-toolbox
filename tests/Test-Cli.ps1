@@ -1928,6 +1928,13 @@ Write-Host 'P 组 · 发布包（build.ps1 -Package 打出来的 zip）'
 # 工具目录里该进包的文件一个都不能少，而且**测试只往临时目录打**，不许碰 bin\ 里真正的发布包。
 
 $pkgScript = Join-Path $root 'tools\Make-Package.ps1'
+# P04 / P05 要用「工具目录」的路径，而 `$toolDir` 这个变量归属 **F 组**（`$toolDir = Get-Key $status.Out 'toolDir'`）
+# —— **挑组跑的时候 F 不一定被选中**。2026-10-06 实测：闸门挑的是 A,E,M,P,S,T，于是 $toolDir 是 $null，
+# 下面那句 `Test-Path -LiteralPath $toolDir` 直接抛
+# 「Cannot bind argument to parameter 'LiteralPath' because it is null」，**整个套件从这里中断**
+# （P 后面那一组 T 一条都没跑，闸门只看见一句"脚本出错"）。这里自己兜一份：值仍然从 A 组的 $status 里读
+# （和 F 组读的是同一个来源，不会各说一套；A 组是挑组时的公共前置，永远在）。
+if (-not $toolDir) { $toolDir = Get-Key $status.Out 'toolDir' }
 Check 'P01 打包脚本在（tools\Make-Package.ps1，build.ps1 -Package 调的就是它）' `
     (Test-Path -LiteralPath $pkgScript) $pkgScript
 
@@ -1964,7 +1971,7 @@ try {
         $skipExts = @('.tmp', '.log', '.bak')
         $toolSrc = New-Object System.Collections.ArrayList
         $toolMiss = New-Object System.Collections.ArrayList
-        if (Test-Path -LiteralPath $toolDir) {
+        if ($toolDir -and (Test-Path -LiteralPath $toolDir)) {
             foreach ($f in @(Get-ChildItem -LiteralPath $toolDir -Recurse -File -Force)) {
                 $rel = $f.FullName.Substring($toolDir.Length).TrimStart('\')
                 if ($f.Name -eq '说明.txt') { continue }
@@ -1988,7 +1995,10 @@ try {
         }
 
         # 工具文件夹：解压出来就得能长出按钮 —— tool.json 与 exe 一个都不能少
-        $folders = @(Get-ChildItem -LiteralPath $toolDir -Directory -Force -ErrorAction SilentlyContinue)
+        $folders = @()
+        if ($toolDir -and (Test-Path -LiteralPath $toolDir)) {
+            $folders = @(Get-ChildItem -LiteralPath $toolDir -Directory -Force -ErrorAction SilentlyContinue)
+        }
         if ($folders.Count -eq 0) {
             Skip 'P05 每个工具文件夹的 tool.json / exe 都在包里' '工具目录里还没有工具文件夹'
         } else {

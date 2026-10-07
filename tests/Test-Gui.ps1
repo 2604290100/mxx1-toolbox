@@ -1322,6 +1322,24 @@ if ($rightProbe.Count -eq 0 -or $rightShot -eq $null) {
     }
 }
 
+# C01e：右键增强页的段序（用户 2026-10-06 晚六：「【状态与修补】这个说明栏和里面的按钮
+#   应该放到底部才对」→ 放到**倒数第一**）。这一页现在有 7 段，段标题是一个个 STATIC 标签，
+#   按屏幕上的 Top 排一遍就是页面顺序。这条断言把**整页顺序**钉住：以后谁把段号调回去，
+#   或者新加一段插错地方，这里当场红。
+# ⚠ 第一条为什么是「隔壁工具」而不是「解除文件占用」：**置顶的按钮排在本页最前**
+#   （MainForm 装载清单时先按 pinned 排一遍，见那里的注释；permdel.gui 在清单里就带 pinned:true），
+#   段号管不了它。第一次按段号顺序写这条断言，实测就是这个项排在最上面。
+$wantRightCaps = @('隔壁工具（永久删除）',
+                   '右键菜单 · 解除文件占用', '右键菜单 · 一键解除占用', '右键菜单 · 常用功能',
+                   '右键菜单 · 复制文件路径（相对 / 绝对）',
+                   '右键菜单 · 在此处打开终端（cmd / PowerShell）',
+                   '状态与修补')
+$gotRightCaps = @(Get-ChildControls -RootHandle $main |
+    Where-Object { $wantRightCaps -contains $_.Text } | Sort-Object Top | ForEach-Object { $_.Text })
+Check ('C01e 右键增强页的段序：7 段，最后一段是「状态与修补」（共 {0} 段）' -f $wantRightCaps.Count) `
+    (($gotRightCaps -join ' | ') -eq ($wantRightCaps -join ' | ')) `
+    ('实际=' + ($gotRightCaps -join ' | '))
+
 Check ('C02 点「清理优化」→ {0} 个按钮' -f $cleanNames.Count) (Switch-Tab -Handle $main -TabName '清理优化' -ExpectNames $cleanNames) ''
 Check ('C03 点「系统工具」→ {0} 个按钮' -f $sysNames.Count) (Switch-Tab -Handle $main -TabName '系统工具' -ExpectNames $sysNames) ''
 

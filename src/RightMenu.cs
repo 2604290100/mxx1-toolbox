@@ -66,26 +66,53 @@ namespace Mxx1Toolbox
         public const string UnlockVerb = "Mxx1Unlock";
         public const string AutoVerb = "Mxx1AutoUnlock";
         public const string CommonVerb = "Mxx1Common";
-        public const string CopyVerb = "Mxx1CopyPath";
-        public const string TerminalVerb = "Mxx1Terminal";
+        /// <summary>「复制文件路径」这一对的两个 verb（用户 2026-10-06 晚六：「要求多选，
+        /// 一个是相对路径 另外一个是绝对路径」）。</summary>
+        public const string CopyRelVerb = "Mxx1CopyPathRel";
+        public const string CopyAbsVerb = "Mxx1CopyPathAbs";
+        /// <summary>「在此处打开终端」这一对的两个 verb（「一个是 cmd 另外一个是 powershell」）。</summary>
+        public const string TerminalCmdVerb = "Mxx1TerminalCmd";
+        public const string TerminalPsVerb = "Mxx1TerminalPs";
+        /// <summary>**上一版的 verb 名**（v1.5.4：一项「复制文件路径」+ 一项「在此处打开终端」）。
+        /// 那一项现在拆成了一对，旧键要认得出、也得清得掉（见 LegacyPair / CleanLegacy）——
+        /// 否则用户的菜单里会同时留着旧的那一条和新那两条。</summary>
+        public const string LegacyCopyVerb = "Mxx1CopyPath";
+        public const string LegacyTerminalVerb = "Mxx1Terminal";
         public const string SharedKey = "Mxx1Toolbox.Common";
         public const string UnlockTitle = "解除文件占用";
         public const string AutoTitle = "一键解除占用";
         public const string CommonTitle = "常用功能";
+        /// <summary>一对菜单项**合起来**的名字：界面上的装 / 撤按钮、报告里那句「装了什么」用它。</summary>
         public const string CopyTitle = "复制文件路径";
         public const string TerminalTitle = "在此处打开终端";
+        /// <summary>四个菜单项各自的标题（= 右键里显示的那一行，也就是 MUIVerb）。</summary>
+        public const string CopyRelTitle = "复制相对路径";
+        public const string CopyAbsTitle = "复制绝对路径";
+        public const string TerminalCmdTitle = "在此处打开终端（cmd）";
+        public const string TerminalPsTitle = "在此处打开终端（PowerShell）";
         public const string ItemUnlock = "unlock";
         public const string ItemAuto = "auto";
         public const string ItemCommon = "common";
-        public const string ItemCopy = "copy";
-        public const string ItemTerminal = "terminal";
+        public const string ItemCopyRel = "copy.rel";
+        public const string ItemCopyAbs = "copy.abs";
+        public const string ItemTerminalCmd = "terminal.cmd";
+        public const string ItemTerminalPs = "terminal.ps";
+        /// <summary>上一版那两个 item 名（旧记录文件里写的是它们，清旧键时要按它把记录一起丢掉）。</summary>
+        public const string LegacyItemCopy = "copy";
+        public const string LegacyItemTerminal = "terminal";
         public const string BackupName = "rightmenu-installed.tsv";
 
-        /// <summary>五个菜单项（顺序 = 界面上的顺序，也 = 报告里的顺序）。
-        /// 装 / 撤 / 状态 / 说明都遍历它，别在别处另写一份名单。</summary>
+        /// <summary>七个菜单项（顺序 = 报告里的顺序）。装 / 撤 / 状态 / 说明都遍历它，
+        /// 别在别处另写一份名单。
+        ///
+        /// 为什么"多选"是拆成两个 item，而不是给一项加个"变体"参数：注册表里本来就是**两个键**
+        /// （两个 verb、两个 MUIVerb、两条 command），撤掉 / 修补 / 读回核对 / 图标核对全是按 verb
+        /// 一项一项做的 —— 拆开之后那条路一行都不用改；界面上那对装 / 撤按钮只是把两个 id
+        /// 一起传进来（`Launcher.Ones(...)`）。</summary>
         public static readonly string[] AllItems = new string[]
         {
-            ItemUnlock, ItemAuto, ItemCommon, ItemCopy, ItemTerminal,
+            ItemUnlock, ItemAuto, ItemCommon,
+            ItemCopyRel, ItemCopyAbs, ItemTerminalCmd, ItemTerminalPs,
         };
 
         /// <summary>命令里给"右键选中的那个路径"的占位：Explorer 会把它换成真实路径。</summary>
@@ -94,30 +121,36 @@ namespace Mxx1Toolbox
         /// <summary>背景位置（文件夹里的空白处 / 桌面空白处）要用 %V：那里 Explorer 不替换 %1。</summary>
         public const string BackgroundPlaceholder = "%V";
 
-        /// <summary>五项菜单项各自的图标源（都是工具箱自己的按钮图标，装的时候转成 .ico）。
+        /// <summary>七项菜单项各自的图标源（都是工具箱自己的按钮图标，装的时候转成 .ico）。
         /// 名字必须是**真实存在的按钮 id**（`assets\icons\<id>.png` 是 Make-Icons.ps1 按 id 生成的；
-        /// 2026-10-05 写成 rightmenu.unlock.auto 这种不存在的 id 时，图标会静默缺失 —— M20a 盯着）。</summary>
+        /// 2026-10-05 写成 rightmenu.unlock.auto 这种不存在的 id 时，图标会静默缺失 —— M20a 盯着）。
+        /// 一对里的两项共用同一张图（相对 / 绝对、cmd / PowerShell 各自看标题就分得清）。</summary>
         public const string UnlockIconId = "rightmenu.unlock.on";
         public const string AutoIconId = "rightmenu.auto.on";
         public const string CommonIconId = "rightmenu.common.on";
         public const string CopyIconId = "rightmenu.copy.on";
         public const string TerminalIconId = "rightmenu.terminal.on";
 
-        // ------------------------------------------------------------------ item（unlock / auto / common / copy / terminal）
+        // ------------------------------------------------------------------ item（unlock / auto / common / copy.* / terminal.*）
         //
         // 2026-10-05 加第三项「一键解除占用」（用户要的：保留原来那个弹窗口的，另外单独给一个
         // 不弹窗、直接结束占用它的程序的一键版 + 单独一对装 / 撤按钮）。
         // 2026-10-06 晚五加第四、五项「复制文件路径」和「在此处打开终端」（用户原话：
         // 「复制文件路径 / 在此处打开终端 这2个功能做一下」）—— 同样各一对装 / 撤按钮。
-        // 五项共用同一张位置表、同一套"写前记原值 → 写回读回核对 → 只删自己那几个键"的规矩，
+        // 2026-10-06 晚六（用户原话：「【在此处打开终端】要求多选 一个是cmd 另外一个是powershell」、
+        // 「【复制文件路径】要求多选 一个是相对路径 另外一个是绝对路径。复制出来的路径两边都
+        // 不可以带有引号」）：这两项**各自拆成两个菜单项**，所以现在是 7 项（界面按钮对数不变：5 对）。
+        // 七项共用同一张位置表、同一套"写前记原值 → 写回读回核对 → 只删自己那几个键"的规矩，
         // 所以下面这几个小映射函数是唯一的"项目 → 键名 / 标题 / 图标 / 命令 / 装哪几个位置"的出处。
 
         private static string VerbOf(string item)
         {
             if (item == ItemAuto) { return AutoVerb; }
             if (item == ItemCommon) { return CommonVerb; }
-            if (item == ItemCopy) { return CopyVerb; }
-            if (item == ItemTerminal) { return TerminalVerb; }
+            if (item == ItemCopyRel) { return CopyRelVerb; }
+            if (item == ItemCopyAbs) { return CopyAbsVerb; }
+            if (item == ItemTerminalCmd) { return TerminalCmdVerb; }
+            if (item == ItemTerminalPs) { return TerminalPsVerb; }
             return UnlockVerb;
         }
 
@@ -125,8 +158,10 @@ namespace Mxx1Toolbox
         {
             if (item == ItemAuto) { return AutoTitle; }
             if (item == ItemCommon) { return CommonTitle; }
-            if (item == ItemCopy) { return CopyTitle; }
-            if (item == ItemTerminal) { return TerminalTitle; }
+            if (item == ItemCopyRel) { return CopyRelTitle; }
+            if (item == ItemCopyAbs) { return CopyAbsTitle; }
+            if (item == ItemTerminalCmd) { return TerminalCmdTitle; }
+            if (item == ItemTerminalPs) { return TerminalPsTitle; }
             return UnlockTitle;
         }
 
@@ -134,25 +169,29 @@ namespace Mxx1Toolbox
         {
             if (item == ItemAuto) { return AutoIconId; }
             if (item == ItemCommon) { return CommonIconId; }
-            if (item == ItemCopy) { return CopyIconId; }
-            if (item == ItemTerminal) { return TerminalIconId; }
+            if ((item == ItemCopyRel) || (item == ItemCopyAbs)) { return CopyIconId; }
+            if ((item == ItemTerminalCmd) || (item == ItemTerminalPs)) { return TerminalIconId; }
             return UnlockIconId;
         }
 
         /// <summary>点这个菜单项跑什么命令。unlock = 开那个结果窗口；auto = 不弹窗，直接解锁；
-        /// copy = 把完整路径复制进剪贴板（带引号，和 Windows 自己的「复制为路径」一个写法）；
-        /// terminal = 在当前这个目录里开终端。</summary>
+        /// copy.* = 把路径复制进剪贴板（**不带引号**：用户 2026-10-06 晚六明确要求
+        /// 「复制出来的路径两边都不可以带有引号」，所以菜单里那条命令不再传 `--quote`；
+        /// `--quote` 只留作命令行的一个可选开关）；terminal.* = 在那个目录里开终端，
+        /// 一对里的两条各把要哪个终端**钉死**（不再走"wt → ps → cmd"那个自动挑）。</summary>
         private static string CommandOf(string item, string placeholder)
         {
             if (item == ItemAuto) { return QuoteExe() + " rightmenu unlock --auto \"" + placeholder + "\""; }
-            if (item == ItemCopy) { return QuoteExe() + " copypath --quote \"" + placeholder + "\""; }
-            if (item == ItemTerminal) { return QuoteExe() + " terminal \"" + placeholder + "\""; }
+            if (item == ItemCopyRel) { return QuoteExe() + " copypath --relative \"" + placeholder + "\""; }
+            if (item == ItemCopyAbs) { return QuoteExe() + " copypath \"" + placeholder + "\""; }
+            if (item == ItemTerminalCmd) { return QuoteExe() + " terminal --cmd \"" + placeholder + "\""; }
+            if (item == ItemTerminalPs) { return QuoteExe() + " terminal --ps \"" + placeholder + "\""; }
             return QuoteExe() + " rightmenu unlock \"" + placeholder + "\"";
         }
 
-        /// <summary>这一项装在哪几个位置。解锁那三项四个位置都有；**「复制文件路径」只装在
+        /// <summary>这一项装在哪几个位置。解锁那三项四个位置都有；**「复制文件路径」那一对只装在
         /// "有选中东西"的两个位置**（任意文件 / 文件夹）—— 背景位置没有选中项，装上去点了一下
-        /// 只会得到一句"路径不存在"；「在此处打开终端」反过来：**背景那两个位置才是重点**
+        /// 只会得到一句"路径不存在"；「在此处打开终端」那一对反过来：**背景那两个位置才是重点**
         /// （"在这个文件夹里开终端"），加上右键文件夹那一个。</summary>
         private static RightMenuLocation[] LocationsOf(string item)
         {
@@ -160,8 +199,14 @@ namespace Mxx1Toolbox
             foreach (RightMenuLocation loc in Table)
             {
                 bool take = true;
-                if (item == ItemCopy) { take = (loc.Id == "files") || (loc.Id == "folder"); }
-                else if (item == ItemTerminal) { take = (loc.Id == "folder") || (loc.Id == "folderbg") || (loc.Id == "desktop"); }
+                if ((item == ItemCopyRel) || (item == ItemCopyAbs))
+                {
+                    take = (loc.Id == "files") || (loc.Id == "folder");
+                }
+                else if ((item == ItemTerminalCmd) || (item == ItemTerminalPs))
+                {
+                    take = (loc.Id == "folder") || (loc.Id == "folderbg") || (loc.Id == "desktop");
+                }
                 if (take) { list.Add(loc); }
             }
             return list.ToArray();
@@ -174,6 +219,125 @@ namespace Mxx1Toolbox
             new RightMenuLocation("folderbg", "文件夹里的空白处",   "Directory\\Background\\shell", BackgroundPlaceholder),
             new RightMenuLocation("desktop",  "桌面空白处",         "DesktopBackground\\Shell",   BackgroundPlaceholder),
         };
+
+        // ------------------------------------------------------------------ 上一版那一项 → 现在这一对
+        //
+        // 为什么要这一段：v1.5.4 装的是一条「复制文件路径」（verb Mxx1CopyPath）和一条
+        // 「在此处打开终端」（verb Mxx1Terminal）；晚六改成了一对各两条。装过旧版的用户
+        // 如果不把旧键清掉，菜单里就会同时出现「复制文件路径」和「复制相对路径 / 复制绝对路径」
+        // 三条 —— 看着像做坏了。所以：装上 / 撤掉这一对时顺手清掉旧键，启动时的自动修补也认得
+        // 旧键（**先把新的一对写进去、再清旧的**，中间不会有一段时间菜单是空的）。
+        // 底线不变：只删**确认是我们的**键（键名对 + MUIVerb 还是旧标题）。
+
+        private sealed class LegacyPair
+        {
+            public string OldItem = "";
+            public string OldVerb = "";
+            public string OldTitle = "";
+            public string[] NewItems = new string[0];
+        }
+
+        private static readonly LegacyPair[] LegacyPairs = new LegacyPair[]
+        {
+            new LegacyPair { OldItem = LegacyItemCopy, OldVerb = LegacyCopyVerb, OldTitle = CopyTitle,
+                NewItems = new string[] { ItemCopyRel, ItemCopyAbs } },
+            new LegacyPair { OldItem = LegacyItemTerminal, OldVerb = LegacyTerminalVerb, OldTitle = TerminalTitle,
+                NewItems = new string[] { ItemTerminalCmd, ItemTerminalPs } },
+        };
+
+        /// <summary>这一项属于哪一对旧项（不是拆出来的就返回 null）。</summary>
+        private static LegacyPair LegacyOf(string item)
+        {
+            foreach (LegacyPair p in LegacyPairs)
+            {
+                foreach (string s in p.NewItems)
+                {
+                    if (string.Equals(s, item, StringComparison.OrdinalIgnoreCase)) { return p; }
+                }
+            }
+            return null;
+        }
+
+        /// <summary>这批 item 里有没有"旧项拆出来"的那几个（没有就别去读记录文件了）。</summary>
+        private static bool AnyLegacy(List<string> items)
+        {
+            foreach (string item in items)
+            {
+                if (LegacyOf(item) != null) { return true; }
+            }
+            return false;
+        }
+
+        /// <summary>旧键现在还在不在（四个位置都看一眼；只认**确实是我们的**那些）。
+        /// 启动时的自动修补靠它判断"要不要顺手升级成新的一对"。</summary>
+        private static bool LegacyInstalled(LegacyPair p)
+        {
+            foreach (RightMenuLocation loc in Table)
+            {
+                string relative = loc.Key + "\\" + p.OldVerb;
+                string full = RootKey + "\\" + relative;
+                if (KeyExists(full) && IsOurs(full, relative)) { return true; }
+            }
+            return false;
+        }
+
+        /// <summary>把"上一版那一项"的旧键清掉，并把它的记录一起丢掉（记录留着只会让状态里那句
+        /// 「装的时候记了几条现场」越攒越多）。`sb` 给 null 就闭嘴（启动时的自动修补用它）、
+        /// `records` 给 null 就不管记录。返回删掉的处数。</summary>
+        private static int CleanLegacy(List<string> items, StringBuilder sb, List<RightMenuRecord> records)
+        {
+            int removed = 0;
+            List<string> done = new List<string>();
+            foreach (string item in items)
+            {
+                LegacyPair p = LegacyOf(item);
+                if (p == null) { continue; }
+                bool seen = false;
+                foreach (string v in done) { if (v == p.OldVerb) { seen = true; break; } }
+                if (seen) { continue; }
+                done.Add(p.OldVerb);
+
+                int before = removed;
+                foreach (RightMenuLocation loc in Table)
+                {
+                    string relative = loc.Key + "\\" + p.OldVerb;
+                    string full = RootKey + "\\" + relative;
+                    if (!KeyExists(full)) { continue; }
+                    if (!IsOurs(full, relative))
+                    {
+                        if (sb != null) { sb.Append("  × 上一版的旧键不是工具箱写的，没动它：").Append(full).AppendLine(); }
+                        continue;
+                    }
+                    string error = DeleteTree(full);
+                    if (error.Length > 0)
+                    {
+                        if (sb != null) { sb.Append("  × 上一版的旧键没清掉（").Append(full).Append("）：").Append(error).AppendLine(); }
+                        continue;
+                    }
+                    removed++;
+                    if (sb != null)
+                    {
+                        sb.Append("  √ 清掉了上一版的旧键：").Append(loc.Label).Append(" · ").Append(p.OldTitle).AppendLine();
+                    }
+                }
+                if ((records != null) && (removed > before))
+                {
+                    for (int i = records.Count - 1; i >= 0; i--)
+                    {
+                        if (string.Equals(records[i].Item, p.OldItem, StringComparison.OrdinalIgnoreCase))
+                        {
+                            records.RemoveAt(i);
+                        }
+                    }
+                }
+            }
+            if (removed > 0)
+            {
+                Logger.Write("右键增强", "清掉了上一版的旧键 "
+                    + removed.ToString(CultureInfo.InvariantCulture) + " 处");
+            }
+            return removed;
+        }
 
         private static readonly string[] CriticalProcesses = new string[]
         {
@@ -267,6 +431,18 @@ namespace Mxx1Toolbox
             }
 
             sb.AppendLine();
+            // 上一版的旧键（一项拆成一对之前的那些）：装上这一对时顺手清掉，见 LegacyPair 那段说明。
+            if (AnyLegacy(items))
+            {
+                List<RightMenuRecord> recs = LoadRecords();
+                int gone = CleanLegacy(items, sb, recs);
+                if (gone > 0)
+                {
+                    SaveRecords(recs);
+                    sb.Append("  （上一版那一条现在拆成了两条，所以上面顺手清掉了 ").Append(gone.ToString(CultureInfo.InvariantCulture))
+                      .Append(" 处旧键）").AppendLine();
+                }
+            }
             if (skipped == 0)
             {
                 sb.Append("  ").Append(done.ToString(CultureInfo.InvariantCulture))
@@ -331,6 +507,9 @@ namespace Mxx1Toolbox
                         loc.Label + " · " + TitleOf(item), ref removed, ref kept);
                 }
             }
+            // 上一版的旧键也要一起撤（不然用户点了「撤掉」，菜单里还留着一条旧版的）；
+            // 顺便把旧记录从 records 里摘掉，下面的 SaveRecords 就会把它写没了。
+            if (AnyLegacy(items)) { removed += CleanLegacy(items, sb, records); }
             if (Contains(items, ItemCommon))
             {
                 string full = RootKey + "\\" + SharedKey;
@@ -367,7 +546,7 @@ namespace Mxx1Toolbox
                 sb.Append("  记录文件没写回去：").Append(saveError).AppendLine();
                 sb.Append("  （" + BackupName + " 里的记录可能不准了，下次装会重新记）");
             }
-            // 五项都撤掉了：生成出来的 .ico 也没用了，删掉（留着一个空目录也只是碍眼）。
+            // 七项都撤掉了：生成出来的 .ico 也没用了，删掉（留着一个空目录也只是碍眼）。
             bool anyLeft = false;
             foreach (string item in AllItems)
             {
@@ -458,7 +637,11 @@ namespace Mxx1Toolbox
         ///
         /// 2026-10-04 起这里顺带**修补自己装过的键**：命令里的占位符（旧版「文件夹里的空白处」
         /// 和「桌面空白处」写的是 %1，资源管理器在那种位置不替换 %1）和图标（旧版指向没有图标资源的
-        /// exe，菜单里是空白）。只重写 Mxx1* 这几个自己写的键，别人的键一个都不碰。</summary>
+        /// exe，菜单里是空白）。只重写 Mxx1* 这几个自己写的键，别人的键一个都不碰。
+        ///
+        /// 2026-10-06 晚六起还**认上一版的那两项**（一项拆成一对之前装的）：旧键在、新的一对没装过，
+        /// 就把新的一对写进去再把旧键清掉 —— 用户不用自己去想到"要再点一次装上"，
+        /// 而且中途不会出现"菜单里一条都没有"的空档（先写新、后删旧）。</summary>
         public static void SyncIfInstalled()
         {
             try
@@ -467,6 +650,14 @@ namespace Mxx1Toolbox
                 foreach (string item in AllItems)
                 {
                     if (IsInstalled(item)) { installed.Add(item); }
+                }
+                foreach (LegacyPair p in LegacyPairs)
+                {
+                    if (!LegacyInstalled(p)) { continue; }
+                    foreach (string ni in p.NewItems)
+                    {
+                        if (!Contains(installed, ni)) { installed.Add(ni); }
+                    }
                 }
                 if (installed.Count == 0) { return; }
                 if (SyncDisabled) { return; }
@@ -490,6 +681,8 @@ namespace Mxx1Toolbox
                     string error;
                     WriteSharedTree(out error);
                 }
+                // 新的一对都写好了，现在才清旧键（顺序不能反）
+                CleanLegacy(installed, null, null);
             }
             catch { }
         }
@@ -719,7 +912,9 @@ namespace Mxx1Toolbox
 
             foreach (string item in AllItems)
             {
-                sb.Append("  ").Append(RegEngine.PadCjk(TitleOf(item), 16));
+                // 标题里有「在此处打开终端（PowerShell）」这种比较长的，列宽给到 24
+                // （别改回 16：那会让状态报告右半边参差不齐）
+                sb.Append("  ").Append(RegEngine.PadCjk(TitleOf(item), 24));
                 List<string> where = InstalledLocations(item);
                 if (where.Count == 0) { sb.Append("没装"); }
                 else
@@ -735,18 +930,36 @@ namespace Mxx1Toolbox
                 {
                     sb.Append("　点了不弹窗口：查到占用就直接结束那些程序").AppendLine();
                 }
-                else if (item == ItemCopy)
+                else if (item == ItemCopyRel)
                 {
-                    sb.Append("　点了不弹窗口：把完整路径复制进剪贴板（多选就是一行一个）").AppendLine();
+                    sb.Append("　点了不弹窗口：把**相对路径**复制进剪贴板（相对你右键时所在的那个文件夹）").AppendLine();
                 }
-                else if (item == ItemTerminal)
+                else if (item == ItemCopyAbs)
                 {
-                    sb.Append("　点了不弹窗口：在那个目录里开一个终端").AppendLine();
+                    sb.Append("　点了不弹窗口：把**完整路径**复制进剪贴板（不带引号；多选就是一行一个）").AppendLine();
+                }
+                else if (item == ItemTerminalCmd)
+                {
+                    sb.Append("　点了不弹窗口：在那个目录里开**命令提示符 cmd**").AppendLine();
+                }
+                else if (item == ItemTerminalPs)
+                {
+                    sb.Append("　点了不弹窗口：在那个目录里开 **Windows PowerShell**").AppendLine();
                 }
                 else
                 {
                     sb.AppendLine();
                 }
+            }
+
+            // 上一版那一条（一项拆成一对之前装的）：如实念出来，免得用户看着「复制相对路径 / 绝对路径
+            // 都没装」却明明在菜单里看到一条「复制文件路径」。
+            foreach (LegacyPair p in LegacyPairs)
+            {
+                if (!LegacyInstalled(p)) { continue; }
+                sb.Append("  ").Append(RegEngine.PadCjk("上一版那一条", 24));
+                sb.Append("「").Append(p.OldTitle).Append("」还在菜单里");
+                sb.AppendLine("（点一次「装上…」会自动换成新的那两条）");
             }
 
             // 子菜单内容
@@ -849,7 +1062,8 @@ namespace Mxx1Toolbox
             StringBuilder sb = new StringBuilder();
             sb.AppendLine("右键增强是什么");
             sb.AppendLine();
-            sb.AppendLine("  工具箱能往你的右键菜单里装五样东西，五样都只写当前用户（HKCU\\Software\\Classes），");
+            sb.AppendLine("  工具箱能往你的右键菜单里装七样东西（= 五件事，其中两件各有两个菜单项），");
+            sb.AppendLine("  七样都只写当前用户（HKCU\\Software\\Classes），");
             sb.AppendLine("  不要管理员权限、不装 shell 扩展 DLL、不起服务、不加开机启动：");
             sb.AppendLine();
             sb.AppendLine("  1. " + UnlockTitle + " —— 右键一个文件 / 文件夹，看到是谁占着它，勾一下就能把");
@@ -875,23 +1089,31 @@ namespace Mxx1Toolbox
             sb.AppendLine("  3. " + CommonTitle + " —— 右键里多一个子菜单，里面是你工具箱「常用」页的东西：");
             sb.AppendLine("     置顶的按钮 + 最近用过的按钮（最多 " + UserTools.RecentLimit.ToString(CultureInfo.InvariantCulture)
                 + " 个）+ 打开工具箱 / 运行日志 / 设置。");
-            sb.AppendLine("  4. " + CopyTitle + " —— 右键一个文件 / 文件夹，把它的完整路径复制进剪贴板");
-            sb.AppendLine("     （一行一个；带引号，和 Windows 自己那个「复制为路径」一个写法）。");
-            sb.AppendLine("     一次选中好几个也可以：几个路径就复制几行。**只读**，不移动、不改名、不删除任何文件。");
-            sb.AppendLine("  5. " + TerminalTitle + " —— 右键一个文件夹（或文件夹里的空白处、桌面空白处），");
-            sb.AppendLine("     在那个目录里开一个终端：有 Windows Terminal 就用它（`wt -d <目录>`），");
-            sb.AppendLine("     没装就用 PowerShell，再没有就用 cmd。**不申请管理员权限**。");
+            sb.AppendLine("  4. " + CopyTitle + "（一对：「" + CopyRelTitle + "」和「" + CopyAbsTitle + "」）");
+            sb.AppendLine("     —— 右键一个文件 / 文件夹，把路径复制进剪贴板。**不带引号**（用户 2026-10-06 定的：");
+            sb.AppendLine("     带引号粘到别处还得自己删）。一行一个，一次选中好几个就复制好几行：");
+            sb.AppendLine("     · 「" + CopyAbsTitle + "」= 完整路径（像 D:\\资料\\报告.txt 这样）；");
+            sb.AppendLine("     · 「" + CopyRelTitle + "」= 相对**你右键时所在的那个文件夹**的路径");
+            sb.AppendLine("       （像 报告.txt、子目录\\a.txt 这样）—— 写脚本 / 提交代码时省掉一长串盘符；");
+            sb.AppendLine("       跨盘符时没有相对路径可言，那一行会自动退回完整路径。");
+            sb.AppendLine("     **只读**，不移动、不改名、不删除任何文件。");
+            sb.AppendLine("  5. " + TerminalTitle + "（一对：「" + TerminalCmdTitle + "」和「" + TerminalPsTitle + "」）");
+            sb.AppendLine("     —— 右键一个文件夹（或文件夹里的空白处、桌面空白处），终端直接在");
+            sb.AppendLine("     那个目录里打开，省掉「开终端再 cd 半天」。两个菜单项各钉死一个终端：");
+            sb.AppendLine("     要 cmd 就点 cmd 那条，要 PowerShell 就点 PowerShell 那条（不再替你挑）。");
+            sb.AppendLine("     **不申请管理员权限** —— 就是一个普通用户的终端窗口。");
             sb.AppendLine();
             sb.AppendLine("装在哪些位置");
             sb.AppendLine();
             sb.AppendLine("  任意文件 / 文件夹 / 文件夹里的空白处（= 当前这个文件夹）/ 桌面空白处。");
-            sb.AppendLine("  其中「" + CopyTitle + "」装在**有选中东西**的两个位置（任意文件 / 文件夹）；");
-            sb.AppendLine("  「" + TerminalTitle + "」装在**能代表一个目录**的三个位置（文件夹 / 文件夹里的空白处 / 桌面空白处）。");
+            sb.AppendLine("  其中「" + CopyTitle + "」那一对装在**有选中东西**的两个位置（任意文件 / 文件夹）；");
+            sb.AppendLine("  「" + TerminalTitle + "」那一对装在**能代表一个目录**的三个位置（文件夹 / 文件夹里的空白处 / 桌面空白处）。");
             sb.AppendLine();
             sb.AppendLine("怎么卸干净");
             sb.AppendLine();
             sb.AppendLine("  点「撤掉…」那一排按钮即可（撤掉解除占用 / 一键解除占用 / 常用功能 / 复制文件路径 / 在此处打开终端）");
-            sb.AppendLine("  —— 只删工具箱自己写的 Mxx1* 键，");
+            sb.AppendLine("  —— 只删工具箱自己写的 Mxx1* 键（一对里的两条会一起撤掉；");
+            sb.AppendLine("  上一版那种一项一个键的旧键也会顺手清掉），");
             sb.AppendLine("  别的键（包括隔壁「永久删除」那套）一个都不碰。装之前会记现场，写在");
             sb.AppendLine("  " + BackupFile);
             sb.AppendLine("  「右键菜单状态」会念给你听：装了几个位置、子菜单现在几项、有没有残留。");
@@ -1180,10 +1402,14 @@ namespace Mxx1Toolbox
             return list;
         }
 
-        /// <summary>五个 verb 名（图标核对 / 残留检测 / 菜单管理器那几处都遍历它）。</summary>
+        /// <summary>七个 verb 名 + 上一版那两个（图标核对 / 残留检测 / 菜单管理器那几处都遍历它）。
+        /// 旧 verb 也要认：用户装过 v1.5.4 那一版的话，注册表里现在就有它们，不认就查不到、
+        /// 也撤不干净。</summary>
         private static string[] AllVerbs()
         {
-            return new string[] { UnlockVerb, AutoVerb, CommonVerb, CopyVerb, TerminalVerb };
+            return new string[] { UnlockVerb, AutoVerb, CommonVerb,
+                CopyRelVerb, CopyAbsVerb, TerminalCmdVerb, TerminalPsVerb,
+                LegacyCopyVerb, LegacyTerminalVerb };
         }
 
         /// <summary>verb 名 → 给人看的标题（菜单管理器那个状态文件里是按 verb 记的）。</summary>
@@ -1191,8 +1417,12 @@ namespace Mxx1Toolbox
         {
             if (verb == AutoVerb) { return AutoTitle; }
             if (verb == CommonVerb) { return CommonTitle; }
-            if (verb == CopyVerb) { return CopyTitle; }
-            if (verb == TerminalVerb) { return TerminalTitle; }
+            if (verb == CopyRelVerb) { return CopyRelTitle; }
+            if (verb == CopyAbsVerb) { return CopyAbsTitle; }
+            if (verb == TerminalCmdVerb) { return TerminalCmdTitle; }
+            if (verb == TerminalPsVerb) { return TerminalPsTitle; }
+            if (verb == LegacyCopyVerb) { return CopyTitle; }
+            if (verb == LegacyTerminalVerb) { return TerminalTitle; }
             return UnlockTitle;
         }
 
@@ -1210,7 +1440,9 @@ namespace Mxx1Toolbox
             catch { return false; }
         }
 
-        /// <summary>这个键是我们的吗：键名就叫 SharedKey，或者 MUIVerb 写着我们那几句话之一。</summary>
+        /// <summary>这个键是我们的吗：键名就叫 SharedKey，或者 MUIVerb 写着我们那几句话之一
+        /// （包含**上一版那两句**：「复制文件路径」「在此处打开终端」—— 那是现在这一对拆开之前的
+        /// 一项，清旧键时要认得出它是我们的）。</summary>
         private static bool IsOurs(string fullKey, string relativeKey)
         {
             if (string.Equals(relativeKey, SharedKey, StringComparison.OrdinalIgnoreCase)) { return true; }
@@ -1218,6 +1450,10 @@ namespace Mxx1Toolbox
             foreach (string item in AllItems)
             {
                 if (string.Equals(text, TitleOf(item), StringComparison.Ordinal)) { return true; }
+            }
+            foreach (LegacyPair p in LegacyPairs)
+            {
+                if (string.Equals(text, p.OldTitle, StringComparison.Ordinal)) { return true; }
             }
             return false;
         }

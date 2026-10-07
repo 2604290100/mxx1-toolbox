@@ -10,11 +10,12 @@ namespace Mxx1Toolbox
 {
     /// <summary>「在此处打开终端」—— 在指定目录里开一个命令行窗口。
     ///
-    /// 谁在用：① 右键菜单里那一项（`src\RightMenu.cs` 的 TerminalVerb）—— 三个位置：
-    /// 右键文件夹（`%1`）、文件夹里的空白处（`%V`= 当前这个文件夹）、桌面空白处（`%V`= 桌面）；
-    /// ② 命令行 `terminal [<目录>] [--wt|--ps|--cmd] [--dry]`。
+    /// 谁在用：① 右键菜单里**那两个**菜单项（`src\RightMenu.cs` 的 TerminalCmdVerb / TerminalPsVerb）
+    /// —— 三个位置：右键文件夹（`%1`）、文件夹里的空白处（`%V`= 当前这个文件夹）、桌面空白处
+    /// （`%V`= 桌面）；那两条命令各把终端**钉死**（`--cmd` / `--ps`），因为用户 2026-10-06 晚六要的是
+    /// 「多选 一个是cmd 另外一个是powershell」；② 命令行 `terminal [<目录>] [--wt|--ps|--cmd] [--dry]`。
     ///
-    /// 用哪一个终端（顺序写死，不猜用户的偏好）：**Windows Terminal → Windows PowerShell → cmd**。
+    /// 不点名时用哪一个终端（顺序写死，不猜用户的偏好）：**Windows Terminal → Windows PowerShell → cmd**。
     /// Win7 / 精简版 Win10 上没有 wt.exe 就落到 PowerShell（系统自带，一定有）。
     /// 真正"用了哪个"会**如实报出来**（输出里的 `terminal=`、日志、提示卡都写）——
     /// 用户点完只看到"冒出来一个黑窗口"，至少得知道那是哪一个。
@@ -112,6 +113,10 @@ namespace Mxx1Toolbox
         {
             full = "";
             string d = (dir == null) ? "" : AppPaths.Expand(dir).Trim().Trim('"');
+            // 只有一个盘符的（`D:`）补上反斜杠 = 那个盘的根：右键**盘的根**时占位符换成的是 `D:\`，
+            // 而 `"D:\"` 在命令行解析里那个反斜杠会把引号吃掉（`\"` = 转义引号），我们收到的是 `D:"`。
+            // 不补的话 `Path.GetFullPath("D:")` 会当成"这个盘上的当前目录"，随 cwd 漂。
+            if ((d.Length == 2) && (d[1] == ':')) { d += "\\"; }
             if (d.Length == 0) { d = Environment.CurrentDirectory; }
             try
             {

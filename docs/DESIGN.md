@@ -189,11 +189,11 @@ v1.5.0 起这一页不只放隔壁工具的入口了：前面 12 个（**6 对**
 | | 撤掉一键解除占用 | `rightmenu.auto.off` | 同上 |
 | 3 · 常用功能 | 装上常用功能 | `rightmenu.common.on` | 装级联子菜单（`ExtendedSubCommandsKey`） |
 | | 撤掉常用功能 | `rightmenu.common.off` | 同上，连共用子项键一起删 |
-| 4 · 复制文件名 | 装上复制文件名 | `rightmenu.copyname.on` | 一个普通菜单项 `Mxx1CopyName` → `copypath --name "%1"`（文件 / 文件夹两个位置） |
+| 4 · 复制文件名 | 装上复制文件名 | `rightmenu.copyname.on` | 一个普通菜单项 `Mxx1Toolbox.1.CopyName` → `copypath --name "%1"`（文件 / 文件夹两个位置） |
 | | 撤掉复制文件名 | `rightmenu.copyname.off` | 只删这一个键，**不动**下面那个「复制文件路径」 |
-| 5 · 复制文件路径 | 装上复制文件路径 | `rightmenu.copy.on` | 一个普通菜单项 `Mxx1CopyPath` → `copypath "%1"`（两条都不带 `--quote`，§12.63） |
+| 5 · 复制文件路径 | 装上复制文件路径 | `rightmenu.copy.on` | 一个普通菜单项 `Mxx1Toolbox.2.CopyPath` → `copypath "%1"`（两条都不带 `--quote`，§12.63） |
 | | 撤掉复制文件路径 | `rightmenu.copy.off` | 只删这一个键，顺手清晚六第一稿那套残留 |
-| 6 · 在此处打开终端 | 装上在此处打开终端 | `rightmenu.terminal.on` | 装级联子菜单父项 `Mxx1Terminal` + 两棵子项树（`%1` / `%V` 各一棵，各 2 行 cmd / PowerShell） |
+| 6 · 在此处打开终端 | 装上在此处打开终端 | `rightmenu.terminal.on` | 装级联子菜单父项 `Mxx1Toolbox.6.Terminal` + 两棵子项树（`%1` / `%V` 各一棵，各 2 行 cmd / PowerShell） |
 | | 撤掉在此处打开终端 | `rightmenu.terminal.off` | 父项 + 两棵树一起撤 |
 | 7 · 隔壁工具 | 永久删除工具 | `permdel.gui` | `builtin:permdel/gui` —— 不带参数启动隔壁 `PermanentDeleteSetup.exe`，开它自己的窗口 |
 | 8 · 状态与修补 | 右键菜单状态 / 重建常用功能 / 右键增强说明 | `rightmenu.status` / `.rebuild` / `.help` | 只读念状态 / 手动重建子菜单 / 一页说明。**这一段排在最后**（用户 2026-10-06 晚六要求「放到倒数第一」，§12.63） |
@@ -1283,8 +1283,8 @@ N21f       发出点击=True 点完到关掉用了=110ms 进程退出=True      
 
 **做法**：`src\CopyPath.cs` + 命令行
 `copypath <文件…> [--name] [--relative] [--base=<目录>] [--quote] [--print] [--no-wait]`；
-右键菜单里是**两条平铺的一级项**（晚六最终稿，见 §12.63）：`Mxx1CopyName`（`copypath --name "%1"`）
-和 `Mxx1CopyPath`（`copypath "%1"`），各一对装 / 撤按钮，只装在
+右键菜单里是**两条平铺的一级项**（晚六最终稿，见 §12.63）：`Mxx1Toolbox.1.CopyName`（`copypath --name "%1"`）
+和 `Mxx1Toolbox.2.CopyPath`（`copypath "%1"`），各一对装 / 撤按钮，只装在
 **有选中东西**的两个位置（任意文件 / 文件夹）—— 空白处没有选中项，装上去点一下只会得到一句
 "路径不存在"（这一条有回归：M41 断言背景位置**没有**它）。
 
@@ -1341,7 +1341,7 @@ N21f       发出点击=True 点完到关掉用了=110ms 进程退出=True      
 ### 12.62 「在此处打开终端」：挑终端要**如实报**，验证要验"落在哪个目录"
 
 **用户要的**：和 §12.61 同一句里的第二件（任务书 §2.3）。做法：`src\Terminal.cs` +
-命令行 `terminal [<目录>] [--wt|--ps|--cmd] [--dry]`；右键菜单里是**一个子菜单父项** `Mxx1Terminal`
+命令行 `terminal [<目录>] [--wt|--ps|--cmd] [--dry]`；右键菜单里是**一个子菜单父项** `Mxx1Toolbox.6.Terminal`
 （晚六改了四遍口径，最后用户选"保持子菜单一条"，见 §12.63），移上去弹出两行
 `terminal --cmd "%1"` 与 `terminal --ps "%1"`（子项写在那两棵子项树里），
 父项装在**能代表一个目录**的三个位置：右键文件夹（`%1`）、文件夹里的空白处
@@ -1388,16 +1388,20 @@ Win7 / 精简版 Win10 上没有 wt 就落 PowerShell（系统自带）。**用�
 | ④ | 「**我要这个效果**，然后记得加上安装和卸载按钮」（附了他画的菜单效果图：`复制文件名` 和 `复制文件路径` **两条并排**） | **复制 = 两条平铺的一级项** |
 | ⑤ | 拿两句问过他：终端要不要也平铺 → 「**保持子菜单一条**」；复制配几对按钮 → 「**各配一对，共 16 个按钮**」 | 终末稿定死 |
 
-**最终形态**：菜单里 **6 项** —— 5 条一级项 + 1 个子菜单（「常用功能」和「在此处打开终端」是子菜单）。
+**最终形态**：菜单里 **6 项** —— 4 条一级项 + 2 个子菜单（「常用功能」和「在此处打开终端」是子菜单）。
+⚠️ **键名是 2026-10-06 晚七改的**（带上序号，见 §12.64）：下表按**菜单里的先后**排。
 
-| item | verb | MUIVerb | 命令 | 位置 |
+| item | verb（键名） | MUIVerb | 命令 | 位置 |
 | --- | --- | --- | --- | --- |
-| `unlock` | `Mxx1Unlock` | 解除文件占用 | `rightmenu unlock "%1"` | 4 个位置 |
-| `auto` | `Mxx1AutoUnlock` | 一键解除占用 | `rightmenu unlock --auto "%1"` | 4 个位置 |
-| `common` | `Mxx1Common` | 常用功能 ▸ | 子菜单（树 `Mxx1Toolbox.Common`，动态） | 4 个位置 |
-| `copyname` | `Mxx1CopyName` | **复制文件名** | `copypath --name "%1"` | 文件 / 文件夹 |
-| `copypath` | `Mxx1CopyPath` | **复制文件路径** | `copypath "%1"` | 文件 / 文件夹 |
-| `terminal` | `Mxx1Terminal` | 在此处打开终端 ▸ | 子菜单（树 `Mxx1Toolbox.Terminal` = `%1` 那棵 / `.Terminal.bg` = `%V` 那棵），每棵 2 行 | 文件夹 / 两个空白处 |
+| `copyname` | `Mxx1Toolbox.1.CopyName` | **复制文件名** | `copypath --name "%1"` | 文件 / 文件夹 |
+| `copypath` | `Mxx1Toolbox.2.CopyPath` | **复制文件路径** | `copypath "%1"` | 文件 / 文件夹 |
+| `unlock` | `Mxx1Toolbox.3.Unlock` | 解除文件占用 | `rightmenu unlock "%1"` | 4 个位置 |
+| `auto` | `Mxx1Toolbox.4.AutoUnlock` | 一键解除占用 | `rightmenu unlock --auto "%1"` | 4 个位置 |
+| `common` | `Mxx1Toolbox.5.Common` | 常用功能 ▸ | 子菜单（树 `Mxx1Toolbox.Common`，动态） | 4 个位置 |
+| `terminal` | `Mxx1Toolbox.6.Terminal` | 在此处打开终端 ▸ | 子菜单（树 `Mxx1Toolbox.Terminal` = `%1` 那棵 / `.Terminal.bg` = `%V` 那棵），每棵 2 行 | 文件夹 / 两个空白处 |
+
+上一版那批**不带序号**的键名（`Mxx1Unlock` / `Mxx1AutoUnlock` / `Mxx1Common` / `Mxx1CopyName` /
+`Mxx1CopyPath` / `Mxx1Terminal`）由 `MigrateLegacyNames` 就地换掉（§12.64 ③）。
 
 **① 为什么"复制"能平铺、"终端"要留子菜单**：两者的子项数一样是 2，但 **`%1` 与 `%V` 的差别**
 让终端必须"一个父项按位置指两棵不同的子树"（见下条）；复制两条都只在"有选中东西"的位置，
@@ -1422,8 +1426,12 @@ Win7 / 精简版 Win10 上没有 wt 就落 PowerShell（系统自带）。**用�
 - v1.5.4 那两个键名没变：`Mxx1CopyPath` 还是「复制文件路径」用的键（命令去掉 `--quote`），
   `Mxx1Terminal` 从"一条普通命令"改写成"子菜单父项"。**启动时的自动修补**（`SyncIfInstalled`）
   就会做，用户不用自己想到"要再点一次装上"。
+  ⚠️ **晚七之后这两个名字也变成"旧键名"了**（换成 `Mxx1Toolbox.2.CopyPath` / `…6.Terminal`），
+  换名同样由启动修补自动完成 —— 见 §12.64 ③。
 - **新加的 `Mxx1CopyName` 不会自己冒出来**：那是新功能，要用户自己点一次「装上复制文件名」。
   设计取舍：`SyncIfInstalled` 只**修补自己装过的**，绝不擅自往菜单里加新项（不替用户改注册表）。
+  （同理，晚七的「常用功能」也要用户点一次 —— 虽然他在同一轮里说"把常用功能也装上"，
+  但那句话指的是"排进顺序里"，不是"替我往菜单里加"。）
 - **晚六第①②稿留下的四个 verb**（`Mxx1CopyPathRel` / `Mxx1CopyPathAbs` / `Mxx1TerminalCmd` /
   `Mxx1TerminalPs`）没发布过，但万一有人点过「装上」：装 / 撤 / 启动修补都会顺手清掉
   （`CleanSuperseded`，只删 MUIVerb 对得上的那四句），第一稿给复制建的那棵子项树
@@ -1459,13 +1467,119 @@ Win7 / 精简版 Win10 上没有 wt 就落 PowerShell（系统自带）。**用�
 测试里要传盘符根也一样，得写成 `"D:\\"`。
 
 **回归（这一轮的账）**：命令行 **M40/M41**（复制文件路径：平铺、`copypath "%1"`、不带 `--quote`、
-不是子菜单、背景两个位置没有它）、**M41b/M41c**（复制文件名：独立键 `Mxx1CopyName` +
+不是子菜单、背景两个位置没有它）、**M41b/M41c**（复制文件名：独立键 `Mxx1Toolbox.1.CopyName` +
 `copypath --name "%1"`）、**M42/M43/M43b/M43c**（终端子菜单：父项指对子树、两棵各 2 行、
 占位符不串、不装在任意文件上）、**M44**（升级：第一稿四个独立项清掉 + 同名键就地改写）、
 **M45/M45b**（别人的同名键不动 + 障碍物清掉后补装）、**M21b**（各装各撤）、
 **M21**（六项撤干净 + 四棵子项树）、图标计数 22 → **19**（4×3 + 2×2 + 3）；
 O 组 **O16–O20**（`--name` 取文件名 / 给文件夹 / 一次给两个 / 真进剪贴板 / 批次模式头分得开）；
 界面 **C01e**（8 段段序）/ **C01f**（16 个按钮）。
+
+## 12.64 右键菜单的**先后顺序**：Windows 按 verb 键名的字母序排 —— 所以顺序写进键名里
+
+**用户 2026-10-06 晚七**：「**右键增强后的右键菜单顺序文字效果图发我看下，我需要调整一下顺序**」
+（他要看的是**真实菜单里的先后**，不是设计稿），随后拍板：
+
+> **复制文件名 → 复制文件路径 → 解除文件占用 → 一键解除占用 → 常用功能 ▸ → 在此处打开终端 ▸**
+> （两个子菜单收在最后）
+
+### ① 先量：真实顺序跟"我们想让它排第几"没关系
+
+写这个功能以来，菜单顺序一直是"我们按 `AllItems` 的顺序写键、然后就以为它按这个顺序显示"。
+**没这回事**。用 shell 自己的菜单接口（只读探针 `tools\Show-MenuOrder.ps1`：`SHParseDisplayName` →
+`IShellFolder::GetUIObjectOf/CreateViewObject` → `IContextMenu::QueryContextMenu` → 遍历 `HMENU`）
+把真实菜单**按顺序**打出来，四个位置 4/4 一致：
+
+| 位置 | 那一版键名排出来的实际顺序 |
+| --- | --- |
+| 右键文件 | 一键解除占用（`Mxx1AutoUnlock`）→ 复制文件名（`Mxx1CopyName`）→ 复制文件路径（`Mxx1CopyPath`）→ 解除文件占用（`Mxx1Unlock`） |
+| 右键文件夹 | 一键解除占用 → 复制文件名 → 复制文件路径 → **在此处打开终端**（`Mxx1Terminal`）→ 解除文件占用 |
+| 文件夹里的空白处 / 桌面空白处 | 一键解除占用 → 在此处打开终端 → 解除文件占用 |
+
+**规律 = 同一个右键位置里的项，按 verb 名（= `...\shell\` 下面那个键名）的字母序（ASCII 有序）排。**
+最好的证据是两条：
+- **按标题排的假设被排除**：文件夹那一档里「在此处打开终端」(U+5728) 落在「复制…」(U+590D)
+  **后面** —— 按汉字码位排它该在前面。
+- **刻意做了一次对照实验**（`Aaa1Test`+标题「探针Z」、`Zzz9Test`+标题「探针A」、`Mxx1Toolbox.0.Probe`、
+  `Mxx1Unlock`，装在一个**临时文件类型**下、跑完立刻删干净）：结果是
+  「探针Z」（键名 A 开头）在最前、「探针A」（键名 Z 开头）在最后，`Mxx1Toolbox.0.Probe` 排在
+  `Mxx1Unlock` 前面 —— **键名决定顺序，标题完全不参与**。
+  （微软文档里另一个排序属性 `Position=Top|Bottom` 只能把**一项**顶到最上或最下，做不到任意顺序。）
+
+⚠️ 顺带量到的一个容易看错的点：**不同的"键来源"是分组排的** —— 文件类型自己的 `shell` 键和
+`*\shell`（全体文件）的键各自成组、组内排序，所以两组之间不会交叉。
+
+### ② 改法：把顺序写进键名
+
+既然顺序由键名决定，那就让键名**自身可排序**：`Mxx1Toolbox.<n>.<名字>`，
+
+| 序号 | 键名 | 菜单上 |
+| --- | --- | --- |
+| 1 | `Mxx1Toolbox.1.CopyName` | 复制文件名 |
+| 2 | `Mxx1Toolbox.2.CopyPath` | 复制文件路径 |
+| 3 | `Mxx1Toolbox.3.Unlock` | 解除文件占用 |
+| 4 | `Mxx1Toolbox.4.AutoUnlock` | 一键解除占用 |
+| 5 | `Mxx1Toolbox.5.Common` | 常用功能 ▸ |
+| 6 | `Mxx1Toolbox.6.Terminal` | 在此处打开终端 ▸ |
+
+**以后要改顺序 = 改这个数字**（不用动命令、不用动图标、不用动子项树）。
+`rightmenu items` 里的 `verbs=` 那一行把顺序**打给机器看**，回归 **M46/M47** 钉住"序号 1..6 = 用户要的顺序"
+—— 谁改了名字里的数字，就等于改了用户菜单里的顺序，测试必须当场红（这类"顺序"没法自动截图，
+键名是它唯一的机器可读出口）。`titles=` 按同一顺序报（M47 断言两者一一对应）。
+界面那一页的**段序故意没跟着动**（用户只要求改右键菜单里的顺序，见 `tools\rightmenu.json` 的 `_comment`）。
+
+### ③ 老用户怎么换过来：`MigrateLegacyNames`
+
+键名变了 = 注册表里是另一批键，光"修补同名键"是不够的。启动修补（`SyncIfInstalled`）、
+以及用户点任何一对「装上…」时，都会走一遍 `MigrateLegacyNames`：
+
+- 旧键名（`LegacyVerbOf(item)`，就是上一版那六个）**在位、且 MUIVerb 是我们的** → 处理；
+  不是我们的（别人手写的同名键）一个字都不动，并在报告里念出来。
+- **顺序不能反：先确认新键名的键在这个位置已经写好、而且是我们写的，才删旧键。**
+  反过来先删旧的，用户会短暂地（最坏是永久地）少一项。
+- 这一项**本来就不该装在那个位置**的旧键（历史遗留位置）直接清掉。
+- 旧键的记录（`rightmenu-installed.tsv`）跟着摘掉，免得「撤掉…」念一句"记录里有、注册表里没有"。
+- 用户选的是「**换名做进启动修补，自动换顺序（不用我点装上）**」，所以 `SyncIfInstalled` 那条路
+  必须能认得出"只在旧键名下装过"的项 —— `IsInstalled` 因此**新旧两个名字都问**
+  （只认新名字的话，老用户会被当成"没装"、不参与修补，顺序永远换不过来）。
+
+`rightmenu status` 会把这件事念给用户听，两种情况各一句：
+- 某项**已装但只有旧键名**：那一行照样报「已装 · N 个位置」（`InstalledLocations` 新旧都算），
+  由下面那行统一说明；
+- 还有旧键名在：`上一版的键名　还有 N 处在（菜单顺序还是老的）—— 打开一次工具箱就会自动换成新键名`。
+
+### ④ 「常用功能」没装的那一项（用户同一次选择）
+
+用户在同一个问题里还选了「**把「常用功能」也装上并排进顺序**」。设计上不替用户往菜单里加新项
+（`SyncIfInstalled` 只修补装过的，见 §14.3），所以这一项需要**用户自己点一次「装上常用功能」** ——
+装上之后它就在第 5 位（键名序号已经留好了），以后也归启动修补管。
+
+### ⑤ 回归
+
+命令行 **M44**（第一稿四个独立项清掉 + **旧键名换成带序号的键名**、新键名用的是不带 `--quote` 的新命令）、
+**M44b**（别人写的旧键名换名时一个字都不动）、**M48**（启动修补那条路 `pin`：某个位置只有旧键名 →
+新键名补上（命令 + 图标齐全）、旧键名清掉）、**M46 / M47 / M47b**（顺序钉住：`verbs=` 序号 1..6、
+`titles=` 同序、`legacy=` 是新旧对照表）、**M22c**（用户真实菜单的键值快照现在**新旧名字一起拍**）。
+只读探针 `tools\Show-MenuOrder.ps1` 是**人眼/排错**用的，不进自动化测试（它读的是用户真实菜单，
+机器上没有稳定的前置条件）。
+
+### ⑥ 实测：换名之后真实菜单里的顺序（2026-10-06 晚七，本机）
+
+改完之后在本机真的让它换了一遍（走的就是启动修补那条路：`Mxx1Toolbox.exe pin devmgmt`，
+日志里记着 `右键增强 把上一版的旧键名换成带序号的（15 处）`），再用同一个只读探针量：
+
+| 位置 | 真实顺序（★ = 工具箱装的项） |
+| --- | --- |
+| 右键一个文件 | 复制文件名 → 复制文件路径 → 解除文件占用 → 一键解除占用 |
+| 右键一个文件夹 | 复制文件名 → 复制文件路径 → 解除文件占用 → 一键解除占用 → 在此处打开终端 ▸ |
+| 文件夹里的空白处 / 桌面空白处 | 解除文件占用 → 一键解除占用 → 在此处打开终端 ▸ |
+
+**这就把"键名决定顺序"这条从"推断"变成了"实测"**：同一批键，换名前排出来是
+「一键解除占用 / 复制文件名 / 复制文件路径 / 在此处打开终端 / 解除文件占用」，
+只把键名加上序号（命令、图标、子项树一个字没改），顺序就变成了用户要的那个。
+⚠️ 唯一要注意的时机问题：**老实例还开着的时候别做这件事** —— 旧代码的 `SyncIfInstalled` 会按
+**旧键名**修补，等于把我们刚换掉的键又写回来（菜单里会出现两份同名项；新 exe 再启动一次会清掉）。
+本机是先关掉旧实例、再触发换名的。「常用功能」那一项没装，所以表里看不到它（装上就在第 5 位）。
 
 ## 13 外部工具放哪：`bin-tools\` 工具目录（①③ 层**已实现**）
 
@@ -1632,6 +1746,10 @@ O 组 **O16–O20**（`--name` 取文件名 / 给文件夹 / 一次给两个 / �
 > （各一对装 / 撤按钮，都不带 `--quote`），终端保持**子菜单一条**（父项 + 两棵子项树，
 > 每棵 2 行：cmd / PowerShell）—— 用户改了四遍口径，全过程与"为什么最后是这样"见 **§12.63**。
 > 菜单里 **6 项**、界面 **16 个按钮 / 6 对**；三条底线一个字都没放松。
+>
+> **2026-10-06 晚七改了键名（顺序）**：用户看了真实菜单的顺序要调整 → 键名换成
+> `Mxx1Toolbox.<n>.<名字>`（**菜单顺序 = 键名里的序号**，Windows 按字母序排，见 **§12.64**）；
+> 上一版那批不带序号的键名由启动修补自动换掉。
 
 ### 14.1 装什么、装在哪（只用 HKCU）
 
@@ -1640,12 +1758,12 @@ O 组 **O16–O20**（`--name` 取文件名 / 给文件夹 / 一次给两个 / �
 写着：`HKEY_CLASSES_ROOT` 是 `HKEY_CURRENT_USER` 和 `HKEY_LOCAL_MACHINE` 的合并，所以在
 `HKCU\Software\Classes` 下注册子动词**不需要提升权限**。
 
-| 出现在哪 | 键（都在 `HKCU\Software\Classes` 下） |
+| 出现在哪 | 键（都在 `HKCU\Software\Classes` 下；**键名里的序号 = 菜单里的位置**） |
 | --- | --- |
-| 任意文件 | `*\shell\Mxx1Unlock` / `*\shell\Mxx1AutoUnlock` / `*\shell\Mxx1Common` / `*\shell\Mxx1CopyName` / `*\shell\Mxx1CopyPath` |
-| 文件夹 | `Directory\shell\Mxx1Unlock` / `…\Mxx1AutoUnlock` / `…\Mxx1Common` / `…\Mxx1CopyName` / `…\Mxx1CopyPath` / `…\Mxx1Terminal` |
-| 文件夹里的空白处（= 当前文件夹） | `Directory\Background\shell\Mxx1Unlock` / `…\Mxx1AutoUnlock` / `…\Mxx1Common` / `…\Mxx1Terminal` |
-| 桌面空白处 | `DesktopBackground\Shell\Mxx1Unlock` / `…\Mxx1AutoUnlock` / `…\Mxx1Common` / `…\Mxx1Terminal` |
+| 任意文件 | `*\shell\Mxx1Toolbox.1.CopyName` / `…2.CopyPath` / `…3.Unlock` / `…4.AutoUnlock` / `…5.Common` |
+| 文件夹 | `Directory\shell\` 上面五个 + `…6.Terminal` |
+| 文件夹里的空白处（= 当前文件夹） | `Directory\Background\shell\Mxx1Toolbox.3.Unlock` / `…4.AutoUnlock` / `…5.Common` / `…6.Terminal` |
+| 桌面空白处 | `DesktopBackground\Shell\Mxx1Toolbox.3.Unlock` / `…4.AutoUnlock` / `…5.Common` / `…6.Terminal` |
 
 （v1.5.4 之前是两项；第三项和第一项的结构一模一样，只是标题、图标和命令里多一个 `--auto`。
 后加的那几项**不是**四个位置都装，理由写在 `RightMenu.LocationsOf` 的注释里：
@@ -1656,25 +1774,26 @@ O 组 **O16–O20**（`--name` 取文件名 / 给文件夹 / 一次给两个 / �
 
 ```reg
 ; 「解除文件占用」= 普通 verb
-[HKCU\Software\Classes\*\shell\Mxx1Unlock]
+; ⚠️ 键名里那个 **3** 就是它在菜单里的位置（Windows 按同一位置里的键名字母序排菜单，见 §12.64）
+[HKCU\Software\Classes\*\shell\Mxx1Toolbox.3.Unlock]
 "MUIVerb"="解除文件占用"
 "Icon"="C:\Users\<你>\AppData\Local\mxx1-toolbox\rightmenu-icons\rightmenu.unlock.on.<指纹>.ico"
 "MultiSelectModel"="Player"
 @=""                                   ; 默认值必须留空（否则和 MUIVerb 打架）
-[HKCU\Software\Classes\*\shell\Mxx1Unlock\command]
+[HKCU\Software\Classes\*\shell\Mxx1Toolbox.3.Unlock\command]
 @="\"<工具箱 exe>\" rightmenu unlock \"%1\""
 
 ; 「一键解除占用」= 同样是普通 verb，只是命令多一个 --auto（不弹窗口那条路）
-[HKCU\Software\Classes\*\shell\Mxx1AutoUnlock]
+[HKCU\Software\Classes\*\shell\Mxx1Toolbox.4.AutoUnlock]
 "MUIVerb"="一键解除占用"
 "Icon"="…\rightmenu-icons\rightmenu.auto.on.<指纹>.ico"
 "MultiSelectModel"="Player"
 @=""
-[HKCU\Software\Classes\*\shell\Mxx1AutoUnlock\command]
+[HKCU\Software\Classes\*\shell\Mxx1Toolbox.4.AutoUnlock\command]
 @="\"<工具箱 exe>\" rightmenu unlock --auto \"%1\""
 
 ; 「常用功能」= 级联子菜单：父键只指向共用的子项键
-[HKCU\Software\Classes\*\shell\Mxx1Common]
+[HKCU\Software\Classes\*\shell\Mxx1Toolbox.5.Common]
 "MUIVerb"="常用功能"
 "Icon"="…\rightmenu-icons\rightmenu.common.on.<指纹>.ico"
 "MultiSelectModel"="Player"
@@ -1855,8 +1974,9 @@ O 组 **O16–O20**（`--name` 取文件名 / 给文件夹 / 一次给两个 / �
 
 ### 14.10 还需要人眼确认的事情
 
-1. 右键菜单里**真的出现了**「解除文件占用」「一键解除占用」和「常用功能」（含 Win11 需要点
-   「显示更多选项」、或去 Context Menu Manager Plus 放行）；
+1. 右键菜单里**真的出现了**那六项（复制文件名 / 复制文件路径 / 解除文件占用 / 一键解除占用 /
+   常用功能 ▸ / 在此处打开终端 ▸；含 Win11 需要点「显示更多选项」、或去 Context Menu Manager Plus
+   放行）；子菜单（常用功能 / 终端）**移上去能展开**；
 2. 多选几个文件时点它，命令是**调用一次还是每个文件一次**（决定 `MultiSelectModel` 要不要改）；
 3. **图标看着行不行**：现生成的 .ico 是 16px 的按钮图标放大到 DPI 需要的尺寸，
    在 125% / 150% 缩放下会觉得糊还是能接受，得用户自己看一眼 —— 觉得糊的话
@@ -1869,10 +1989,13 @@ O 组 **O16–O20**（`--name` 取文件名 / 给文件夹 / 一次给两个 / �
    才自己消失、卡片上有字、点一下就关**都量住了，但"好不好看、字号大小合不合适、深浅主题下配色
    顺不顺眼"只有人眼能判 —— 自己跑一次
    `Mxx1Toolbox.exe rightmenu unlock --auto <一个没被占用的文件>`（不带 `--quiet`）
-   就能看到它（**它现在会一直留着，点一下才关**）。自动化里默认一律带 `--quiet` / `MXX1_NO_NOTIFY=1`，
-   测试不该在别人桌面上弹东西。
+   就能看到它（**默认 5 秒自动关，点一下提前关**，见 §12.60）。自动化里默认一律带 `--quiet` /
+   `MXX1_NO_NOTIFY=1`，测试不该在别人桌面上弹东西。
+6. **菜单里的先后顺序**：顺序是"键名里的序号"决定的（§12.64），自动化能钉住**键名**（M46/M47），
+   "资源管理器里真的按这个顺序显示"要用只读探针 `tools\Show-MenuOrder.ps1` 量 —— **2026-10-06 晚七
+   换名之后已经量过一遍**（四个位置，结果见 §12.64 ⑥，跟预期一致）；换顺序 / 加项之后值得再跑一次。
 
-这五条没法在自动化回归里验（要真去点资源管理器的右键菜单、真看屏幕、真拿别人的程序试），
+这六条没法在自动化回归里验（要真去点资源管理器的右键菜单、真看屏幕、真拿别人的程序试），
 所以写在文档里而不是假装测过。
 
 ### 14.7 底线（和隐私 / 常用设置同一套）

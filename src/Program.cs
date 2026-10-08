@@ -517,9 +517,12 @@ namespace Mxx1Toolbox
                 {
                     Console.WriteLine(loc.Id + "\t" + loc.Label + "\t" + loc.Key);
                 }
-                Console.WriteLine("titles=" + RightMenu.UnlockTitle + " / " + RightMenu.AutoTitle + " / "
-                    + RightMenu.CommonTitle + " / " + RightMenu.CopyNameTitle + " / " + RightMenu.CopyPathTitle
-                    + " / " + RightMenu.TerminalTitle);
+                // titles / verbs 都按**菜单里的先后**打（= RightMenu.AllItems 的顺序 = 键名里的序号）。
+                // verbs 那一行是给回归测试用的：菜单顺序靠键名排，所以"序号是 1..6 递增"这件事
+                // 必须能被机器读到，别只靠人眼看效果图。
+                Console.WriteLine("titles=" + string.Join(" / ", RightMenu.MenuTitles));
+                Console.WriteLine("verbs=" + string.Join(" / ", RightMenu.MenuVerbs));
+                Console.WriteLine("legacy=" + string.Join(" / ", RightMenu.LegacyVerbs));
                 Console.WriteLine("children=" + RightMenu.TerminalCmdName + " / " + RightMenu.TerminalPsName);
                 Console.WriteLine("shared=" + RightMenu.SharedKey);
                 Console.WriteLine("trees=" + RightMenu.SharedKey + " / " + RightMenu.TerminalTreeKey + " / " + RightMenu.TerminalBgTreeKey);

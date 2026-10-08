@@ -63,21 +63,44 @@ namespace Mxx1Toolbox
     /// 用户的右键菜单上。</summary>
     internal static class RightMenu
     {
-        public const string UnlockVerb = "Mxx1Unlock";
-        public const string AutoVerb = "Mxx1AutoUnlock";
-        public const string CommonVerb = "Mxx1Common";
-        /// <summary>「复制文件名」和「复制文件路径」—— **两条平铺的一级菜单项**（用户 2026-10-06
-        /// 晚六最后定的：先要子菜单，看过效果图之后改成两条直接摆出来，原话「我要这个效果，
-        /// 然后记得加上安装和卸载按钮」）。`Mxx1CopyPath` 这个名字和 v1.5.4 那一版**一模一样**，
-        /// 所以老用户升级上来时同一个键被就地改写成新命令（去掉 `--quote`），菜单里不会多出一条；
-        /// `Mxx1CopyName` 是本轮新增的那个键。</summary>
-        public const string CopyNameVerb = "Mxx1CopyName";
-        public const string CopyPathVerb = "Mxx1CopyPath";
+        // ---- 菜单项的 verb（注册表键名）------------------------------------------------------
+        //
+        // ⚠️ **键名决定菜单里的先后顺序**：资源管理器把同一个右键位置里的静态菜单项**按 verb 名
+        // （= `...\shell\` 下面那个键名）的字母序**排，不看我们想让它排第几。这是 2026-10-06 晚七
+        // 用 shell 自己的 `IContextMenu` 把真实菜单**按顺序打出来**量到的（只读探针
+        // `tools\Show-MenuOrder.ps1`，四个位置 4/4 一致，见 DESIGN §12.64）：那时候名字是
+        // Mxx1AutoUnlock / Mxx1CopyName / Mxx1CopyPath / Mxx1Terminal / Mxx1Unlock，排出来的
+        // 顺序就是「一键解除占用 / 复制文件名 / 复制文件路径 / 在此处打开终端 / 解除文件占用」，
+        // **「解除文件占用」因为 U 排最后掉到了最底下** —— 用户看了效果图要改顺序。
+        //
+        // 所以每个名字前面挂一个**序号**：`Mxx1Toolbox.<n>.<名字>`，字母序 = 我们要的顺序。
+        // **改顺序 = 改这个数字**（老用户那边由「启动修补」自动换名，见 MigrateLegacyNames）。
+        // 顺序（用户 2026-10-06 晚七拍板，两个子菜单收在最后）：
+        //   1 复制文件名 · 2 复制文件路径 · 3 解除文件占用 · 4 一键解除占用 · 5 常用功能 · 6 在此处打开终端
+        public const string VerbPrefix = "Mxx1Toolbox.";
+        /// <summary>「复制文件名」—— 平铺的一级菜单项（`copypath --name "%1"`）。</summary>
+        public const string CopyNameVerb = "Mxx1Toolbox.1.CopyName";
+        /// <summary>「复制文件路径」—— 平铺的一级菜单项（`copypath "%1"`）。
+        /// 晚六那版叫 `Mxx1CopyPath`（不带序号），老用户那边由迁移换名（见 LegacyCopyPathVerb）。</summary>
+        public const string CopyPathVerb = "Mxx1Toolbox.2.CopyPath";
+        public const string UnlockVerb = "Mxx1Toolbox.3.Unlock";
+        public const string AutoVerb = "Mxx1Toolbox.4.AutoUnlock";
+        public const string CommonVerb = "Mxx1Toolbox.5.Common";
         /// <summary>「在此处打开终端」的**父项** verb —— 它是**级联子菜单**（用户 2026-10-06 晚六：
         /// 「我是让你设定为可以多选而不是新增一个菜单，是要你做成子菜单」；问他「复制改成平铺了，
         /// 终端要不要也照做」时，他选「**保持子菜单一条**」）：菜单里只出现一项，
         /// 鼠标移上去弹出「cmd / PowerShell」。</summary>
-        public const string TerminalVerb = "Mxx1Terminal";
+        public const string TerminalVerb = "Mxx1Toolbox.6.Terminal";
+
+        /// <summary>**这一版之前**那六个 verb 名（2026-10-06 晚六及更早，不带序号）。
+        /// 老用户那边这些键由 MigrateLegacyNames 就地换名 —— **先写新的、新键写成读回核对过了
+        /// 才删旧的**（顺序反了会让人短暂地没有这一项，甚至永久丢掉）。</summary>
+        public const string LegacyCopyNameVerb = "Mxx1CopyName";
+        public const string LegacyCopyPathVerb = "Mxx1CopyPath";
+        public const string LegacyUnlockVerb = "Mxx1Unlock";
+        public const string LegacyAutoVerb = "Mxx1AutoUnlock";
+        public const string LegacyCommonVerb = "Mxx1Common";
+        public const string LegacyTerminalVerb = "Mxx1Terminal";
         /// <summary>**晚六第一稿**（同一天，没发布）装过四个独立菜单项，用的是这四个 verb。
         /// 万一有人点过，装上 / 撤掉 / 启动修补时顺手清掉（见 CleanSuperseded）——
         /// 不然他会同时看到四个独立项和新做的子菜单。</summary>
@@ -86,7 +109,10 @@ namespace Mxx1Toolbox
         public const string SupersededTerminalCmdVerb = "Mxx1TerminalCmd";
         public const string SupersededTerminalPsVerb = "Mxx1TerminalPs";
         /// <summary>共用子项键的前缀（都在 HKCU\Software\Classes 下）：级联子菜单的内容写在这里，
-        /// 父项只写一个 `ExtendedSubCommandsKey` 指过来。</summary>
+        /// 父项只写一个 `ExtendedSubCommandsKey` 指过来。
+        /// ⚠️ 晚七起这个前缀**同时也是 verb 名的前缀**（`Mxx1Toolbox.<n>.<名字>`，见上面那段），
+        /// 所以 `IsOurs()` 拿它当"这是工具箱的键"的判据比原来更宽 —— 两边的键都在同一个根下面，
+        /// 这个前缀就是"我们家的东西"的标记。</summary>
         public const string SharedKeyPrefix = "Mxx1Toolbox.";
         public const string SharedKey = "Mxx1Toolbox.Common";
         /// <summary>「复制文件路径」**曾经**在晚六第一稿里是一棵子项树（`Mxx1Toolbox.CopyPath`）。
@@ -118,16 +144,19 @@ namespace Mxx1Toolbox
         public const string ItemTerminal = "terminal";
         public const string BackupName = "rightmenu-installed.tsv";
 
-        /// <summary>六个菜单项（顺序 = 报告里的顺序）。装 / 撤 / 状态 / 说明都遍历它，
-        /// 别在别处另写一份名单。
+        /// <summary>六个菜单项。**这里的顺序 = 菜单里的顺序**（= 键名里那个序号），所以状态报告、
+        /// 说明、残留检测都按它排 —— 别在别处另写一份名单。
+        /// 用户 2026-10-06 晚七拍板的顺序：复制文件名 / 复制文件路径 / 解除文件占用 /
+        /// 一键解除占用 / 常用功能 / 在此处打开终端。
         ///
         /// 其中只有两项是**级联子菜单**（「常用功能」和「在此处打开终端」：父项写
-        /// `ExtendedSubCommandsKey`，内容写在共用的子项树里）；另外四项（解除文件占用 /
-        /// 一键解除占用 / 复制文件名 / 复制文件路径）都是直接挂命令的普通项。
-        /// 界面上是 **6 对**装 / 撤按钮（一共 16 个按钮），一对只管一项。</summary>
+        /// `ExtendedSubCommandsKey`，内容写在共用的子项树里）；另外四项（复制文件名 / 复制文件路径 /
+        /// 解除文件占用 / 一键解除占用）都是直接挂命令的普通项。
+        /// 界面上是 **6 对**装 / 撤按钮（一共 16 个按钮），一对只管一项 ——
+        /// ⚠️ **界面那一段的顺序没跟着动**（用户只要求改右键菜单里的顺序，见 tools\rightmenu.json）。</summary>
         public static readonly string[] AllItems = new string[]
         {
-            ItemUnlock, ItemAuto, ItemCommon, ItemCopyName, ItemCopyPath, ItemTerminal,
+            ItemCopyName, ItemCopyPath, ItemUnlock, ItemAuto, ItemCommon, ItemTerminal,
         };
 
         /// <summary>命令里给"右键选中的那个路径"的占位：Explorer 会把它换成真实路径。</summary>
@@ -168,6 +197,19 @@ namespace Mxx1Toolbox
             if (item == ItemCopyPath) { return CopyPathVerb; }
             if (item == ItemTerminal) { return TerminalVerb; }
             return UnlockVerb;
+        }
+
+        /// <summary>这一项**上一版用的**键名（不带序号那批，2026-10-06 晚七以前）。只用来做迁移：
+        /// 老用户升级上来时把旧键名换成新键名，菜单顺序才会跟着变。返回空 = 这一项没有旧名字。</summary>
+        private static string LegacyVerbOf(string item)
+        {
+            if (item == ItemCopyName) { return LegacyCopyNameVerb; }
+            if (item == ItemCopyPath) { return LegacyCopyPathVerb; }
+            if (item == ItemUnlock) { return LegacyUnlockVerb; }
+            if (item == ItemAuto) { return LegacyAutoVerb; }
+            if (item == ItemCommon) { return LegacyCommonVerb; }
+            if (item == ItemTerminal) { return LegacyTerminalVerb; }
+            return "";
         }
 
         private static string TitleOf(string item)
@@ -233,6 +275,17 @@ namespace Mxx1Toolbox
             new RightMenuLocation("folderbg", "文件夹里的空白处",   "Directory\\Background\\shell", BackgroundPlaceholder),
             new RightMenuLocation("desktop",  "桌面空白处",         "DesktopBackground\\Shell",   BackgroundPlaceholder),
         };
+
+        /// <summary>这一项装不装在这个位置（和 LocationsOf 同一张表，单独问一个位置时用它，
+        /// 换名那一段要按位置决定"新键应该在这儿吗"）。</summary>
+        private static bool InstallsAt(string item, RightMenuLocation loc)
+        {
+            foreach (RightMenuLocation l in LocationsOf(item))
+            {
+                if (string.Equals(l.Id, loc.Id, StringComparison.Ordinal)) { return true; }
+            }
+            return false;
+        }
 
         // ------------------------------------------------------------------ 级联子菜单的内容
         //
@@ -363,6 +416,77 @@ namespace Mxx1Toolbox
             return removed;
         }
 
+        /// <summary>把上一版那批**不带序号**的旧键名换成这一版带序号的（菜单顺序就是靠键名排的，
+        /// 不换名顺序不会变 —— 见文件顶部那段说明和 DESIGN §12.64）。
+        ///
+        /// 规矩（**顺序不能反**）：先确认新键名那一项在这个位置已经装好、而且是工具箱写的，
+        /// 才删旧键；反过来先删旧的，用户会短暂地（最坏是永久地）少一项。
+        /// 新键没写成的那些位置（比如那里蹲着一个不是我们写的同名键）一律**不删**旧键，
+        /// 留着让人还能用，并把原因念在报告里。
+        ///
+        /// `only` 给 null = 所有项（启动修补那条路用）；否则只处理名单里的项
+        /// （用户点了哪一对「装上…」就只换那一项，别的项一个字节都不动）。
+        /// `sb` 给 null 就闭嘴（启动时那条路）。返回换掉的处数。</summary>
+        private static int MigrateLegacyNames(StringBuilder sb, List<RightMenuRecord> records, List<string> only)
+        {
+            int moved = 0;
+            List<string> goneKeys = new List<string>();
+            foreach (string item in AllItems)
+            {
+                if ((only != null) && !Contains(only, item)) { continue; }
+                string legacy = LegacyVerbOf(item);
+                if (legacy.Length == 0) { continue; }
+                foreach (RightMenuLocation loc in Table)
+                {
+                    string relOld = loc.Key + "\\" + legacy;
+                    string fullOld = RootKey + "\\" + relOld;
+                    if (!KeyExists(fullOld)) { continue; }
+                    if (!IsOurs(fullOld, relOld))
+                    {
+                        if (sb != null)
+                        {
+                            sb.Append("  × ").Append(fullOld).Append(" 不是工具箱写的，没动它").AppendLine();
+                        }
+                        continue;
+                    }
+                    // 这一项本来该装在这儿的话，新键必须先在那儿（写完读回核对过才算）
+                    if (InstallsAt(item, loc))
+                    {
+                        string relNew = loc.Key + "\\" + VerbOf(item);
+                        string fullNew = RootKey + "\\" + relNew;
+                        if (!KeyExists(fullNew) || !IsOurs(fullNew, relNew)) { continue; }
+                    }
+                    string error = DeleteTree(fullOld);
+                    if (error.Length > 0)
+                    {
+                        if (sb != null)
+                        {
+                            sb.Append("  × 旧键名没换掉（").Append(fullOld).Append("）：").Append(error).AppendLine();
+                        }
+                        continue;
+                    }
+                    goneKeys.Add(fullOld);
+                    moved++;
+                }
+            }
+            if (moved > 0)
+            {
+                // 旧键的记录也摘掉（不摘的话「撤掉…」会念一句"记录里有、注册表里没有"）
+                if (records != null)
+                {
+                    for (int i = records.Count - 1; i >= 0; i--)
+                    {
+                        string key = (records[i].Key == null) ? "" : records[i].Key;
+                        if (Contains(goneKeys, key)) { records.RemoveAt(i); }
+                    }
+                    SaveRecords(records);
+                }
+                Logger.Write("右键增强", "把上一版的旧键名换成带序号的（"
+                    + moved.ToString(CultureInfo.InvariantCulture) + " 处）");
+            }
+            return moved;
+        }
+
         private static readonly string[] CriticalProcesses = new string[]
         {
             "system", "registry", "memory compression", "idle", "smss", "csrss", "wininit",
@@ -370,6 +494,45 @@ namespace Mxx1Toolbox
         };
 
         public static RightMenuLocation[] Locations { get { return Table; } }
+
+        /// <summary>菜单里从上到下的标题（顺序 = `AllItems` = 键名里的序号）。`rightmenu items`
+        /// 打它，回归测试也读它。</summary>
+        public static string[] MenuTitles
+        {
+            get
+            {
+                List<string> list = new List<string>();
+                foreach (string item in AllItems) { list.Add(TitleOf(item)); }
+                return list.ToArray();
+            }
+        }
+
+        /// <summary>菜单里从上到下的 verb 名 —— **"菜单顺序"唯一能被机器读到的出口**：
+        /// 顺序是 Windows 按键名排的，所以这里念出来的顺序就是菜单里真正的顺序（见 DESIGN §12.64）。</summary>
+        public static string[] MenuVerbs
+        {
+            get
+            {
+                List<string> list = new List<string>();
+                foreach (string item in AllItems) { list.Add(VerbOf(item)); }
+                return list.ToArray();
+            }
+        }
+
+        /// <summary>上一版那批不带序号的旧键名（换名迁移用；也打出来给回归测试核对）。</summary>
+        public static string[] LegacyVerbs
+        {
+            get
+            {
+                List<string> list = new List<string>();
+                foreach (string item in AllItems)
+                {
+                    string v = LegacyVerbOf(item);
+                    if (v.Length > 0) { list.Add(v); }
+                }
+                return list.ToArray();
+            }
+        }
 
         public static string BackupFile
         {
@@ -481,6 +644,17 @@ namespace Mxx1Toolbox
             if (treeGap) { skipped++; }
 
             sb.AppendLine();
+            // 晚七：把上一版那批**不带序号**的旧键名换成带序号的（菜单里的先后顺序就是按键名排的，
+            // 见文件顶部说明）。必须排在上面两轮写入之后 —— 里面"先确认新键装好了才删旧键"。
+            {
+                List<RightMenuRecord> recs = LoadRecords();
+                int moved = MigrateLegacyNames(sb, recs, items);
+                if (moved > 0)
+                {
+                    sb.Append("  （顺手把上一版的旧键名换掉了 ").Append(moved.ToString(CultureInfo.InvariantCulture))
+                      .Append(" 处 —— 键名里那个序号就是右键菜单里的先后顺序）").AppendLine();
+                }
+            }
             // 晚六第一稿那四个独立项（如果装过）：装上时顺手清掉，见 CleanSuperseded 那段说明。
             // 现在**这四条正好全都要清**：复制那两条第一稿用的是 `Mxx1CopyPathRel`/`Abs`、
             // 终端那两条用的是 `Mxx1TerminalCmd`/`Ps`，跟这一版的名字都不一样。
@@ -754,6 +928,13 @@ namespace Mxx1Toolbox
                         WriteTree(TerminalBgTreeKey, FixedChildren(ItemTerminal, BackgroundPlaceholder), out error);
                     }
                 }
+                // 换名（晚七）：上一版的键名不带序号，而**菜单顺序就是按键名排的** ——
+                // 老用户升级上来光修命令是不够的，得把键名一起换掉顺序才会变。上面两轮已经把
+                // 新键名的键写好了，所以换名排在这儿（里面"先确认新键装好了才删旧键"）。
+                {
+                    List<RightMenuRecord> recs = LoadRecords();
+                    MigrateLegacyNames(null, recs, installed);
+                }
                 // 新写法都写好了，现在才清第一稿那四个独立项（顺序不能反）
                 CleanSuperseded(null, null);
             }
@@ -1012,6 +1193,7 @@ namespace Mxx1Toolbox
             StringBuilder sb = new StringBuilder();
             sb.AppendLine("右键增强当前状态（只读，没改任何东西）");
             if (IsTestRoot) { sb.AppendLine("（测试根：" + RootLabel + "）"); }
+            sb.AppendLine("（下面六行的**先后就是右键菜单里的先后** —— 顺序是按注册表键名里的序号排的，见「右键增强说明」）");
             sb.AppendLine();
 
             foreach (string item in AllItems)
@@ -1051,6 +1233,27 @@ namespace Mxx1Toolbox
                 {
                     sb.AppendLine();
                 }
+            }
+
+            // 上一版那批**不带序号**的旧键名（晚七换了名）：还在的话顺序就还是老的，
+            // 如实念出来 —— 打开一次工具箱（启动修补）或者点一次「装上…」就会换掉。
+            List<string> oldNames = new List<string>();
+            foreach (string item in AllItems)
+            {
+                string legacy = LegacyVerbOf(item);
+                if (legacy.Length == 0) { continue; }
+                foreach (RightMenuLocation loc in Table)
+                {
+                    string rel = loc.Key + "\\" + legacy;
+                    string full = RootKey + "\\" + rel;
+                    if (KeyExists(full) && IsOurs(full, rel)) { oldNames.Add(full); }
+                }
+            }
+            if (oldNames.Count > 0)
+            {
+                sb.Append("  ").Append(RegEngine.PadCjk("上一版的键名", 24));
+                sb.Append("还有 ").Append(oldNames.Count.ToString(CultureInfo.InvariantCulture))
+                  .AppendLine(" 处在（菜单顺序还是老的）—— 打开一次工具箱就会自动换成新键名，换完顺序才是上面这个");
             }
 
             // 晚六第一稿那四个独立项（万一装过）：如实念出来，并说明点一次装上就会换掉
@@ -1176,7 +1379,15 @@ namespace Mxx1Toolbox
             sb.AppendLine("  是**级联子菜单**：鼠标移上去会弹出几行让你选（Windows 那套 `ExtendedSubCommandsKey` 机制，");
             sb.AppendLine("  子项写在 HKCU\\Software\\Classes\\Mxx1Toolbox.* 下，父项只存一个指针）：");
             sb.AppendLine();
-            sb.AppendLine("  1. " + UnlockTitle + " —— 右键一个文件 / 文件夹，看到是谁占着它，勾一下就能把");
+            sb.AppendLine("  1. " + CopyNameTitle + "、2. " + CopyPathTitle + " —— 右键一个文件 / 文件夹，");
+            sb.AppendLine("     把**名字**（文件名 / 文件夹名）或**完整路径**复制进剪贴板。一次选中好几个就一行一个。");
+            sb.AppendLine("     · 「" + CopyNameTitle + "」= 只取名字：文件 `报告.txt`、文件夹 `2026`，不带路径。");
+            sb.AppendLine("       用户 2026-10-06：原来那版给的是「相对路径」，可右键时的工作目录**就是**文件所在的");
+            sb.AppendLine("       那个文件夹，折出来正好就是文件名 —— 所以照他要的直接给名字。");
+            sb.AppendLine("     · 「" + CopyPathTitle + "」= 完整路径（像 D:\\资料\\报告.txt 这样）。");
+            sb.AppendLine("     两条**都不带引号**（用户定的：带引号粘到别处还得自己动手删）。");
+            sb.AppendLine("     两条都**只读** —— 不移动、不改名、不删除任何文件。");
+            sb.AppendLine("  3. " + UnlockTitle + " —— 右键一个文件 / 文件夹，看到是谁占着它，勾一下就能把");
             sb.AppendLine("     那个程序结束掉（用的是 Windows 自带的 Restart Manager，不装 handle.exe）。");
             sb.AppendLine("     右键**文件夹**时会往下扫 " + FileLock.MaxScanDepth.ToString(CultureInfo.InvariantCulture)
                 + " 层、最多 " + FileLock.MaxScanFiles.ToString(CultureInfo.InvariantCulture)
@@ -1191,27 +1402,30 @@ namespace Mxx1Toolbox
             sb.AppendLine("     把对方手里那个句柄直接关掉，**进程不动**（和火绒的「解锁占用」是一个思路）。");
             sb.AppendLine("     风险写在确认框里：句柄被突然关掉，那个程序可能报错 / 存不上盘；");
             sb.AppendLine("     系统进程和内核驱动的句柄关不掉（谁做的都一样，得靠内核驱动）。");
-            sb.AppendLine("  2. " + AutoTitle + " —— 不弹窗口的一键版：右键一下，它在后台查谁占着它，");
+            sb.AppendLine("  4. " + AutoTitle + " —— 不弹窗口的一键版：右键一下，它在后台查谁占着它，");
             sb.AppendLine("     查到就直接把那些程序结束掉，然后鼠标旁边一张小卡片说结果（5 秒自动关闭）。");
             sb.AppendLine("     适合「我只想让这个文件能删掉、别问我」的场合。代价是没有确认框：");
             sb.AppendLine("     那些程序里没保存的东西会丢。系统关键进程、explorer.exe、工具箱自己，它一律不动。");
             sb.AppendLine("     拿不准的时候用上面那个「" + UnlockTitle + "」（它会先列出来让你勾）。");
-            sb.AppendLine("  3. " + CommonTitle + " —— 右键里多一个子菜单，里面是你工具箱「常用」页的东西：");
+            sb.AppendLine("  5. " + CommonTitle + " —— 右键里多一个子菜单，里面是你工具箱「常用」页的东西：");
             sb.AppendLine("     置顶的按钮 + 最近用过的按钮（最多 " + UserTools.RecentLimit.ToString(CultureInfo.InvariantCulture)
                 + " 个）+ 打开工具箱 / 运行日志 / 设置。");
-            sb.AppendLine("  4. " + CopyNameTitle + "、5. " + CopyPathTitle + " —— 右键一个文件 / 文件夹，");
-            sb.AppendLine("     把**名字**（文件名 / 文件夹名）或**完整路径**复制进剪贴板。一次选中好几个就一行一个。");
-            sb.AppendLine("     · 「" + CopyNameTitle + "」= 只取名字：文件 `报告.txt`、文件夹 `2026`，不带路径。");
-            sb.AppendLine("       用户 2026-10-06：原来那版给的是「相对路径」，可右键时的工作目录**就是**文件所在的");
-            sb.AppendLine("       那个文件夹，折出来正好就是文件名 —— 所以照他要的直接给名字。");
-            sb.AppendLine("     · 「" + CopyPathTitle + "」= 完整路径（像 D:\\资料\\报告.txt 这样）。");
-            sb.AppendLine("     两条**都不带引号**（用户定的：带引号粘到别处还得自己动手删）。");
-            sb.AppendLine("     两条都**只读** —— 不移动、不改名、不删除任何文件。");
             sb.AppendLine("  6. " + TerminalTitle + "（**子菜单**两行：「" + TerminalCmdName + "」「" + TerminalPsName + "」）");
             sb.AppendLine("     —— 右键一个文件夹（或文件夹里的空白处、桌面空白处），终端直接在");
             sb.AppendLine("     那个目录里打开，省掉「开终端再 cd 半天」。两行各钉死一个终端：");
             sb.AppendLine("     要 cmd 就点 cmd，要 PowerShell 就点 PowerShell（不再替你挑）。");
             sb.AppendLine("     **不申请管理员权限** —— 就是一个普通用户的终端窗口。");
+            sb.AppendLine();
+            sb.AppendLine("菜单里的先后顺序是怎么定的");
+            sb.AppendLine();
+            sb.AppendLine("  资源管理器把同一个右键位置里的项**按注册表键名的字母序**排，不看我们想让它排第几");
+            sb.AppendLine("  （微软的文档只给了一个 `Position=Top|Bottom`，只能把一项顶到最上或最下）。");
+            sb.AppendLine("  所以六项的键名前面都带一个序号，序号就是菜单里的位置：");
+            foreach (string hmItem in AllItems)
+            {
+                sb.Append("    ").Append(VerbOf(hmItem)).Append("  →  ").AppendLine(TitleOf(hmItem));
+            }
+            sb.AppendLine("  **改顺序 = 改这几个名字里的数字**（老用户那边的旧键名由启动时的自动修补换掉）。");
             sb.AppendLine();
             sb.AppendLine("装在哪些位置");
             sb.AppendLine();
@@ -1481,21 +1695,30 @@ namespace Mxx1Toolbox
                 if (string.Equals(r.Item, item, StringComparison.OrdinalIgnoreCase)) { return true; }
             }
             // 记录被删了也别谎报"没装"：按已知键名再问一遍注册表。
-            string suffix = VerbOf(item);
-            foreach (RightMenuLocation loc in Table)
+            // **新名字和上一版那个旧名字都要问** —— 只认新名字的话，老用户（键名还没换过来）
+            // 会被当成"没装"进而不参与启动修补，顺序永远换不过来。
+            foreach (string suffix in new string[] { VerbOf(item), LegacyVerbOf(item) })
             {
-                if (KeyExists(RootKey + "\\" + loc.Key + "\\" + suffix)) { return true; }
+                if (suffix.Length == 0) { continue; }
+                foreach (RightMenuLocation loc in Table)
+                {
+                    if (KeyExists(RootKey + "\\" + loc.Key + "\\" + suffix)) { return true; }
+                }
             }
             return false;
         }
 
+        /// <summary>这一项现在装在哪些位置（**新键名和上一版的旧键名都算** —— 老用户那边键名还没换过来
+        /// 的时候，这里说"没装"就是谎报；换没换过来由状态里"上一版的键名"那一行单独说）。</summary>
         private static List<string> InstalledLocations(string item)
         {
             List<string> list = new List<string>();
-            string suffix = VerbOf(item);
+            string legacy = LegacyVerbOf(item);
             foreach (RightMenuLocation loc in Table)
             {
-                if (KeyExists(RootKey + "\\" + loc.Key + "\\" + suffix)) { list.Add(loc.Label); }
+                string cur = RootKey + "\\" + loc.Key + "\\" + VerbOf(item);
+                string old = (legacy.Length == 0) ? "" : (RootKey + "\\" + loc.Key + "\\" + legacy);
+                if (KeyExists(cur) || ((old.Length > 0) && KeyExists(old))) { list.Add(loc.Label); }
             }
             return list;
         }
@@ -1517,11 +1740,13 @@ namespace Mxx1Toolbox
             return list;
         }
 
-        /// <summary>六个 verb 名 + 晚六第一稿那四个独立项（图标核对 / 残留检测 / 菜单管理器那几处
-        /// 都遍历它）。第一稿那几个也要认：万一有人点过「装上」，不认就查不到、也撤不干净。</summary>
+        /// <summary>这一版六个 verb 名 + **上一版那六个旧键名**（晚七换了名，老用户那边可能还在）
+        /// + 晚六第一稿那四个独立项 —— 图标核对 / 残留检测 / 菜单管理器那几处都遍历它。
+        /// 旧名字也要认：不认就查不到、也撤不干净。</summary>
         private static string[] AllVerbs()
         {
             return new string[] { UnlockVerb, AutoVerb, CommonVerb, CopyNameVerb, CopyPathVerb, TerminalVerb,
+                LegacyUnlockVerb, LegacyAutoVerb, LegacyCommonVerb, LegacyCopyNameVerb, LegacyCopyPathVerb, LegacyTerminalVerb,
                 SupersededCopyRelVerb, SupersededCopyAbsVerb,
                 SupersededTerminalCmdVerb, SupersededTerminalPsVerb };
         }
@@ -1529,11 +1754,11 @@ namespace Mxx1Toolbox
         /// <summary>verb 名 → 给人看的标题（菜单管理器那个状态文件里是按 verb 记的）。</summary>
         private static string TitleOfVerb(string verb)
         {
-            if (verb == AutoVerb) { return AutoTitle; }
-            if (verb == CommonVerb) { return CommonTitle; }
-            if (verb == CopyNameVerb) { return CopyNameTitle; }
-            if (verb == CopyPathVerb) { return CopyPathTitle; }
-            if (verb == TerminalVerb) { return TerminalTitle; }
+            if (verb == AutoVerb || verb == LegacyAutoVerb) { return AutoTitle; }
+            if (verb == CommonVerb || verb == LegacyCommonVerb) { return CommonTitle; }
+            if (verb == CopyNameVerb || verb == LegacyCopyNameVerb) { return CopyNameTitle; }
+            if (verb == CopyPathVerb || verb == LegacyCopyPathVerb) { return CopyPathTitle; }
+            if (verb == TerminalVerb || verb == LegacyTerminalVerb) { return TerminalTitle; }
             if (verb == SupersededCopyRelVerb) { return SupersededTitles[0]; }
             if (verb == SupersededCopyAbsVerb) { return SupersededTitles[1]; }
             if (verb == SupersededTerminalCmdVerb) { return SupersededTitles[2]; }

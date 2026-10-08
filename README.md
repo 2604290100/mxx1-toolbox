@@ -57,6 +57,10 @@
   和 **「在此处打开终端」子菜单**（一条菜单项、移上去弹出两行）：**「cmd」** 和 **「PowerShell」**，
   右键文件夹 / 文件夹里的空白处 / 桌面空白处，终端直接在那个目录里打开，
   要哪个点哪行（不再替你挑）；**不申请管理员权限**。
+  这六项在菜单里的**先后顺序是「复制文件名 → 复制文件路径 → 解除文件占用 → 一键解除占用 →
+  常用功能 → 在此处打开终端」**（Windows 是按键名的字母序排菜单的，所以顺序写在键名的序号里：
+  `Mxx1Toolbox.<n>.<名字>`；老用户升级上来时启动修补会自动换名，见 `docs\DESIGN.md` §12.64；
+  想核对自己机器上的真实顺序就跑一次 `tools\Show-MenuOrder.ps1`，只读）。
   这六项都只写 `HKCU\Software\Classes`，删掉键就干净；再加上**「永久删除工具」**：打开隔壁的
   [永久删除（不进回收站）](../permanent-delete-menu) 安装器窗口，零改动集成
 - **「文件哈希校验」**：选一个文件（也可以直接拖进窗口）就算出 MD5 / SHA256，粘上网站上给的值按「对比」；**只在本机算、不上传、不改动文件**，`hash <文件>` 命令行同名入口
@@ -128,7 +132,7 @@ powershell -ExecutionPolicy Bypass -File build.ps1     # 编译，产物 bin\Mxx
 | 隐私设置 | 29 | **真功能**（11 组成对开关 + 4 个权限入口 + 状态 / 一键优化 / 一键还原） |
 | 应用管理 | 5 | **真功能**（查看已安装应用 / 启动项 / 默认应用 / 应用和功能 / 单个卸载 —— 卸载窗口里显示中文应用名） |
 | 清理优化 | 8 | **真功能**（一键清理垃圾 / 清理临时文件 / 清空回收站 / 浏览器缓存 / 磁盘清理 / 存储感知 / 启动项 / 大文件查找） |
-| 右键增强 | 16 | **真功能**：六对装上 / 撤掉（**解除文件占用**（右键文件就能查出谁占着它：真占着的程序 / 它自己在运行 / 窗口里开着它 / 能不能删，勾一下结束那个程序或「强制解锁」抽掉它的句柄）/ **一键解除占用** / **常用功能**级联子菜单 / **复制文件名** / **复制文件路径**（两条平铺的菜单项，各一对按钮、各写自己的键）/ **在此处打开终端**子菜单（移上去是 cmd + PowerShell 两行））+ 右键菜单状态 + 重建常用功能 + 右键增强说明 + 「永久删除工具」；**状态与修补那一段排在页面最底下** |
+| 右键增强 | 16 | **真功能**：六对装上 / 撤掉（**解除文件占用**（右键文件就能查出谁占着它：真占着的程序 / 它自己在运行 / 窗口里开着它 / 能不能删，勾一下结束那个程序或「强制解锁」抽掉它的句柄）/ **一键解除占用** / **常用功能**级联子菜单 / **复制文件名** / **复制文件路径**（两条平铺的菜单项，各一对按钮、各写自己的键）/ **在此处打开终端**子菜单（移上去是 cmd + PowerShell 两行））+ 右键菜单状态 + 重建常用功能 + 右键增强说明 + 「永久删除工具」；**状态与修补那一段排在页面最底下**；**右键菜单里的先后**（和页面段序是两回事）：复制文件名 → 复制文件路径 → 解除文件占用 → 一键解除占用 → 常用功能 ▸ → 在此处打开终端 ▸ |
 | 我的工具 | 3+ | **真功能** `[+ 新建按钮]` + 导出 / 导入，加上你自己加的按钮 |
 
 「系统工具」27 个按钮对应哪个 Windows 组件、缺组件时说什么，见
@@ -207,10 +211,11 @@ powershell -File tools\Test-Quick.ps1        # 提交前闸门：只跑这次改
 powershell -File tools\Test-Encoding.ps1     # 编码红线体检（BOM / 纯 ASCII / 硬编码本机路径）
 powershell -File tools\Test-InlineSyntax.ps1 # 内联脚本语法 + 清单 JSON + 每个 .ps1 的语法体检
 powershell -ExecutionPolicy Bypass -File tests\Test-All.ps1   # 全部（无桌面时加 -SkipGui）
-powershell -ExecutionPolicy Bypass -File tests\Test-Cli.ps1   # 命令行回归 280 项（本机 279 通过 + 1 跳过）
+powershell -ExecutionPolicy Bypass -File tests\Test-Cli.ps1   # 命令行回归 285 项（本机 284 通过 + 1 跳过）
 powershell -ExecutionPolicy Bypass -File tests\Test-Gui.ps1   # 界面回归 166 项（要交互式桌面，无桌面返回 3 = 跳过）
 powershell -ExecutionPolicy Bypass -File tests\Test-Cli.ps1 -Only M,N   # 只跑 M、N 两组
 powershell -File tools\Sync-Skill.ps1        # 把 skill 的三份文件同步到三处副本（改完 skill 必跑）
+powershell -File tools\Show-MenuOrder.ps1     # 只读：把真实右键菜单**按顺序**打出来（核菜单先后用，见 DESIGN §12.64）
 powershell -File tools\Make-Package.ps1       # 只打发布包（build.ps1 -Package 调的就是它）
 powershell -File tools\Make-Screenshots.ps1  # 重新拍 docs 里的截图（浅色 / 深色 / 系统工具页签）
 powershell -File tools\Make-Icons.ps1        # 重新生成 16x16 PNG 图标（先 build 再跑，改完还要再 build）

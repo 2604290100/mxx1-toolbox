@@ -20,7 +20,9 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
 
 - 版本 **1.5.5**（`src\AssemblyInfo.cs` 是唯一来源），已打 tag `v1.5.5` 并发 Release：
   <https://github.com/2604290100/mxx1-toolbox/releases/tag/v1.5.5>（`Mxx1Toolbox.exe` 842,240 字节 +
-  `Mxx1Toolbox-package.zip` 1,304,367 字节，说明里带 SHA256）。CI 绿的。
+  `Mxx1Toolbox-package.zip` 1,308,446 字节，说明里带 SHA256）。CI 绿的。
+  ⚠️ **zip 发版后重传过一版**（第一版 1,304,367 字节；CI 那次假红修好之后重打重传 —— 里面装着 `tests\`，
+  **exe 一个字节没变**，所以 exe 那个 SHA256 前后一致）。
 - 测试 **452 项** = 命令行 **286**（285 通过 + 1 项环境不满足跳过）+ 界面 **166**（两套都完整跑过、
   0 失败、**没有没跑的组**）；编码体检 204 个文件。本地实测：命令行约 2 分钟（挑组 `-Only T` 只要 2.9 秒）、
   界面约 2.5 分钟。
@@ -807,8 +809,9 @@ powershell -File tools\Make-AppIcon.ps1       # 重生成 assets\app.ico（改�
    —— **等用户说"我只想拷一个 exe"再做，别自己开工。**
 3. ✅ **v1.5.5 已经发布**（2026-10-09）：版本号 `1.5.5`（`src\AssemblyInfo.cs`，标题栏跟着变 ——
    唯一来源），`CHANGELOG.md` 里是 `[1.5.5] - 2026-10-09`；已打 tag **`v1.5.5`** 并发 Release
-   （附 `Mxx1Toolbox.exe` 842,240 字节 + `Mxx1Toolbox-package.zip` 1,304,367 字节 + 说明里的 SHA256），
-   CI 绿的。⚠️ **这一版没改条款正文**（`docs\DISCLAIMER.md` 一个字没动）→ 同意指纹没变，
+   （附 `Mxx1Toolbox.exe` 842,240 字节 + `Mxx1Toolbox-package.zip` 1,308,446 字节 + 说明里的 SHA256；
+   zip 发版后因为"CI 那次假红"重传过一版、exe 没变），CI 绿的。
+   ⚠️ **这一版没改条款正文**（`docs\DISCLAIMER.md` 一个字没动）→ 同意指纹没变，
    用户这次打开**不会**再被要求确认。
    上一版（v1.5.4，2026-10-06）指向 `e5c1bdb`。
    **下一次要发版还是先问用户**（原话："推送的时候不要每次都推送，太卡了要问过我才行"、"发布工具"

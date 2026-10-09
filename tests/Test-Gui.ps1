@@ -38,6 +38,11 @@ $root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $Exe = Join-Path $root 'bin\Mxx1Toolbox.exe'
 $SettingsIni = Join-Path $env:LOCALAPPDATA 'mxx1-toolbox\settings.ini'
 
+# 夹具根先规范化成长名 —— 和 Test-Cli.ps1 同一个坑（2026-10-09 首次上 CI 时命令行那套红了四条）：
+# 有的机器上 %TEMP% 是 8.3 短名（CI 的 runner 就是：用户目录那一段写成 `RUNNER~1` 那种），而工具箱报出来的
+# 路径是规范长名，两边字面对不上。这里只规范化一次，后面所有临时目录都从 $tmpRoot 派生。
+$tmpRoot = [System.IO.Path]::GetFullPath($env:TEMP)
+
 # ---------------------------------------------------------------- 挑组执行（-Only / -Skip）
 # 见文件开头那段说明与 docs\DESIGN.md §15。组标记就是那些 `# ---- X 组：…` 注释，前缀匹配。
 # 注意：这个开关只影响"中间的检查组"；前面的「准备」段与后面的「现场复原」段照旧总会跑
@@ -2046,7 +2051,7 @@ function Wait-UnlockTexts {
     return $texts
 }
 
-$unlockDir = Join-Path $env:TEMP 'mxx1-unlock-gui'
+$unlockDir = Join-Path $tmpRoot 'mxx1-unlock-gui'
 if (Test-Path -LiteralPath $unlockDir) { Remove-Item -LiteralPath $unlockDir -Recurse -Force }
 New-Item -ItemType Directory -Path $unlockDir | Out-Null
 $unlockFile = Join-Path $unlockDir 'gui-locked.txt'
@@ -2132,7 +2137,7 @@ try {
 
     # ---- N06：用户 2026-10-04 报的**原始场景** —— 右键一个文件夹，而占着文件的程序（Office /
     #      PDF 阅读器）打开的是子文件夹里的那个文档。窗口必须查到，并且说出来"文件夹里扫了几个文件"。
-    $deepRoot = Join-Path $env:TEMP 'mxx1-unlock-deep-gui'
+    $deepRoot = Join-Path $tmpRoot 'mxx1-unlock-deep-gui'
     if (Test-Path -LiteralPath $deepRoot) { Remove-Item -LiteralPath $deepRoot -Recurse -Force }
     $deepSub = Join-Path $deepRoot '年报资料'
     New-Item -ItemType Directory -Path $deepSub -Force | Out-Null
@@ -2178,7 +2183,7 @@ try {
     #      句柄（镜像是内存映射），Restart Manager 报不出来，原来窗口只会说"报不出是哪个程序"；
     #      现在要把「它自己在运行」这条线索点出来。N08 顺带验：点「结束选中的进程」时确认框里
     #      写明了"会连带结束子进程"，而**点取消之后一个进程都不能少**（用户报的就是只结束父进程）。
-    $runRoot = Join-Path $env:TEMP 'mxx1-unlock-run-gui'
+    $runRoot = Join-Path $tmpRoot 'mxx1-unlock-run-gui'
     if (Test-Path -LiteralPath $runRoot) { Remove-Item -LiteralPath $runRoot -Recurse -Force }
     New-Item -ItemType Directory -Path $runRoot | Out-Null
     Set-Content -LiteralPath (Join-Path $runRoot 'doc.txt') -Value 'x' -Encoding UTF8
@@ -2258,7 +2263,7 @@ try {
     #      全端到端：另一个进程把文件**独占**打开 → 点按钮（会先扫全系统句柄）→ 确认框 → 点「执行」→
     #      断言三件事：① 那个进程**还活着**（这是和「结束进程」的根本区别）；
     #      ② 文件真的自由了（我自己能独占打开它了）；③ 窗口里念了结果。
-    $forceRoot = Join-Path $env:TEMP 'mxx1-unlock-force-gui'
+    $forceRoot = Join-Path $tmpRoot 'mxx1-unlock-force-gui'
     if (Test-Path -LiteralPath $forceRoot) { Remove-Item -LiteralPath $forceRoot -Recurse -Force }
     New-Item -ItemType Directory -Path $forceRoot | Out-Null
     $forceFile = Join-Path $forceRoot 'locked.txt'
@@ -2347,7 +2352,7 @@ try {
     #      **没查到占用**（比如右键记事本里开着的那份 txt）：窗口里那段正文有八九行
     #      （自查结论 + 能不能删 + 为什么 + 四条可能原因），原来 300px 高的固定窗口会把它切掉一半。
     #      这里右键一个**谁都没占**的文件，断言：正文完整（窗口跟着长高）而且没有控件被切。
-    $freeRoot = Join-Path $env:TEMP 'mxx1-unlock-free-gui'
+    $freeRoot = Join-Path $tmpRoot 'mxx1-unlock-free-gui'
     if (Test-Path -LiteralPath $freeRoot) { Remove-Item -LiteralPath $freeRoot -Recurse -Force }
     New-Item -ItemType Directory -Path $freeRoot | Out-Null
     $freeFile = Join-Path $freeRoot 'nothing-holds-me.txt'
@@ -2394,7 +2399,7 @@ try {
     # 这一条是本组的重点：真起一个 `rightmenu unlock --auto` 进程，从它出生到退出每 100ms 枚举一次
     # 它的顶层窗口 —— 一个可见窗口都不许有（连一闪而过的也不行），同时那个占着文件的进程必须被结束、
     # 文件必须松开。文件名 / 路径都用拼的（编码体检不许出现字面量绝对路径）。
-    $autoRoot = Join-Path $env:TEMP 'mxx1-auto-gui'
+    $autoRoot = Join-Path $tmpRoot 'mxx1-auto-gui'
     if (Test-Path -LiteralPath $autoRoot) { Remove-Item -LiteralPath $autoRoot -Recurse -Force }
     New-Item -ItemType Directory -Path $autoRoot | Out-Null
     $autoFile = Join-Path $autoRoot 'auto-locked.txt'
@@ -2438,7 +2443,7 @@ try {
     # 612ms 起完全没响应，一直到 7093ms（拖不动、关不掉、任务栏写"无响应"）。这条回归不看截图、
     # 也不看"窗口还在不在"，而是每 20ms 用 WM_NULL 问一次"你还处理消息吗"，量**最长一次没人应的时长**。
     # 修好之后那个数应该是个位数毫秒（不管扫描要多久，它都不在界面线程上）；修之前会是整个扫描的时长。
-    $slowRoot = Join-Path $env:TEMP 'mxx1-unlock-slow-gui'
+    $slowRoot = Join-Path $tmpRoot 'mxx1-unlock-slow-gui'
     if (Test-Path -LiteralPath $slowRoot) { Remove-Item -LiteralPath $slowRoot -Recurse -Force }
     New-Item -ItemType Directory -Path $slowRoot | Out-Null
     for ($i = 1; $i -le 400; $i++) {
@@ -2515,7 +2520,7 @@ try {
     #      点一下可以提前关。所以下面第一段验"钉住 + 到点自己走"，第二段验"**5 秒**这个默认值"和
     #      "点一下提前关"，第三段验"新卡顶掉上一张"（常驻那一段去掉了）。
     # 它要真动鼠标，所以先存下原来的位置、跑完放回去（和 B10/B11 一个规矩）。
-    $noticeRoot = Join-Path $env:TEMP 'mxx1-notice-gui'
+    $noticeRoot = Join-Path $tmpRoot 'mxx1-notice-gui'
     if (Test-Path -LiteralPath $noticeRoot) { Remove-Item -LiteralPath $noticeRoot -Recurse -Force }
     New-Item -ItemType Directory -Path $noticeRoot | Out-Null
     $noticeFile = Join-Path $noticeRoot 'free.txt'

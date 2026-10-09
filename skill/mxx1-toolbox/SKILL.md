@@ -21,9 +21,13 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
 - 版本 **1.5.5**（`src\AssemblyInfo.cs` 是唯一来源），已打 tag `v1.5.5` 并发 Release：
   <https://github.com/2604290100/mxx1-toolbox/releases/tag/v1.5.5>（`Mxx1Toolbox.exe` 842,240 字节 +
   `Mxx1Toolbox-package.zip` 1,304,367 字节，说明里带 SHA256）。CI 绿的。
-- 测试 **451 项** = 命令行 **285**（284 通过 + 1 项环境不满足跳过）+ 界面 **166**（两套都完整跑过、
+- 测试 **452 项** = 命令行 **286**（285 通过 + 1 项环境不满足跳过）+ 界面 **166**（两套都完整跑过、
   0 失败、**没有没跑的组**）；编码体检 204 个文件。本地实测：命令行约 2 分钟（挑组 `-Only T` 只要 2.9 秒）、
   界面约 2.5 分钟。
+- ⚠️ **夹具根已经规范化过**：两个套件都用 `$tmpRoot = [System.IO.Path]::GetFullPath($env:TEMP)`，
+  套件里**不许**再写"`Join-Path` 直接接 `$env:TEMP`"（CI 的 `%TEMP%` 是 8.3 短名，程序报长名 →
+  四条断言假红，A 组 **A03e** 是盯着这件事的看门狗）。**改版本号要连 `Test-Cli.ps1` 的
+  A03 / S11 一起改**。两条都在 `PITFALLS.md` **坑 40**、正本 `docs\DESIGN.md` **§12.65**。
 - **测试可以挑组跑了**（`-Only M,N` / `-Skip P`）+ 提交前闸门 `tools\Test-Quick.ps1` +
   映射表 `tests\test-map.json`；分层与流程约定见 `docs\DESIGN.md` **§15**。
 - 这一轮（2026-10-06）改的东西：① 「一键解除占用」不弹窗口那条路（鼠标旁边一张提示卡，

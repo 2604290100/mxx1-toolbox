@@ -44,6 +44,17 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $Exe = Join-Path $root 'bin\Mxx1Toolbox.exe'
 
+# ---------------------------------------------------------------- 夹具根：先规范化成长名
+# ⚠ 2026-10-09 踩的坑（首次把 O/Q 组推上 CI 就红了四条：O12 / O13 / Q04 / Q06）：
+#   GitHub 的 Windows runner 上 **%TEMP% 是 8.3 短名**（用户目录那一段写成 `RUNNER~1` 那种），
+#   而工具箱**报出来的路径是规范长名**（同一条路径展开成 `runneradmin`：进程的当前目录、以及
+#   `Path.GetFullPath` 走过的地方都会被系统展开）。于是"测试里拼出来的路径"和"程序报出来的路径"
+#   字面对不上 —— 四条断言全是这么红的，功能一个字都没错（本机 C: 关着 8dot3，所以本地永远不复现）。
+#   修法：**只在这里**把夹具根规范化一次，后面所有临时目录都从 `$tmpRoot` 派生。
+#   注意 `[System.IO.Path]::GetFullPath` 才会展开短名（`Resolve-Path` 不会，实测两种写法都试过）。
+#   规矩：套件里**不许**再写 `Join-Path` 直接接 `$env:TEMP`（A 组有一条自我看门狗盯着）。
+$tmpRoot = [System.IO.Path]::GetFullPath($env:TEMP)
+
 $script:Pass = 0
 $script:Fail = 0
 # 注意：这里原来叫 $script:Skip —— 和上面那个 -Skip 参数（挑组用）**撞名**了（PowerShell 变量不区分
@@ -340,6 +351,15 @@ $status = Invoke-Exe 'status'
 Check 'A01 status 退出码 0' ($status.Code -eq 0) ('exit=' + $status.Code)
 Check 'A02 中文输出没有乱码（UTF-8）' ($status.Out -match 'name=萌新工具箱') ('name=' + (Get-Key $status.Out 'name'))
 Check 'A03 版本号 1.5.5' ((Get-Key $status.Out 'version') -eq '1.5.5') (Get-Key $status.Out 'version')
+
+# 自我看门狗（2026-10-09 加，见文件开头 $tmpRoot 那段）：套件里**不许**直接拿 %TEMP% 拼夹具路径。
+# CI 的 %TEMP% 是 8.3 短名，程序报的是规范长名 → 拼出来的路径和程序报的对不上，四条断言假红。
+# 这条读自己的源码数一遍（这条检查自己的文字里也有那几个字，所以模式是**拼**出来的，不写整串）。
+$selfText = Get-Content -LiteralPath $script:SelfPath -Raw
+$badPat = 'Join' + '-Path ' + '$env' + ':TEMP'
+$badCount = ([regex]::Matches($selfText, [regex]::Escape($badPat))).Count
+Check 'A03e 套件里没有一处直接拿 %TEMP% 拼夹具（夹具根只能从规范化过的 $tmpRoot 派生）' `
+    ($badCount -eq 0) ('命中=' + $badCount + ' 处')
 
 # 兼容性（v1.5.3）：只保证 Win7 / Win10 / Win11。系统工具页里 7 个按钮走的是 ms-settings:
 # 这个协议 —— 那是 Windows 10 起才有的「设置」应用，Win7 的注册表里根本没有它。
@@ -803,7 +823,7 @@ if (Test-GroupSelected 'G') {
 Write-Host ''
 Write-Host 'G 组 · 拖进来的东西会变成什么按钮（draft，用户报过快捷方式进来就失败）'
 
-$gTmp = Join-Path $env:TEMP ('mxx1-g-' + [Guid]::NewGuid().ToString('N').Substring(0, 8))
+$gTmp = Join-Path $tmpRoot ('mxx1-g-' + [Guid]::NewGuid().ToString('N').Substring(0, 8))
 [void][System.IO.Directory]::CreateDirectory($gTmp)
 try {
     $gBat = Join-Path $gTmp 'probe.bat'
@@ -1118,7 +1138,7 @@ try {
 }
 
 # 导出 / 导入：这时用户层的按钮被暂停了，所以先看"没东西可导出"这条路是否老实报错
-$kTmp = Join-Path $env:TEMP ('mxx1-k-' + [Guid]::NewGuid().ToString('N').Substring(0, 8) + '.json')
+$kTmp = Join-Path $tmpRoot ('mxx1-k-' + [Guid]::NewGuid().ToString('N').Substring(0, 8) + '.json')
 try {
     $noExport = Invoke-Exe ('export "' + $kTmp + '"')
     Check 'K06 没有自建按钮时 export 老实报错（退出码 1）' `
@@ -1294,7 +1314,7 @@ $rmDry = Invoke-Exe 'run rightmenu.unlock.on --dry'
 Check 'M10 右键增强按钮 --dry 解析成注册表动作（不真的写）' ((Get-Key $rmDry.Out 'kind') -eq 'registry') ('kind=' + (Get-Key $rmDry.Out 'kind'))
 
 # ---- 查占用：自己锁一个文件，看它认不认得（Restart Manager）
-$rmDir = Join-Path $env:TEMP 'mxx1-rightmenu-check'
+$rmDir = Join-Path $tmpRoot 'mxx1-rightmenu-check'
 if (Test-Path -LiteralPath $rmDir) { Remove-Item -LiteralPath $rmDir -Recurse -Force }
 New-Item -ItemType Directory -Path $rmDir | Out-Null
 $rmFile = Join-Path $rmDir 'locked.txt'
@@ -1337,7 +1357,7 @@ Check 'M14c 路径没传过来（字面量 %1）时如实说路径不存在，�
 #      原来只登记文件夹里第一层的文件，第一层只有子文件夹时直接放弃 —— 而占用它的多半是
 #      子文件夹里的 Office / PDF 文件。现在按层往下扫（深度 ≤4、≤400 个文件），并且要指名
 #      到底是哪个文件被占着。
-$rmDeep = Join-Path $env:TEMP 'mxx1-rightmenu-deep'
+$rmDeep = Join-Path $tmpRoot 'mxx1-rightmenu-deep'
 if (Test-Path -LiteralPath $rmDeep) { Remove-Item -LiteralPath $rmDeep -Recurse -Force }
 $rmDeepSub = Join-Path $rmDeep '年报资料'
 New-Item -ItemType Directory -Path $rmDeepSub -Force | Out-Null
@@ -1361,7 +1381,7 @@ try {
 #      内存映射，加载器读完就把句柄关了），所以 Restart Manager 报不出来、"我自己独占打开试试"
 #      也照样成功 —— 可它让文件删不掉、让文件夹松不开。用户报的「右键文件夹说有程序占用着但
 #      找不到进程」就是这种：那个文件夹里放着一个正在跑的安装包。
-$rmRun = Join-Path $env:TEMP 'mxx1-rightmenu-run'
+$rmRun = Join-Path $tmpRoot 'mxx1-rightmenu-run'
 if (Test-Path -LiteralPath $rmRun) { Remove-Item -LiteralPath $rmRun -Recurse -Force }
 New-Item -ItemType Directory -Path $rmRun | Out-Null
 Set-Content -LiteralPath (Join-Path $rmRun 'doc.txt') -Value 'x' -Encoding UTF8
@@ -1413,7 +1433,7 @@ try {
 # ---- 结束进程要**连它启动的子进程一起**（用户 2026-10-04 实测：跑 qingjian 安装包，右键结束进程后
 #      文件锁松开了（父进程死了）、窗口却还在（窗口是父进程拉起来的那个子进程的））。命令行这边
 #      只做**只读预览**（child= 行），真正动手的是界面上那个按钮（GUI 套件 N08 盯着确认框和"取消"）。
-$rmTree = Join-Path $env:TEMP 'mxx1-rightmenu-tree'
+$rmTree = Join-Path $tmpRoot 'mxx1-rightmenu-tree'
 if (Test-Path -LiteralPath $rmTree) { Remove-Item -LiteralPath $rmTree -Recurse -Force }
 New-Item -ItemType Directory -Path $rmTree | Out-Null
 $rmTreeFile = Join-Path $rmTree 'locked.txt'
@@ -1462,7 +1482,7 @@ public class Mxx1HandleFixture{
  public static string ExclusiveProbe(string p){IntPtr h=CreateFileW(p,0x80000000,0,IntPtr.Zero,3,0x02000000,IntPtr.Zero);if(h==(IntPtr)(-1))return "err="+Marshal.GetLastWin32Error();CloseHandle(h);return "free";}
 }
 '@
-$rmH = Join-Path $env:TEMP 'mxx1-handles'
+$rmH = Join-Path $tmpRoot 'mxx1-handles'
 if (Test-Path -LiteralPath $rmH) { Remove-Item -LiteralPath $rmH -Recurse -Force }
 New-Item -ItemType Directory -Path $rmH | Out-Null
 $rmHFile = Join-Path $rmH 'shared.txt'
@@ -1501,7 +1521,7 @@ try {
 #   ③ 没同意过《免责声明与服务条款》时一个进程都不碰（没有窗口可以弹确认框，所以规矩是
 #      "不同意就不动手"、只写日志）；
 #   ④ 没给路径时退出码 2（不猜、更不乱动）。
-$autoDir = Join-Path $env:TEMP 'mxx1-auto-unlock'
+$autoDir = Join-Path $tmpRoot 'mxx1-auto-unlock'
 if (Test-Path -LiteralPath $autoDir) { Remove-Item -LiteralPath $autoDir -Recurse -Force }
 New-Item -ItemType Directory -Path $autoDir | Out-Null
 $autoFile = Join-Path $autoDir 'locked.txt'
@@ -2050,7 +2070,7 @@ if (Test-GroupSelected 'O') {
 Write-Host ''
 Write-Host 'O 组 · 复制文件名 / 复制文件路径（copypath：多选合批 / 引号 / 文件名模式 / 相对路径 / 剪贴板 / 只读）'
 
-$cpDir = Join-Path $env:TEMP 'mxx1-copypath'
+$cpDir = Join-Path $tmpRoot 'mxx1-copypath'
 if (Test-Path -LiteralPath $cpDir) { Remove-Item -LiteralPath $cpDir -Recurse -Force }
 New-Item -ItemType Directory -Path $cpDir | Out-Null
 $cpSpace = Join-Path $cpDir '报告 final.txt'          # 空格 + 中文
@@ -2278,8 +2298,8 @@ if (Test-GroupSelected 'Q') {
 Write-Host ''
 Write-Host 'Q 组 · 在此处打开终端（terminal：挑终端 / 引号 / 真落在那个目录 / 不硬开）'
 
-$tmDir = Join-Path $env:TEMP "mxx1-terminal\a b & 中文'x"       # 空格 + & + 中文 + 单引号，一次凑齐
-if (Test-Path -LiteralPath (Join-Path $env:TEMP 'mxx1-terminal')) { Remove-Item -LiteralPath (Join-Path $env:TEMP 'mxx1-terminal') -Recurse -Force }
+$tmDir = Join-Path $tmpRoot "mxx1-terminal\a b & 中文'x"       # 空格 + & + 中文 + 单引号，一次凑齐
+if (Test-Path -LiteralPath (Join-Path $tmpRoot 'mxx1-terminal')) { Remove-Item -LiteralPath (Join-Path $tmpRoot 'mxx1-terminal') -Recurse -Force }
 New-Item -ItemType Directory -Path $tmDir -Force | Out-Null
 Set-Content -LiteralPath (Join-Path $tmDir 'marker.txt') -Value 'x' -Encoding UTF8
 
@@ -2352,7 +2372,7 @@ try {
     if ($tmProc -and -not $tmProc.HasExited) { Stop-Process -Id $tmProc.Id -Force -ErrorAction SilentlyContinue }
     $tmLeft = @(Get-ChildItem -LiteralPath $tmDir -File -ErrorAction SilentlyContinue)
     Check 'Q11 只读：那个目录里的文件一个没变（开终端不改用户的文件）' ($tmLeft.Count -eq 1) ('文件数=' + $tmLeft.Count)
-    if (Test-Path -LiteralPath (Join-Path $env:TEMP 'mxx1-terminal')) { Remove-Item -LiteralPath (Join-Path $env:TEMP 'mxx1-terminal') -Recurse -Force -ErrorAction SilentlyContinue }
+    if (Test-Path -LiteralPath (Join-Path $tmpRoot 'mxx1-terminal')) { Remove-Item -LiteralPath (Join-Path $tmpRoot 'mxx1-terminal') -Recurse -Force -ErrorAction SilentlyContinue }
 }
 
 }
@@ -2535,7 +2555,7 @@ $realZip = Join-Path $root 'bin\Mxx1Toolbox-package.zip'
 $realZipBefore = ''
 if (Test-Path -LiteralPath $realZip) { $realZipBefore = (Get-Item -LiteralPath $realZip).LastWriteTimeUtc.ToString('o') }
 
-$pTmp = Join-Path $env:TEMP ('mxx1-pkg-' + [Guid]::NewGuid().ToString('N').Substring(0, 8))
+$pTmp = Join-Path $tmpRoot ('mxx1-pkg-' + [Guid]::NewGuid().ToString('N').Substring(0, 8))
 $pStage = Join-Path $pTmp 'stage'
 $pZip = Join-Path $pTmp 'Mxx1Toolbox-package.zip'
 $hostExe = (Get-Process -Id $PID).Path
@@ -2657,7 +2677,7 @@ Check 'P10 打包测试的临时目录收拾干净了（不留垃圾在 %TEMP%�
 if (Test-GroupSelected 'T') {
 Write-Host 'T 组 · 文件哈希校验（MD5 / SHA256）与「功能说明」文案'
 
-$tDir = Join-Path $env:TEMP ('mxx1-hash-test-' + [Guid]::NewGuid().ToString('N').Substring(0, 8))
+$tDir = Join-Path $tmpRoot ('mxx1-hash-test-' + [Guid]::NewGuid().ToString('N').Substring(0, 8))
 [void][System.IO.Directory]::CreateDirectory($tDir)
 $tFile = Join-Path $tDir 'sample.bin'
 $tEmpty = Join-Path $tDir 'empty.bin'

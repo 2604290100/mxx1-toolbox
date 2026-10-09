@@ -8,6 +8,6 @@ using System.Runtime.InteropServices;
 [assembly: AssemblyCompany("mxx1.cn")]
 [assembly: AssemblyProduct("Mxx1Toolbox")]
 [assembly: AssemblyCopyright("Copyright (C) 2026 mxx1.cn  |  GPL-3.0-or-later")]
-[assembly: AssemblyVersion("1.5.4.0")]
-[assembly: AssemblyFileVersion("1.5.4.0")]
+[assembly: AssemblyVersion("1.5.5.0")]
+[assembly: AssemblyFileVersion("1.5.5.0")]
 [assembly: ComVisible(false)]

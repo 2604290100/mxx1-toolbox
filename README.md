@@ -70,8 +70,11 @@
   [`docs/DISCLAIMER.md`](docs/DISCLAIMER.md)，编译时内嵌进 exe），勾选「我已阅读并同意」之后
   「同意并继续」才可点，点「不同意，退出」程序直接关闭、**不写注册表不联网**；
   记的是**条款正文的指纹** —— 正文改了就要重新确认（命令行不被拦，脚本照旧能用）
-- **更新检查**：关于窗口一行「更新」状态 + 「检查更新」按钮，底栏发现新版本会提示一句；
-  **只读版本号，不下载不替换**，失败只写日志，`MXX1_NO_UPDATE=1` 能彻底关掉
+- **更新检查**：关于窗口一行「更新」状态 + 「检查更新」按钮，底栏发现新版本会提示一句，
+  弹出的确认框上是 **「前往更新」**（点了用浏览器打开站点上的资源页 <https://www.mxx1.cn/info?id=2109>）；
+  **只读版本号，不下载不替换**，失败只写日志，`MXX1_NO_UPDATE=1` 能彻底关掉。
+  版本号**先读自己站点的资源接口**（`/apis/resources?id=2109`，公开只读不要 token），
+  读不到才退到 GitHub（`api.github.com`）
 - **外部工具统一放 `bin-tools\`**：隔壁的 `PermanentDeleteSetup.exe` 丢进去就能用（设置 / 关于里都有「打开工具目录」）；
   **丢进去的工具文件夹会自动长出一个按钮**（见下面「加一个按钮」第 3 条）
 - **「我的工具」能自己长按钮**：图形化「+ 新建按钮」（`Ctrl+N`）、把 exe / 脚本 / 文件夹拖进窗口、右键用户按钮可编辑 / 删除
@@ -211,8 +214,8 @@ powershell -File tools\Test-Quick.ps1        # 提交前闸门：只跑这次改
 powershell -File tools\Test-Encoding.ps1     # 编码红线体检（BOM / 纯 ASCII / 硬编码本机路径）
 powershell -File tools\Test-InlineSyntax.ps1 # 内联脚本语法 + 清单 JSON + 每个 .ps1 的语法体检
 powershell -ExecutionPolicy Bypass -File tests\Test-All.ps1   # 全部（无桌面时加 -SkipGui）
-powershell -ExecutionPolicy Bypass -File tests\Test-Cli.ps1   # 命令行回归 285 项（本机 284 通过 + 1 跳过）
-powershell -ExecutionPolicy Bypass -File tests\Test-Gui.ps1   # 界面回归 166 项（要交互式桌面，无桌面返回 3 = 跳过）
+powershell -ExecutionPolicy Bypass -File tests\Test-Cli.ps1   # 命令行回归 304 项（本机 304 通过 / 0 失败）
+powershell -ExecutionPolicy Bypass -File tests\Test-Gui.ps1   # 界面回归 203 项（要交互式桌面，无桌面返回 3 = 跳过）
 powershell -ExecutionPolicy Bypass -File tests\Test-Cli.ps1 -Only M,N   # 只跑 M、N 两组
 powershell -File tools\Sync-Skill.ps1        # 把 skill 的三份文件同步到三处副本（改完 skill 必跑）
 powershell -File tools\Show-MenuOrder.ps1     # 只读：把真实右键菜单**按顺序**打出来（核菜单先后用，见 DESIGN §12.64）

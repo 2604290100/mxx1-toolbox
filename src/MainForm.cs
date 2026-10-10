@@ -1642,18 +1642,24 @@ namespace Mxx1Toolbox
             });
         }
 
-        /// <summary>把检查结果讲清楚：有新版本就把下载页打开（不自动下载、不替换文件）。</summary>
+        /// <summary>把检查结果讲清楚：有新版本就把下载页打开（不自动下载、不替换文件）。
+        ///
+        /// 按钮文字是用户 2026-10-11 定的：**「前往更新」**（原来叫「打开发布页」）——
+        /// 因为来源换成了 mxx1.cn 的资源页（方案 A，见 UpdateCheck），点下去打开的是
+        /// `https://www.mxx1.cn/info?id=2109`，叫"发布页"就名不副实了。</summary>
         private void ReportUpdate(UpdateResult r)
         {
             SetStatus("检查更新 · " + r.UiText);
-            Logger.Write("检查更新", r.UiText + "（detail=" + r.Detail + "）");
+            Logger.Write("检查更新", r.UiText + "（source=" + r.Source + " detail=" + r.Detail + "）");
             if (r.State == UpdateState.Available)
             {
+                // 版本号从站点读的就叫"资源页"，退到 GitHub 兜底时才叫"发布页" —— 别把两边叫混
+                string page = r.Source == "site" ? "站点上的资源页" : "GitHub 上的发布页";
                 using (ConfirmForm f = new ConfirmForm(
                     "发现新版本", r.UiText + Environment.NewLine + Environment.NewLine
-                    + "本工具不会自己下载、也不会替换文件 —— 要看这一版就打开发布页，"
+                    + "本工具不会自己下载、也不会替换文件 —— 要看这一版就打开" + page + "，"
                     + "下载和替换都由你自己决定。",
-                    "打开发布页", _theme))
+                    "前往更新", _theme))
                 {
                     if (f.ShowDialog(this) == DialogResult.OK) { OpenUrl(r.Url); }
                 }
@@ -1675,7 +1681,7 @@ namespace Mxx1Toolbox
                 _btnUpdate.Text = "发现新版本 v" + latest;
                 _btnUpdate.Width = TextRenderer.MeasureText(_btnUpdate.Text, _btnUpdate.Font).Width + 12;
                 _tips.SetToolTip(_btnUpdate, "有新版本 v" + latest + "（当前 v" + AboutForm.VersionText
-                    + "）· 点一下打开发布页；本工具不自动下载、不替换文件");
+                    + "）· 点一下打开下载页；本工具不自动下载、不替换文件");
             }
             catch { }
         }
@@ -1705,7 +1711,7 @@ namespace Mxx1Toolbox
         }
 
         /// <summary>在浏览器里打开一个网址。**全工具唯一的入口**（关于窗口的官网 / 仓库、
-        /// 更新检查的「打开发布页」都走它），所以"点一下就能访问"只有这一处要保证。
+        /// 更新检查的「前往更新」都走它），所以"点一下就能访问"只有这一处要保证。
         ///
         /// 回归测试要验"点了真的会去打开"：那种检查不能让测试机真弹出浏览器，所以
         /// `MXX1_NO_OPEN=1` 时**只写一行日志、不真打开** —— 测试点完去读日志，两边都干净。

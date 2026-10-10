@@ -33,8 +33,8 @@ namespace Mxx1Toolbox
             + "它是个启动器：按钮会启动别的程序；「隐私设置」「常用设置」会写 HKCU 下的注册表值\r\n"
             + "（写入前记原值，随时能一键还原）；「右键增强」会往 HKCU\\Software\\Classes 写自己那几个键；\r\n"
             + "「解除文件占用」在确认后可以结束你勾选的进程或关掉它们持有的文件句柄。\r\n"
-            + "本工具不收集任何个人数据；启动时的更新检查只访问 GitHub 公开接口，\r\n"
-            + "可用环境变量 MXX1_NO_UPDATE=1 完全关闭。\r\n\r\n"
+            + "本工具不收集任何个人数据；启动时的更新检查只读版本号（先问 mxx1.cn 的资源接口，\r\n"
+            + "读不到再退到 GitHub 公开接口），可用环境变量 MXX1_NO_UPDATE=1 完全关闭。\r\n\r\n"
             + "完整内容见仓库的 docs/DISCLAIMER.md。";
 
         private readonly Theme _theme;

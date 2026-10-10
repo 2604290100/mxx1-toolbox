@@ -419,3 +419,28 @@
       会被悄悄跳过（B10 的 guard 就是这么写的：`(-not $cursorMoved) -and ($tip.Length -eq 0)`）。
       一般规律：**依赖桌面/输入/别的窗口的检查，先验"环境允许我做这件事"，再验功能**；
       这类 [SKIP] 不算失败、要在汇总里报数（套件本来就有 `Skip()`）。
+
+  53. **站点资源接口是 `gzip` + `GBK`，而且"读错编码"从版本号上看不出来**（2026-10-11 换更新来源时实测）
+      接口：`GET https://www.mxx1.cn/apis/resources?id=2109`。三个反直觉的地方：
+      ① 响应头是 `Content-Encoding: gzip` —— **请求里不带 `Accept-Encoding` 它也回 gzip**
+         （实测：Windows 自带的老 curl 连 `--compressed` 都不支持，拿到的是一堆压缩字节）。
+         .NET 那边必须开 `AutomaticDecompression = GZip | Deflate`，少了它读到的是乱码；
+      ② `Content-Type: application/json; charset=gb2312` —— 是 **GBK**，不是 UTF-8。
+         `new StreamReader(s, Encoding.UTF8)` 会让中文全变乱码；
+      ③ ⚠️ **最坑的地方**：`title` / `description` 在库里存的是 **URL 编码后的 ASCII**
+         （`%E8%90%8C%E6%96%B0%E5%B7%A5%E5%85%B7%E7%AE%B1%20%7C%20v1.5.6`），
+         所以**哪怕编码读错了，版本号照样能解出来**（版本号本来就是 ASCII）——
+         光验"读没读出版本号"**根本发现不了这个坑**。
+      **规矩**：① 编码这件事要**单独找一条判据**盯着 —— 现在是断言 `checkupdate` 的 `sitetitle=`
+      那一行里的**中文**（假站点按 GBK 发、标题故意不做 URL 编码，读错就是乱码 → 当场红）；
+      ② 写"读接口"的代码时，**先 `curl -D` 把响应头打出来看**，别按文档的编码假设写；
+      ③ 接口**公开只读、不需要 token**（裸请求就能拉），所以 exe 里不含任何密钥 —— 这条别改坏。
+  54. **换了"默认联网来源"之后，原来那几条"只指了一半假接口"的测试会偷偷连真站（还会被真站抢答）**
+      （2026-10-11 同上）：`S12`（两边都连不上 → 期望 `update=error`）和 `S13–S15`（GitHub 有新版）
+      原来只把 `MXX1_UPDATE_URL` / `MXX1_UPDATE_TAGS_URL` 指到本机假接口 —— 换成"站点优先"之后，
+      这几条会**先去打真的 `mxx1.cn`**：真站回 `title=…v1.5.44` → `update=available` →
+      和期望的 `update=error` 对不上，**用例当场变红**；更糟的是**测试自己联了外网**，
+      在 CI 上成了"看站点脸色"的用例。
+      **规矩**：**"默认来源"有几个，测试就得把每一个都指到假接口**（或死端口）。
+      加新来源时，回头把所有碰这条链路的测试**一次改齐**，别只改新写的那几条。
+      顺带定了一条：`checkupdate` 要打出 `source=site|github|none`，让"到底走的哪条路"可断言。

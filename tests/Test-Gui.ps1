@@ -3628,7 +3628,9 @@ if ($winD) {
 }
 try { if ($procD -and -not $procD.HasExited) { $procD.Kill() } } catch { }
 
-# ---- 更新检查：本机假接口返回 v9.9.9（不碰外网），底栏那个按钮应该自己变成「发现新版本 v9.9.9」
+# ---- 更新检查：本机假**站点接口**返回 v9.9.9（不碰外网），底栏那个按钮应该自己变成「发现新版本 v9.9.9」
+# 2026-10-11 起首选来源是 mxx1.cn 的资源接口（方案 A），所以这一轮假接口扮的是**站点**、按 GBK 发；
+# GitHub 那条兜底路一律指到死端口 —— 它由命令行的 S13–S15/S25/S26 盯着，界面这边只验"用户看得见的那半"。
 $null = Invoke-Exe 'consent --accept'
 $tcpU = New-Object System.Net.Sockets.TcpListener([System.Net.IPAddress]::Loopback, 0)
 $tcpU.Start()
@@ -3642,13 +3644,15 @@ try {
     $listenerU.Prefixes.Add($prefixU)
     $listenerU.Start()
     $ctxU = $listenerU.GetContextAsync()
-    $bodyU = '{"tag_name":"v9.9.9","html_url":"' + $prefixU + 'fake-release"}'
-    $bytesU = [System.Text.Encoding]::UTF8.GetBytes($bodyU)
+    # 站点接口的真实形状：`{"code":200,…,"data":{"total":1,"list":[{"title":"…"}]}}`，GBK 编码
+    $bodyU = '{"code":200,"message":"获取成功","data":{"total":1,"list":[{"id":2109,"title":"035期 | 萌新工具箱 | v9.9.9 | ★0"}]}}'
+    $bytesU = [System.Text.Encoding]::GetEncoding(936).GetBytes($bodyU)
     # 空串 = 把开头设的 MXX1_NO_UPDATE=1 顶掉（空值不算开启），让更新检查真的跑起来
     $procU = Start-Gui -Env @{
         MXX1_NO_UPDATE          = ''
-        MXX1_UPDATE_URL         = ($prefixU + 'releases/latest')
-        MXX1_UPDATE_TAGS_URL    = ($prefixU + 'tags')
+        MXX1_RESOURCE_URL       = ($prefixU + 'apis/resources')
+        MXX1_UPDATE_URL         = 'http://127.0.0.1:9/releases'
+        MXX1_UPDATE_TAGS_URL    = 'http://127.0.0.1:9/tags'
     }
     $mainU = $procU.MainWindowHandle
     Check 'I14 假接口那一轮界面能起来' (($mainU -ne [IntPtr]::Zero) -and (-not $procU.HasExited)) ('handle=' + $mainU)
@@ -3687,16 +3691,49 @@ try {
         if ($dlgU.Count -ge 1) {
             $ut = (@(Get-ChildControls -RootHandle $dlgU[0].H | ForEach-Object { $_.Text }) -join ' ')
             Check 'I18 确认框里说明了"不自动下载、不替换文件"' (($ut -match '不会自己下载') -and ($ut -match '替换')) ''
-            Check 'I19 确认框的动作按钮是「打开发布页」' ($ut -match '打开发布页') ''
-            [void][TBGui]::CloseWindow($dlgU[0].H)      # 取消：绝不真的去开浏览器
-            Start-Sleep -Milliseconds 500
+            # 用户 2026-10-11 定的：按钮文字是「前往更新」（原来叫"打开发布页"），
+            # 而且来源是站点时正文要说是"资源页"（退到 GitHub 兜底时才叫发布页）。
+            Check 'I19 确认框的动作按钮是「前往更新」' ($ut -match '前往更新') ''
+            Check 'I19b 来源是站点时正文说的是"站点上的资源页"' ($ut -match '资源页') ''
+            # 真去点「前往更新」：测试进程带着 MXX1_NO_OPEN=1（文件开头设的），所以点下去只多一行日志、
+            # 不会在别人桌面上弹浏览器 —— 断言的就是"日志里真的多了一行站点资源页的网址"。
+            $logPathU = ''
+            $stNow = Invoke-Exe 'status'
+            if ($stNow -match '(?m)^log=([^\r\n]+)') { $logPathU = $Matches[1].Trim() }
+            $logHadU = 0
+            if (($logPathU.Length -gt 0) -and (Test-Path -LiteralPath $logPathU)) {
+                $logHadU = @(Get-Content -LiteralPath $logPathU -Encoding UTF8 -ErrorAction SilentlyContinue).Count
+            }
+            $goBtn = @(Get-ChildControls -RootHandle $dlgU[0].H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '前往更新' })
+            $openedU = ''
+            if ($goBtn.Count -eq 1) {
+                [void][TBGui]::Click($goBtn[0].H)
+                for ($i = 0; $i -lt 25; $i++) {
+                    Start-Sleep -Milliseconds 200
+                    if (($logPathU.Length -eq 0) -or (-not (Test-Path -LiteralPath $logPathU))) { continue }
+                    $newLines = @(Get-Content -LiteralPath $logPathU -Encoding UTF8 -ErrorAction SilentlyContinue) |
+                                Select-Object -Skip $logHadU
+                    $hit = @($newLines | Where-Object { $_ -match 'info\?id=2109' })
+                    if ($hit.Count -ge 1) { $openedU = ($hit -join ' ') ; break }
+                }
+            }
+            Check 'I19c 点「前往更新」真的去打开站点资源页（http://mxx1.cn/info?id=2109）' `
+                ($openedU -match 'https://www\.mxx1\.cn/info\?id=2109') `
+                ($(if ($goBtn.Count -ne 1) { '（没找到「前往更新」按钮）' } else { $openedU }))
+            # 点成功的话窗口自己就关了（DialogResult=OK）；没找到按钮时兜底关掉，免得挡住后面的检查
+            try { if ($goBtn.Count -ne 1) { [void][TBGui]::CloseWindow($dlgU[0].H) } } catch { }
+            Start-Sleep -Milliseconds 300
         } else {
             Check 'I18 确认框里说明了"不自动下载、不替换文件"' $false 'skipped'
-            Check 'I19 确认框的动作按钮是「打开发布页」' $false 'skipped'
+            Check 'I19 确认框的动作按钮是「前往更新」' $false 'skipped'
+            Check 'I19b 来源是站点时正文说的是"站点上的资源页"' $false 'skipped'
+            Check 'I19c 点「前往更新」真的去打开站点资源页（http://mxx1.cn/info?id=2109）' $false 'skipped'
         }
     } else {
         foreach ($nm in @('I16 按钮上写清了新版本号', 'I17 点它弹出自家确认框（不是 MessageBox 甩一段字）',
-                          'I18 确认框里说明了"不自动下载、不替换文件"', 'I19 确认框的动作按钮是「打开发布页」')) {
+                          'I18 确认框里说明了"不自动下载、不替换文件"', 'I19 确认框的动作按钮是「前往更新」',
+                          'I19b 来源是站点时正文说的是"站点上的资源页"',
+                          'I19c 点「前往更新」真的去打开站点资源页（http://mxx1.cn/info?id=2109）')) {
             Check $nm $false 'skipped（按钮没变成"发现新版本"）'
         }
     }

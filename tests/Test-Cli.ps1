@@ -290,6 +290,94 @@ function Get-Key {
     return ''
 }
 
+# ---- 站点资源接口（更新检查的**首选**来源）的假服务器 ----
+# 为什么不能直接用 Invoke-Exe：这条路径要求"程序请求的那一刻服务端在场"，而程序是当场起来当场请求的
+# —— 只能一边等它退出、一边响应请求（S13 那套写法）。这里抽成函数，让 S30–S36 各场景共用。
+#
+# **故意不回 gzip**：真实站点是 `Content-Encoding: gzip` + `charset=gb2312`（坑 53），
+# 压缩那一半交给 .NET 的 AutomaticDecompression（程序里已经写着、且和 GitHub 那条路共用），
+# 这里专门盯**GBK 解码**和"从标题里取版本号"这两半。
+# 响应体按 **GBK** 编码发出去（和真实站点一致）：程序要是拿 UTF-8 去读，中文就成乱码了。
+$script:SiteListener = $null
+$script:SiteCtx = $null
+$script:SitePrefix = ''
+
+function Start-FakeSite {
+    $t = New-Object System.Net.Sockets.TcpListener([System.Net.IPAddress]::Loopback, 0)
+    $t.Start()
+    $port = $t.LocalEndpoint.Port
+    $t.Stop()
+    $script:SitePrefix = 'http://127.0.0.1:' + $port + '/'
+    $script:SiteListener = New-Object System.Net.HttpListener
+    $script:SiteListener.Prefixes.Add($script:SitePrefix)
+    $script:SiteListener.Start()
+    $script:SiteCtx = $script:SiteListener.GetContextAsync()
+}
+
+function Stop-FakeSite {
+    if ($script:SiteListener -ne $null) {
+        try { $script:SiteListener.Stop(); $script:SiteListener.Close() } catch { }
+        $script:SiteListener = $null
+        $script:SiteCtx = $null
+    }
+}
+
+# 起一次 checkupdate，把假站点接在 MXX1_RESOURCE_URL 上；GitHub 那条路一律指向死端口，
+# 所以本函数验的**只有站点这一条路**（GitHub 兜底由 S13–S15 用另一个假服务器盯）。
+function Invoke-ExeWithFakeSite {
+    param([string]$Body, [hashtable]$Env = $null, [int]$TimeoutSec = 40)
+    $bytes = [System.Text.Encoding]::GetEncoding(936).GetBytes([string]$Body)
+    $si = New-Object System.Diagnostics.ProcessStartInfo
+    $si.FileName = $Exe
+    $si.Arguments = 'checkupdate'
+    $si.UseShellExecute = $false
+    $si.RedirectStandardOutput = $true
+    $si.RedirectStandardError = $true
+    $si.CreateNoWindow = $true
+    $si.StandardOutputEncoding = New-Object System.Text.UTF8Encoding($false)
+    $si.EnvironmentVariables['MXX1_RESOURCE_URL'] = $script:SitePrefix + 'apis/resources'
+    $si.EnvironmentVariables['MXX1_UPDATE_URL'] = 'http://127.0.0.1:9/releases'
+    $si.EnvironmentVariables['MXX1_UPDATE_TAGS_URL'] = 'http://127.0.0.1:9/tags'
+    $si.EnvironmentVariables['MXX1_UPDATE_TIMEOUT_MS'] = '2000'
+    if ($Env) { foreach ($k in $Env.Keys) { $si.EnvironmentVariables[$k] = [string]$Env[$k] } }
+    $p = New-Object System.Diagnostics.Process
+    $p.StartInfo = $si
+    [void]$p.Start()
+    $tOut = $p.StandardOutput.ReadToEndAsync()
+    [void]$p.StandardError.ReadToEndAsync()
+    $deadline = (Get-Date).AddSeconds($TimeoutSec)
+    while ((-not $p.HasExited) -and ((Get-Date) -lt $deadline)) {
+        if (($script:SiteCtx -ne $null) -and $script:SiteCtx.IsCompleted) {
+            try {
+                $c = $script:SiteCtx.Result
+                $c.Response.StatusCode = 200
+                $c.Response.ContentType = 'application/json; charset=gb2312'
+                $c.Response.ContentLength64 = $bytes.Length
+                $c.Response.OutputStream.Write($bytes, 0, $bytes.Length)
+                $c.Response.OutputStream.Close()
+            } catch { }
+            if ($script:SiteListener -ne $null) { $script:SiteCtx = $script:SiteListener.GetContextAsync() }
+        }
+        Start-Sleep -Milliseconds 100
+    }
+    if (-not $p.HasExited) {
+        try { $p.Kill() } catch { }
+        return @{ Code = 'TIMEOUT'; Out = '' }
+    }
+    $out = ''
+    try { $out = $tOut.Result } catch { }
+    return @{ Code = $p.ExitCode; Out = $out }
+}
+
+# 拼一段站点风格的响应体（真实结构见 docs\DESIGN.md §12.67）：
+# `{"code":200,"message":"获取成功","data":{"total":1,"list":[{…"title":"…"}]}}`
+# **title 故意不做 URL 编码**：真实站点存的是编码后的 ASCII，那样的话"UTF-8 还是 GBK"根本验不出来
+# （版本号是 ASCII，两种编码下都能解出来 —— 这就是坑 53 不容易被发现的原因）。
+function New-SiteBody {
+    param([string]$Title)
+    return '{"code":200,"message":"获取成功","data":{"total":1,"list":[{"id":2109,"title":"' + $Title + '"}]}}'
+}
+
 # 读文件头几个字节（判 .ico 的 00 00 01 00 用）。
 # PS 5.1 是 `-Encoding Byte`，PowerShell 7 改成了 `-AsByteStream` —— 写成 5.1 那一套在 pwsh 里
 # 会当场抛 'Byte' is not a supported encoding name 并把整个套件打断（2026-10-04 用 pwsh 跑测试时踩到，
@@ -2552,16 +2640,18 @@ Check 'S07 指向仓库里的正本（窗口显示的与文档永远一致）' `
     (($dis.Out -match 'docs/DISCLAIMER\.md') -and ($dis.Out -match '(?m)^source=docs/DISCLAIMER')) ''
 Check 'S08 命令里带上了正文指纹（同意门用的就是它）' ($dis.Out -match '(?m)^hash=[0-9a-f]{16}') (Get-Key $dis.Out 'hash')
 
-# S01b：默认打的必须**是 GitHub 的接口地址**，不能是网页地址。
+# S01b：默认打的必须**是两个正确的接口地址**（都只看打印出来的值，不要求网络通）。
 # 这一条是 2026-10-05 补的（真实环境里发现的 bug）：S10–S15 全程拿 MXX1_UPDATE_URL 指到本机假接口，
 # 正好把默认值绕过去了 —— 而默认值当时被写成了网页地址
 # （`https://github.com/<账号>/<仓库>/releases/latest`），GitHub 对请求里那个
 # `Accept: application/vnd.github+json` 直接回 **406**，于是用户那边永远是「检查失败：http-406」。
-# 这里只看 `api=` 那一行长什么样（**不要求网络通**），所以离线机器 / CI 上一样可靠。
+# 2026-10-11 起首选来源换成了 mxx1.cn 的资源接口（方案 A），所以 `site=` 那一行也要一起盯。
 $cuDefault = Invoke-Exe 'checkupdate' 60 $Exe @{ MXX1_UPDATE_TIMEOUT_MS = '1500' }
 $apiDefault = Get-Key $cuDefault.Out 'api'
-Check 'S01b 默认打的是 GitHub 接口地址（不是网页地址 —— 406 那次教训）' `
-    (($apiDefault -match '^https://api\.github\.com/repos/') -and ($apiDefault -match '/mxx1-toolbox')) $apiDefault
+$siteDefault = Get-Key $cuDefault.Out 'site'
+Check 'S01b 默认打的是站点资源接口 + GitHub 接口地址（都不是网页地址 —— 406 那次教训）' `
+    (($apiDefault -match '^https://api\.github\.com/repos/') -and ($apiDefault -match '/mxx1-toolbox') -and ($siteDefault -eq 'https://www.mxx1.cn/apis/resources?id=2109')) `
+    ('api=' + $apiDefault + ' site=' + $siteDefault)
 
 $helpText = Invoke-Exe 'help'
 Check 'S09 help 里能查到 checkupdate / disclaimer / consent 三个命令' `
@@ -2574,12 +2664,15 @@ Check 'S10 MXX1_NO_UPDATE=1 时一个字节都不发（update=disabled，退出�
 Check 'S11 关掉时也报版本号（脚本据此判断）' ((Get-Key $cuOff.Out 'version') -eq '1.5.6') (Get-Key $cuOff.Out 'version')
 
 $cuBad = Invoke-Exe 'checkupdate' 60 $Exe @{
+    MXX1_RESOURCE_URL = 'http://127.0.0.1:9/apis/resources'
     MXX1_UPDATE_URL = 'http://127.0.0.1:9/releases'
     MXX1_UPDATE_TAGS_URL = 'http://127.0.0.1:9/tags'
     MXX1_UPDATE_TIMEOUT_MS = '1500'
 }
-Check 'S12 连不上时静默降级成 update=error（不抛异常、不弹窗）' `
+Check 'S12 两边都连不上时静默降级成 update=error（不抛异常、不弹窗）' `
     (($cuBad.Code -eq 1) -and ($cuBad.Out -match '(?m)^update=error\r?$')) (Get-Key $cuBad.Out 'detail')
+Check 'S12b 两边都没读成时 source=none（不是含糊地报 github）' `
+    ((Get-Key $cuBad.Out 'source') -eq 'none') (Get-Key $cuBad.Out 'source')
 
 # 本机假接口（用完就关，不碰外网）：有新版时命令行说得出来，而且只给出"发布页"这个地址
 $cuListener = $null
@@ -2606,6 +2699,9 @@ try {
     $cuSi.StandardOutputEncoding = New-Object System.Text.UTF8Encoding($false)
     $cuSi.EnvironmentVariables['MXX1_UPDATE_URL'] = ($cuPrefix + 'releases/latest')
     $cuSi.EnvironmentVariables['MXX1_UPDATE_TAGS_URL'] = ($cuPrefix + 'tags')
+    # ⚠️ 站点那一半必须也指到死端口：不指的话它会去打**真的 mxx1.cn**，
+    # 于是这条"GitHub 有新版"的用例会被真实站点抢答（而且测试还偷偷联了外网）。
+    $cuSi.EnvironmentVariables['MXX1_RESOURCE_URL'] = 'http://127.0.0.1:9/apis/resources'
     $cuP = New-Object System.Diagnostics.Process
     $cuP.StartInfo = $cuSi
     [void]$cuP.Start()
@@ -2634,8 +2730,63 @@ try {
     Check 'S14 报的是"发布页"地址（只报告，不下载任何文件）' `
         ((Get-Key $cuOut 'url') -eq ($cuPrefix + 'fake-release')) (Get-Key $cuOut 'url')
     Check 'S15 界面文案里写清新版本和当前版本' ($cuOut -match '发现新版本 v9\.9\.9') (Get-Key $cuOut 'ui')
+    # 站点读不成 → 退 GitHub 这条路必须**看得出来走的是哪条**（source + detail 里带上站点失败的原因）
+    Check 'S15b 站点读不成时退到 GitHub，而且 source/detail 都说得清' `
+        (((Get-Key $cuOut 'source') -eq 'github') -and ((Get-Key $cuOut 'detail') -like 'site-*>*')) `
+        ('source=' + (Get-Key $cuOut 'source') + ' detail=' + (Get-Key $cuOut 'detail'))
 } finally {
     if ($cuListener -ne $null) { try { $cuListener.Stop(); $cuListener.Close() } catch { } }
+}
+
+# ---- 站点资源接口（首选来源）：六个场景 ----
+# 判据全走 `checkupdate` 打出来的 key=value（标题 / 版本号 / 来源 / 点开哪个链接），
+# 不看截图也不看实现 —— 换实现方式不影响这几条。
+Start-FakeSite
+try {
+    # S30：站点读得出 `… | 萌新工具箱 | v9.9.9 | ★0` → 以站点为准（**不去问 GitHub**）
+    $siteOk = Invoke-ExeWithFakeSite (New-SiteBody '035期 | 多行多列按钮墙启动器，124 个内置真功能按钮 | 萌新工具箱 | v9.9.9 | ★0')
+    Check 'S30 站点标题里读出高版本 → update=available + latest=9.9.9 + source=site' `
+        (($siteOk.Code -eq 0) -and ($siteOk.Out -match '(?m)^update=available\r?$') -and ((Get-Key $siteOk.Out 'latest') -eq '9.9.9') -and ((Get-Key $siteOk.Out 'source') -eq 'site')) `
+        ('latest=' + (Get-Key $siteOk.Out 'latest') + ' source=' + (Get-Key $siteOk.Out 'source'))
+
+    # S31：**GBK 解码**的判据。假站点按 GBK 发、标题里的中文没做 URL 编码，
+    # 所以程序要是拿 UTF-8 去读，这一行就是乱码 —— 这条能真正区分两种编码。
+    Check 'S31 站点标题按 GBK 解码（读错了这一行就是乱码）' `
+        ((Get-Key $siteOk.Out 'sitetitle') -match '萌新工具箱') (Get-Key $siteOk.Out 'sitetitle')
+
+    # S32：用户 2026-10-11 要的就是这个链接 —— 点「前往更新」打开站点资源页
+    Check 'S32 有更新时 url= 是站点资源页 http://mxx1.cn/info?id=2109（前往更新点开的就是它）' `
+        ((Get-Key $siteOk.Out 'url') -eq 'https://www.mxx1.cn/info?id=2109') (Get-Key $siteOk.Out 'url')
+
+    # S33：站点自己报失败（文档里失败就是 {"code":-1}）→ 退 GitHub；
+    # 这条用例里 GitHub 也是死端口，所以最终 source=none —— 但 detail 里必须留下站点那一半的原因
+    $siteBad = Invoke-ExeWithFakeSite '{"code":-1}'
+    Check 'S33 站点返回 code=-1 时就退到 GitHub（两边都不成 → source=none）' `
+        (((Get-Key $siteBad.Out 'source') -eq 'none') -and ($siteBad.Out -match '(?m)^update=error\r?$')) `
+        ('source=' + (Get-Key $siteBad.Out 'source') + ' detail=' + (Get-Key $siteBad.Out 'detail'))
+    Check 'S33b 退到 GitHub 的原因说得出来（code(-1)）' `
+        ((Get-Key $siteBad.Out 'detail') -like 'site-code(-1)>*') (Get-Key $siteBad.Out 'detail')
+
+    # S34：标题里没有版本号（比如站长改了标题写法）→ 不当成"已是最新"，退 GitHub
+    $siteNoVer = Invoke-ExeWithFakeSite (New-SiteBody '035期 | 萌新工具箱 | 这个版本号我忘了写 | ★0')
+    Check 'S34 站点标题里找不到版本号时退到 GitHub（reason=no-version），不瞎猜' `
+        ((Get-Key $siteNoVer.Out 'detail') -like 'site-no-version>*') (Get-Key $siteNoVer.Out 'detail')
+    Check 'S34b 这种情况照样把站点标题原文报出来（让人看出站点上写的是什么）' `
+        ((Get-Key $siteNoVer.Out 'sitetitle') -match '这个版本号我忘了写') (Get-Key $siteNoVer.Out 'sitetitle')
+
+    # S35：资源 id 是参数化的 —— 换 id，「前往更新」指向的页面跟着换（一个 id 绑死就麻烦了）
+    $siteId = Invoke-ExeWithFakeSite (New-SiteBody '萌新工具箱 | v9.9.9') @{ MXX1_RESOURCE_ID = '1234' }
+    Check 'S35 MXX1_RESOURCE_ID 换了，url= 和请求地址都跟着换' `
+        (((Get-Key $siteId.Out 'url') -eq 'https://www.mxx1.cn/info?id=1234') -and ((Get-Key $siteId.Out 'site') -match '\?id=1234$')) `
+        ('url=' + (Get-Key $siteId.Out 'url') + ' site=' + (Get-Key $siteId.Out 'site'))
+
+    # S36：站点说"就是最新"时不要再去问 GitHub，也不要乱报更新（版本相等 = 最新）
+    $siteSame = Invoke-ExeWithFakeSite (New-SiteBody '萌新工具箱 | v1.5.6')
+    Check 'S36 站点版本与本机相等 → update=latest，且 source=site（没去问 GitHub）' `
+        (($siteSame.Out -match '(?m)^update=latest\r?$') -and ((Get-Key $siteSame.Out 'source') -eq 'site')) `
+        ('update=' + (Get-Key $siteSame.Out 'update') + ' detail=' + (Get-Key $siteSame.Out 'detail'))
+} finally {
+    Stop-FakeSite
 }
 
 # ---- 使用条款的同意状态（consent 命令 / status 字段 / settings.ini 里的记录）

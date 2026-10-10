@@ -104,7 +104,9 @@ namespace Mxx1Toolbox
             _name.TextAlign = ContentAlignment.MiddleLeft;
             _name.AutoEllipsis = true;
             _name.Margin = new Padding(0);
-            _name.Text = e.Title;
+            // 受 Windows 保护的项（所有者 TrustedInstaller、连管理员也写不动）在标题后面直接标出来 ——
+            // 用户 2026-10-10 问「为什么管理员权限启动也无法禁止？」之后加的：这件事必须在**点之前**看见。
+            _name.Text = e.Protected ? (e.Title + "（Windows 保护）") : e.Title;
             _name.ForeColor = (e.Actionable && !e.Disabled) ? theme.InputText : theme.BarText;
             _name.BackColor = Color.Transparent;
             _name.Cursor = Cursor;

@@ -120,7 +120,8 @@
       "paths": [
         "src/CtxMenu.cs",
         "src/CtxMenuForm.cs",
-        "src/CtxRow.cs"
+        "src/CtxRow.cs",
+        "src/RegAcl.cs"
       ],
       "cli": [
         "A",

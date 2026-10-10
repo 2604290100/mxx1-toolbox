@@ -84,7 +84,7 @@ namespace Mxx1Toolbox
         private Panel _actionPanel;
         private TableLayoutPanel _actionList;
         private Label _status;
-        private Button _logBtn, _disableBtn, _restoreBtn, _deleteBtn, _refreshBtn, _closeBtn;
+        private Button _logBtn, _disableBtn, _restoreBtn, _deleteBtn, _takeBtn, _refreshBtn, _closeBtn;
         private ToolTip _tips;
 
         /// <summary>`focus` = `--focus=&lt;位置id&gt;|&lt;键名&gt;[,&lt;键名&gt;…]`（空 = 打开第一页）。</summary>
@@ -358,6 +358,14 @@ namespace Mxx1Toolbox
             _deleteBtn.Click += delegate { DoAction("删除"); };
             right.Controls.Add(_deleteBtn);
 
+            // 「取得所有权」：只给"被 Windows 保护"的项用（所有者 TrustedInstaller、管理员只给读）。
+            // 它和前面三个动作**不是一回事** —— 那个是改系统安全描述符，所以单独一个按钮 + 重确认，
+            // 而且只作用在**当前选中的那一项**上（一次一项，绝不混进批量里）。
+            _takeBtn = MakeBarButton("取得所有权", "给被 Windows 保护的项用：把那个键的所有者改成管理员并追加完全控制，"
+                + "然后才写得动。会先存下原样的权限（可还原）；这一步要管理员。");
+            _takeBtn.Click += delegate { DoTakeOwn(); };
+            right.Controls.Add(_takeBtn);
+
             _refreshBtn = MakeBarButton("刷新", "重新读一遍注册表（别的软件刚装完 / 刚卸完时用）");
             _refreshBtn.Click += delegate { LoadRows(); };
             right.Controls.Add(_refreshBtn);
@@ -494,7 +502,9 @@ namespace Mxx1Toolbox
                     if (!_expanded[groupId]) { continue; }
                     foreach (CtxEntry e in mine)
                     {
-                        CtxRow row = new CtxRow(e, _theme, e.Actionable);
+                        // 扩展项和"被 Windows 保护"的项都勾不动：前者这一版不给动，后者要单独走
+                        // 「取得所有权」（改系统安全描述符）——不能让它们混在批量里被顺手改掉。
+                        CtxRow row = new CtxRow(e, _theme, e.Actionable && !e.Protected);
                         row.Toggled += delegate { UpdateBar(); };
                         row.Activated += delegate(object s, EventArgs a) { SetCurrent(s as CtxRow); };
                         row.Margin = new Padding(0, 0, 0, 1);
@@ -648,6 +658,13 @@ namespace Mxx1Toolbox
                 sb.Append("（筛选中：").Append(_filterButtons[_filter].Text).Append("）");
             }
             if (_busy) { sb.Append(" · 正在处理…"); }
+            // 选中的那一项被 Windows 保护时，把"怎么办"直接写在底栏（以前是点了才知道没反应）
+            CtxRow cur = CurrentRow();
+            bool curProtected = (cur != null) && cur.Entry.Protected;
+            if (curProtected)
+            {
+                sb.Append(" · 选中这一项被 Windows 保护（所有者是 TrustedInstaller，连管理员也写不动）→ 点右边「取得所有权」");
+            }
             _status.Text = sb.ToString();
 
             SetButtonText(_disableBtn, "禁用选中的 " + canDisable.ToString(CultureInfo.InvariantCulture) + " 项");
@@ -656,6 +673,7 @@ namespace Mxx1Toolbox
             _disableBtn.Enabled = (!_busy && canDisable > 0);
             _restoreBtn.Enabled = (!_busy && canRestore > 0);
             _deleteBtn.Enabled = (!_busy && checkedRows.Count > 0);
+            _takeBtn.Enabled = (!_busy && curProtected);
             _refreshBtn.Enabled = !_busy;
         }
 
@@ -669,18 +687,20 @@ namespace Mxx1Toolbox
         private void CheckVerbs(string verbList, bool elevated)
         {
             string[] wanted = verbList.Split(',');
-            int hit = 0;
+            int hit = 0;      // 勾上的
+            int picked = 0;   // 选中的（含勾不动的：受保护 / 扩展项）
             foreach (CtxRow r in _rows)
             {
                 foreach (string v in wanted)
                 {
-                    if (string.Equals(r.Entry.Verb, v.Trim(), StringComparison.OrdinalIgnoreCase) && r.CanCheck)
-                    {
-                        r.Checked = true;
-                        if (hit == 0) { SetCurrent(r); }
-                        hit++;
-                        break;
-                    }
+                    if (!string.Equals(r.Entry.Verb, v.Trim(), StringComparison.OrdinalIgnoreCase)) { continue; }
+                    // ⚠️ **勾不动也要选中**：被 Windows 保护的项 checkbox 是灰的，但它正是要靠
+                    // 「取得所有权」处理的那一项 —— 提权重开之后得把它选中，底栏那个按钮才会亮
+                    // （2026-10-10 实测踩过：只勾不选，重开之后按钮还是灰的）。
+                    if (picked == 0) { SetCurrent(r); }
+                    picked++;
+                    if (r.CanCheck) { r.Checked = true; hit++; }
+                    break;
                 }
             }
             UpdateBar();
@@ -691,6 +711,10 @@ namespace Mxx1Toolbox
             else if (hit > 0)
             {
                 Flash("已勾选 " + hit.ToString(CultureInfo.InvariantCulture) + " 项。");
+            }
+            else if (picked > 0)
+            {
+                Flash("已选中那一项（它被 Windows 保护、勾不动）—— 想禁用它就点底栏的「取得所有权」。");
             }
         }
 
@@ -863,6 +887,64 @@ namespace Mxx1Toolbox
                 + " / 共 " + items.Count.ToString(CultureInfo.InvariantCulture) + " 项"
                 + (ok ? "" : "（没成功的那几条在动作记录里，红字那行写着原因）"));
             // 动完之后，"刚才到底动了哪几个键"的答案就在动作记录里 —— 收起着就替用户展开一次
+            if (_actionPanel != null && !_actionPanel.Visible) { ToggleActionPanel(); }
+        }
+
+        /// <summary>「取得所有权」：只对**当前选中**的那一项（一次一项）。
+        /// ① 不是管理员 → 走提权重开那条路（和别的动作一样）；
+        /// ② 重确认：把"改所有者 + 追加完全控制 + 可还原"说清楚，再动手。</summary>
+        private void DoTakeOwn()
+        {
+            if (_busy) { return; }
+            CtxRow cur = CurrentRow();
+            if (cur == null || !cur.Entry.Protected) { return; }
+            CtxEntry e = cur.Entry;
+
+            if (!Consent.EnsureAccepted(this, _theme, "右键菜单管理：取得所有权「" + e.Title + "」"))
+            {
+                Flash("没有同意《免责声明与服务条款》，这个动作被拦下了。");
+                return;
+            }
+            if (e.NeedsAdmin && !CtxMenu.IsAdmin())
+            {
+                List<CtxEntry> one = new List<CtxEntry>();
+                one.Add(e);
+                List<CtxRow> rows = new List<CtxRow>();
+                rows.Add(cur);
+                OfferElevation("取得所有权", one, rows);
+                return;
+            }
+
+            StringBuilder body = new StringBuilder();
+            body.Append("这一项被 Windows 保护（所有者是 NT SERVICE\\TrustedInstaller，管理员只有读权限），")
+                .AppendLine("所以连管理员也写不动 —— 想禁用它，必须先把这个注册表键的所有权拿过来。")
+                .AppendLine();
+            body.AppendLine("会做三件事：");
+            body.AppendLine("· 先把原样的所有者和权限存成一份文件（备份文件夹里，扩展名 .sddl）；");
+            body.AppendLine("· 把所有者改成 Administrators，并追加一条「管理员：完全控制」（原有的权限一条都不删）；");
+            body.AppendLine("· 然后写隐藏开关，让那一项从右键里消失。");
+            body.AppendLine();
+            body.AppendLine("后悔了：动作记录里点那一条的「还原权限」—— 隐藏开关删掉、原样的所有者和权限写回去。");
+            body.Append("注意：这是改系统的安全设置（比写一个值重得多）；Windows 以后更新时也可能把它再收回去。");
+
+            bool go;
+            using (ConfirmForm f = new ConfirmForm("要取得「" + e.Title + "」的所有权吗？", body.ToString(), "取得所有权并禁用", _theme))
+            {
+                go = (f.ShowDialog(this) == DialogResult.OK);
+            }
+            if (!go) { return; }
+
+            _busy = true;
+            UpdateBar();
+            bool ok;
+            string report;
+            try { report = CtxMenu.TakeOwnAndDisable(e, out ok); }
+            catch (Exception ex) { report = "取得所有权失败：" + ex.Message; ok = false; }
+            _busy = false;
+            Logger.Write("右键菜单管理", report);
+            LoadRows();
+            Flash(ok ? ("已取得所有权并禁用「" + e.Title + "」（想还原就点记录里的「还原权限」）")
+                     : "没成功 —— 原因在动作记录里（红字那行）");
             if (_actionPanel != null && !_actionPanel.Visible) { ToggleActionPanel(); }
         }
 

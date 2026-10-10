@@ -56,6 +56,13 @@ namespace Mxx1Toolbox
         public bool Shellex = false;
         /// <summary>已经带着隐藏开关（我们写的，或者别人写的）。</summary>
         public bool Disabled = false;
+        /// <summary>这一项是不是「Windows 保护的」（所有者是 TrustedInstaller、管理员只有读权限）——
+        /// 判定办法就是**试着以可写方式打开那个键**（只读判断、一个字节都不写）。
+        /// 2026-10-10 用户问「为什么管理员权限启动也无法禁止？」之后加的：这些项要「取得所有权」才动得了，
+        /// 而界面必须**在点之前**就看得出来（以前是点了才知道没反应）。
+        /// 实测那几个键：`HKLM\SOFTWARE\Classes\Drive\shell\cmd` 之类，所有者 `NT SERVICE\TrustedInstaller`、
+        /// `BUILTIN\Administrators` 只有 `ReadKey`。</summary>
+        public bool Protected = false;
         /// <summary>键里有 `Extended` = 只在按住 Shift 右键时才出现。</summary>
         public bool ShiftOnly = false;
         /// <summary>级联子菜单的父项（`SubCommands` / `ExtendedSubCommandsKey`）。</summary>
@@ -153,6 +160,11 @@ namespace Mxx1Toolbox
             get
             {
                 if (Legacy || Key.Length == 0) { return false; }
+                if (Action == "取得所有权并禁用")
+                {
+                    if (Backup.Length == 0) { return false; }
+                    try { return File.Exists(Backup); } catch { return false; }
+                }
                 if (Action != "删除") { return true; }
                 try { return (Backup.Length > 0) && File.Exists(Backup); }
                 catch { return false; }
@@ -164,6 +176,7 @@ namespace Mxx1Toolbox
         {
             get
             {
+                if (Action == "取得所有权并禁用") { return "还原权限"; }
                 if (Action == "删除") { return "还原来"; }
                 if (Action == "恢复") { return "再禁一次"; }
                 return "恢复";
@@ -480,16 +493,57 @@ namespace Mxx1Toolbox
                             if (isUser) { found.InUser = true; } else { found.InMachine = true; }
                             continue;
                         }
-                        using (RegistryKey v = k.OpenSubKey(verb, false))
+                        // ⚠️ **读一项失败不能把整个列表带走**：2026-10-10 实测过一次 —— 有个键的权限
+                        // 只给读（我们造的"被保护"夹具），`v.OpenSubKey("command", false)` 直接抛
+                        // SecurityException，那一下把**整个管理窗口**崩掉了（进程退出码 0xE0434352）。
+                        // 用户机器上只要有一个 ACL 古怪的项，窗口就会开不出来 —— 所以逐项兜住、跳过它。
+                        try
                         {
-                            if (v == null) { continue; }
-                            CtxEntry e = new CtxEntry();
-                            e.ZoneId = z.Id; e.ZoneLabel = z.Label;
-                            e.Sub = sub; e.Verb = verb;
-                            e.InUser = isUser; e.InMachine = !isUser;
-                            FillVerb(e, v);
-                            seen[verb] = e;
-                            list.Add(e);
+                            using (RegistryKey v = k.OpenSubKey(verb, false))
+                            {
+                                if (v == null) { continue; }
+                                CtxEntry e = new CtxEntry();
+                                e.ZoneId = z.Id; e.ZoneLabel = z.Label;
+                                e.Sub = sub; e.Verb = verb;
+                                e.InUser = isUser; e.InMachine = !isUser;
+                                FillVerb(e, v);
+                                e.Protected = !AllRootsWritable(e);
+                                seen[verb] = e;
+                                list.Add(e);
+                            }
+                        }
+                        catch
+                        {
+                            // 这一项读不动（权限被保护）：**照样列出来**，只是只知道键名。
+                            // ⚠️ 别在这里 `continue` 跳过 —— 那会让这一项**从列表里消失**，
+                            // 用户反而看不到它，也就没机会点「取得所有权」（2026-10-10 实测踩过：
+                            // 跳过之后界面上少一条、计数也对不上）。
+                            CtxEntry broken = new CtxEntry();
+                            broken.ZoneId = z.Id; broken.ZoneLabel = z.Label;
+                            broken.Sub = sub; broken.Verb = verb;
+                            broken.InUser = isUser; broken.InMachine = !isUser;
+                            broken.Title = verb;
+                            broken.Protected = true;
+                            // 尽力把标题读出来：读不动多半卡在 `command` 那一层，标题往往读得到
+                            // （实测：只给 ReadKey 的键，默认值读得到，`OpenSubKey("command")` 才被拒）。
+                            try
+                            {
+                                using (RegistryKey v2 = k.OpenSubKey(verb, false))
+                                {
+                                    if (v2 != null)
+                                    {
+                                        string t2 = Str(v2.GetValue(null, null));
+                                        if (t2.Length == 0) { t2 = Str(v2.GetValue("MUIVerb", null)); }
+                                        t2 = ResolveIndirect(t2);
+                                        if (t2.Length > 0) { broken.Title = t2; }
+                                    }
+                                }
+                            }
+                            catch { }
+                            broken.Note = "这一项读不动（权限被保护，连管理员也写不动）——"
+                                + "只看得到键名。想动它：选中这一行点底栏的「取得所有权」。";
+                            seen[verb] = broken;
+                            list.Add(broken);
                         }
                     }
                 }
@@ -565,6 +619,8 @@ namespace Mxx1Toolbox
                             if (isUser) { found.InUser = true; } else { found.InMachine = true; }
                             continue;
                         }
+                        try
+                        {
                         using (RegistryKey h = k.OpenSubKey(name, false))
                         {
                             if (h == null) { continue; }
@@ -583,6 +639,19 @@ namespace Mxx1Toolbox
                                 + "，" + HandlerDll(realClsid) + "）—— 这一版只显示、不给动";
                             seen[name] = e;
                             list.Add(e);
+                        }
+                        }
+                        catch
+                        {
+                            CtxEntry broken = new CtxEntry();
+                            broken.ZoneId = z.Id; broken.ZoneLabel = z.Label;
+                            broken.Sub = rel; broken.Verb = name;
+                            broken.InUser = isUser; broken.InMachine = !isUser;
+                            broken.Shellex = true;
+                            broken.Title = name + "（扩展项）";
+                            broken.Note = "这一项读不动（权限被保护）—— 只看得到登记名。";
+                            seen[name] = broken;
+                            list.Add(broken);
                         }
                     }
                 }
@@ -667,6 +736,16 @@ namespace Mxx1Toolbox
             catch { return ""; }
         }
 
+        /// <summary>这一项在**每一个**有它的根下都能写吗（不能写 = 被系统保护，要取得所有权）。</summary>
+        private static bool AllRootsWritable(CtxEntry e)
+        {
+            foreach (string key in RootsOf(e))
+            {
+                if (!RegAcl.CanWrite(key)) { return false; }
+            }
+            return true;
+        }
+
         private static string Str(object o)
         {
             return (o == null) ? "" : o.ToString();
@@ -712,10 +791,17 @@ namespace Mxx1Toolbox
             sb.Append("（在用 ").Append(active.ToString(CultureInfo.InvariantCulture));
             sb.Append(" / 已禁用 ").Append(disabled.ToString(CultureInfo.InvariantCulture));
             sb.Append(" / 扩展项 ").Append(shellex.ToString(CultureInfo.InvariantCulture));
+            int prot = 0;
+            foreach (CtxEntry e in list) { if (e.Protected) { prot++; } }
             if (machine > 0)
             {
                 sb.Append("；其中 ").Append(machine.ToString(CultureInfo.InvariantCulture))
                   .Append(" 条在系统区，改它要管理员");
+            }
+            if (prot > 0)
+            {
+                sb.Append("；").Append(prot.ToString(CultureInfo.InvariantCulture))
+                  .Append(" 条被 Windows 保护（连管理员也写不动，要「取得所有权并禁用」）");
             }
             sb.Append("）");
             return sb.ToString();
@@ -854,6 +940,105 @@ namespace Mxx1Toolbox
                 sb.AppendLine("结果：没成功。"
                     + (e.NeedsAdmin ? "这一项在系统区，需要管理员权限（点一下会弹 UAC，重开这个窗口再来一次）。" : ""));
                 Record("恢复", e, "", "", "失败：" + FailWhy(why, e));
+            }
+            return sb.ToString();
+        }
+
+        /// <summary>「取得所有权并禁用」：给 Windows 保护的那些项用的（`src\RegAcl.cs`）。
+        ///
+        /// 三步，**顺序不能换**：① 先把原样的安全描述符（SDDL，含所有者和 DACL）存成一份文件 ——
+        /// **存不下就绝不动手**（宁可不做，也不留一个"权限被改过、还不知道原来什么样"的系统键）；
+        /// ② 取得所有权（所有者改 Administrators + 追加一条完全控制，原有 ACE 一条不删）；
+        /// ③ 写隐藏开关（这时才写得动）。那份 SDDL 文件记在动作记录的"备份文件"那一列，
+        /// 界面上「还原权限」就是把它写回去。
+        /// ⚠️ 这是**改系统安全描述符**，比写一个值重得多，所以界面上过一次**重确认**才走到这里。</summary>
+        public static string TakeOwnAndDisable(CtxEntry e, out bool ok)
+        {
+            ok = false;
+            StringBuilder sb = Head("取得所有权并禁用", e);
+            if (!e.Actionable)
+            {
+                sb.AppendLine("结果：没有处理 —— 扩展项这一版只显示、不给动。");
+                return sb.ToString();
+            }
+            if (!IsAdmin())
+            {
+                sb.AppendLine("结果：没做 —— 这一步**必须是以管理员身份**（要打开「取得所有权」特权）。"
+                    + "点一下会弹 UAC，重开这个窗口之后再来一次。");
+                return sb.ToString();
+            }
+            if (!e.Protected)
+            {
+                sb.AppendLine("结果：没做 —— 这一项本来就能写，直接点「禁用」就行（不用抢所有权）。");
+                return sb.ToString();
+            }
+
+            int done = 0, failed = 0;
+            string sddlFile = "";
+            string why = "";
+            foreach (string key in RootsOf(e))
+            {
+                try
+                {
+                    if (!RegAcl.CanWrite(key))
+                    {
+                        string sddl = RegAcl.ReadSddl(key);
+                        if (sddl.Length == 0)
+                        {
+                            failed++; why = "存不下原样的权限（SDDL），宁可不做";
+                            sb.AppendLine("· " + key + " —— 存不下原样权限，跳过（没有它就不许改权限）");
+                            continue;
+                        }
+                        Directory.CreateDirectory(BackupDir);
+                        string file = Path.Combine(BackupDir,
+                            DateTime.Now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture)
+                            + "_acl_" + SafeName(key) + ".sddl");
+                        File.WriteAllText(file, sddl, new UTF8Encoding(false));
+                        sb.AppendLine("· 原样权限已存：" + file);
+
+                        bool took;
+                        string report = RegAcl.TakeOwn(key, out took);
+                        sb.AppendLine(report.TrimEnd());
+                        if (!took) { failed++; why = "取得所有权失败"; continue; }
+                        sddlFile = file;
+                    }
+                    using (RegistryKey k = OpenFull(key, true))
+                    {
+                        if (k == null)
+                        {
+                            failed++; why = "键已经不在了";
+                            sb.AppendLine("· " + key + " —— 已经不在了");
+                            continue;
+                        }
+                        k.SetValue(HideValue, "", RegistryValueKind.String);
+                        if (k.GetValue(HideValue, null) == null)
+                        {
+                            failed++; why = "写不进去（读回是空的）";
+                            sb.AppendLine("· " + key + " —— 写不进去（读回是空的）");
+                            continue;
+                        }
+                    }
+                    done++;
+                    sb.AppendLine("· " + key + " —— 已写入 " + HideValue);
+                }
+                catch (Exception ex)
+                {
+                    failed++; why = ex.Message;
+                    sb.AppendLine("· " + key + " —— 失败：" + ex.Message);
+                }
+            }
+            ok = (failed == 0 && done > 0);
+            sb.AppendLine();
+            if (ok)
+            {
+                sb.AppendLine("结果：已取得所有权并禁用 —— 那一项从右键里消失了，原样的权限存在上面那个文件里。");
+                sb.AppendLine("想连权限一起放回去：动作记录里点「还原权限」。");
+                Record("取得所有权并禁用", e, done.ToString(CultureInfo.InvariantCulture) + " 个键", sddlFile, "成功");
+            }
+            else
+            {
+                sb.AppendLine("结果：没成功。");
+                Record("取得所有权并禁用", e, "", sddlFile, "失败：" + FailWhy(why, e));
             }
             return sb.ToString();
         }
@@ -1158,6 +1343,32 @@ namespace Mxx1Toolbox
                 return sb.ToString();
             }
             sb.Append("键：").AppendLine(a.Key);
+
+            if (a.Action == "取得所有权并禁用")
+            {
+                // ① 先把隐藏开关删掉（让那一项回到菜单里）；② 再把安全描述符写回原样
+                try
+                {
+                    using (RegistryKey k = OpenFull(a.Key, true))
+                    {
+                        if (k != null)
+                        {
+                            k.DeleteValue(HideValue, false);
+                            k.DeleteValue(HideValue2, false);
+                        }
+                    }
+                }
+                catch (Exception ex) { sb.AppendLine("· 删隐藏开关时：" + ex.Message); }
+                string sddl = "";
+                try { if (File.Exists(a.Backup)) { sddl = File.ReadAllText(a.Backup, Encoding.UTF8).Trim(); } }
+                catch { }
+                bool okAcl;
+                string rep = RegAcl.RestoreSddl(a.Key, sddl, out okAcl);
+                sb.AppendLine(rep.TrimEnd());
+                ok = okAcl;
+                if (ok) { RecordRaw("撤销·还原权限", a.ZoneId, a.ZoneLabel, a.Key, a.Backup, a.Title, "成功"); }
+                return sb.ToString();
+            }
 
             if (a.Action == "删除")
             {
@@ -1480,7 +1691,8 @@ namespace Mxx1Toolbox
                     sb.Append("entry\t").Append(z.Id).Append('\t').Append(e.Shellex ? "shellex" : "verb").Append('\t')
                       .Append(e.Verb).Append('\t').Append(e.Title).Append('\t')
                       .Append(e.StateLabel).Append('\t')
-                      .Append(e.InMachine ? (e.InUser ? "both" : "machine") : "user").AppendLine();
+                      .Append(e.InMachine ? (e.InUser ? "both" : "machine") : "user").Append('\t')
+                      .Append(e.Protected ? "protected" : "writable").AppendLine();
                 }
             }
             return sb.ToString();

@@ -12,6 +12,12 @@
         powershell -NoProfile -ExecutionPolicy Bypass -File tools\Show-MenuOrder.ps1
         powershell ... -File tools\Show-MenuOrder.ps1 -Path D:\某个文件夹
         powershell ... -File tools\Show-MenuOrder.ps1 -SkipDesktop
+        powershell ... -File tools\Show-MenuOrder.ps1 -Extended
+
+    `-Extended`：连"按住 Shift 才显示"的项一起打出来（`Extended` 值 / `CMF_EXTENDEDVERBS`）。
+    默认不带它 —— 那才是你**平时**右键看到的样子。2026-10-10 排查「Windows 保护的那几个键为什么
+    管理员也写不动」时加的：`在此处打开命令窗口 / Powershell` 这类项都是 Extended，不带这个开关
+    在菜单里根本看不到它们。
 
     带 ★ 的行 = 工具箱自己装的六项（复制文件名 / 复制文件路径 / 解除文件占用 / 一键解除占用 /
     常用功能 / 在此处打开终端）。**顺序就是从上往下的行序**；★ 之间谁在前谁在后 = 键名里的序号。
@@ -24,7 +30,8 @@
 #>
 param(
     [string]$Path = '',
-    [switch]$SkipDesktop
+    [switch]$SkipDesktop,
+    [switch]$Extended
 )
 
 $ErrorActionPreference = 'Stop'
@@ -45,6 +52,8 @@ using System.Text;
 
 public static class MenuOrderProbe
 {
+    /// <summary>`true` = 问菜单时带上 CMF_EXTENDEDVERBS，连"按住 Shift 才显示"的项一起列出来。</summary>
+    public static bool Extended = false;
     [DllImport("shell32.dll", CharSet = CharSet.Unicode, PreserveSig = false)]
     static extern void SHParseDisplayName(string pszName, IntPtr pbc, out IntPtr ppidl, uint sfgaoIn, out uint psfgaoOut);
 
@@ -133,7 +142,7 @@ public static class MenuOrderProbe
         }
         IContextMenu cm = (IContextMenu)Marshal.GetTypedObjectForIUnknown(cmPtr, typeof(IContextMenu));
         IntPtr h = CreatePopupMenu();
-        cm.QueryContextMenu(h, 0, 1, 0x7FFF, 0);
+        cm.QueryContextMenu(h, 0, 1, 0x7FFF, Extended ? 0x100u : 0u);   // 0x100 = CMF_EXTENDEDVERBS
         StringBuilder sb = new StringBuilder();
         Walk(sb, h, 0);
         DestroyMenu(h);
@@ -172,6 +181,7 @@ public static class MenuOrderProbe
 }
 '@
 Add-Type -TypeDefinition $src -Language CSharp | Out-Null
+[MenuOrderProbe]::Extended = $Extended.IsPresent
 
 # 工具箱那六项（标题就是菜单上显示的字）—— 命中的行打 ★
 $mine = @('复制文件名', '复制文件路径', '解除文件占用', '一键解除占用', '常用功能', '在此处打开终端')

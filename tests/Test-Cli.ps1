@@ -2128,6 +2128,14 @@ try {
     Check 'M50 zone 行的数字对得上夹具（共 5 = 在用 3 / 已禁用 1 / 扩展项 1；其中 1 条在系统区）' `
         (($cxZone.Count -eq 1) -and ($cxZone[0] -eq "zone`tfiles`t文件`t5`t3`t1`t1`t1")) ($cxZone -join ' / ')
 
+    # M50b：entry 行末尾那一列 —— "这一项改得动还是改不动"（writable / protected）。
+    # 2026-10-10 加的：用户问「为什么管理员权限启动也无法禁止？」→ 那些键所有者是 TrustedInstaller、
+    # 管理员只有读权限，判定办法就是**试着以可写方式打开**（只读判断、不写一个字节）。
+    $cxFlags = @($cxEntry | ForEach-Object { ($_ -split "`t")[-1] })
+    Check 'M50b entry 行末尾报"改得动 / 改不动"（writable / protected），夹具全都报 writable' `
+        (($cxFlags.Count -eq 5) -and (@($cxFlags | Where-Object { $_ -ne 'writable' -and $_ -ne 'protected' }).Count -eq 0) -and `
+         (@($cxFlags | Where-Object { $_ -eq 'protected' }).Count -eq 0)) ($cxFlags -join ',')
+
     $cxFolder = Invoke-Exe 'rightmenu list --zone=folder' 60 $Exe $cxEnv
     $cxAll = Invoke-Exe 'rightmenu list' 60 $Exe $cxEnv
     $cxZoneKeys = @()

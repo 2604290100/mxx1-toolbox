@@ -1420,6 +1420,47 @@ $ctxActionLogHad = Test-Path -LiteralPath $ctxActionLog
 $ctxActionLogOld = ''
 if ($ctxActionLogHad) { $ctxActionLogOld = [System.IO.File]::ReadAllText($ctxActionLog) }
 
+# 读一个键的安全描述符（SDDL）。⚠️ 不能用 Get-Acl：它没有 -LiteralPath，而我们的键路径里带 `*`。
+function Get-CtxSddl([string]$Sub) {
+    try {
+        $k = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($Sub,
+            [Microsoft.Win32.RegistryKeyPermissionCheck]::ReadWriteSubTree,
+            [System.Security.AccessControl.RegistryRights]::ReadPermissions)
+        if (-not $k) { return '' }
+        $s = $k.GetAccessControl([System.Security.AccessControl.AccessControlSections]::All).GetSecurityDescriptorSddlForm([System.Security.AccessControl.AccessControlSections]::All)
+        $k.Close()
+        return $s
+    } catch { return '' }
+}
+
+# 把一个键的 DACL 重置成「继承 + 当前用户完全控制」。⚠️ 只带 ChangePermissions 打开的句柄**不能**
+# 枚举子键（实测「Attempted to perform an unauthorized operation」）—— 所以改完就关掉。
+function Reset-CtxAcl([string]$Sub) {
+    $k = $null
+    try {
+        $k = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($Sub,
+            [Microsoft.Win32.RegistryKeyPermissionCheck]::ReadWriteSubTree,
+            [System.Security.AccessControl.RegistryRights]::ChangePermissions)
+        if (-not $k) { return }
+        $sec = $k.GetAccessControl([System.Security.AccessControl.AccessControlSections]::Access)
+        $sec.SetAccessRuleProtection($false, $true)
+        $me = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+        $sec.AddAccessRule((New-Object System.Security.AccessControl.RegistryAccessRule($me, 'FullControl', 'Allow')))
+        $k.SetAccessControl($sec)
+    } catch { } finally { if ($k) { $k.Close() } }
+}
+
+# 清场：上一次崩在半路可能留下一条**只读**的测试键（造它就是为了验「取得所有权」），
+# 那下一次连造夹具都会被拒（实测：Access to the registry key ... is denied）。
+function Clear-CtxLeftover([string]$RootRel) {
+    try {
+        Reset-CtxAcl $RootRel
+        Reset-CtxAcl ($RootRel + '\*\shell\Mxx1FixtureProtected')
+        Reset-CtxAcl ($RootRel + '\*\shell\Mxx1FixtureProtected\command')
+        [Microsoft.Win32.Registry]::CurrentUser.DeleteSubKeyTree($RootRel, $false)
+    } catch { }
+}
+
 function New-CtxFixture {
     param([string]$RootRel, [string]$Verb, [string]$Title, [string]$ExtraValue)
     $base = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey($RootRel)
@@ -1504,10 +1545,50 @@ $ctxGone = Join-Path 'HKCU:\Software\mxx1-toolbox\ctxmenu-test' '*\shell\Mxx1Fix
 $ctxSys = Join-Path 'HKCU:\Software\mxx1-toolbox\ctxmenu-test' '*\shell\Windows.Mxx1FixtureSys'
 
 try {
+    Clear-CtxLeftover $ctxRootRel
+    Clear-CtxLeftover $ctxRootMachineRel
     New-CtxFixture ($ctxRootRel + '\*\shell') 'Mxx1FixtureKeep' '夹具·在用' ''
     New-CtxFixture ($ctxRootRel + '\*\shell') 'Mxx1FixtureOff' '夹具·已禁用' 'LegacyDisable'
     New-CtxFixture ($ctxRootRel + '\*\shell') 'Mxx1FixtureDel' '夹具·待删' ''
     New-CtxFixture ($ctxRootRel + '\*\shell') 'Mxx1FixtureGone' '夹具·待删二' ''
+    # 夹具：一条「被 Windows 保护」的项 —— 把它的 DACL 改成**只读**（留 Delete，收尾才删得掉）。
+    # 真机上那些项的所有者是 TrustedInstaller，普通用户造不出来；但「能不能可写打开」这个**判据**
+    # 是一样的，所以用一条自造的只读键就能把「标注 / 勾不动 / 取得所有权 / 还原权限」整条路验完。
+    New-CtxFixture ($ctxRootRel + '\*\shell') 'Mxx1FixtureProtected' '夹具·受保护' ''
+    function Set-CtxReadOnly([string]$sub) {
+        $k = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($sub,
+            [Microsoft.Win32.RegistryKeyPermissionCheck]::ReadWriteSubTree,
+            [System.Security.AccessControl.RegistryRights]::ChangePermissions)
+        $sec = $k.GetAccessControl([System.Security.AccessControl.AccessControlSections]::Access)
+        # ⚠️ 必须**切断继承**：不切的话父键（测试根）那条「完全控制」会继承下来，键照样能写
+        # —— 第一版漏了这句，夹具自检 C19u 当场红（能可写打开=True）。
+        $sec.SetAccessRuleProtection($true, $false)
+        foreach ($r in @($sec.GetAccessRules($true, $true, [System.Security.Principal.NTAccount]))) {
+            [void]$sec.RemoveAccessRule($r)
+        }
+        $me = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+        $rights = [System.Security.AccessControl.RegistryRights]::ReadKey -bor [System.Security.AccessControl.RegistryRights]::Delete
+        $sec.AddAccessRule((New-Object System.Security.AccessControl.RegistryAccessRule($me, $rights, 'Allow')))
+        $k.SetAccessControl($sec)
+        $k.Close()
+    }
+    Set-CtxReadOnly ($ctxRootRel + '\*\shell\Mxx1FixtureProtected')
+    $ctxProt = Join-Path 'HKCU:\Software\mxx1-toolbox\ctxmenu-test' '*\shell\Mxx1FixtureProtected'
+    $ctxProtSddl = Get-CtxSddl ($ctxRootRel + '\*\shell\Mxx1FixtureProtected')
+    # 原来的所有者（还原之后要能对得上；SDDL 整串比字符串太脆 —— 规范化顺序一变就假红）
+    $ctxProtOwner = ''
+    $kOwn = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($ctxRootRel + '\*\shell\Mxx1FixtureProtected',
+        [Microsoft.Win32.RegistryKeyPermissionCheck]::ReadWriteSubTree,
+        [System.Security.AccessControl.RegistryRights]::ReadPermissions)
+    if ($kOwn) { $ctxProtOwner = $kOwn.GetAccessControl([System.Security.AccessControl.AccessControlSections]::Owner).GetOwner([System.Security.Principal.NTAccount]).ToString(); $kOwn.Close() }
+    $ctxWritableOk = $false
+    try {
+        $probeW = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($ctxRootRel + '\*\shell\Mxx1FixtureProtected', $true)
+        $ctxWritableOk = ($null -ne $probeW)
+        if ($probeW) { $probeW.Close() }
+    } catch { $ctxWritableOk = $false }
+    Check 'C19u 夹具自检：那条「受保护」的夹具**确实写不动**了（不然下面几条等于没测）' `
+        ((-not $ctxWritableOk) -and ($ctxProtSddl.Length -gt 20)) ('能可写打开=' + $ctxWritableOk)
     New-CtxFixture ($ctxRootRel + '\*\shell') 'Windows.Mxx1FixtureSys' '夹具·系统自带' ''
     New-CtxFixture ($ctxRootMachineRel + '\*\shell') 'Mxx1FixtureMachine' '夹具·系统区' ''
     $ctxExtParent = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey(
@@ -1564,7 +1645,7 @@ try {
         $caps = @($mwTexts | Where-Object { $_ -like '*（*）*' -and ($_ -match '程序装的|系统自带|DLL 扩展项|工具箱自己装的') })
         $capsJoined = $caps -join ' || '
         Check 'C19b 段标题按"谁装的"分段（程序装的 5 / 系统自带 1 / DLL 扩展项 1 都在）' `
-            ((($capsJoined -match '程序装的（5）') -and ($capsJoined -match '系统自带（1）') -and ($capsJoined -match 'DLL 扩展项（1）'))) `
+            ((($capsJoined -match '程序装的（6）') -and ($capsJoined -match '系统自带（1）') -and ($capsJoined -match 'DLL 扩展项（1）'))) `
             $capsJoined
         Check 'C19c 行卡片上的字（名称 / 状态 / 在哪儿）跨进程读得到 —— 不是画上去的' `
             (($mwTexts -contains '夹具·在用') -and ($mwTexts -contains '夹具·已禁用') -and `
@@ -1575,7 +1656,7 @@ try {
             ((($mwTexts -join ' ') -match '不用重启资源管理器') -and (($mwTexts -join ' ') -match '只显示、不给动')) `
             (($mwTexts | Where-Object { $_ -match '重启|只显示' }) -join ' || ')
         Check 'C19e 底栏那句小结写着这一页的真实条数（共 7 条 = 在用 5 / 已禁用 1 / 扩展项 1）' `
-            ((Get-CtxStatus $mw) -match '共 7 条（在用 5 / 已禁用 1 / 扩展项 1') (Get-CtxStatus $mw)
+            ((Get-CtxStatus $mw) -match '共 8 条（在用 6 / 已禁用 1 / 扩展项 1') (Get-CtxStatus $mw)
 
         # ---- C19f：「系统自带」那一段默认收起，点「展开」才出来（默认藏起来，最不该动的先别挡路）
         $sysRowShown = ($mwTexts -contains '夹具·系统自带（系统自带）')
@@ -1738,6 +1819,107 @@ try {
         }
         Check 'C19s 失败的那一条也写进了动作记录（写着「失败：…」并带着原因）' `
             ($failLine.Count -ge 1) (($failLine -join ' ') + ' :: ' + (Get-CtxStatus $mw))
+        # ---- C19v–C19y：Windows 保护的那类项（取得所有权并禁用）----------------------------
+        # 用户 2026-10-10 问「为什么管理员权限启动也无法禁止？」→ 量出来是所有者 TrustedInstaller、
+        # 管理员只有读权限。这里用一条自造的只读键把整条路验完（判据一样，见夹具那段的自检 C19u）。
+        $protBox = Find-CtxCheck -Hwnd $mw -RowLabel '夹具·受保护（Windows 保护）'
+        $protRowTexts = @((Get-CtxTexts $mw) | Where-Object { $_ -like '夹具·受保护*' })
+        Check 'C19v 被 Windows 保护的那一项在标题后面标出来了，而且**勾选框是灰的**（批量动作不会碰它）' `
+            ((($protRowTexts -join ' ') -match '（Windows 保护）') -and `
+             ((($null -eq $protBox) -or (-not $protBox.Enabled)))) `
+            ('行=' + ($protRowTexts -join ' | ') + ' 勾选框=' + $(if ($null -eq $protBox) { '没找到' } else { $protBox.Enabled }))
+
+        # 选中它 → 底栏应该出现「取得所有权」按钮（并且只在选中受保护项时才亮）。
+        # 这里**另起一个管理窗口**并用 `--focus` 直接选中那一行 —— 比"真鼠标点某一行"确定性强得多，
+        # 而且 `--focus` 正是提权重开时走的那条路（顺带把它也验了）。
+        $takeBtn0 = Wait-CtxButton -Hwnd $mw -Text '取得所有权'
+        $greyBefore = ($takeBtn0.Count -eq 1) -and (-not $takeBtn0[0].Enabled)
+        [void][TBGui]::CloseWindow($mw)
+        Start-Sleep -Milliseconds 700
+        $mgrP = Start-Manager -Focus 'files|Mxx1FixtureProtected'
+        $mwP = $mgrP.MainWindowHandle
+        Check 'C19w0 用 --focus 打开时照样能起来' ($mwP -ne [IntPtr]::Zero) ('handle=' + $mwP)
+        $takeBtn = Wait-CtxButton -Hwnd $mwP -Text '取得所有权'
+        Check 'C19w 底栏那句直接告诉用户"这一项被 Windows 保护 → 点取得所有权"，而且按钮这时才亮' `
+            (($takeBtn.Count -eq 1) -and $takeBtn[0].Enabled -and (((Get-CtxTexts $mwP) -join ' ') -match '被 Windows 保护')) `
+            (('按钮找到=' + $takeBtn.Count + ' 亮=' + $(if ($takeBtn.Count -eq 1) { $takeBtn[0].Enabled } else { 'x' }) + ' 没选中时是灰的=' + $greyBefore) + ' :: ' + (Get-CtxStatus $mwP))
+        $mw = $mwP      # 后面的检查都对着这个新窗口
+
+        if ($takeBtn.Count -eq 1 -and $takeBtn[0].Enabled) {
+            [void][TBGui]::Click($takeBtn[0].H)
+            $dlgT = $null
+            for ($i = 0; $i -lt 40; $i++) {
+                Start-Sleep -Milliseconds 200
+                $dlgT = @((Get-TopWindows -ProcessId $mgrP.Id) | Where-Object { $_.H -ne $main -and $_.Visible -and $_.Text -eq '请确认' })
+                if ($dlgT.Count -ge 1) { break }
+            }
+            $dlgTText = ''
+            if ($dlgT.Count -ge 1) { $dlgTText = (@(Get-ChildControls -RootHandle $dlgT[0].H | ForEach-Object { $_.Text }) -join ' ') }
+            Check 'C19x 取得所有权要过**重确认**：写明会改所有者 / 追加完全控制 / 可还原' `
+                (($dlgT.Count -ge 1) -and ($dlgTText -match 'TrustedInstaller') -and `
+                 ($dlgTText -match '所有者') -and ($dlgTText -match '还原')) $dlgTText
+            if ($dlgT.Count -ge 1) {
+                $okT = @(Get-ChildControls -RootHandle $dlgT[0].H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '取得所有权并禁用' })
+                if ($okT.Count -eq 1) { [void][TBGui]::Click($okT[0].H) } else { [void][TBGui]::CloseWindow($dlgT[0].H) }
+                for ($i = 0; $i -lt 40; $i++) {
+                    Start-Sleep -Milliseconds 250
+                    if ((Get-ItemProperty -LiteralPath $ctxProt -ErrorAction SilentlyContinue).PSObject.Properties.Name -contains 'LegacyDisable') { break }
+                }
+            }
+            $protAfter = Get-ItemProperty -LiteralPath $ctxProt -ErrorAction SilentlyContinue
+            Check 'C19y 端到端：取得所有权之后真的把隐藏开关写进去了（那一项藏起来了）' `
+                (($null -ne $protAfter) -and ($protAfter.PSObject.Properties.Name -contains 'LegacyDisable')) `
+                ('值=' + ($protAfter.PSObject.Properties.Name -join ','))
+
+            $undoAcl = Wait-CtxButton -Hwnd $mwP -Text '还原权限'
+            Check 'C19z 动作记录里那一条挂着「还原权限」（不是「恢复」——它要还的是权限）' `
+                (($undoAcl.Count -eq 1) -and $undoAcl[0].Enabled) ('找到=' + $undoAcl.Count)
+            if ($undoAcl.Count -eq 1 -and $undoAcl[0].Enabled) {
+                [void][TBGui]::Click($undoAcl[0].H)
+                # 判据用**行为口径**，不拿整串 SDDL 比字符串：程序内部那次还原已经比过 SDDL 了，
+                # 界面上该验的是"用户能不能看出还回去了" —— 开关没了 + 那个键又变回写不动 + 所有者复原。
+                $sddlBack = ''
+                $writableBack = $true
+                $ownerBack = ''
+                $hideGone = $false
+                for ($i = 0; $i -lt 40; $i++) {
+                    Start-Sleep -Milliseconds 250
+                    $sddlBack = Get-CtxSddl ($ctxRootRel + '\*\shell\Mxx1FixtureProtected')
+                    $hideGone = -not ((Get-ItemProperty -LiteralPath $ctxProt -ErrorAction SilentlyContinue).PSObject.Properties.Name -contains 'LegacyDisable')
+                    $writableBack = $false
+                    try {
+                        $w2 = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($ctxRootRel + '\*\shell\Mxx1FixtureProtected', $true)
+                        $writableBack = ($null -ne $w2)
+                        if ($w2) { $w2.Close() }
+                    } catch { $writableBack = $false }
+                    $kOwn2 = $null
+                    try {
+                        $kOwn2 = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($ctxRootRel + '\*\shell\Mxx1FixtureProtected',
+                            [Microsoft.Win32.RegistryKeyPermissionCheck]::ReadWriteSubTree,
+                            [System.Security.AccessControl.RegistryRights]::ReadPermissions)
+                        if ($kOwn2) {
+                            $ownerBack = $kOwn2.GetAccessControl([System.Security.AccessControl.AccessControlSections]::Owner).GetOwner([System.Security.Principal.NTAccount]).ToString()
+                        }
+                    } catch { }
+                    finally { if ($kOwn2) { $kOwn2.Close() } }
+                    if ($hideGone -and (-not $writableBack) -and ($ownerBack -eq $ctxProtOwner)) { break }
+                }
+                Check 'C19z2 点「还原权限」：隐藏开关删掉 + 那个键又变回写不动（权限确实还回去了）' `
+                    ($hideGone -and (-not $writableBack) -and ($ownerBack -eq $ctxProtOwner)) `
+                    ('开关没了=' + $hideGone + ' 又变回只读=' + (-not $writableBack) + ' 所有者=【' + $ownerBack + '】原本=【' + $ctxProtOwner + '】')
+            } else {
+                Check 'C19z2 点「还原权限」：隐藏开关删掉 + 那个键又变回写不动（权限确实还回去了）' $false 'skipped'
+            }
+        } else {
+            foreach ($nm in @('C19x 取得所有权要过**重确认**：写明会改所有者 / 追加完全控制 / 可还原',
+                              'C19y 端到端：取得所有权之后真的把隐藏开关写进去了（那一项藏起来了）',
+                              'C19z 动作记录里那一条挂着「还原权限」（不是「恢复」——它要还的是权限）',
+                              'C19z2 点「还原权限」：隐藏开关删掉 + 全所有者/权限写回原样（SDDL 一字不差）')) {
+                Check $nm $false 'skipped（取得所有权按钮没亮）'
+            }
+        }
+
+        # 切一页：那一页没有夹具 → 空状态那句话
         # 切一页：那一页没有夹具 → 空状态那句话
         $folderTab = @(Find-CtxButton -Hwnd $mw -Text '文件夹 0')
         if ($folderTab.Count -eq 1) { [void][TBGui]::Click($folderTab[0].H) ; Start-Sleep -Milliseconds 800 }
@@ -1781,8 +1963,8 @@ try {
 }
 finally {
     # 夹具与测试根删掉；测试自己产生的 .reg 备份 / 动作记录也按原样放回（别在用户机器上留测试痕迹）
-    Remove-Item -LiteralPath 'HKCU:\Software\mxx1-toolbox\ctxmenu-test' -Recurse -Force -ErrorAction SilentlyContinue
-    Remove-Item -LiteralPath 'HKCU:\Software\mxx1-toolbox\ctxmenu-test-machine' -Recurse -Force -ErrorAction SilentlyContinue
+    Clear-CtxLeftover $ctxRootRel
+    Clear-CtxLeftover $ctxRootMachineRel
     $ctxBackupNow = @(Get-ChildItem -LiteralPath $ctxBackupDir -File -ErrorAction SilentlyContinue |
         Select-Object -ExpandProperty Name)
     foreach ($n in @($ctxBackupNow | Where-Object { $ctxBackupBefore -notcontains $_ })) {

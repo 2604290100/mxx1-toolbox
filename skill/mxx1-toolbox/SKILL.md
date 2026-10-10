@@ -28,6 +28,14 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
 > 正本 `docs\DESIGN.md` **§12.66**；`CHANGELOG.md` 的 `## [未发布]` 有完整条目。
 > **推送 / 发版照旧要用户点头**，版本号还没动（下次发版大概 1.5.6）。
 >
+> **⚠️ 2026-10-10 又补了一轮：被 Windows 保护的那类项也能禁用了。** 用户问「**为什么管理员权限启动
+> 也无法禁止？**」→ 量出来是那些键（`HKLM\...\Drive\shell\cmd` 等）**所有者是 TrustedInstaller、
+> 管理员只有 ReadKey**，提权也没用。现在：界面标「（Windows 保护）」+ 勾选框灰掉 + 底栏提示 +
+> 新按钮「取得所有权」（重确认后改所有者 + 追加完全控制 + 写隐藏开关，原样 SDDL 存成 .sddl），
+> 动作记录里挂「还原权限」把它写回去。新文件 `src\RegAcl.cs`；探针 `tools\Show-MenuOrder.ps1` 加了
+> `-Extended`。⚠️ 还修了个真 bug：一个只读的键会让 `OpenSubKey("command")` 抛异常 → 整个窗口崩掉。
+> 正本 `docs\DESIGN.md` §12.66 ⑧、坑 48；回归 界面 C19u–C19z2 + 命令行 M50b。
+>
 > **⚠️ 2026-10-09 晚十：界面按用户挑的方案重做过一轮**（他原话「**右键菜单管理 的界面是不是可以优化
 > 一下，给我几个方案看看。最好就是和主窗口【萌新工具箱】界面统一风格**」）——**宽行卡片**（段标题 +
 > 一行行卡片，不再用 ListView）+ **勾选多选 + 底栏动作** + **禁用/恢复不弹确认、删除仍然弹** +
@@ -163,6 +171,12 @@ D:\萌新工具开发\toolbox\
                                    不是子键 —— 拼成 `<类键>\shell\shellex\...` 就永远列不出扩展项。
                                    删除前必备份成 .reg（备份没成功就绝不删）；测试走
                                    `MXX1_CTXMENU_ROOT` / `MXX1_CTXMENU_ROOT_MACHINE` 两个隔离根
+  src\RegAcl.cs                    **2026-10-10**：注册表权限那一层 —— `CanWrite`（**只读判断**：试着以可写
+                                   方式打开，用来标注"改不动的项"）、`ReadSddl` / `TakeOwn` / `RestoreSddl`
+                                   （取得所有权 + 还原权限：两个特权 SeTakeOwnershipPrivilege /
+                                   SeRestorePrivilege 都**要先在进程里打开**，管理员默认持有但默认关着）。
+                                   ⚠️ **存不下原样 SDDL 就绝不动手**；只加 ACE、不删原有 ACE。
+                                   为什么需要它：那些键所有者是 TrustedInstaller、管理员只有 ReadKey。
   src\CtxMenuForm.cs               同上的窗口（**2026-10-09 界面重做过**）：5 个位置页签（**带条数**，高 30 写死）
                                    + 搜索框（灰字提示）+ 五个快选 + 段标题 + 一行行卡片（勾选多选）
                                    + 底栏（禁用 / 恢复 / 删除（先备份）/ 刷新 / 关闭，数字跟着勾选变）

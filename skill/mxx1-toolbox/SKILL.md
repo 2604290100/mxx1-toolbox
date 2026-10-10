@@ -16,7 +16,17 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
 > **接手 / 新会话先做两件事**：读 `docs\DESIGN.md`（外观与行为的**唯一正本**）和本文件。
 > 设计一改先改 `DESIGN.md`，再同步本 skill —— 两份分叉就会出现"两套行为"。
 
-## 当前状态（2026-10-09，v1.5.5 已发布）
+## 当前状态（2026-10-09 晚补九，**未发布**）
+
+> **⚠️ 有一批改动还没提交 / 没发版**：2026-10-09 用户要的「**右键菜单管理**」
+> （原话：「工具箱做一个 右键菜单管理按钮 弹出一个窗口显示右键菜单的列表【要考虑多种情况下的
+> 右键的文件列表、文件夹列表、桌面列表的右键展示】，功能暂定 禁用、恢复、删除。你整理一个文字
+> 效果图发我看一下，使用最简单的方案」）。落地：`src\CtxMenu.cs` + `src\CtxMenuForm.cs` + 按钮
+> 「右键菜单管理」（右键增强页「状态与修补」段第 4 个，**16 → 17 个按钮**，总按钮 121 → **122**）+
+> 只读出口 `rightmenu list`。**禁用 = 往那个键写 `LegacyDisable` 空值**（量出来的，改名没用）、
+> **删除先备份 .reg**、**扩展项只显示**、**要管理员的项提权重开 + 再点一次**。
+> 正本 `docs\DESIGN.md` **§12.66**；`CHANGELOG.md` 的 `## [未发布]` 有完整条目。
+> **推送 / 发版照旧要用户点头**，版本号还没动（下次发版大概 1.5.6）。
 
 - 版本 **1.5.5**（`src\AssemblyInfo.cs` 是唯一来源），已打 tag `v1.5.5` 并发 Release：
   <https://github.com/2604290100/mxx1-toolbox/releases/tag/v1.5.5>（`Mxx1Toolbox.exe` 842,240 字节 +
@@ -133,6 +143,22 @@ D:\萌新工具开发\toolbox\
   src\RightMenu.cs                 「右键增强」后端：在 HKCU\Software\Classes 下装 / 卸 verb 与级联子菜单、
                                    写前记原值（rightmenu-installed.tsv）、按位置给占位符（%1 / %V）、
                                    启动时顺手修补自己装过的键、读 Context Menu Manager Plus 的态度
+  src\CtxMenu.cs                   **2026-10-09**：「右键菜单管理」后端 —— 按**五个位置**（文件 / 文件夹 /
+                                   文件夹空白处 / 桌面 / 磁盘）列出右键菜单里**真实存在的项**（含别的软件装的、
+                                   含 DLL 扩展项），并且能 **禁用 / 恢复 / 删除**。
+                                   ⭐ **禁用 = 往那个键里写一个 `LegacyDisable` 空值**（键结构和标题一个字不动，
+                                   恢复 = 删掉这个值）—— 这是 2026-10-09 用只读探针**量**出来的：
+                                   「整键改名」那条路**没用**（菜单里照样显示，键名被当成标题兜底）。
+                                   五种写法 + 五个位置的实测表在 `docs\DESIGN.md` §12.66 ①。
+                                   ⚠️ `shellex` 是 `shell` 的**兄弟**（`<类键>\shellex\ContextMenuHandlers`），
+                                   不是子键 —— 拼成 `<类键>\shell\shellex\...` 就永远列不出扩展项。
+                                   删除前必备份成 .reg（备份没成功就绝不删）；测试走
+                                   `MXX1_CTXMENU_ROOT` / `MXX1_CTXMENU_ROOT_MACHINE` 两个隔离根
+  src\CtxMenuForm.cs               同上的窗口：5 个位置页签 + 列表 + 「禁用 / 恢复 / 删除（先备份）/
+                                   刷新 / 打开备份文件夹 / 关闭」+ 只读报告框（写清动了哪个键）。
+                                   **要管理员的项走"提权重开窗口 + 自动选中原来那一行 + 再点一次"**：
+                                   自动做完就需要一个"带动作"的命令行参数，那会破掉
+                                   「命令行只有只读入口」这条底线（L07 / M52 钉着）。
   src\MenuIcons.cs                 菜单图标：把内嵌的按钮 PNG 现场转成多尺寸 .ico（注册表的 Icon
                                    只认 exe/dll 图标资源或 .ico，**指 .png 是无效的**）
   src\FileLock.cs                  「谁占着这个文件」：Restart Manager（rstrtmgr.dll）P/Invoke +
@@ -235,7 +261,7 @@ D:\萌新工具开发\toolbox\
                                    N21/N21d「提示卡就在鼠标旁边、卡片上有字」、**N21b 卡片不跟着鼠标跑**、
                                    N21c 给了 `--notify` 还是到点自己消失、
                                    **N21e/N21f/N21g「不给 --notify 时 1 秒还在、5 秒自己关掉 + 点一下立刻关 + 新卡顶掉上一张」**）、
-                                   I 组 27 项把条款确认窗口真开起来点一遍，含 I10b/I10c；C01e 钉右键增强页 8 段段序、C01f 钉那 16 个按钮的名单）
+                                   I 组 27 项把条款确认窗口真开起来点一遍，含 I10b/I10c；C01e 钉右键增强页 8 段段序、C01f 钉那 17 个按钮的名单、C17–C19o 钉「右键菜单管理」窗口）
   docs\DESIGN.md                   设计正本（含"踩过的坑"清单 + §13.7 自动按钮 + §16 兼容性 + §17 条款门）
   docs\DISCLAIMER.md               免责声明与服务条款正本（**编译时内嵌进 exe**，窗口显示的就是它）
   assets\app.manifest              清单：asInvoker + supportedOS（Win7/8/8.1/10）+ System DPI + longPathAware
@@ -271,6 +297,7 @@ powershell -File tools\Make-AppIcon.ps1       # 重生成 assets\app.ico（改�
 & bin\Mxx1Toolbox.exe privacy status          # 只读列隐私开关状态；selftest 自检「原值→写入→还原」
 & bin\Mxx1Toolbox.exe sysreg  status          # 只读列 6 组系统设置开关的现状；items / selftest 同上
 & bin\Mxx1Toolbox.exe rightmenu status        # 只读列右键菜单里装了什么 / 子菜单几项（**写入口只在界面里点**）
+& bin\Mxx1Toolbox.exe rightmenu list          # 只读列五个位置里**真实存在**的菜单项（含别人的软件装的 / DLL 扩展项）
 & bin\Mxx1Toolbox.exe rightmenu unlock --query-only <路径>   # 只查谁占着这个文件，不弹窗也不结束进程
 & bin\Mxx1Toolbox.exe rightmenu unlock --auto <路径>         # **一键解除占用**：不弹窗，直接结束占着它的程序
                                                             #   加 --notify=<毫秒> 定提示卡显示多久（--quiet 连它也不要）
@@ -486,7 +513,7 @@ powershell -File tools\Make-AppIcon.ps1       # 重生成 assets\app.ico（改�
 - 全是只读查看：**不加 `danger` / `runAsAdmin` / 二次确认**。
 - 想加一个系统工具：在 `SystemTargets` 数组里加一行 + `tools\system.json` 里加一条同 `action` 的按钮。
 
-## 「右键增强」怎么点（16 个按钮 = 15 个右键菜单按钮（6 对装 / 撤 + 状态 / 重建 / 说明）+ 隔壁工具）
+## 「右键增强」怎么点（17 个按钮 = 16 个右键菜单按钮（6 对装 / 撤 + 状态 / 重建 / 说明 + 右键菜单管理）+ 隔壁工具）
 
 **用户 2026-10-04 定的方案**（设计正本 `docs\DESIGN.md` §14，晚六最终口径见 **§12.63**）：
 工具箱自己往 Windows 右键菜单里装 **六样**东西 —— **只写 `HKCU\Software\Classes`**，不要管理员、
@@ -522,7 +549,7 @@ powershell -File tools\Make-AppIcon.ps1       # 重生成 assets\app.ico（改�
 `Mxx1CopyPath`（去掉 `--quote`）与 `Mxx1Terminal`（变成子菜单父项）是**同名就地改写**，
 启动时 `SyncIfInstalled` 会做（见 §12.63）；**晚七又把它们换成带序号的键名**（§12.64，自动换）。
 **段序**：六个功能段 → 隔壁工具 → **状态与修补放最底下**（共 8 段）；⚠️ 置顶的「永久删除工具」
-永远排在页面最前（C01e 盯着整页顺序、C01f 盯着 16 个按钮的名单）。**页面段序 ≠ 右键菜单里的先后**：
+永远排在页面最前（C01e 盯着整页顺序、C01f 盯着 17 个按钮的名单）。**页面段序 ≠ 右键菜单里的先后**：
 后者由键名里的序号决定，改段号不会动菜单。
 
 **第三项「一键解除占用」**（`src\AutoUnlock.cs`，用户 2026-10-05 点名要的"不弹窗版本"）：
@@ -633,8 +660,15 @@ powershell -File tools\Make-AppIcon.ps1       # 重生成 assets\app.ico（改�
 - **装 / 卸 / 状态**（`src\RightMenu.cs`）：写之前记原值（`rightmenu-installed.tsv`，和
   `sysreg-original.tsv` 同一套路）、写完读回核对、撤掉时**只删自己那几个 `Mxx1*` 键** ——
   同名键不是工具箱写的就跳过并在报告里说明（不覆盖、不删别人的东西）。
-  **命令行只有只读入口**（`rightmenu status|items|help`、`rightmenu unlock --query-only <路径>`），
+  **命令行只有只读入口**（`rightmenu status|items|list|help`、`rightmenu unlock --query-only <路径>`），
   写注册表只在界面里点（和 `sysreg` 同一条规矩）。
+- **「右键菜单管理」**（`src\CtxMenu.cs` / `src\CtxMenuForm.cs`，2026-10-09 新增，按钮在「状态与修补」段）：
+  按位置列出真实菜单项 + 禁用 / 恢复 / 删除。三条要记住的：
+  ① **禁用写 `LegacyDisable` 空值**（不是改名 —— 改名实测没用）；② **删除先备份 .reg，备份没成功就绝不删**；
+  ③ **扩展项这一版只显示不给动**（另一套机制：系统级黑名单 + 必须重启资源管理器 + 禁了是所有位置一起没）。
+  只读出口 `rightmenu list [--zone=…]`；要管理员的项 = 提权重开窗口 + 用户**再点一次**（命令行里
+  **不存在**"带动作"的参数，`rightmenu disable` 这种写法一律退出码 2）。正本 `docs\DESIGN.md` §12.66，
+  回归 = 命令行 M49–M54 + 界面 C17–C19o。
 - **菜单图标（v1.5.1，`src\MenuIcons.cs`）**：注册表的 `Icon` **只认"带图标资源的 exe/dll"或 `.ico`
   文件，指 `.png` 是无效的**；而工具箱那个 exe 自己也没有 `/win32icon`（`assets\app.ico` 不存在，
   `build.ps1` 那行等于没生效）—— 所以 v1.5.0 写 `Icon=<exe>` 的结果是**菜单里一片空白**（用户报的）。

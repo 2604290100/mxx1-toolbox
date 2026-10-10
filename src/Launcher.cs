@@ -366,6 +366,7 @@ namespace Mxx1Toolbox
                         if (a == "status") { return "只读：列出右键菜单里装了什么、子菜单现在几项"; }
                         if (a == "rebuild") { return "重写「" + RightMenu.CommonTitle + "」子菜单的内容（置顶 / 最近使用变了之后手动兜底）"; }
                         if (a == "help") { return "一页说明：装在哪、怎么卸干净、右键里看不到怎么办"; }
+                        if (a == "manage") { return "在本程序里打开「右键菜单管理」窗口（按位置列出右键菜单里真实存在的项，能禁用 / 恢复 / 删除）"; }
                         return "内置动作: " + t.Module + "/" + t.Action;
                     }
                     if (t.Module == ModuleApp)

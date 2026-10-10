@@ -26,6 +26,15 @@ namespace Mxx1Toolbox
                     Application.Run(new UnlockForm(PathsFrom(args)));
                     return 0;
                 }
+                // 「右键菜单管理」窗口。这一条有两个来路：界面里那个按钮（直接 new），
+                // 以及**需要管理员时提权重开自己**（`rightmenu manage --focus=<位置>|<键名>`）。
+                // ⚠️ 命令行里**没有"带动作"的参数** —— 重开只带"聚焦哪一行"，真正写注册表
+                // 仍然只能由用户在窗口里点出来（`rightmenu list` 是只读的），这条底线没破。
+                if (IsCtxMenuGui(args))
+                {
+                    Application.Run(new CtxMenuForm(FocusFrom(args)));
+                    return 0;
+                }
                 // `ui log` / `ui settings`：右键「常用功能」子菜单里那几个固定入口。打开主界面，
                 // 然后替用户点一下那个界面动作（否则从资源管理器点出来会"什么都不发生"）。
                 if (string.Equals(args[0], "ui", StringComparison.OrdinalIgnoreCase))
@@ -63,6 +72,28 @@ namespace Mxx1Toolbox
                 if (string.Equals(a, "--auto", StringComparison.OrdinalIgnoreCase)) { return false; }
             }
             return true;
+        }
+
+        /// <summary>`rightmenu manage [--focus=&lt;位置&gt;|&lt;键名&gt;]` = 打开「右键菜单管理」窗口。
+        /// 提权重开走的也是这一条：**只带"聚焦哪一行"，不带任何动作**。</summary>
+        private static bool IsCtxMenuGui(string[] args)
+        {
+            if (args.Length < 2) { return false; }
+            if (!string.Equals(args[0], "rightmenu", StringComparison.OrdinalIgnoreCase)) { return false; }
+            return string.Equals(args[1], "manage", StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>`--focus=<位置id>|<键名>`（提权重开时自动选中原来那一行）。</summary>
+        private static string FocusFrom(string[] args)
+        {
+            foreach (string a in args)
+            {
+                if (a.StartsWith("--focus=", StringComparison.OrdinalIgnoreCase))
+                {
+                    return a.Substring(8).Trim().Trim('"');
+                }
+            }
+            return "";
         }
 
         /// <summary>解锁窗口要处理的路径（跳过开关；多选时资源管理器会给多个）。</summary>
@@ -255,6 +286,9 @@ namespace Mxx1Toolbox
             Console.WriteLine("  Mxx1Toolbox.exe sysreg status        只读列出系统设置开关（任务栏/开始菜单/内核隔离…）的状态与原值");
             Console.WriteLine("  Mxx1Toolbox.exe sysreg selftest      自检系统设置那条链路（DWORD / 字符串 / 整棵键三种值）");
             Console.WriteLine("  Mxx1Toolbox.exe rightmenu status     只读列出右键菜单里装了什么（装 / 卸只在界面里点）");
+            Console.WriteLine("  Mxx1Toolbox.exe rightmenu list       只读列出五个位置里真实存在的菜单项（含别人的软件装的 / DLL 扩展）");
+            Console.WriteLine("                                                       选项：--zone=files|folder|folderbg|desktop|drive");
+            Console.WriteLine("  Mxx1Toolbox.exe rightmenu manage     打开「右键菜单管理」窗口（禁用 / 恢复 / 删除都在界面里点）");
             Console.WriteLine("  Mxx1Toolbox.exe rightmenu help       右键增强的说明（怎么卸干净 / 菜单没出现怎么办）");
             Console.WriteLine("  Mxx1Toolbox.exe rightmenu unlock --query-only <路径>   只查谁占着这个文件，不弹窗不结束进程");
             Console.WriteLine("  Mxx1Toolbox.exe rightmenu unlock --auto <路径>         一键解除占用：不弹窗口，直接结束占用它的程序");
@@ -534,6 +568,13 @@ namespace Mxx1Toolbox
                 Console.Write(RightMenu.Help());
                 return 0;
             }
+            // 「右键菜单管理」的只读出口：列出每个位置里真实存在的项（含别的软件的项）。
+            // 写（禁用 / 恢复 / 删除）只在界面里点 —— 和 sysreg 同一条规矩（回归 L07 钉着这条）。
+            if (what == "list")
+            {
+                Console.Write(CtxMenu.Report(ZoneArg(args)));
+                return 0;
+            }
             if (what == "unlock")
             {
                 return UnlockQuery(args);
@@ -542,8 +583,22 @@ namespace Mxx1Toolbox
             {
                 return HandlesQuery(args);
             }
-            Console.Error.WriteLine("用法: rightmenu status | items | help | unlock [--query-only|--auto] <路径> | handles <路径>");
+            Console.Error.WriteLine("用法: rightmenu status | items | list [--zone=<位置>] | help | unlock [--query-only|--auto] <路径> | handles <路径>");
             return 2;
+        }
+
+        /// <summary>`rightmenu list --zone=<位置id>`（不给就是全部位置）。已知的位置 id 在
+        /// `CtxMenu.Zones` 里（files / folder / folderbg / desktop / drive）。</summary>
+        private static string ZoneArg(string[] args)
+        {
+            foreach (string a in args)
+            {
+                if (a.StartsWith("--zone=", StringComparison.OrdinalIgnoreCase))
+                {
+                    return a.Substring(7).Trim().Trim('"');
+                }
+            }
+            return "";
         }
 
         /// <summary>`rightmenu unlock ...` 后面那串路径（跳过 -- 开头的开关；多选时资源管理器

@@ -1425,6 +1425,16 @@ namespace Mxx1Toolbox
                 Logger.Write(t.Name, "打开常用链接窗口");
                 return;
             }
+            if (t.Kind == "builtin" && t.Module == Launcher.ModuleRightMenu && t.Action == "manage")
+            {
+                // 「右键菜单管理」：程序自己的窗口（列表 + 禁用 / 恢复 / 删除）。
+                // 写注册表的动作全在窗口里点出来 —— 所以**这里不弹确认框**（点了它本身什么都不改），
+                // 每一步都过窗口里那个确认框。
+                OpenCtxMenuManager("");
+                SetStatus(t.Name + " · 已打开右键菜单管理");
+                Logger.Write(t.Name, "打开右键菜单管理窗口");
+                return;
+            }
             if (t.Kind == "builtin" && t.Module == Launcher.ModulePermdel && t.Action == "enginelog")
             {
                 OpenEngineLog();
@@ -1756,6 +1766,15 @@ namespace Mxx1Toolbox
         {
             LogForm f = new LogForm("引擎日志（永久删除）", AppPaths.PermdelEngineLog,
                 "最新的在最上面 —— " + AppPaths.PermdelEngineLog, _theme, true);
+            WindowPlacement.ShowCentered(f, this);
+        }
+
+        /// <summary>「右键菜单管理」窗口（右键增强页那个按钮，或者提权重开时从命令行进来）。
+        /// 窗口自己就是后端 `src\CtxMenu.cs` 的界面 —— 禁用 / 恢复 / 删除都在里面点，
+        /// 每一步过确认框，写注册表也只从界面写（命令行 `rightmenu list` 是只读的）。</summary>
+        private void OpenCtxMenuManager(string focus)
+        {
+            CtxMenuForm f = new CtxMenuForm(focus);
             WindowPlacement.ShowCentered(f, this);
         }
 

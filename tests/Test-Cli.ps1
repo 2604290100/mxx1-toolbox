@@ -391,13 +391,13 @@ foreach ($line in ($status.Out -split "`r?`n")) {
     }
 }
 
-Check ('A04 按钮总数 121 + 工具目录里自动加载的 {0} 个（测试期间用户层的按钮会暂停：常用 33 + 系统工具 27 + 隐私 29 + 应用 5 + 清理 8 + 右键 16 + 我的 3）' -f $autoBase) `
-    ((Get-Key $status.Out 'buttons') -eq [string](121 + $autoBase)) (Get-Key $status.Out 'buttons')
+Check ('A04 按钮总数 122 + 工具目录里自动加载的 {0} 个（测试期间用户层的按钮会暂停：常用 33 + 系统工具 27 + 隐私 29 + 应用 5 + 清理 8 + 右键 17 + 我的 3）' -f $autoBase) `
+    ((Get-Key $status.Out 'buttons') -eq [string](122 + $autoBase)) (Get-Key $status.Out 'buttons')
 Check 'A05 内置清单里没有灰色占位按钮了（两个「资源管理器」也接上了真功能；灰规则改由 B 组注入验证）' ((Get-Key $status.Out 'placeholders') -eq '0') (Get-Key $status.Out 'placeholders')
 Check 'A06 危险按钮 3 个' ((Get-Key $status.Out 'dangerous') -eq '3') (Get-Key $status.Out 'dangerous')
 
 # 「常用」页签是合成的（置顶 + 最近使用），清单里没有它的按钮，所以是 0
-$tabExpect = @{ 'recent' = 0; 'common' = 33; 'mine' = 3; 'system' = 27; 'cleanup' = 8; 'privacy' = 29; 'apps' = 5; 'rightmenu' = 16 }
+$tabExpect = @{ 'recent' = 0; 'common' = 33; 'mine' = 3; 'system' = 27; 'cleanup' = 8; 'privacy' = 29; 'apps' = 5; 'rightmenu' = 17 }
 $tabOk = $true
 $tabDetail = @()
 foreach ($k in $tabExpect.Keys) {
@@ -405,16 +405,16 @@ foreach ($k in $tabExpect.Keys) {
     $tabDetail += ($k + '=' + $v)
     if ($v -ne [string]([int]$tabExpect[$k] + [int]$autoByTab[$k])) { $tabOk = $false }
 }
-Check 'A07 八个页签的按钮数正确（0/33/3/27/8/29/5/16，加上自动按钮）' $tabOk ($tabDetail -join ' ')
+Check 'A07 八个页签的按钮数正确（0/33/3/27/8/29/5/17，加上自动按钮）' $tabOk ($tabDetail -join ' ')
 
 $list = Invoke-Exe 'list'
 Check 'A08 list 退出码 0' ($list.Code -eq 0) ('exit=' + $list.Code)
-Check 'A09 list 报的按钮数一致' ((Get-Key $list.Out 'buttons') -eq [string](121 + $autoBase)) (Get-Key $list.Out 'buttons')
+Check 'A09 list 报的按钮数一致' ((Get-Key $list.Out 'buttons') -eq [string](122 + $autoBase)) (Get-Key $list.Out 'buttons')
 $lines = @($list.Out -split "`r?`n" | Where-Object { $_ -match "`t" })
-Check ('A10 list 打出 {0} 行按钮' -f (121 + $autoBase)) ($lines.Count -eq (121 + $autoBase)) ('lines=' + $lines.Count)
+Check ('A10 list 打出 {0} 行按钮' -f (122 + $autoBase)) ($lines.Count -eq (122 + $autoBase)) ('lines=' + $lines.Count)
 
 $rmList = Invoke-Exe 'list --tab rightmenu'
-Check 'A11 右键增强 16 个按钮（15 个右键菜单功能 + 隔壁永久删除工具）' ((Get-Key $rmList.Out 'shown') -eq [string](16 + [int]$autoByTab['rightmenu'])) (Get-Key $rmList.Out 'shown')
+Check 'A11 右键增强 17 个按钮（16 个右键菜单功能 + 隔壁永久删除工具）' ((Get-Key $rmList.Out 'shown') -eq [string](17 + [int]$autoByTab['rightmenu'])) (Get-Key $rmList.Out 'shown')
 Check 'A12 右键增强里的按钮是"真功能"（不带 placeholder 标记）' (-not ($rmList.Out -match 'placeholder')) ''
 Check 'A13 右键增强那个按钮叫「永久删除工具」' ($rmList.Out -match '永久删除工具') (($rmList.Out -split "`r?`n" | Where-Object { $_ -match "`t" }) -join '')
 
@@ -910,7 +910,7 @@ Write-Host 'H 组 · 悬停说明（用户 2026-10-04 报过「鼠标悬停的�
 # tip 命令打印的就是界面塞给 ToolTip 的那个字符串，所以这里能直接断言，不用去动真鼠标。
 $tipsAll = Invoke-Exe 'tip'
 Check 'H01 tip 退出码 0' ($tipsAll.Code -eq 0) ('exit=' + $tipsAll.Code)
-Check ('H02 tip 覆盖了每个按钮（121 + 自动 {0} 个）' -f $autoBase) ((Get-Key $tipsAll.Out 'tips') -eq [string](121 + $autoBase)) (Get-Key $tipsAll.Out 'tips')
+Check ('H02 tip 覆盖了每个按钮（122 + 自动 {0} 个）' -f $autoBase) ((Get-Key $tipsAll.Out 'tips') -eq [string](122 + $autoBase)) (Get-Key $tipsAll.Out 'tips')
 
 $blocks = @{}
 $curId = ''
@@ -1286,7 +1286,7 @@ Check 'M47b legacy= 报的是上一版那六个旧键名（换名迁移的名单
 
 $rmList = Invoke-Exe 'list --tab rightmenu'
 $rmBtns = @($rmList.Out -split "`r?`n" | Where-Object { $_ -match '^rightmenu\.' })
-Check 'M04 「右键增强」页签新增 15 个按钮（加上隔壁永久删除工具 = 16 个）' ($rmBtns.Count -eq 15) ('新按钮=' + $rmBtns.Count)
+Check 'M04 「右键增强」页签新增 16 个按钮（加上隔壁永久删除工具 = 17 个）' ($rmBtns.Count -eq 16) ('新按钮=' + $rmBtns.Count)
 $rmOnOff = @($rmBtns | Where-Object { $_ -match 'rightmenu/(unlock|auto|common|copyname|copy|terminal)\.(on|off)' })
 Check 'M05 装 / 撤是成对的（解除占用 + 一键解除 + 常用功能 + 复制文件名 + 复制文件路径 + 在此处打开终端 共 6 对）' ($rmOnOff.Count -eq 12) ('数=' + $rmOnOff.Count)
 # 用户 2026-10-06 晚六最后定的口径：「复制」两条**各一对**按钮（16 个按钮），不是一对按钮管两条 ——
@@ -2047,6 +2047,130 @@ Check 'M23 收尾干净：测试根删掉了、用户的原值记录按原样放
 $rmRealIconAfter = @(Get-ChildItem -LiteralPath $rmRealIconDir -File -ErrorAction SilentlyContinue).Count
 Check 'M23b 撤掉测试项没动用户真实那份图标目录（文件数不变）' `
     ($rmRealIconAfter -eq $rmRealIconsBefore) ('before=' + $rmRealIconsBefore + ' after=' + $rmRealIconAfter)
+
+# ---- 右键菜单管理的**只读出口**（`rightmenu list`）+「命令行没有写入口」那条底线（M49–M54）----
+# 窗口那一半（5 页签 / 列表 / 禁用 / 恢复 / 删除 / 报告行）由界面套件的 C17–C19g 盯着；
+# 这里只盯命令行这一半。整段仍然在**隔离的根**里做（MXX1_CTXMENU_ROOT / _MACHINE），
+# 用户真实那份右键菜单一个键都不许碰。
+$cxRootRel = 'Software\mxx1-toolbox\ctxmenu-test'
+$cxRootRelMachine = 'Software\mxx1-toolbox\ctxmenu-test-machine'
+$cxEnv = @{
+    MXX1_CTXMENU_ROOT         = 'HKCU\Software\mxx1-toolbox\ctxmenu-test'
+    MXX1_CTXMENU_ROOT_MACHINE = 'HKCU\Software\mxx1-toolbox\ctxmenu-test-machine'
+}
+$cxBackupDir = Join-Path $env:LOCALAPPDATA 'mxx1-toolbox\ctxmenu-backup'
+$cxActionLog = Join-Path $env:LOCALAPPDATA 'mxx1-toolbox\ctxmenu-actions.tsv'
+$cxActionLogHad = Test-Path -LiteralPath $cxActionLog
+$cxActionLogOld = ''
+if ($cxActionLogHad) { $cxActionLogOld = [System.IO.File]::ReadAllText($cxActionLog) }
+$cxBackupBefore = @(Get-ChildItem -LiteralPath $cxBackupDir -File -ErrorAction SilentlyContinue).Count
+$cxRealKeysBefore = @(Get-ChildItem -LiteralPath 'HKCU:\Software\Classes\*\shell' -ErrorAction SilentlyContinue |
+    Select-Object -ExpandProperty PSChildName)
+
+# 夹具：三种状态（在用 / 已禁用）+ 一条"只在系统区"的 + 一个 DLL 扩展项。
+# 用 .NET 的注册表 API 而不是 PowerShell 的 provider：`*\shell` 里的 `*` 在 provider 眼里是**通配符**，
+# New-Item / Get-Item 不带 -LiteralPath 就会跑到别的地方去（注册表 API 不认通配符，最稳）。
+function New-CtxFixture {
+    param([string]$RootRel, [string]$Verb, [string]$Title, [string]$ExtraValue)
+    $base = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey($RootRel)
+    $k = $base.CreateSubKey($Verb)
+    $k.SetValue('', $Title)
+    $c = $k.CreateSubKey('command')
+    $c.SetValue('', 'cmd.exe /c exit')
+    $c.Close()
+    if ($ExtraValue) { $k.SetValue($ExtraValue, '') }
+    $k.Close()
+    $base.Close()
+}
+
+# 测试根下面所有值的一张快照（键路径|值名=值），用来断言"这一串只读命令一个字节都没写"。
+function Get-CtxTestSnapshot {
+    $lines = @()
+    foreach ($rel in @($script:cxRootRel, $script:cxRootRelMachine)) {
+        $stack = New-Object System.Collections.Stack
+        $stack.Push($rel)
+        while ($stack.Count -gt 0) {
+            $p = $stack.Pop()
+            $k = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($p)
+            if (-not $k) { continue }
+            foreach ($n in $k.GetValueNames()) { $lines += ($p + '|' + $n + '=' + $k.GetValue($n)) }
+            foreach ($s in $k.GetSubKeyNames()) { $stack.Push($p + '\' + $s) }
+            $k.Close()
+        }
+    }
+    return (($lines | Sort-Object) -join "`n")
+}
+
+try {
+    New-CtxFixture ($cxRootRel + '\*\shell') 'Mxx1FixtureKeep' '夹具·在用' ''
+    New-CtxFixture ($cxRootRel + '\*\shell') 'Mxx1FixtureOff' '夹具·已禁用' 'LegacyDisable'
+    New-CtxFixture ($cxRootRel + '\*\shell') 'Mxx1FixtureDel' '夹具·待删' ''
+    New-CtxFixture ($cxRootRelMachine + '\*\shell') 'Mxx1FixtureMachine' '夹具·系统区' ''
+    $cxExtParent = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey(
+        $cxRootRel + '\*\shellex\ContextMenuHandlers')
+    $cxExtKey = $cxExtParent.CreateSubKey('Mxx1FixtureExt')
+    $cxExtKey.SetValue('', '{23170F69-40C1-278A-1000-000100020000}')
+    $cxExtKey.Close()
+    $cxExtParent.Close()
+    $cxSnapBefore = Get-CtxTestSnapshot
+
+    $cxList = Invoke-Exe 'rightmenu list --zone=files' 60 $Exe $cxEnv
+    $cxEntry = @($cxList.Out -split "`r?`n" | Where-Object { $_ -like "entry`tfiles`t*" })
+    Check 'M49 只读列出这一页的项：夹具五条都在，状态（在用 / 已禁用 / 扩展项）与位置（用户区 / 系统区）都对' `
+        (($cxList.Code -eq 0) -and ($cxEntry.Count -eq 5) -and `
+         (@($cxEntry | Where-Object { $_ -match "Mxx1FixtureKeep`t夹具·在用`t在用`tuser" }).Count -eq 1) -and `
+         (@($cxEntry | Where-Object { $_ -match "Mxx1FixtureOff`t夹具·已禁用`t已禁用`tuser" }).Count -eq 1) -and `
+         (@($cxEntry | Where-Object { $_ -match "Mxx1FixtureMachine`t夹具·系统区`t在用`tmachine" }).Count -eq 1) -and `
+         (@($cxEntry | Where-Object { $_ -match "shellex`tMxx1FixtureExt`t.*扩展项`tuser" }).Count -eq 1)) `
+        ('exit=' + $cxList.Code + ' 行=' + $cxEntry.Count + ' :: ' + ($cxEntry -join ' / '))
+
+    $cxZone = @($cxList.Out -split "`r?`n" | Where-Object { $_ -like "zone`tfiles`t*" })
+    Check 'M50 zone 行的数字对得上夹具（共 5 = 在用 3 / 已禁用 1 / 扩展项 1；其中 1 条在系统区）' `
+        (($cxZone.Count -eq 1) -and ($cxZone[0] -eq "zone`tfiles`t文件`t5`t3`t1`t1`t1")) ($cxZone -join ' / ')
+
+    $cxFolder = Invoke-Exe 'rightmenu list --zone=folder' 60 $Exe $cxEnv
+    $cxAll = Invoke-Exe 'rightmenu list' 60 $Exe $cxEnv
+    $cxZoneKeys = @()
+    foreach ($zid in @('files', 'folder', 'folderbg', 'desktop', 'drive')) {
+        if ($cxAll.Out -match ("(?m)^zone`t" + $zid + "`t")) { $cxZoneKeys += $zid }
+    }
+    Check 'M51 --zone 只管一页；不给 --zone 时五个位置各有一行（位置名单和窗口上的页签一致）' `
+        (((@($cxFolder.Out -split "`r?`n" | Where-Object { $_ -like "zone`tfolder`t文件夹`t0`t0`t0`t0`t0" }).Count) -eq 1) -and `
+         (($cxZoneKeys -join ',') -eq 'files,folder,folderbg,desktop,drive')) `
+        ('--zone=folder 的 zone 行=' + (@($cxFolder.Out -split "`r?`n" | Where-Object { $_ -like 'zone*' }) -join ' | ') + `
+         ' 全部位置=' + ($cxZoneKeys -join ','))
+
+    # ---- 底线：命令行**只有只读入口**。`rightmenu disable / delete / restore` 这类"带动作"的写法
+    #      一律不认（退出码 2）—— 写注册表只能从界面点，这条和 sysreg 是同一个规矩（L07 钉着它）。
+    $cxBad1 = Invoke-Exe 'rightmenu disable Mxx1FixtureKeep' 60 $Exe $cxEnv
+    $cxBad2 = Invoke-Exe 'rightmenu delete Mxx1FixtureDel' 60 $Exe $cxEnv
+    $cxBad3 = Invoke-Exe 'rightmenu restore Mxx1FixtureOff' 60 $Exe $cxEnv
+    Check 'M52 命令行没有"带动作"的入口：disable / delete / restore 一律不认（退出码 2）' `
+        (($cxBad1.Code -eq 2) -and ($cxBad2.Code -eq 2) -and ($cxBad3.Code -eq 2)) `
+        ('exit=' + $cxBad1.Code + '/' + $cxBad2.Code + '/' + $cxBad3.Code + ' err=' + $cxBad1.Err)
+
+    $cxSnapAfter = Get-CtxTestSnapshot
+    $cxRealKeysAfter = @(Get-ChildItem -LiteralPath 'HKCU:\Software\Classes\*\shell' -ErrorAction SilentlyContinue |
+        Select-Object -ExpandProperty PSChildName)
+    $cxBackupAfter = @(Get-ChildItem -LiteralPath $cxBackupDir -File -ErrorAction SilentlyContinue).Count
+    $cxActionLogAfter = Test-Path -LiteralPath $cxActionLog
+    Check 'M53 这一串命令跑完一个字节都没写：夹具逐值一致、备份目录没多文件、用户真实菜单一个键没变' `
+        (($cxSnapBefore -eq $cxSnapAfter) -and ($cxBackupAfter -eq $cxBackupBefore) -and `
+         (($cxRealKeysBefore -join ',') -eq ($cxRealKeysAfter -join ',')) -and ($cxActionLogAfter -eq $cxActionLogHad)) `
+        ('夹具一致=' + ($cxSnapBefore -eq $cxSnapAfter) + ' 备份=' + $cxBackupBefore + '→' + $cxBackupAfter + `
+         ' 真实菜单=' + ($cxRealKeysBefore.Count) + '→' + ($cxRealKeysAfter.Count) + `
+         ' 动作流水=' + $cxActionLogHad + '→' + $cxActionLogAfter)
+}
+finally {
+    Remove-Item -LiteralPath 'HKCU:\Software\mxx1-toolbox\ctxmenu-test' -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath 'HKCU:\Software\mxx1-toolbox\ctxmenu-test-machine' -Recurse -Force -ErrorAction SilentlyContinue
+    # 这一串只读命令本来就不该产生动作流水；真产生了（= 有东西写了）也按原样放回去，别留给用户。
+    if ($cxActionLogHad) { [System.IO.File]::WriteAllText($cxActionLog, $cxActionLogOld) }
+    elseif (Test-Path -LiteralPath $cxActionLog) { Remove-Item -LiteralPath $cxActionLog -Force -ErrorAction SilentlyContinue }
+}
+Check 'M54 收尾干净：两个测试根都删掉了' `
+    (((Test-Path -LiteralPath 'HKCU:\Software\mxx1-toolbox\ctxmenu-test') -eq $false) -and `
+     ((Test-Path -LiteralPath 'HKCU:\Software\mxx1-toolbox\ctxmenu-test-machine') -eq $false)) ''
 
 }
 

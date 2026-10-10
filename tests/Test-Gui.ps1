@@ -1274,6 +1274,17 @@ $hoverBtn = $refProbe[0]
 $cursorHome = [TBGui]::CursorAt()
 $hoverX = $hoverBtn.Left + [int]($hoverBtn.Width / 2)
 $hoverY = $hoverBtn.Top + [int]($hoverBtn.Height / 2)
+# 夹具自检：**鼠标动不了的时候这一条测不了**（SetCursorPos 没生效 —— 用户正在用鼠标 / 输入桌面被占 /
+# 屏幕锁着都会这样）。跟 N21b 同一套口径：这只把"环境做不到"记成 SKIP，**真断言失败照旧 FAIL**
+# （所以下面那个 guard 要求"鼠标确实没动"**而且**"说明一直是空的"两个条件同时成立）。
+# 2026-10-11 发版那一跑就是这么红的：`说明=` 空、`途中见过的=` 空，而鼠标底下就是测试实例自己。
+$cursorMoved = $false
+for ($i = 0; $i -lt 3 -and -not $cursorMoved; $i++) {
+    [void][TBGui]::MoveCursor(($hoverX + 3), ($hoverY + 3))
+    Start-Sleep -Milliseconds 200
+    $cm = [TBGui]::CursorAt()
+    if (([Math]::Abs($cm[0] - ($hoverX + 3)) -le 4) -and ([Math]::Abs($cm[1] - ($hoverY + 3)) -le 4)) { $cursorMoved = $true }
+}
 try {
     # 悬停这一步是**真的动系统鼠标**，所以会被环境打断：别的窗口盖住按钮、用户正好在动鼠标、
     # 前台被抢走…… 给它 3 次机会，失败时把"鼠标底下是谁 / 前台是谁"打出来自证
@@ -1302,11 +1313,20 @@ try {
 }
 $hoverFlat = ($hoverTip -replace "`r?`n", ' / ')
 $hoverSeenFlat = (($hoverSeen | ForEach-Object { $_ -replace "`r?`n", ' / ' }) -join ' ;; ')
+if ((-not $cursorMoved) -and ($hoverTip.Length -eq 0)) {
+    # 鼠标根本没动起来 → 悬停测不了（不是功能坏了）。判据要看"鼠标确实没动"，
+    # 所以真要是 ToolTip 坏了（鼠标动了、说明还是空的）会照旧在下面 FAIL。
+    $cp = [TBGui]::CursorAt()
+    Skip 'B10 鼠标停在按钮上会弹出说明，第一行就是这个按钮的名字' `
+        ('鼠标挪不动（SetCursorPos 没生效，试了 3 次）：想到 (' + ($hoverX + 3) + ',' + ($hoverY + 3) + ')，实际停在 (' + ($cp -join ',') + ')；这一条要真悬停才测得出来（跟 N21b 同一套口径）')
+    Skip 'B11 悬停说明里不再摊开内联脚本正文' '同上（鼠标挪不动）'
+} else {
 Check 'B10 鼠标停在按钮上会弹出说明，第一行就是这个按钮的名字' `
     (($hoverTip.Length -gt 0) -and ($hoverTip -match [regex]::Escape($hoverBtn.Text))) `
     ('按钮=' + $hoverBtn.Text + ' 说明=' + $hoverFlat + ' 途中见过的=' + $hoverSeenFlat + '  鼠标(' + $hoverX + ',' + $hoverY + ')底下=' + $hoverUnder + '  前台=' + $hoverFront)
 Check 'B11 悬停说明里不再摊开内联脚本正文' `
     (($hoverTip.Length -gt 0) -and ($hoverTip -notmatch 'powershell -Command|EncodedCommand')) $hoverFlat
+}
 }
 
 }

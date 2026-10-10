@@ -350,7 +350,7 @@ Write-Host 'A 组 · status 与 list'
 $status = Invoke-Exe 'status'
 Check 'A01 status 退出码 0' ($status.Code -eq 0) ('exit=' + $status.Code)
 Check 'A02 中文输出没有乱码（UTF-8）' ($status.Out -match 'name=萌新工具箱') ('name=' + (Get-Key $status.Out 'name'))
-Check 'A03 版本号 1.5.5' ((Get-Key $status.Out 'version') -eq '1.5.5') (Get-Key $status.Out 'version')
+Check 'A03 版本号 1.5.6' ((Get-Key $status.Out 'version') -eq '1.5.6') (Get-Key $status.Out 'version')
 
 # 自我看门狗（2026-10-09 加，见文件开头 $tmpRoot 那段）：套件里**不许**直接拿 %TEMP% 拼夹具路径。
 # CI 的 %TEMP% 是 8.3 短名，程序报的是规范长名 → 拼出来的路径和程序报的对不上，四条断言假红。
@@ -2571,7 +2571,7 @@ Check 'S09 help 里能查到 checkupdate / disclaimer / consent 三个命令' `
 $cuOff = Invoke-Exe 'checkupdate' 60 $Exe @{ MXX1_NO_UPDATE = '1' }
 Check 'S10 MXX1_NO_UPDATE=1 时一个字节都不发（update=disabled，退出码 1 = 这次没结论）' `
     (($cuOff.Code -eq 1) -and ($cuOff.Out -match '(?m)^update=disabled\r?$')) (Get-Key $cuOff.Out 'update')
-Check 'S11 关掉时也报版本号（脚本据此判断）' ((Get-Key $cuOff.Out 'version') -eq '1.5.5') (Get-Key $cuOff.Out 'version')
+Check 'S11 关掉时也报版本号（脚本据此判断）' ((Get-Key $cuOff.Out 'version') -eq '1.5.6') (Get-Key $cuOff.Out 'version')
 
 $cuBad = Invoke-Exe 'checkupdate' 60 $Exe @{
     MXX1_UPDATE_URL = 'http://127.0.0.1:9/releases'

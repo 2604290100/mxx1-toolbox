@@ -4,69 +4,119 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Globalization;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Windows.Forms;
 
 namespace Mxx1Toolbox
 {
     /// <summary>「右键菜单管理」窗口：按位置（文件 / 文件夹 / 文件夹空白处 / 桌面 / 磁盘）列出右键菜单里
-    /// 真实存在的项，选中一行可以 **禁用 / 恢复 / 删除**。
+    /// 真实存在的项，勾上几项就能 **禁用 / 恢复 / 删除**。
     ///
-    /// 几个口径（对应用户 2026-10-09 的拍板）：
-    /// ① **5 页**：他要的「文件 / 文件夹 / 桌面」三页，加上「文件夹空白处」和「磁盘」——
-    ///    「在此处打开终端」「Git Bash Here」这类就装在空白处，少了它看着像漏项；
-    /// ② **扩展项只显示不给动**（火绒 / 网盘 / 压缩软件那一类 DLL 扩展）：那一套要多写一份系统级
-    ///    黑名单、必须重启资源管理器、而且禁了是所有位置一起没了，不在这一版；列表里照样列出来，
-    ///    让用户知道"为什么它在菜单里而这里点不动"；
-    /// ③ **要管理员的项走 UAC**：选了「提权重开窗口，让我再点一次」，而不是"自动做完" ——
-    ///    "自动做完"需要给命令行加一个**带动作**的参数，那会破掉"命令行只有只读入口"这条底线
-    ///    （回归 L07 钉着它），所以重开时只带"打开窗口 + 聚焦哪一行"，动作仍然只能由用户点出来；
-    /// ④ 三个动作都会过自家的确认框（和主界面里"会改动系统的按钮"同一条规矩），
-    ///    只有"设置里关掉了确认"时才不问。
+    /// ## 这个窗口长什么样，是 2026-10-09 用户挑出来的（别自己改回去）
     ///
-    /// 高度不随内容长（列表占满中间、动作报告进下面那个只读框）—— 这个窗口是"看列表"的，
-    /// 不适合像解锁窗口那样按内容自适应。</summary>
+    /// 用户原话：「**右键菜单管理 的界面是不是可以优化一下，给我几个方案看看。最好就是和主窗口
+    /// 【萌新工具箱】界面统一风格**」。给了他三个方案（只换外壳 / 宽行卡片 / 左右分栏），他选
+    /// **宽行卡片**；交互也定了：**勾选多选 + 底栏动作**、**禁用和恢复不弹确认框**（完全可逆）、
+    /// **动作记录里每一条都能撤销**。所以内容区**不用 `ListView`**（那是"表格脸"，和主窗口不是
+    /// 一种气质），照主窗口那套搭：
+    ///
+    /// ```
+    /// 页签行（同款：TabBack / 当前页 TabActiveBack + 蓝边；**高 30，写死的**；每个页签带条数）
+    /// 搜索行：[ 输入名字过滤… ] [全部][未禁用][程序装的][已禁用][扩展项]   改完立刻生效，不用重启资源管理器
+    /// 内容区：段标题（灰色小字 + 一条细线）＋ 一行行卡片（勾选框 / 图标 / 名称 / 灰色副标题 / 右侧状态）
+    /// 动作记录（可收起，Ctrl+L）：每条后面挂「恢复 / 再禁一次 / 还原来」
+    /// 底栏（同款：BarBack + 右边一排小按钮）：已勾选 N 项 · 共 M 条（…）  [禁用选中的 N 项][恢复…][删除…][刷新][关闭]
+    /// ```
+    ///
+    /// ## 三条"照主窗口"的高度规矩（2026-10-09 看实图定的，别写死数字）
+    /// ① **页签行 `Absolute(TabBarHeight = 30)`**：这一行我第一版写成 `AutoSize`，`AutoSize` 行 +
+    ///    `Dock=Fill` 的页签按钮互相喂高度，5 个页签被撑到 **94px 高** —— 用户原话
+    ///    「上面5个大按钮…差点意思」（用 `PrintWindow` 拍实图量的，主窗口那边一直是写死 30）；
+    /// ② **小按钮高度按字体算**：`max(24, 量「国」字高 + 8)`（底栏 / 段标题的展开收起 / 记录里那个
+    ///    撤销按钮全用它，底栏高 = 按钮高 + 4）。第一版写死 20 → 用户一眼看出「字被切了」；
+    ///    主窗口早就为这一条踩过坑（22px 时底栏每个标签的最后一行墨迹被切掉，回归 D01e）；
+    /// ③ 段标题行高 = 小按钮高度 + 10，跟着它走。
+    ///
+    /// ## 其余不能松的口径
+    /// ① **禁用 / 恢复不弹确认框**（用户拍板）：完全可逆，动作记录里能一键撤销；**删除仍然弹**
+    ///    （列清单 + 说清备份在哪）；
+    /// ② **切页 / 改筛选 / 改搜索 = 清空勾选** —— 否则会出现"勾了 3 项、其中 2 项被筛掉了，
+    ///    点「删除选中的 3 项」到底删几条"这种没人说得清的状态；
+    /// ③ **底栏按钮上的数字跟着勾选实时变**，没勾任何一项时是灰的（绝不猜你要动哪一条）；
+    /// ④ `--focus=&lt;位置&gt;|&lt;键名&gt;[,&lt;键名&gt;…]` 只负责"打开窗口 + 把这几项勾上"（提权重开时把用户
+    ///    刚才的勾选带过来）；**命令行里不存在"带动作"的参数**，写注册表只能由用户点出来；
+    /// ⑤ 要管理员的项：弹一次 UAC，带管理员权限重开窗口（勾选会跟过来），再点一次才生效。</summary>
     internal sealed class CtxMenuForm : Mxx1Form
     {
+        /// <summary>页签行高度 —— 和主窗口同一个数（`MainForm.TabBarHeight`）。**必须写死**，
+        /// 别改回 `AutoSize`（理由见类说明 ①）。</summary>
+        private const int TabBarHeight = 30;
+        private const int ActionPanelHeight = 170;
+        private const int MaxActionLines = 20;
+
+        /// <summary>小按钮的统一高度（底栏 / 段标题的展开收起 / 动作记录里的撤销按钮）。
+        /// **照主窗口的算法算、别写死**（理由见类说明 ②）。</summary>
+        private readonly int _barHeight;
+        private readonly int _statusBarHeight;
+        private readonly int _captionRowHeight;
+
         private readonly Theme _theme;
-        private readonly bool _confirmDangerous;  // 设置里关掉了确认就不弹（和主界面同一个开关）
+        private readonly bool _confirmDangerous;
         private string _zoneId = "files";
-        private List<CtxEntry> _rows = new List<CtxEntry>();
+        private string _filter = "all";
+        private string _search = "";
         private bool _busy;
+
+        private List<CtxEntry> _all = new List<CtxEntry>();
+        private readonly List<CtxRow> _rows = new List<CtxRow>();
+        private readonly Dictionary<string, bool> _expanded = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, int> _zoneCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
         private TableLayoutPanel _root;
         private readonly Dictionary<string, Button> _tabButtons = new Dictionary<string, Button>(StringComparer.OrdinalIgnoreCase);
-        private Label _head;
-        private Label _detail;
-        private ListView _list;
-        private TextBox _report;
-        private Label _rule;
-        private Button _disableBtn, _restoreBtn, _deleteBtn, _refreshBtn, _backupBtn;
+        private readonly Dictionary<string, Button> _filterButtons = new Dictionary<string, Button>(StringComparer.OrdinalIgnoreCase);
+        private Panel _searchRow;
+        private TextBox _searchBox;
+        private Label _hint;
+        private Panel _content;
+        private TableLayoutPanel _list;
+        private Panel _actionPanel;
+        private TableLayoutPanel _actionList;
+        private Label _status;
+        private Button _logBtn, _disableBtn, _restoreBtn, _deleteBtn, _refreshBtn, _closeBtn;
+        private ToolTip _tips;
 
-        private const int TextWidth = 900;
-
-        /// <summary>`focus` 是 `--focus=&lt;位置id&gt;|&lt;键名&gt;`（提权重开时用：自动帮你选中原来那一行）。
-        /// 空 = 打开第一页。</summary>
+        /// <summary>`focus` = `--focus=&lt;位置id&gt;|&lt;键名&gt;[,&lt;键名&gt;…]`（空 = 打开第一页）。</summary>
         public CtxMenuForm(string focus)
         {
             _theme = Theme.Resolve(Settings.Load().Theme);
             _confirmDangerous = Settings.Load().ConfirmDangerous;
+            _tips = new ToolTip();
+            _tips.AutoPopDelay = 20000;
 
-            string focusVerb = "";
+            // 小按钮的高度从字体算出来（和主窗口同一套算法，见类说明 ②）
+            using (Font barFont = new Font("Microsoft YaHei", 8.25f, FontStyle.Regular, GraphicsUnit.Point))
+            {
+                _barHeight = TextRenderer.MeasureText("国", barFont).Height + 8;
+                if (_barHeight < 24) { _barHeight = 24; }
+            }
+            _statusBarHeight = _barHeight + 4;      // 上下各 2px 留白
+            _captionRowHeight = _barHeight + 10;    // 段标题行：一个按钮 + 上下留白
+
+            string focusVerbs = "";
             if (focus != null && focus.Length > 0)
             {
                 int bar = focus.IndexOf('|');
                 if (bar > 0)
                 {
                     _zoneId = focus.Substring(0, bar).Trim().Trim('"');
-                    focusVerb = focus.Substring(bar + 1).Trim().Trim('"');
+                    focusVerbs = focus.Substring(bar + 1).Trim().Trim('"');
                 }
-                else
-                {
-                    _zoneId = focus.Trim().Trim('"');
-                }
+                else { _zoneId = focus.Trim().Trim('"'); }
             }
             _zoneId = CtxMenu.ZoneOf(_zoneId).Id;
+            foreach (string id in CtxMenu.GroupIds) { _expanded[id] = !CtxMenu.GroupCollapsedByDefault(id); }
 
             Text = "右键菜单管理";
             StartPosition = FormStartPosition.CenterScreen;
@@ -74,8 +124,8 @@ namespace Mxx1Toolbox
             MaximizeBox = false;
             ShowInTaskbar = true;
             AutoScaleMode = AutoScaleMode.Font;
-            ClientSize = new Size(980, 620);
-            MinimumSize = new Size(820, 520);
+            ClientSize = new Size(1000, 620);
+            MinimumSize = new Size(860, 460);
             BackColor = _theme.FormBack;
             try { Font = new Font("Microsoft YaHei", 9f, FontStyle.Regular, GraphicsUnit.Point); }
             catch { }
@@ -83,43 +133,27 @@ namespace Mxx1Toolbox
             _root = new TableLayoutPanel();
             _root.Dock = DockStyle.Fill;
             _root.ColumnCount = 1;
-            _root.Padding = new Padding(14, 12, 14, 12);
+            _root.Padding = new Padding(10, 8, 10, 0);
             _root.BackColor = _theme.FormBack;
             _root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
-            _root.RowStyles.Add(new RowStyle(SizeType.AutoSize));      // 页签
-            _root.RowStyles.Add(new RowStyle(SizeType.AutoSize));      // 标题 + 小结
-            _root.RowStyles.Add(new RowStyle(SizeType.Percent, 100f)); // 列表
-            _root.RowStyles.Add(new RowStyle(SizeType.AutoSize));      // 选中项详情
-            _root.RowStyles.Add(new RowStyle(SizeType.Absolute, 96f)); // 动作结果（只读框）
-            _root.RowStyles.Add(new RowStyle(SizeType.AutoSize));      // 按钮行
-            _root.RowStyles.Add(new RowStyle(SizeType.AutoSize));      // 底部规则
+            _root.RowStyles.Add(new RowStyle(SizeType.Absolute, TabBarHeight));      // 0 页签（写死，别用 AutoSize）
+            _root.RowStyles.Add(new RowStyle(SizeType.AutoSize));                    // 1 搜索 + 快选 + 常驻说明
+            _root.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));               // 2 内容区
+            _root.RowStyles.Add(new RowStyle(SizeType.Absolute, 0f));                // 3 动作记录（默认收起）
+            _root.RowStyles.Add(new RowStyle(SizeType.Absolute, _statusBarHeight));  // 4 底栏
 
             BuildTabs();
-            BuildHead();
-            BuildList();
-            BuildDetail();
-            BuildReportBox();
-            BuildBar();
-            BuildRule();
+            BuildSearchRow();
+            BuildContent();
+            BuildActionPanel();
+            BuildStatusBar();
 
             Controls.Add(_root);
+            KeyPreview = true;
             Native.ApplyDarkTitleBar(Handle, _theme.DarkMode);
-            Native.ApplyDarkControl(_report.Handle, _theme.DarkMode);
 
-            // 提权重开时：那一行自动选好，并且把"再点一次"写在报告框里
-            if (focusVerb.Length > 0)
-            {
-                _report.Text = "带你回到了刚才那一项。" + Environment.NewLine
-                    + (CtxMenu.IsAdmin()
-                        ? "现在有管理员权限了，再点一次刚才那个按钮（这一次会真的生效）。"
-                        : "（没有拿到管理员权限。）");
-            }
-            else if (CtxMenu.IsAdmin())
-            {
-                _report.Text = "当前窗口有管理员权限：用户区和系统区的项都能改。" + Environment.NewLine;
-            }
-
-            SelectZone(_zoneId, focusVerb);
+            LoadRows();
+            if (focusVerbs.Length > 0) { CheckVerbs(focusVerbs, CtxMenu.IsAdmin()); }
         }
 
         // ------------------------------------------------------------------ 搭界面
@@ -139,205 +173,436 @@ namespace Mxx1Toolbox
             foreach (CtxZone z in CtxMenu.Zones)
             {
                 Button b = new Button();
-                b.Text = z.Label;
+                b.Text = z.Label;                 // 真正的文本（带条数）由 RefreshTabTexts 填
                 b.Tag = z.Id;
                 b.Dock = DockStyle.Fill;
-                b.Margin = new Padding(1, 2, 1, 6);
+                b.Margin = new Padding(1, 2, 1, 0);
                 b.FlatStyle = FlatStyle.Flat;
                 b.FlatAppearance.BorderSize = 1;
                 b.UseVisualStyleBackColor = false;
                 b.Font = new Font("Microsoft YaHei", 9f, FontStyle.Regular, GraphicsUnit.Point);
                 string id = z.Id;
-                b.Click += delegate { SelectZone(id, ""); };
+                b.Click += delegate { SelectZone(id); };
                 _tabButtons[id] = b;
                 bar.Controls.Add(b);
             }
             _root.Controls.Add(bar, 0, 0);
         }
 
-        private void BuildHead()
+        private void BuildSearchRow()
         {
-            _head = new Label();
-            _head.AutoSize = true;
-            _head.MaximumSize = new Size(TextWidth, 0);
-            _head.ForeColor = _theme.InputText;
-            _head.Margin = new Padding(2, 0, 2, 8);
-            _root.Controls.Add(_head, 0, 1);
+            _searchRow = new Panel();
+            _searchRow.Dock = DockStyle.Fill;
+            _searchRow.Height = _barHeight + 8;
+            _searchRow.Margin = new Padding(0, 0, 0, 4);
+            _searchRow.BackColor = _theme.FormBack;
+
+            TableLayoutPanel row = new TableLayoutPanel();
+            row.Dock = DockStyle.Fill;
+            row.ColumnCount = 4;
+            row.RowCount = 1;
+            row.Margin = new Padding(0);
+            row.BackColor = _theme.FormBack;
+            row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 220f));    // 搜索框
+            row.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));          // 快选
+            row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));     // 空
+            row.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));          // 常驻说明
+            row.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+
+            _searchBox = new TextBox();
+            _searchBox.Dock = DockStyle.Fill;
+            _searchBox.BorderStyle = BorderStyle.FixedSingle;
+            _searchBox.Margin = new Padding(2, 4, 8, 4);
+            _searchBox.BackColor = _theme.InputBack;
+            _searchBox.ForeColor = _theme.InputText;
+            _searchBox.TextChanged += delegate
+            {
+                _search = _searchBox.Text.Trim();
+                if (!_busy) { ClearChecks(); BuildRows(); }
+            };
+            row.Controls.Add(_searchBox, 0, 0);
+
+            FlowLayoutPanel filters = new FlowLayoutPanel();
+            filters.Dock = DockStyle.Fill;
+            filters.AutoSize = true;
+            filters.FlowDirection = FlowDirection.LeftToRight;
+            filters.WrapContents = false;
+            filters.Margin = new Padding(0);
+            filters.BackColor = _theme.FormBack;
+            AddFilter(filters, "all", "全部");
+            AddFilter(filters, "active", "未禁用");
+            AddFilter(filters, "apps", "程序装的");
+            AddFilter(filters, "disabled", "已禁用");
+            AddFilter(filters, "shellex", "扩展项");
+            row.Controls.Add(filters, 1, 0);
+
+            // 常驻那句：回答"是不是要重启资源管理器才生效"（不然用户会怀疑没生效）
+            _hint = new Label();
+            _hint.AutoSize = true;
+            _hint.Anchor = AnchorStyles.Right;
+            _hint.Font = new Font("Microsoft YaHei", 8.25f, FontStyle.Regular, GraphicsUnit.Point);
+            _hint.ForeColor = _theme.BarText;
+            _hint.Text = "改完立刻生效，不用重启资源管理器";
+            _hint.Margin = new Padding(8, 0, 4, 0);
+            row.Controls.Add(_hint, 3, 0);
+
+            _searchRow.Controls.Add(row);
+            _root.Controls.Add(_searchRow, 0, 1);
+            _tips.SetToolTip(_hint, "静态菜单项是每次右键现场拼的 —— 2026-10-09 用只读探针在五个位置实测过。");
         }
 
-        private void BuildList()
-        {
-            _list = new ListView();
-            _list.Dock = DockStyle.Fill;
-            _list.View = View.Details;
-            _list.FullRowSelect = true;
-            _list.MultiSelect = false;
-            _list.HideSelection = false;
-            _list.HeaderStyle = ColumnHeaderStyle.Nonclickable;
-            _list.BackColor = _theme.InputBack;
-            _list.ForeColor = _theme.InputText;
-            _list.Margin = new Padding(2, 0, 2, 8);
-            _list.Columns.Add("菜单上显示的字", 320, HorizontalAlignment.Left);
-            _list.Columns.Add("状态", 100, HorizontalAlignment.Left);
-            _list.Columns.Add("在哪儿", 165, HorizontalAlignment.Left);
-            _list.Columns.Add("点下去会跑什么", 355, HorizontalAlignment.Left);
-            _list.SelectedIndexChanged += delegate { UpdateDetail(); UpdateButtons(); };
-            _root.Controls.Add(_list, 0, 2);
-        }
-
-        private void BuildDetail()
-        {
-            _detail = new Label();
-            _detail.AutoSize = true;
-            _detail.MaximumSize = new Size(TextWidth, 0);
-            _detail.ForeColor = _theme.BarText;
-            _detail.Margin = new Padding(2, 0, 2, 8);
-            _root.Controls.Add(_detail, 0, 3);
-        }
-
-        private void BuildReportBox()
-        {
-            _report = new TextBox();
-            _report.Dock = DockStyle.Fill;
-            _report.Multiline = true;
-            _report.ReadOnly = true;
-            _report.ScrollBars = ScrollBars.Vertical;
-            _report.WordWrap = true;
-            _report.BackColor = _theme.LogBack;
-            _report.ForeColor = _theme.LogText;
-            _report.BorderStyle = BorderStyle.FixedSingle;
-            _report.Margin = new Padding(2, 0, 2, 8);
-            _report.Text = "这里会说清楚每一步到底写了哪个键。" + Environment.NewLine
-                + "（「禁用」＝给那一项加一个隐藏开关，键本身不动；「删除」＝先备份成 .reg 再删。）";
-            _root.Controls.Add(_report, 0, 4);
-        }
-
-        private void BuildBar()
-        {
-            FlowLayoutPanel bar = new FlowLayoutPanel();
-            bar.Dock = DockStyle.Fill;
-            bar.AutoSize = true;
-            bar.FlowDirection = FlowDirection.LeftToRight;
-            bar.WrapContents = false;
-            bar.Margin = new Padding(0);
-            bar.BackColor = _theme.FormBack;
-
-            _disableBtn = MakeButton("禁用");
-            _disableBtn.Click += delegate { DoDisable(); };
-            bar.Controls.Add(_disableBtn);
-
-            _restoreBtn = MakeButton("恢复");
-            _restoreBtn.Click += delegate { DoRestore(); };
-            bar.Controls.Add(_restoreBtn);
-
-            _deleteBtn = MakeButton("删除（先备份）");
-            _deleteBtn.Click += delegate { DoDelete(); };
-            bar.Controls.Add(_deleteBtn);
-
-            _refreshBtn = MakeButton("刷新");
-            _refreshBtn.Click += delegate { Reload(); };
-            bar.Controls.Add(_refreshBtn);
-
-            _backupBtn = MakeButton("打开备份文件夹");
-            _backupBtn.Click += delegate { OpenBackupDir(); };
-            bar.Controls.Add(_backupBtn);
-
-            Button close = MakeButton("关闭");
-            close.Click += delegate { Close(); };
-            bar.Controls.Add(close);
-            CancelButton = close;
-
-            _root.Controls.Add(bar, 0, 5);
-        }
-
-        private void BuildRule()
-        {
-            _rule = new Label();
-            _rule.AutoSize = true;
-            _rule.MaximumSize = new Size(TextWidth, 0);
-            _rule.ForeColor = _theme.BarText;
-            _rule.Margin = new Padding(2, 0, 2, 0);
-            _rule.Text =
-                "· 「禁用」只是给那一项加一个隐藏开关：键和标题原样留着，随时能「恢复」。"
-                + Environment.NewLine
-                + "· 「删除」会先把那个键导出成一份 .reg（在备份文件夹里），备份没成功就绝不删。"
-                + Environment.NewLine
-                + "· 改完立刻生效，不用重启资源管理器 —— 静态菜单项是每次右键现场拼的（2026-10-09 实测）。"
-                + Environment.NewLine
-                + "· 扩展项（DLL，比如压缩软件 / 网盘那一类）这一版只显示、不给动：那是另一套机制，"
-                + "要多写一份系统级黑名单、必须重启资源管理器，而且禁了是所有位置一起没了。";
-            _root.Controls.Add(_rule, 0, 6);
-        }
-
-        private Button MakeButton(string text)
+        private void AddFilter(FlowLayoutPanel host, string id, string text)
         {
             Button b = new Button();
             b.Text = text;
+            b.Tag = id;
             b.AutoSize = true;
             b.AutoSizeMode = AutoSizeMode.GrowAndShrink;
-            b.Padding = new Padding(10, 4, 10, 4);
+            b.Padding = new Padding(6, 2, 6, 2);
+            b.Margin = new Padding(0, 2, 6, 2);
             b.FlatStyle = FlatStyle.Flat;
+            b.FlatAppearance.BorderSize = 1;
+            b.UseVisualStyleBackColor = false;
+            b.Font = new Font("Microsoft YaHei", 8.25f, FontStyle.Regular, GraphicsUnit.Point);
+            b.Click += delegate { SelectFilter(id); };
+            _filterButtons[id] = b;
+            host.Controls.Add(b);
+        }
+
+        private void BuildContent()
+        {
+            _content = new Panel();
+            _content.Dock = DockStyle.Fill;
+            _content.Margin = new Padding(0);
+            _content.AutoScroll = true;
+            _content.BackColor = _theme.FormBack;
+
+            _list = new TableLayoutPanel();
+            _list.Dock = DockStyle.Top;
+            _list.AutoSize = true;
+            _list.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            _list.ColumnCount = 1;
+            _list.Margin = new Padding(0);
+            _list.BackColor = _theme.FormBack;
+            _list.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+
+            _content.Controls.Add(_list);
+            _root.Controls.Add(_content, 0, 2);
+        }
+
+        private void BuildActionPanel()
+        {
+            _actionPanel = new Panel();
+            _actionPanel.Dock = DockStyle.Fill;
+            _actionPanel.Margin = new Padding(0, 4, 0, 4);
+            _actionPanel.AutoScroll = true;
+            _actionPanel.BackColor = _theme.FormBack;
+            _actionPanel.Visible = false;
+
+            _actionList = new TableLayoutPanel();
+            _actionList.Dock = DockStyle.Top;
+            _actionList.AutoSize = true;
+            _actionList.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            _actionList.ColumnCount = 1;
+            _actionList.Margin = new Padding(0);
+            _actionList.BackColor = _theme.FormBack;
+            _actionList.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+            _actionPanel.Controls.Add(_actionList);
+            _root.Controls.Add(_actionPanel, 0, 3);
+        }
+
+        private void BuildStatusBar()
+        {
+            TableLayoutPanel bar = new TableLayoutPanel();
+            bar.Dock = DockStyle.Fill;
+            bar.Margin = new Padding(0);
+            bar.ColumnCount = 2;
+            bar.RowCount = 1;
+            bar.Padding = new Padding(6, 0, 4, 0);
+            bar.BackColor = _theme.BarBack;
+            bar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+            bar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            bar.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+
+            _status = new Label();
+            _status.AutoSize = false;
+            _status.Dock = DockStyle.Fill;
+            _status.TextAlign = ContentAlignment.MiddleLeft;
+            _status.AutoEllipsis = true;
+            _status.Margin = new Padding(0);
+            _status.BackColor = _theme.BarBack;
+            _status.ForeColor = _theme.BarText;
+            bar.Controls.Add(_status, 0, 0);
+
+            FlowLayoutPanel right = new FlowLayoutPanel();
+            right.Dock = DockStyle.Fill;
+            right.AutoSize = true;
+            right.FlowDirection = FlowDirection.LeftToRight;
+            right.WrapContents = false;
+            right.Margin = new Padding(0);
+            right.BackColor = _theme.BarBack;
+
+            _logBtn = MakeBarButton("动作记录", "展开或收起动作记录（Ctrl+L）—— 每条后面能直接撤销");
+            _logBtn.Click += delegate { ToggleActionPanel(); };
+            right.Controls.Add(_logBtn);
+
+            _disableBtn = MakeBarButton("禁用选中的 0 项", "给选中的项加一个隐藏开关：键和标题原样留着，随时能「恢复」");
+            _disableBtn.Click += delegate { DoAction("禁用"); };
+            right.Controls.Add(_disableBtn);
+
+            _restoreBtn = MakeBarButton("恢复选中的 0 项", "把隐藏开关删掉，选中的项回到右键菜单里");
+            _restoreBtn.Click += delegate { DoAction("恢复"); };
+            right.Controls.Add(_restoreBtn);
+
+            _deleteBtn = MakeBarButton("删除选中的 0 项", "先给每一个键各备份一份 .reg（备份没成功就不删），然后才删");
+            _deleteBtn.Click += delegate { DoAction("删除"); };
+            right.Controls.Add(_deleteBtn);
+
+            _refreshBtn = MakeBarButton("刷新", "重新读一遍注册表（别的软件刚装完 / 刚卸完时用）");
+            _refreshBtn.Click += delegate { LoadRows(); };
+            right.Controls.Add(_refreshBtn);
+
+            _closeBtn = MakeBarButton("关闭", "关掉这个窗口（不改任何东西）");
+            _closeBtn.Click += delegate { Close(); };
+            right.Controls.Add(_closeBtn);
+
+            bar.Controls.Add(right, 1, 0);
+            _root.Controls.Add(bar, 0, 4);
+            CancelButton = _closeBtn;
+        }
+
+        private Button MakeBarButton(string text, string tip)
+        {
+            Button b = new Button();
+            b.Text = text;
+            b.AutoSize = false;
+            b.Font = new Font("Microsoft YaHei", 8.25f, FontStyle.Regular, GraphicsUnit.Point);
+            b.Height = _barHeight;
+            b.Width = TextRenderer.MeasureText(text, b.Font).Width + 12;
+            b.Margin = new Padding(4, 2, 0, 2);
+            b.FlatStyle = FlatStyle.Flat;
+            b.FlatAppearance.BorderSize = 1;
             b.UseVisualStyleBackColor = false;
             b.BackColor = _theme.ButtonBack;
             b.ForeColor = _theme.ButtonText;
             b.FlatAppearance.BorderColor = _theme.ButtonBorder;
             b.FlatAppearance.MouseOverBackColor = _theme.ButtonHover;
             b.FlatAppearance.MouseDownBackColor = _theme.ButtonPressed;
-            b.Margin = new Padding(0, 0, 8, 0);
+            b.TabStop = false;
+            _tips.SetToolTip(b, tip);
             return b;
         }
 
-        // ------------------------------------------------------------------ 读列表
-
-        private void SelectZone(string zoneId, string focusVerb)
+        private static void SetButtonText(Button b, string text)
         {
-            _zoneId = zoneId;
-            Reload();
-            if (focusVerb != null && focusVerb.Length > 0) { SelectVerb(focusVerb); }
+            if (b.Text == text) { return; }
+            b.Text = text;
+            b.Width = TextRenderer.MeasureText(text, b.Font).Width + 12;
         }
 
-        private void Reload()
-        {
-            string keep = "";
-            CtxEntry sel = Selected();
-            if (sel != null) { keep = sel.Verb; }
+        // ------------------------------------------------------------------ 数据 → 界面
 
-            _rows = CtxMenu.List(_zoneId);
-            _list.BeginUpdate();
+        private void SelectZone(string zoneId)
+        {
+            if (string.Equals(_zoneId, zoneId, StringComparison.OrdinalIgnoreCase)) { return; }
+            _zoneId = zoneId;
+            LoadRows();          // 切页会清空勾选（见类说明 ②）
+        }
+
+        private void SelectFilter(string id)
+        {
+            if (string.Equals(_filter, id, StringComparison.OrdinalIgnoreCase)) { return; }
+            _filter = id;
+            ClearChecks();
+            BuildRows();
+        }
+
+        private void LoadRows()
+        {
+            ClearChecks();
+            RefreshZoneCounts();
+            RefreshTabTexts();
+            BuildRows();
+        }
+
+        /// <summary>五个位置各自的条数（页签上写「文件 17」这种）。用户 2026-10-09 看过实图之后要的：
+        /// 一眼知道哪一页有东西、哪一页是空的，省得一个个点过去看。
+        /// 顺手把当前页那一份结果留下来当 `_all`，所以这里不会白白多读一遍。</summary>
+        private void RefreshZoneCounts()
+        {
+            foreach (CtxZone z in CtxMenu.Zones)
+            {
+                List<CtxEntry> one = CtxMenu.List(z.Id);
+                _zoneCounts[z.Id] = one.Count;
+                if (string.Equals(z.Id, _zoneId, StringComparison.OrdinalIgnoreCase)) { _all = one; }
+            }
+        }
+
+        private void RefreshTabTexts()
+        {
+            foreach (CtxZone z in CtxMenu.Zones)
+            {
+                Button b;
+                if (!_tabButtons.TryGetValue(z.Id, out b) || b == null) { continue; }
+                int n = 0;
+                _zoneCounts.TryGetValue(z.Id, out n);
+                b.Text = z.Label + " " + n.ToString(CultureInfo.InvariantCulture);
+            }
+        }
+
+        private void ClearChecks()
+        {
+            foreach (CtxRow r in _rows) { r.Checked = false; }
+        }
+
+        private bool VisibleEntry(CtxEntry e)
+        {
+            if (_filter == "active") { if (e.Disabled || e.Shellex) { return false; } }
+            else if (_filter == "apps") { if (e.GroupId != CtxMenu.GroupApps) { return false; } }
+            else if (_filter == "disabled") { if (!e.Disabled) { return false; } }
+            else if (_filter == "shellex") { if (!e.Shellex) { return false; } }
+            if (_search.Length == 0) { return true; }
+            string needle = _search.ToLowerInvariant();
+            return (e.Title.ToLowerInvariant().IndexOf(needle) >= 0)
+                || (e.Verb.ToLowerInvariant().IndexOf(needle) >= 0)
+                || (e.Command.ToLowerInvariant().IndexOf(needle) >= 0)
+                || (e.Note.ToLowerInvariant().IndexOf(needle) >= 0);
+        }
+
+        /// <summary>把（筛选后的）项按四段摆出来：段标题 + 行卡片。</summary>
+        private void BuildRows()
+        {
+            _rows.Clear();
+            _list.SuspendLayout();
             try
             {
-                _list.Items.Clear();
-                foreach (CtxEntry e in _rows)
+                foreach (Control c in GetControls(_list)) { c.Dispose(); }
+                _list.Controls.Clear();
+                _list.RowStyles.Clear();
+                _list.RowCount = 0;
+
+                int shown = 0;
+                foreach (string groupId in CtxMenu.GroupIds)
                 {
-                    ListViewItem it = new ListViewItem(new string[]
+                    List<CtxEntry> mine = new List<CtxEntry>();
+                    foreach (CtxEntry e in _all)
                     {
-                        e.Title, e.StateLabel, e.WhereLabel, CommandText(e)
-                    });
-                    it.Tag = e;
-                    // 灰字 = 这一行点不动（已禁用 / 扩展项），和"能操作的项"一眼分得开
-                    if (!e.Actionable || e.Disabled) { it.ForeColor = _theme.BarText; }
-                    _list.Items.Add(it);
+                        if (e.GroupId == groupId && VisibleEntry(e)) { mine.Add(e); }
+                    }
+                    if (mine.Count == 0) { continue; }
+                    AddCaption(groupId, mine.Count);
+                    if (!_expanded[groupId]) { continue; }
+                    foreach (CtxEntry e in mine)
+                    {
+                        CtxRow row = new CtxRow(e, _theme, e.Actionable);
+                        row.Toggled += delegate { UpdateBar(); };
+                        row.Activated += delegate(object s, EventArgs a) { SetCurrent(s as CtxRow); };
+                        row.Margin = new Padding(0, 0, 0, 1);
+                        _list.RowStyles.Add(new RowStyle(SizeType.Absolute, CtxRow.RowHeight + 1));
+                        _list.Controls.Add(row);
+                        _rows.Add(row);
+                        shown++;
+                    }
+                }
+                if (shown == 0)
+                {
+                    Label none = new Label();
+                    none.AutoSize = true;
+                    none.Margin = new Padding(4, 10, 4, 10);
+                    none.ForeColor = _theme.BarText;
+                    none.Text = (_all.Count == 0)
+                        ? "这个位置里什么都没有（右键菜单里没有静态项）。"
+                        : "没有符合条件的项 —— 换个筛选或把搜索框清空试试。";
+                    _list.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+                    _list.Controls.Add(none);
                 }
             }
-            finally { _list.EndUpdate(); }
+            finally { _list.ResumeLayout(true); }
 
-            RefreshTabs();
-            CtxZone z = CtxMenu.ZoneOf(_zoneId);
-            StringBuilder sb = new StringBuilder();
-            sb.Append('[').Append(z.Label).Append("] ").Append(z.Note).Append(" —— ");
-            sb.Append(CtxMenu.Summary(_rows));
-            if (CtxMenu.IsTestRoot)
-            {
-                sb.Append(Environment.NewLine).Append("（测试根：这次读写的不是真实的右键菜单）");
-            }
-            _head.Text = sb.ToString();
-
-            if (keep.Length > 0) { SelectVerb(keep); }
-            UpdateDetail();
-            UpdateButtons();
+            UpdateTabColors();
+            UpdateFilterColors();
+            UpdateBar();
+            RefreshActionList();
         }
 
-        private void RefreshTabs()
+        private static List<Control> GetControls(Control parent)
+        {
+            List<Control> list = new List<Control>();
+            foreach (Control c in parent.Controls) { list.Add(c); }
+            return list;
+        }
+
+        private void AddCaption(string groupId, int count)
+        {
+            TableLayoutPanel line = new TableLayoutPanel();
+            line.Dock = DockStyle.Fill;
+            line.Height = _captionRowHeight;
+            line.Margin = new Padding(2, 6, 2, 4);
+            line.ColumnCount = 3;
+            line.RowCount = 1;
+            line.BackColor = _theme.FormBack;
+            line.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            line.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            line.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+            line.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+
+            Label cap = new Label();
+            cap.AutoSize = true;
+            cap.Anchor = AnchorStyles.Left;
+            cap.Font = new Font("Microsoft YaHei", 8.25f, FontStyle.Regular, GraphicsUnit.Point);
+            cap.ForeColor = _theme.BarText;
+            cap.BackColor = Color.Transparent;
+            cap.TextAlign = ContentAlignment.MiddleLeft;
+            cap.Margin = new Padding(0, 0, 6, 0);
+            cap.Text = CtxMenu.GroupLabel(groupId) + "（" + count.ToString(CultureInfo.InvariantCulture) + "）"
+                + " · " + CtxMenu.GroupNote(groupId);
+            // 段标题本身也能点：不像按钮那么显眼，但点到它就展开 / 收起
+            cap.Cursor = Cursors.Hand;
+            cap.Click += delegate { ToggleGroup(groupId); };
+            line.Controls.Add(cap, 0, 0);
+
+            Button toggle = new Button();
+            toggle.Text = _expanded[groupId] ? "收起" : "展开";
+            toggle.Tag = groupId;
+            toggle.AutoSize = false;
+            toggle.Font = new Font("Microsoft YaHei", 8.25f, FontStyle.Regular, GraphicsUnit.Point);
+            toggle.Height = _barHeight;
+            toggle.Width = TextRenderer.MeasureText(toggle.Text, toggle.Font).Width + 12;
+            toggle.Margin = new Padding(0, 0, 8, 0);
+            toggle.FlatStyle = FlatStyle.Flat;
+            toggle.FlatAppearance.BorderSize = 1;
+            toggle.UseVisualStyleBackColor = false;
+            toggle.BackColor = _theme.ButtonBack;
+            toggle.ForeColor = _theme.ButtonText;
+            toggle.FlatAppearance.BorderColor = _theme.ButtonBorder;
+            toggle.FlatAppearance.MouseOverBackColor = _theme.ButtonHover;
+            toggle.FlatAppearance.MouseDownBackColor = _theme.ButtonPressed;
+            toggle.TabStop = false;
+            toggle.Click += delegate { ToggleGroup(groupId); };
+            line.Controls.Add(toggle, 1, 0);
+
+            Panel rule = new Panel();
+            rule.Dock = DockStyle.Fill;
+            rule.Margin = new Padding(0, (_captionRowHeight / 2), 0, (_captionRowHeight / 2) - 1);
+            rule.BackColor = _theme.SegmentLine;
+            line.Controls.Add(rule, 2, 0);
+
+            _list.RowStyles.Add(new RowStyle(SizeType.Absolute, _captionRowHeight));
+            _list.Controls.Add(line);
+        }
+
+        private void ToggleGroup(string groupId)
+        {
+            _expanded[groupId] = !_expanded[groupId];
+            BuildRows();
+        }
+
+        private void SetCurrent(CtxRow row)
+        {
+            foreach (CtxRow r in _rows) { r.Current = (r == row); }
+        }
+
+        private void UpdateTabColors()
         {
             foreach (KeyValuePair<string, Button> kv in _tabButtons)
             {
@@ -350,198 +615,277 @@ namespace Mxx1Toolbox
             }
         }
 
-        private string CommandText(CtxEntry e)
+        private void UpdateFilterColors()
         {
-            string s = (e.Command.Length > 0) ? e.Command : e.Note;
-            if (s.Length == 0) { return ""; }
-            s = s.Replace("\r", " ").Replace("\n", " ").Trim();
-            if (s.Length > 120) { s = s.Substring(0, 120) + "…"; }
-            return s;
-        }
-
-        private CtxEntry Selected()
-        {
-            if (_list.SelectedItems.Count == 0) { return null; }
-            return _list.SelectedItems[0].Tag as CtxEntry;
-        }
-
-        private void SelectVerb(string verb)
-        {
-            foreach (ListViewItem it in _list.Items)
+            foreach (KeyValuePair<string, Button> kv in _filterButtons)
             {
-                CtxEntry e = it.Tag as CtxEntry;
-                if (e == null) { continue; }
-                if (string.Equals(e.Verb, verb, StringComparison.OrdinalIgnoreCase))
-                {
-                    it.Selected = true;
-                    it.Focused = true;
-                    it.EnsureVisible();
-                    return;
-                }
+                bool active = string.Equals(kv.Key, _filter, StringComparison.OrdinalIgnoreCase);
+                kv.Value.BackColor = active ? _theme.TabActiveBack : _theme.ButtonBack;
+                kv.Value.ForeColor = active ? _theme.TabActiveText : _theme.ButtonText;
+                kv.Value.FlatAppearance.BorderColor = active ? _theme.TabActiveUnderline : _theme.ButtonBorder;
+                kv.Value.FlatAppearance.MouseOverBackColor = active ? _theme.TabActiveBack : _theme.ButtonHover;
+                kv.Value.FlatAppearance.MouseDownBackColor = active ? _theme.TabActiveBack : _theme.ButtonPressed;
             }
         }
 
-        private void UpdateDetail()
+        /// <summary>底栏：左边那句小结 + 右边按钮上的数字（都跟着勾选实时变）。</summary>
+        private void UpdateBar()
         {
-            CtxEntry e = Selected();
-            if (e == null)
+            List<CtxRow> checkedRows = CheckedRows();
+            int canDisable = 0, canRestore = 0;
+            foreach (CtxRow r in checkedRows)
             {
-                _detail.Text = "选中一行看它的注册表键和完整命令。";
-                return;
+                if (r.Entry.Disabled) { canRestore++; } else { canDisable++; }
             }
+
             StringBuilder sb = new StringBuilder();
-            sb.Append("键：").Append(e.InUser ? e.UserKey : e.MachineKey);
-            if (e.InMachine && e.InUser) { sb.Append("　（系统区还有一份：" ).Append(e.MachineKey).Append('）'); }
-            if (e.Note.Length > 0) { sb.Append(Environment.NewLine).Append(e.Note); }
-            _detail.Text = sb.ToString();
-        }
+            sb.Append("已勾选 ").Append(checkedRows.Count.ToString(CultureInfo.InvariantCulture)).Append(" 项");
+            sb.Append(" · ").Append(CtxMenu.Summary(_all));
+            CtxZone z = CtxMenu.ZoneOf(_zoneId);
+            sb.Append(" · ").Append(z.Label);
+            if (!string.Equals(_filter, "all", StringComparison.OrdinalIgnoreCase) && _filterButtons.ContainsKey(_filter))
+            {
+                sb.Append("（筛选中：").Append(_filterButtons[_filter].Text).Append("）");
+            }
+            if (_busy) { sb.Append(" · 正在处理…"); }
+            _status.Text = sb.ToString();
 
-        private void UpdateButtons()
-        {
-            CtxEntry e = Selected();
-            bool can = (e != null) && e.Actionable && !_busy;
-            _disableBtn.Enabled = can && !e.Disabled;
-            _restoreBtn.Enabled = can && e.Disabled;
-            _deleteBtn.Enabled = can;
+            SetButtonText(_disableBtn, "禁用选中的 " + canDisable.ToString(CultureInfo.InvariantCulture) + " 项");
+            SetButtonText(_restoreBtn, "恢复选中的 " + canRestore.ToString(CultureInfo.InvariantCulture) + " 项");
+            SetButtonText(_deleteBtn, "删除选中的 " + checkedRows.Count.ToString(CultureInfo.InvariantCulture) + " 项");
+            _disableBtn.Enabled = (!_busy && canDisable > 0);
+            _restoreBtn.Enabled = (!_busy && canRestore > 0);
+            _deleteBtn.Enabled = (!_busy && checkedRows.Count > 0);
             _refreshBtn.Enabled = !_busy;
         }
 
-        // ------------------------------------------------------------------ 三个动作
-
-        private void DoDisable()
+        private List<CtxRow> CheckedRows()
         {
-            CtxEntry e = Selected();
-            if (e == null || _busy) { return; }
-            if (!BeforeWrite("禁用", e)) { return; }
-            if (!Confirm("要禁用「" + e.Title + "」吗？",
-                "位置：" + e.ZoneLabel + Environment.NewLine
-                + "它现在的状态：" + e.StateLabel + Environment.NewLine + Environment.NewLine
-                + "会怎么做：给这个菜单项加一个隐藏开关 —— 注册表里的键和标题一个字都不动，"
-                + "只是右键菜单里不再出现它。" + Environment.NewLine
-                + "后悔了怎么办：回来选中这一行点「恢复」，它会原样回来。" + Environment.NewLine
-                + "生效时间：立刻（不用重启资源管理器）。", "禁用"))
-            {
-                return;
-            }
-            Run("禁用", delegate(CtxEntry x) { bool ok; return CtxMenu.Disable(x, out ok); });
+            List<CtxRow> list = new List<CtxRow>();
+            foreach (CtxRow r in _rows) { if (r.Checked && r.CanCheck) { list.Add(r); } }
+            return list;
         }
 
-        private void DoRestore()
+        private void CheckVerbs(string verbList, bool elevated)
         {
-            CtxEntry e = Selected();
-            if (e == null || _busy) { return; }
-            if (!BeforeWrite("恢复", e)) { return; }
-            if (!Confirm("要恢复「" + e.Title + "」吗？",
-                "位置：" + e.ZoneLabel + Environment.NewLine + Environment.NewLine
-                + "会怎么做：把那个隐藏开关删掉 —— 右键菜单里就又能看到它了。" + Environment.NewLine
-                + "生效时间：立刻（不用重启资源管理器）。", "恢复"))
+            string[] wanted = verbList.Split(',');
+            int hit = 0;
+            foreach (CtxRow r in _rows)
             {
-                return;
+                foreach (string v in wanted)
+                {
+                    if (string.Equals(r.Entry.Verb, v.Trim(), StringComparison.OrdinalIgnoreCase) && r.CanCheck)
+                    {
+                        r.Checked = true;
+                        if (hit == 0) { SetCurrent(r); }
+                        hit++;
+                        break;
+                    }
+                }
             }
-            Run("恢复", delegate(CtxEntry x) { bool ok; return CtxMenu.Restore(x, out ok); });
+            UpdateBar();
+            if (hit > 0 && elevated)
+            {
+                Flash("带你回到了刚才那几项（已经勾好）。现在有管理员权限了，再点一次刚才那个按钮，这一次会真的生效。");
+            }
+            else if (hit > 0)
+            {
+                Flash("已勾选 " + hit.ToString(CultureInfo.InvariantCulture) + " 项。");
+            }
         }
 
-        private void DoDelete()
+        /// <summary>底栏左边那句临时换成一句提示（几秒后回到正常的小结）。</summary>
+        private void Flash(string text)
         {
-            CtxEntry e = Selected();
-            if (e == null || _busy) { return; }
-            if (!BeforeWrite("删除", e)) { return; }
-            StringBuilder body = new StringBuilder();
-            body.Append("位置：").Append(e.ZoneLabel).Append(Environment.NewLine);
-            if (e.Command.Length > 0) { body.Append("命令：").Append(e.Command).Append(Environment.NewLine); }
-            body.Append(Environment.NewLine);
-            body.Append("会怎么做：先把注册表里这一个键导出成一份 .reg 放到备份文件夹，"
-                + "备份没成功就绝不删；然后再删掉那个键。").Append(Environment.NewLine);
-            body.Append("后悔了怎么办：双击备份文件夹里那个 .reg，菜单项就回来了"
-                + "（也可以在窗口里点「打开备份文件夹」）。").Append(Environment.NewLine);
-            if (e.Ours)
+            _status.Text = text + "（" + CtxMenu.Summary(_all) + "）";
+            System.Windows.Forms.Timer t = new System.Windows.Forms.Timer();
+            t.Interval = 4000;
+            t.Tick += delegate
             {
-                body.Append("⚠ 这是工具箱自己装的项：正规做法是回「右键增强」页点对应的「撤掉…」按钮。")
-                    .Append(Environment.NewLine);
-            }
-            if (e.Systemish)
-            {
-                body.Append("⚠ 这一项看着是 Windows 自带的（键名以 Windows. 开头）：删了可能影响系统功能，"
-                    + "建议改用「禁用」。").Append(Environment.NewLine);
-            }
-            body.Append("只删这一个键，别的一个都不动。");
-            if (!Confirm("要删除「" + e.Title + "」吗？", body.ToString(), "删除"))
-            {
-                return;
-            }
-            Run("删除", delegate(CtxEntry x)
-            {
-                bool ok; string backup; return CtxMenu.Delete(x, out backup, out ok);
-            });
+                t.Stop();
+                t.Dispose();
+                UpdateBar();
+            };
+            t.Start();
         }
 
-        /// <summary>写之前的两道门：① 条款同意（界面里"会改动系统"的动作都要过）；
-        /// ② 这一项在系统区、而现在不是管理员 —— 走提权那条路（提权重开窗口，让用户再点一次）。</summary>
-        private bool BeforeWrite(string action, CtxEntry e)
+        // ------------------------------------------------------------------ 动作记录
+
+        private void ToggleActionPanel()
         {
-            if (!Consent.EnsureAccepted(this, _theme, "右键菜单管理：" + action + "「" + e.Title + "」"))
-            {
-                SetReport("没有同意《免责声明与服务条款》，这个动作被拦下了。");
-                return false;
-            }
-            if (e.NeedsAdmin && !CtxMenu.IsAdmin())
-            {
-                return OfferElevation(action, e);
-            }
-            return true;
+            bool show = !_actionPanel.Visible;
+            _actionPanel.Visible = show;
+            _root.RowStyles[3] = new RowStyle(SizeType.Absolute, show ? ActionPanelHeight : 0f);
+            _logBtn.Text = show ? "收起记录" : "动作记录";
+            _logBtn.Width = TextRenderer.MeasureText(_logBtn.Text, _logBtn.Font).Width + 12;
+            if (show) { RefreshActionList(); }
         }
 
-        /// <summary>需要管理员：说清楚，然后提权重开这个窗口（只带"打开窗口 + 聚焦哪一行"，
-        /// **不带动作** —— 命令行里不存在"能写注册表的参数"，底线不破）。
-        /// 返回值永远是 false：本窗口要么关掉（提权成功），要么什么都不做。</summary>
-        private bool OfferElevation(string action, CtxEntry e)
+        private void RefreshActionList()
         {
-            bool go = Confirm("这一项在系统区，需要管理员权限",
-                "「" + e.Title + "」装在系统区（" + e.ZoneLabel + "），改它要管理员权限。"
-                + Environment.NewLine + Environment.NewLine
-                + "点「确定」之后：会弹一个 UAC 窗口，请点「是」；这个窗口会关掉，"
-                + "然后带管理员权限重新打开，并自动帮你选中刚才那一行。" + Environment.NewLine
-                + "因为写注册表只能由你在界面上点出来（工具箱的命令行故意没有能写注册表的参数），"
-                + "所以**重开之后要再点一次**「" + action + "」，那一次才会真的生效。",
-                "确定")
-                ;
-            if (!go) { return false; }
+            if (_actionPanel == null) { return; }
+            _actionList.SuspendLayout();
             try
             {
-                System.Diagnostics.ProcessStartInfo psi = new System.Diagnostics.ProcessStartInfo(
-                    AppPaths.ExePath,
-                    "rightmenu manage --focus=\"" + _zoneId + "|" + e.Verb + "\"");
-                psi.UseShellExecute = true;
-                psi.Verb = "runas";
-                System.Diagnostics.Process.Start(psi);
-                Logger.Write("右键菜单管理", "需要管理员：已请求以管理员身份重开窗口（" + e.Title + "）");
-                Close();
+                foreach (Control c in GetControls(_actionList)) { c.Dispose(); }
+                _actionList.Controls.Clear();
+                _actionList.RowStyles.Clear();
+                _actionList.RowCount = 0;
+
+                List<CtxAction> list = CtxMenu.LoadActions(MaxActionLines);
+                Label head = new Label();
+                head.AutoSize = true;
+                head.Margin = new Padding(2, 2, 2, 4);
+                head.Font = new Font("Microsoft YaHei", 8.25f, FontStyle.Regular, GraphicsUnit.Point);
+                head.ForeColor = _theme.BarText;
+                head.Text = (list.Count == 0)
+                    ? "动作记录：还没有动过任何一项（这里会记下每一次禁用 / 恢复 / 删除，每条后面能直接撤销）。"
+                    : "动作记录（最新的在最上面；点右边的按钮就能撤销那一步）：";
+                _actionList.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+                _actionList.Controls.Add(head);
+
+                foreach (CtxAction a in list)
+                {
+                    TableLayoutPanel row = new TableLayoutPanel();
+                    row.Dock = DockStyle.Fill;
+                    row.AutoSize = true;
+                    row.ColumnCount = 2;
+                    row.RowCount = 1;
+                    row.Margin = new Padding(0, 0, 0, 2);
+                    row.BackColor = _theme.FormBack;
+                    row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+                    row.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+                    row.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+
+                    Label line = new Label();
+                    line.AutoSize = true;
+                    line.Margin = new Padding(2, 4, 8, 0);
+                    line.Font = new Font("Microsoft YaHei", 8.25f, FontStyle.Regular, GraphicsUnit.Point);
+                    line.ForeColor = _theme.InputText;
+                    line.Text = a.Line;
+                    CtxAction captured = a;
+                    _tips.SetToolTip(line, a.Legacy
+                        ? "旧格式的记录（那时候只记了键名、没记完整键路径），撤不了。"
+                        : ("键：" + a.Key + (a.Backup.Length > 0 ? Environment.NewLine + "备份：" + a.Backup : "")));
+                    row.Controls.Add(line, 0, 0);
+
+                    Button undo = MakeBarButton(a.CanUndo ? a.UndoLabel : "撤不了", "把这一步反着做一遍");
+                    undo.Enabled = a.CanUndo;
+                    undo.Click += delegate { UndoAction(captured); };
+                    row.Controls.Add(undo, 1, 0);
+
+                    _actionList.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+                    _actionList.Controls.Add(row);
+                }
+            }
+            finally { _actionList.ResumeLayout(true); }
+        }
+
+        private void UndoAction(CtxAction a)
+        {
+            if (_busy) { return; }
+            if (!Consent.EnsureAccepted(this, _theme, "右键菜单管理：撤销「" + a.Title + "」"))
+            {
+                Flash("没有同意《免责声明与服务条款》，这个动作被拦下了。");
+                return;
+            }
+            _busy = true;
+            UpdateBar();
+            bool ok;
+            string report;
+            try { report = CtxMenu.Undo(a, out ok); }
+            catch (Exception ex) { report = "撤销失败：" + ex.Message; ok = false; }
+            _busy = false;
+            Logger.Write("右键菜单管理", report);
+            LoadRows();
+            Flash(ok ? ("已撤销：" + a.Action + "「" + a.Title + "」") : "撤销没成功 —— 详情在工具箱日志里");
+        }
+
+        // ------------------------------------------------------------------ 三个动作（批量）
+
+        private void DoAction(string kind)
+        {
+            if (_busy) { return; }
+            List<CtxRow> checkedRows = CheckedRows();
+            if (checkedRows.Count == 0) { return; }
+
+            List<CtxEntry> items = new List<CtxEntry>();
+            foreach (CtxRow r in checkedRows)
+            {
+                if (kind == "禁用" && r.Entry.Disabled) { continue; }
+                if (kind == "恢复" && !r.Entry.Disabled) { continue; }
+                items.Add(r.Entry);
+            }
+            if (items.Count == 0) { return; }
+
+            if (!Consent.EnsureAccepted(this, _theme, "右键菜单管理：" + kind + " " + items.Count + " 项"))
+            {
+                Flash("没有同意《免责声明与服务条款》，这个动作被拦下了。");
+                return;
+            }
+
+            // 需要管理员：弹一次 UAC、带管理员权限重开窗口（勾选跟过来），让用户再点一次
+            bool needAdmin = false;
+            foreach (CtxEntry e in items) { if (e.NeedsAdmin) { needAdmin = true; break; } }
+            if (needAdmin && !CtxMenu.IsAdmin())
+            {
+                OfferElevation(kind, items, checkedRows);
+                return;
+            }
+
+            // 删除有确认框（列清单、说清备份）；禁用 / 恢复不弹 —— 完全可逆，记录里能撤销
+            if (kind == "删除" && !ConfirmDelete(items)) { return; }
+
+            _busy = true;
+            UpdateBar();
+            int done;
+            bool ok;
+            string report;
+            try
+            {
+                if (kind == "禁用") { report = CtxMenu.DisableMany(items, out done, out ok); }
+                else if (kind == "恢复") { report = CtxMenu.RestoreMany(items, out done, out ok); }
+                else { report = CtxMenu.DeleteMany(items, out done, out ok); }
             }
             catch (Exception ex)
             {
-                SetReport("请求管理员权限失败：" + ex.Message);
-                Logger.Write("右键菜单管理", "请求管理员权限失败：" + ex.Message);
+                report = kind + "失败：" + ex.Message;
+                done = 0;
+                ok = false;
             }
-            return false;
-        }
-
-        private void Run(string action, Func<CtxEntry, string> work)
-        {
-            CtxEntry e = Selected();
-            if (e == null) { return; }
-            _busy = true;
-            UpdateButtons();
-            string report;
-            try { report = work(e); }
-            catch (Exception ex) { report = action + "失败：" + ex.Message; }
             _busy = false;
             Logger.Write("右键菜单管理", report);
-            string keep = e.Verb;
-            Reload();
-            SelectVerb(keep);
-            _report.Text = report + Environment.NewLine + Environment.NewLine + CtxMenu.LastAction();
-            _report.SelectionStart = 0;
-            _report.SelectionLength = 0;
+            LoadRows();
+            Flash(kind + "：成功 " + done.ToString(CultureInfo.InvariantCulture)
+                + " / 共 " + items.Count.ToString(CultureInfo.InvariantCulture) + " 项"
+                + (ok ? "" : "（有没成功的，逐条原因见工具箱日志）"));
+            // 动完之后，"刚才到底动了哪几个键"的答案就在动作记录里 —— 收起着就替用户展开一次
+            if (_actionPanel != null && !_actionPanel.Visible) { ToggleActionPanel(); }
+        }
+
+        private bool ConfirmDelete(List<CtxEntry> items)
+        {
+            if (!_confirmDangerous) { return true; }
+            StringBuilder body = new StringBuilder();
+            body.Append("要删除选中的 ").Append(items.Count.ToString(CultureInfo.InvariantCulture)).AppendLine(" 项吗？");
+            body.AppendLine();
+            int shown = 0;
+            foreach (CtxEntry e in items)
+            {
+                if (shown >= 8) { body.AppendLine("…等 " + items.Count.ToString(CultureInfo.InvariantCulture) + " 项"); break; }
+                body.Append("· ").Append(e.Title).Append("（").Append(e.WhereLabel).Append("）").AppendLine();
+                shown++;
+            }
+            body.AppendLine();
+            body.Append("会先给这 ").Append(items.Count.ToString(CultureInfo.InvariantCulture))
+                .AppendLine(" 个键各备份一份 .reg，都备份成功了才开始删；任何一份备份失败，那一条就不删。")
+                .AppendLine("后悔了：动作记录里点那一条的「还原来」，或者双击备份文件夹里的文件。")
+                .AppendLine("只删选中的这些键，别的键一个都不动。");
+            using (ConfirmForm f = new ConfirmForm(
+                "要删除这 " + items.Count.ToString(CultureInfo.InvariantCulture) + " 项吗？", body.ToString(), "删除", _theme))
+            {
+                return f.ShowDialog(this) == DialogResult.OK;
+            }
         }
 
         private bool Confirm(string title, string body, string okText)
@@ -553,27 +897,115 @@ namespace Mxx1Toolbox
             }
         }
 
-        private void SetReport(string text)
+        /// <summary>需要管理员：说清楚，然后提权重开这个窗口，**把刚才勾的那几项一起带过去**
+        /// （`--focus=&lt;位置&gt;|&lt;键名,…&gt;` 只负责"勾上"，不带任何动作 —— 命令行里不存在能写
+        /// 注册表的参数，写只能由用户点出来）。</summary>
+        private void OfferElevation(string kind, List<CtxEntry> items, List<CtxRow> checkedRows)
         {
-            _report.Text = text;
-            _report.SelectionStart = 0;
-            _report.SelectionLength = 0;
-        }
-
-        private void OpenBackupDir()
-        {
+            string names = "";
+            int shown = 0;
+            foreach (CtxEntry e in items)
+            {
+                if (shown >= 6) { names += " 等 " + items.Count.ToString(CultureInfo.InvariantCulture) + " 项"; break; }
+                if (shown > 0) { names += "、"; }
+                names += e.Title;
+                shown++;
+            }
+            bool go = Confirm("选中的项里有装在系统区的，需要管理员权限",
+                "选中的 " + items.Count.ToString(CultureInfo.InvariantCulture) + " 项里有装在系统区的："
+                + names + Environment.NewLine + Environment.NewLine
+                + "点「确定」之后：会弹一个 UAC 窗口，请点「是」；这个窗口会关掉，然后带管理员权限重新打开，"
+                + "刚才勾的那几项会自动帮你勾好。" + Environment.NewLine
+                + "因为写注册表只能由你在界面上点出来（工具箱的命令行故意没有能写注册表的参数），"
+                + "所以重开之后要再点一次「" + kind + "」那一下才会真的生效。", "确定");
+            if (!go) { return; }
             try
             {
-                System.IO.Directory.CreateDirectory(CtxMenu.BackupDir);
-                System.Diagnostics.ProcessStartInfo psi =
-                    new System.Diagnostics.ProcessStartInfo("explorer.exe", "\"" + CtxMenu.BackupDir + "\"");
+                StringBuilder verbs = new StringBuilder();
+                foreach (CtxRow r in checkedRows)
+                {
+                    if (verbs.Length > 0) { verbs.Append(','); }
+                    verbs.Append(r.Entry.Verb);
+                }
+                System.Diagnostics.ProcessStartInfo psi = new System.Diagnostics.ProcessStartInfo(
+                    AppPaths.ExePath,
+                    "rightmenu manage --focus=\"" + _zoneId + "|" + verbs.ToString() + "\"");
                 psi.UseShellExecute = true;
+                psi.Verb = "runas";
                 System.Diagnostics.Process.Start(psi);
+                Logger.Write("右键菜单管理", "需要管理员：已请求以管理员身份重开窗口（" + items.Count + " 项，勾选带过去了）");
+                Close();
             }
             catch (Exception ex)
             {
-                SetReport("打开备份文件夹失败：" + ex.Message + Environment.NewLine + CtxMenu.BackupDir);
+                Flash("请求管理员权限失败：" + ex.Message);
+                Logger.Write("右键菜单管理", "请求管理员权限失败：" + ex.Message);
             }
+        }
+
+        // ------------------------------------------------------------------ 搜索框的灰字提示
+
+        /// <summary>搜索框的灰字提示。`TextBox` 自己没有占位符，这里用系统的 `EM_SETCUEBANNER`
+        /// （Vista 起支持，工具箱最低支持 Win7，够用）—— 比自己画一段灰字、输入时再抹掉省事，
+        /// 也不会在取值时把提示文字当成用户输入。
+        /// ⚠️ 这个 API 的名字**没有 W 后缀**，所以要 `EntryPoint` + `ExactSpelling`（同 PITFALLS 坑 28
+        /// 那个 `FindWindowW`）。</summary>
+        private const int EM_SETCUEBANNER = 0x1501;
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode, EntryPoint = "SendMessageW", ExactSpelling = true)]
+        private static extern IntPtr SendMessageW(IntPtr hWnd, int msg, IntPtr wParam, string lParam);
+
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
+            try { SendMessageW(_searchBox.Handle, EM_SETCUEBANNER, (IntPtr)1, "输入名字过滤…"); }
+            catch { }
+        }
+
+        // ------------------------------------------------------------------ 键盘（和主窗口对齐：Ctrl+F / Ctrl+L）
+
+        protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+        {
+            if (keyData == (Keys.Control | Keys.F))
+            {
+                _searchBox.Focus();
+                return true;
+            }
+            if (keyData == (Keys.Control | Keys.L)) { ToggleActionPanel(); return true; }
+            if (keyData == Keys.Up || keyData == Keys.Down)
+            {
+                MoveCurrent(keyData == Keys.Down ? 1 : -1);
+                return true;
+            }
+            if (keyData == Keys.Space)
+            {
+                CtxRow cur = CurrentRow();
+                if (cur != null && cur.CanCheck) { cur.Toggle(); return true; }
+            }
+            if (keyData == Keys.Delete)
+            {
+                if (_deleteBtn.Enabled) { DoAction("删除"); return true; }
+            }
+            return base.ProcessCmdKey(ref msg, keyData);
+        }
+
+        private CtxRow CurrentRow()
+        {
+            foreach (CtxRow r in _rows) { if (r.Current) { return r; } }
+            return (_rows.Count > 0) ? _rows[0] : null;
+        }
+
+        private void MoveCurrent(int delta)
+        {
+            if (_rows.Count == 0) { return; }
+            int index = 0;
+            for (int i = 0; i < _rows.Count; i++) { if (_rows[i].Current) { index = i; break; } }
+            int want = index + delta;
+            if (want < 0) { want = 0; }
+            if (want >= _rows.Count) { want = _rows.Count - 1; }
+            SetCurrent(_rows[want]);
+            try { _content.ScrollControlIntoView(_rows[want]); }
+            catch { }
         }
     }
 }

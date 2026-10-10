@@ -2,6 +2,7 @@
 // Copyright (C) 2026 mxx1.cn
 using System;
 using System.Collections.Generic;
+using System.Drawing;
 using System.Globalization;
 using System.IO;
 using System.Runtime.InteropServices;
@@ -65,6 +66,9 @@ namespace Mxx1Toolbox
         public bool Ours = false;
         /// <summary>补充说明（扩展项的 DLL 路径 / 名字等）。</summary>
         public string Note = "";
+        /// <summary>注册表 `Icon` 值（`&lt;某个 exe 的路径&gt;,0` 这种；扩展项时是那个 DLL 的路径）——
+        /// 列表里每行显示"这一项自己的图标"就靠它，抽不出来再退回按段给的内嵌图标。</summary>
+        public string IconValue = "";
 
         /// <summary>用户区那份的完整键路径（要写先写它）。</summary>
         public string UserKey { get { return CtxMenu.UserRoot + "\\" + Sub + "\\" + Verb; } }
@@ -96,6 +100,97 @@ namespace Mxx1Toolbox
 
         /// <summary>改它要不要管理员（系统区里有一份、而当前不是管理员）。</summary>
         public bool NeedsAdmin { get { return InMachine && !CtxMenu.IsAdmin(); } }
+
+        /// <summary>列表里的段（对着用户的眼睛分，不是对着注册表分）：
+        /// 工具箱自己装的 / 程序装的 / 系统自带的 / DLL 扩展项。</summary>
+        public string GroupId
+        {
+            get
+            {
+                if (Shellex) { return CtxMenu.GroupShellex; }
+                if (Ours) { return CtxMenu.GroupOurs; }
+                return Systemish ? CtxMenu.GroupSystem : CtxMenu.GroupApps;
+            }
+        }
+    }
+
+    /// <summary>「动作记录」里的一条（界面底部那个面板读它）。
+    ///
+    /// 它不只是"看历史"：**撤销就是照这条记录把那个动作反着做一遍** ——
+    /// 禁用 → 删掉隐藏开关；恢复 → 再写一个；删除 → 把那份 `.reg` 导回去。
+    /// 所以记录里必须有**完整键路径**（带 hive，撤销时直接打开）和**备份文件名**。
+    /// ⚠️ 更早那版记录只有 6 列（只记键名、没有备份），照样能读，但标成 `Legacy`，
+    /// 界面上显示成"只能看、不能撤销" —— 绝不假装能撤。</summary>
+    internal sealed class CtxAction
+    {
+        public string When = "";
+        public string Action = "";
+        public string ZoneId = "";
+        public string ZoneLabel = "";
+        /// <summary>完整键路径（HKEY_CURRENT_USER\Software\Classes\*\shell\Xxx）。</summary>
+        public string Key = "";
+        /// <summary>删除时那份 .reg 的完整路径（「还原来」要导入它）。</summary>
+        public string Backup = "";
+        public string Title = "";
+        /// <summary>旧格式的明细（只有旧记录才有，用来在界面上照原样显示）。</summary>
+        public string Detail = "";
+        /// <summary>旧格式记录（撤不了）。</summary>
+        public bool Legacy = false;
+
+        /// <summary>这一条现在能不能撤销（删除要有备份文件；旧格式一律不行）。</summary>
+        public bool CanUndo
+        {
+            get
+            {
+                if (Legacy || Key.Length == 0) { return false; }
+                if (Action != "删除") { return true; }
+                try { return (Backup.Length > 0) && File.Exists(Backup); }
+                catch { return false; }
+            }
+        }
+
+        /// <summary>撤销按钮上写什么（把"反着做一遍"说成人话）。</summary>
+        public string UndoLabel
+        {
+            get
+            {
+                if (Action == "删除") { return "还原来"; }
+                if (Action == "恢复") { return "再禁一次"; }
+                return "恢复";
+            }
+        }
+
+        /// <summary>键路径的短写法（`HKEY_CURRENT_USER\\Software\\Classes\\…` → `HKCU\\Software\\Classes\\…`）——
+        /// 界面上那行要能一眼看出"动了哪个键"，完整 hive 名太占地方。</summary>
+        public string ShortKey
+        {
+            get
+            {
+                string s = Key;
+                if (s.StartsWith("HKEY_CURRENT_USER\\", StringComparison.OrdinalIgnoreCase)) { s = "HKCU\\" + s.Substring(18); }
+                else if (s.StartsWith("HKEY_LOCAL_MACHINE\\", StringComparison.OrdinalIgnoreCase)) { s = "HKLM\\" + s.Substring(20); }
+                return s;
+            }
+        }
+
+        /// <summary>面板上那一行的正文。</summary>
+        public string Line
+        {
+            get
+            {
+                StringBuilder sb = new StringBuilder();
+                sb.Append(When).Append("  ").Append(Action).Append("「").Append(Title).Append("」");
+                if (ShortKey.Length > 0) { sb.Append(" · ").Append(ShortKey); }
+                else if (ZoneLabel.Length > 0) { sb.Append(" · ").Append(ZoneLabel); }
+                if (Action == "删除" && Backup.Length > 0)
+                {
+                    try { sb.Append(" · 备份 ").Append(Path.GetFileName(Backup)); }
+                    catch { }
+                }
+                if (Legacy) { sb.Append(" ·（旧记录，撤不了）"); }
+                return sb.ToString();
+            }
+        }
     }
 
     /// <summary>「右键菜单管理」的后端：把 Windows 右键菜单里真实存在的项列出来，并且能禁用 / 恢复 / 删除。
@@ -139,6 +234,42 @@ namespace Mxx1Toolbox
         public const string HideValue2 = "ProgrammaticAccessOnly";
         /// <summary>工具箱自己的右键项前缀（和 RightMenu 用的是同一个）。</summary>
         public const string OursPrefix = "Mxx1Toolbox.";
+
+        // ---- 列表的四个段（2026-10-09 界面重做时定的：按"这是谁装的"分，
+        //      而不是按注册表位置分 —— 用户要挑的就是"别人塞进来的那些"）--------------------
+        public const string GroupOurs = "ours";
+        public const string GroupApps = "apps";
+        public const string GroupSystem = "system";
+        public const string GroupShellex = "shellex";
+
+        /// <summary>段的顺序（从上到下）。</summary>
+        public static readonly string[] GroupIds = new string[]
+        {
+            GroupOurs, GroupApps, GroupSystem, GroupShellex
+        };
+
+        public static string GroupLabel(string id)
+        {
+            if (id == GroupOurs) { return "工具箱自己装的"; }
+            if (id == GroupSystem) { return "系统自带"; }
+            if (id == GroupShellex) { return "DLL 扩展项"; }
+            return "程序装的";
+        }
+
+        /// <summary>段标题后面那半句（说清这一段能不能动、为什么）。</summary>
+        public static string GroupNote(string id)
+        {
+            if (id == GroupOurs) { return "想正规撤掉，回「右键增强」页点对应的「撤掉…」"; }
+            if (id == GroupSystem) { return "Windows 自己的，建议用「禁用」而不是删除"; }
+            if (id == GroupShellex) { return "这一版只显示、不给动（另一套机制，见底部说明）"; }
+            return "这些你可以禁用 / 删除";
+        }
+
+        /// <summary>段默认收起吗（系统自带的项最长、但最不该动，默认收起来）。</summary>
+        public static bool GroupCollapsedByDefault(string id)
+        {
+            return id == GroupSystem;
+        }
 
         /// <summary>上一版那批不带序号的旧键名（换名迁移之后就没了，但老用户那边可能还在）。
         /// 名单**直接引用 `RightMenu` 里的常量**，不在这里另抄一份 —— 抄一份就有第二处要维护。
@@ -365,6 +496,7 @@ namespace Mxx1Toolbox
                      || (v.GetValue("ExtendedSubCommandsKey", null) != null);
             e.Ours = IsOursName(e.Verb);
             e.Systemish = e.Verb.StartsWith("Windows.", StringComparison.OrdinalIgnoreCase);
+            e.IconValue = Str(v.GetValue("Icon", null));
 
             using (RegistryKey cmd = v.OpenSubKey("command", false))
             {
@@ -433,6 +565,7 @@ namespace Mxx1Toolbox
                             e.Shellex = true;
                             string realClsid = HandlerClsid(name, value);
                             e.Systemish = HandlerDllIsSystem(realClsid);
+                            e.IconValue = HandlerDllPath(realClsid);
                             e.Title = HandlerTitle(name, value)
                                 + (e.Systemish ? "（扩展项，系统自带）" : "（扩展项）");
                             e.Note = "扩展项（CLSID " + (realClsid.Length > 0 ? realClsid : "没写")
@@ -624,7 +757,7 @@ namespace Mxx1Toolbox
                 sb.AppendLine("结果：已禁用 —— 键和标题原样留着，右键里不再出现。"
                     + "（不用重启资源管理器：静态菜单项是每次右键现场拼的，实测过）");
                 sb.AppendLine("想让它回来：选中这一行点「恢复」。");
-                Record("禁用", e, done.ToString(CultureInfo.InvariantCulture) + " 个键");
+                Record("禁用", e, done.ToString(CultureInfo.InvariantCulture) + " 个键", "");
             }
             else if (missed > 0 && done == 0)
             {
@@ -691,7 +824,7 @@ namespace Mxx1Toolbox
             if (ok)
             {
                 sb.AppendLine("结果：已恢复 —— 重新点一次右键就能看到它（不用重启资源管理器）。");
-                Record("恢复", e, done.ToString(CultureInfo.InvariantCulture) + " 个键");
+                Record("恢复", e, done.ToString(CultureInfo.InvariantCulture) + " 个键", "");
             }
             else if (nothing > 0 && done == 0)
             {
@@ -769,7 +902,7 @@ namespace Mxx1Toolbox
             {
                 sb.AppendLine("结果：已删除。后悔了就双击上面那个 .reg 文件，菜单项就回来了"
                     + "（也可以在窗口里点「打开备份文件夹」）。");
-                Record("删除", e, done.ToString(CultureInfo.InvariantCulture) + " 个键");
+                Record("删除", e, done.ToString(CultureInfo.InvariantCulture) + " 个键", backupFile);
                 ok = true;
             }
             else
@@ -892,46 +1025,347 @@ namespace Mxx1Toolbox
             return s;
         }
 
-        /// <summary>记一笔动作（纯流水，用来给窗口底部那行"上一次…"和事后排查；不参与任何判断）。</summary>
-        private static void Record(string action, CtxEntry e, string detail)
+        /// <summary>记一笔动作。**这份记录不只是"看历史"**：界面上的「动作记录」面板每条后面挂一个
+        /// 按钮（禁用→「恢复」/ 恢复→「再禁一次」/ 删除→「还原来」），撤销就是照这条记录反着做一遍。
+        /// 所以从 2026-10-09 界面重做起，这里必须记**完整键路径**（带 hive，撤销时要能直接打开）
+        /// 和**备份文件名**（删除的还原来要 `reg import` 它）。
+        /// ⚠️ 旧格式（那时候只有 6 列、只记键名）照样能读，但标成"撤不了" —— 绝不假装能撤。</summary>
+        private static void Record(string action, CtxEntry e, string detail, string backup)
+        {
+            string key = (e.InMachine && !e.InUser) ? e.MachineKey : e.UserKey;
+            RecordRaw(action, e.ZoneId, e.ZoneLabel, key, backup, e.Title);
+            Logger.Write("右键菜单管理", action + " · " + e.Title + " · " + e.ZoneLabel + " · " + e.Verb
+                + (detail.Length > 0 ? " · " + detail : ""));
+        }
+
+        /// <summary>记一笔动作（"键"直接给字符串的版本 —— 撤销那条路要照记录重建，手里没有 `CtxEntry`）。</summary>
+        private static void RecordRaw(string action, string zoneId, string zoneLabel, string key, string backup, string title)
         {
             string line = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)
-                + "\t" + action + "\t" + e.ZoneLabel + "\t" + e.Verb + "\t" + detail + "\t" + e.Title;
+                + "\t" + action
+                + "\t" + zoneId + "\t" + zoneLabel
+                + "\t" + key
+                + "\t" + (backup == null ? "" : backup)
+                + "\t" + title;
             try
             {
                 AppPaths.EnsureBase();
                 if (!File.Exists(ActionLogFile))
                 {
                     File.WriteAllText(ActionLogFile,
-                        "# 萌新工具箱 · 右键菜单管理做过什么（只记流水，改了什么以注册表为准；别手改）" + Environment.NewLine
-                        + "# 时间\t动作\t位置\t键名\t明细\t菜单上显示的字" + Environment.NewLine,
+                        "# 萌新工具箱 · 右键菜单管理做过什么（界面上「动作记录」面板读它；撤销也靠它，别手改）"
+                        + Environment.NewLine
+                        + "# 时间\t动作\t位置id\t位置\t完整键路径\t备份文件\t菜单上显示的字" + Environment.NewLine,
                         new UTF8Encoding(false));
                 }
                 File.AppendAllText(ActionLogFile, line + Environment.NewLine, new UTF8Encoding(false));
             }
             catch { }
-            Logger.Write("右键菜单管理", action + " · " + e.Title + " · " + e.ZoneLabel + " · " + e.Verb);
         }
 
-        /// <summary>窗口底部那行"上一次…"（没有记录就返回空串）。</summary>
-        public static string LastAction()
+        /// <summary>读动作记录（**最新的在最前面** —— 和工具箱"日志一律最新在最上"同一条规矩）。</summary>
+        public static List<CtxAction> LoadActions(int max)
         {
+            List<CtxAction> list = new List<CtxAction>();
             try
             {
-                if (!File.Exists(ActionLogFile)) { return ""; }
+                if (!File.Exists(ActionLogFile)) { return list; }
                 string[] lines = File.ReadAllLines(ActionLogFile, Encoding.UTF8);
                 for (int i = lines.Length - 1; i >= 0; i--)
                 {
                     string s = lines[i];
                     if (s.Length == 0 || s.StartsWith("#")) { continue; }
                     string[] f = s.Split('\t');
-                    if (f.Length < 5) { continue; }
-                    return "上一次：" + f[1] + "「" + f[5 < f.Length ? 5 : 4] + "」 · " + f[0];
+                    CtxAction a = new CtxAction();
+                    a.When = (f.Length > 0) ? f[0] : "";
+                    a.Action = (f.Length > 1) ? f[1] : "";
+                    a.ZoneId = (f.Length > 2) ? f[2] : "";
+                    a.ZoneLabel = (f.Length > 3) ? f[3] : "";
+                    if (f.Length >= 7)
+                    {
+                        a.Key = f[4];
+                        a.Backup = f[5];
+                        a.Title = f[6];
+                    }
+                    else if (f.Length >= 6)
+                    {
+                        // 旧格式：第 5 列是"明细"，第 6 列才是标题；没有键路径也没有备份 → 撤不了
+                        a.Legacy = true;
+                        a.Detail = f[4];
+                        a.Title = f[5];
+                    }
+                    else { continue; }
+                    if (a.Action.Length == 0 || a.Title.Length == 0) { continue; }
+                    list.Add(a);
+                    if (max > 0 && list.Count >= max) { break; }
                 }
             }
             catch { }
-            return "";
+            return list;
         }
+
+        /// <summary>撤销一条记录 = 把那个动作反着做一遍：
+        /// 禁用 → 把隐藏开关删掉；恢复 → 再写一个隐藏开关；删除 → 把那份 .reg 导回去。
+        /// 每一步都**读回核对**，并且撤销本身也记一笔（所以"撤销了撤销"也说得清）。</summary>
+        public static string Undo(CtxAction a, out bool ok)
+        {
+            ok = false;
+            StringBuilder sb = new StringBuilder();
+            sb.Append("撤销：").Append(a.When).Append(" 的「").Append(a.Action).Append("「").Append(a.Title).Append("」").AppendLine();
+            if (a.Legacy || a.Key.Length == 0)
+            {
+                sb.AppendLine("结果：没做 —— 这条记录是**旧格式**的（那时候只记了键名，没记完整键路径），"
+                    + "所以撤不了。新的动作都有「恢复 / 还原来」。");
+                return sb.ToString();
+            }
+            sb.Append("键：").AppendLine(a.Key);
+
+            if (a.Action == "删除")
+            {
+                if (a.Backup.Length == 0 || !File.Exists(a.Backup))
+                {
+                    sb.AppendLine("结果：没做 —— 找不到那份备份文件（" + (a.Backup.Length > 0 ? a.Backup : "记录里没写") + "）。");
+                    return sb.ToString();
+                }
+                string err = RunReg("import \"" + a.Backup + "\"");
+                if (err.Length > 0) { sb.AppendLine("结果：导入失败 —— " + err); return sb.ToString(); }
+                using (RegistryKey back = OpenFull(a.Key, false))
+                {
+                    if (back == null) { sb.AppendLine("结果：导入了，但读回没找到那个键（备份文件可能不完整）"); return sb.ToString(); }
+                }
+                sb.AppendLine("结果：已还原来（把备份 " + Path.GetFileName(a.Backup) + " 导回去了，键读回在）。");
+                ok = true;
+                RecordRaw("撤销·还原来", a.ZoneId, a.ZoneLabel, a.Key, a.Backup, a.Title);
+                return sb.ToString();
+            }
+
+            bool wantDisabled = (a.Action != "禁用");   // 「恢复」的撤销 = 再禁一次
+            try
+            {
+                using (RegistryKey k = OpenFull(a.Key, true))
+                {
+                    if (k == null) { sb.AppendLine("结果：没做 —— 那个键已经不存在了（可能被删掉了）"); return sb.ToString(); }
+                    if (wantDisabled)
+                    {
+                        k.SetValue(HideValue, "", RegistryValueKind.String);
+                        if (k.GetValue(HideValue, null) == null) { sb.AppendLine("结果：没成功（读回是空的）"); return sb.ToString(); }
+                        sb.AppendLine("结果：已再禁一次（那一项又藏起来了）。");
+                        RecordRaw("撤销·再禁一次", a.ZoneId, a.ZoneLabel, a.Key, "", a.Title);
+                    }
+                    else
+                    {
+                        k.DeleteValue(HideValue, false);
+                        k.DeleteValue(HideValue2, false);
+                        if ((k.GetValue(HideValue, null) != null) || (k.GetValue(HideValue2, null) != null))
+                        {
+                            sb.AppendLine("结果：没成功（读回还在）");
+                            return sb.ToString();
+                        }
+                        sb.AppendLine("结果：已恢复（那一项回到菜单里了）。");
+                        RecordRaw("撤销·恢复", a.ZoneId, a.ZoneLabel, a.Key, "", a.Title);
+                    }
+                    ok = true;
+                }
+            }
+            catch (Exception ex)
+            {
+                sb.AppendLine("结果：失败 —— " + ex.Message);
+            }
+            return sb.ToString();
+        }
+
+        /// <summary>`reg.exe` 跑一句（备份导入用）。成功返回空串，失败返回原因。
+        /// ⚠️ 边跑边读：先 WaitForExit 再 ReadToEnd 在输出超过管道缓冲时会父子互等。</summary>
+        private static string RunReg(string arguments)
+        {
+            try
+            {
+                System.Diagnostics.ProcessStartInfo psi = new System.Diagnostics.ProcessStartInfo("reg.exe", arguments);
+                psi.UseShellExecute = false;
+                psi.CreateNoWindow = true;
+                psi.RedirectStandardOutput = true;
+                psi.RedirectStandardError = true;
+                using (System.Diagnostics.Process p = new System.Diagnostics.Process())
+                {
+                    p.StartInfo = psi;
+                    StringBuilder err = new StringBuilder();
+                    p.ErrorDataReceived += delegate(object s, System.Diagnostics.DataReceivedEventArgs a)
+                    {
+                        if (a.Data != null) { lock (err) { err.AppendLine(a.Data); } }
+                    };
+                    p.Start();
+                    p.BeginErrorReadLine();
+                    System.Threading.Tasks.Task<string> outTask = p.StandardOutput.ReadToEndAsync();
+                    if (!p.WaitForExit(15000)) { try { p.Kill(); } catch { } return "reg.exe 超时（15 秒）"; }
+                    outTask.Wait(2000);
+                    if (p.ExitCode != 0)
+                    {
+                        string e2 = err.ToString().Trim();
+                        return "reg.exe 退出码 " + p.ExitCode.ToString(CultureInfo.InvariantCulture)
+                            + (e2.Length > 0 ? "：" + e2 : "");
+                    }
+                }
+                return "";
+            }
+            catch (Exception ex) { return ex.Message; }
+        }
+
+        /// <summary>窗口底部那行"上一次…"（没有记录就返回空串）。</summary>
+        public static string LastAction()
+        {
+            List<CtxAction> list = LoadActions(1);
+            if (list.Count == 0) { return ""; }
+            CtxAction a = list[0];
+            return "上一次：" + a.Action + "「" + a.Title + "」 · " + a.When;
+        }
+
+        // ------------------------------------------------------------------ 批量
+
+        /// <summary>批量动作的公共骨架：**逐条做、互不影响** —— 一条失败（比如系统区那份写不进去）
+        /// 不让别的条跟着失败，最后给一行总计。每条各自记一笔，所以撤销也是逐条的。</summary>
+        private static string Many(string action, List<CtxEntry> items,
+            CtxWork work, out int done, out bool ok)
+        {
+            StringBuilder sb = new StringBuilder();
+            done = 0;
+            ok = false;
+            int failed = 0;
+            sb.Append("批量").Append(action).Append("：这一次选了 ")
+              .Append(items.Count.ToString(CultureInfo.InvariantCulture)).AppendLine(" 项。").AppendLine();
+            foreach (CtxEntry e in items)
+            {
+                bool one;
+                string report = work(e, out one);
+                sb.AppendLine(report.TrimEnd());
+                sb.AppendLine();
+                if (one) { done++; } else { failed++; }
+            }
+            sb.Append("合计：").Append(items.Count.ToString(CultureInfo.InvariantCulture)).Append(" 项 —— 成功 ")
+              .Append(done.ToString(CultureInfo.InvariantCulture)).Append("、失败 ")
+              .Append(failed.ToString(CultureInfo.InvariantCulture)).AppendLine("（失败的逐条原因见上）");
+            ok = (failed == 0 && done > 0);
+            return sb.ToString();
+        }
+
+        /// <summary>批量工作的形状（`CtxMenu.Disable` / `Restore` / `Delete` 三选一）。</summary>
+        internal delegate string CtxWork(CtxEntry e, out bool ok);
+
+        public static string DisableMany(List<CtxEntry> items, out int done, out bool ok)
+        {
+            return Many("禁用", items, delegate(CtxEntry e, out bool one) { return Disable(e, out one); }, out done, out ok);
+        }
+
+        public static string RestoreMany(List<CtxEntry> items, out int done, out bool ok)
+        {
+            return Many("恢复", items, delegate(CtxEntry e, out bool one) { return Restore(e, out one); }, out done, out ok);
+        }
+
+        public static string DeleteMany(List<CtxEntry> items, out int done, out bool ok)
+        {
+            return Many("删除", items, delegate(CtxEntry e, out bool one)
+            {
+                string backup;
+                return Delete(e, out backup, out one);
+            }, out done, out ok);
+        }
+
+        // ------------------------------------------------------------------ 行图标
+
+        private static readonly Dictionary<string, Image> IconCache = new Dictionary<string, Image>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>每一行显示"这一项自己的图标"：注册表 `Icon` 值指的 exe/dll/ico（扩展项就是它那个
+        /// DLL）。**抽不到就不画**（返回 null，那一行的图标位留空、各行的文字仍然对齐）——
+        /// 2026-10-09 用户看实图提的：原先退回"按段给的内嵌图标"，结果一整页全是同一个绿色小方块，
+        /// 比空着还难看。
+        /// ⚠️ 抽图标走 `ExtractIconEx`（系统自己的装载器）：**别用 `new Icon(stream, w, h)` 判好坏**
+        /// —— 那个重载对任何 .ico 都可能抛异常，本仓库 2026-10-05 就这么误判过一次（PITFALLS 里记着）。</summary>
+        public static Image RowIcon(CtxEntry e)
+        {
+            int index;
+            string src = StripIconIndex(e.IconValue, out index);
+            if (src.Length > 0)
+            {
+                string cacheKey = src + "#" + index.ToString(CultureInfo.InvariantCulture);
+                lock (IconCache)
+                {
+                    Image cached;
+                    if (IconCache.TryGetValue(cacheKey, out cached)) { return cached; }
+                }
+                Image got = ExtractIcon(src, index);
+                if (got != null)
+                {
+                    lock (IconCache) { IconCache[cacheKey] = got; }
+                    return got;
+                }
+            }
+            return null;
+        }
+
+        /// <summary>`&lt;某个 exe 的路径&gt;,0` → 路径 + 序号；`@shell32.dll,-5` 这种间接写法先解开。
+        /// 拿不到就返回空串（调用方据此"不画图标"）。</summary>
+        private static string StripIconIndex(string value, out int index)
+        {
+            index = 0;
+            string s = ResolveIndirect(value).Trim();
+            if (s.Length == 0) { return ""; }
+            if (s.StartsWith("\"", StringComparison.Ordinal))
+            {
+                int close = s.IndexOf('"', 1);
+                if (close > 0)
+                {
+                    string quoted = s.Substring(1, close - 1);
+                    string rest = s.Substring(close + 1).TrimStart(',', ' ');
+                    int.TryParse(rest, NumberStyles.Integer, CultureInfo.InvariantCulture, out index);
+                    return AppPaths.Expand(quoted);
+                }
+            }
+            int comma = s.LastIndexOf(',');
+            if (comma > 0)
+            {
+                int parsed;
+                if (int.TryParse(s.Substring(comma + 1).Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out parsed))
+                {
+                    index = parsed;
+                    s = s.Substring(0, comma).Trim();
+                }
+            }
+            s = AppPaths.Expand(s);
+            try { if (!File.Exists(s)) { return ""; } }
+            catch { return ""; }
+            return s;
+        }
+
+        private static Image ExtractIcon(string file, int index)
+        {
+            IntPtr small = IntPtr.Zero;
+            try
+            {
+                IntPtr large = IntPtr.Zero;
+                int got = ExtractIconEx(file, index, out large, out small, 1);
+                if (got <= 0 || small == IntPtr.Zero) { return null; }
+                using (Icon ic = Icon.FromHandle(small))
+                {
+                    Bitmap bmp = new Bitmap(16, 15);
+                    using (Graphics g = Graphics.FromImage(bmp))
+                    {
+                        g.Clear(Color.Transparent);
+                        g.DrawIcon(ic, new Rectangle(0, 0, 16, 16));
+                    }
+                    return bmp;
+                }
+            }
+            catch { return null; }
+            finally
+            {
+                if (small != IntPtr.Zero) { try { DestroyIcon(small); } catch { } }
+            }
+        }
+
+        [DllImport("shell32.dll", CharSet = CharSet.Unicode, EntryPoint = "ExtractIconExW", ExactSpelling = true)]
+        private static extern int ExtractIconEx(string file, int index, out IntPtr large, out IntPtr small, int count);
+
+        [DllImport("user32.dll", EntryPoint = "DestroyIcon", ExactSpelling = true)]
+        private static extern bool DestroyIcon(IntPtr icon);
 
         // ------------------------------------------------------------------ 只读出口 / 管理员
 

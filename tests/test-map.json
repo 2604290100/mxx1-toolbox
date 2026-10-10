@@ -119,7 +119,8 @@
     {
       "paths": [
         "src/CtxMenu.cs",
-        "src/CtxMenuForm.cs"
+        "src/CtxMenuForm.cs",
+        "src/CtxRow.cs"
       ],
       "cli": [
         "A",
@@ -128,7 +129,7 @@
       "gui": [
         "C"
       ],
-      "note": "右键菜单管理（按位置列出真实菜单项 + 禁用/恢复/删除）：只读出口 `rightmenu list` 与「命令行没有写入口」那条底线（M49–M54）；窗口那一半（5 页签 / 6 个按钮 / 列表数字 / 三个动作端到端 / 只写测试根）由界面 C 组的 C17–C19o 盯着。测试一律走 MXX1_CTXMENU_ROOT / _MACHINE 两个隔离根，绝不碰用户真实的右键菜单；⭐ 隐藏开关写什么值是 2026-10-09 用只读探针实测定的（LegacyDisable），见 docs\\DESIGN.md §12.66"
+      "note": "右键菜单管理（按位置列出真实菜单项 + 禁用/恢复/删除）：只读出口 `rightmenu list` 与「命令行没有写入口」那条底线（M49–M54）；窗口那一半由界面 C 组的 C17–C19t 盯着（2026-10-09 界面重做后判据换过一轮：页签带条数 / 段标题 + 行卡片 / 勾选批量 / 记录可撤销 / 三个动作端到端）。测试一律走 MXX1_CTXMENU_ROOT / _MACHINE 两个隔离根，绝不碰用户真实的右键菜单；⭐ 隐藏开关写什么值是 2026-10-09 用只读探针实测定的（LegacyDisable），见 docs\\DESIGN.md §12.66"
     },
     {
       "paths": [

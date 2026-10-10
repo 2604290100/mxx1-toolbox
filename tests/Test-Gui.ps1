@@ -1399,22 +1399,26 @@ Check ('C01f 右键增强页 17 个按钮都在（两对复制各一对 = {0} �
      (@($gotRightBtns | Sort-Object) -join '|') -eq (@($wantRightBtns | Sort-Object) -join '|')) `
     ('实际=' + ($gotRightBtns -join ' | '))
 
-# ---- 右键菜单管理窗口（C17–C19g）----------------------------------------------------------
-# 用户 2026-10-09 要的东西：「右键菜单管理按钮，弹出窗口显示右键菜单的列表（要考虑文件列表 /
-# 文件夹列表 / 桌面列表多种情况），功能暂定禁用、恢复、删除」，拍板：5 页签 / 扩展项只显示 /
-# 要管理员的项走 UAC / 按钮塞进「状态与修补」段。
+# ---- 右键菜单管理窗口（2026-10-09 界面重做后的判据）--------------------------------------
+# 用户 2026-10-09 先要「右键菜单管理」，看过文字效果图之后又要求「**和主窗口【萌新工具箱】界面统一
+# 风格**」，挑了「宽行卡片 + 勾选多选 + 禁用/恢复不弹确认 + 动作记录可撤销」这一套。所以这一段验的就是
+# 那套口径：5 个位置页签（同款）/ 搜索 + 快选 / 段标题 + 行卡片（段按"谁装的"分）/
+# 底栏动作按钮上的数字跟着勾选变 / 三个动作端到端 / 动作记录能撤销。
 #
-# 读写都在**隔离的根**里（MXX1_CTXMENU_ROOT / _MACHINE，文件开头就设好了），所以这一段
-# 既不碰用户真实的右键菜单，也不需要管理员。夹具 = 三种状态 + 一条"只在系统区"的 + 一个扩展项。
+# 读写都在**隔离的根**里（MXX1_CTXMENU_ROOT / _MACHINE，文件开头就设好了），所以这一段既不碰用户
+# 真实的右键菜单，也不需要管理员。夹具 = 三种状态 + 一条"只在系统区"的 + 一条系统自带的 + 一个扩展项。
 $ctxRootRel = 'Software\mxx1-toolbox\ctxmenu-test'
 $ctxRootMachineRel = 'Software\mxx1-toolbox\ctxmenu-test-machine'
 $ctxBackupDir = Join-Path $env:LOCALAPPDATA 'mxx1-toolbox\ctxmenu-backup'
+$ctxActionLog = Join-Path $env:LOCALAPPDATA 'mxx1-toolbox\ctxmenu-actions.tsv'
 $ctxRealShell = 'HKCU:\Software\Classes\*\shell'
 $ctxRealBefore = @(Get-ChildItem -LiteralPath $ctxRealShell -ErrorAction SilentlyContinue |
     Select-Object -ExpandProperty PSChildName)
 $ctxBackupBefore = @(Get-ChildItem -LiteralPath $ctxBackupDir -File -ErrorAction SilentlyContinue |
     Select-Object -ExpandProperty Name)
-$ctxFixtures = @('Mxx1FixtureKeep', 'Mxx1FixtureOff', 'Mxx1FixtureDel', 'Mxx1FixtureExt')
+$ctxActionLogHad = Test-Path -LiteralPath $ctxActionLog
+$ctxActionLogOld = ''
+if ($ctxActionLogHad) { $ctxActionLogOld = [System.IO.File]::ReadAllText($ctxActionLog) }
 
 function New-CtxFixture {
     param([string]$RootRel, [string]$Verb, [string]$Title, [string]$ExtraValue)
@@ -1429,23 +1433,80 @@ function New-CtxFixture {
     $base.Close()
 }
 
-# 界面上那一行"列表里都有什么"是窗口顶部那个 Label（`共 N 条（在用 a / 已禁用 b / 扩展项 c…）`），
-# 跨进程能直接 WM_GETTEXT 读出来 —— ListView 的单元格读不了，所以断言走这一行 + 报告框那行。
-function Get-CtxHead([IntPtr]$Hwnd) {
-    $lab = @(Get-ChildControls -RootHandle $Hwnd | Where-Object { $_.Text -like '*点右键会看到的项*' })
+# 窗口底栏左边那句（`已勾选 N 项 · 共 M 条（…） · 位置`）
+function Get-CtxStatus([IntPtr]$Hwnd) {
+    $lab = @(Get-ChildControls -RootHandle $Hwnd | Where-Object { $_.Text -like '已勾选*' })
     if ($lab.Count -eq 0) { return '' }
     return $lab[0].Text
+}
+function Get-CtxTexts([IntPtr]$Hwnd) {
+    return @(Get-ChildControls -RootHandle $Hwnd | ForEach-Object { $_.Text })
+}
+function Find-CtxButton([IntPtr]$Hwnd, [string]$Text) {
+    return @(Get-ChildControls -RootHandle $Hwnd |
+        Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq $Text })
+}
+# 等一个按钮出现（最多 ~4 秒）。勾选之后底栏按钮的文字和可用性要重画一次，读太早会读到旧值 ——
+# 2026-10-09 这一条害得 C19g/C19h 连着一串假红，改成轮询就稳了。
+function Wait-CtxButton([IntPtr]$Hwnd, [string]$Text, [int]$Tries = 20) {
+    # ⚠️ `return @()` / `return $b` 会被 PowerShell 摊开：空数组摊成 $null（调用方一读 .Count 就炸），
+    # 单元素数组摊成那个元素本身。前面加一个逗号（`,$b`）才是"把这个数组原样交出去"——
+    # 2026-10-09 就是漏了这个逗号，C19/C19f/C19g 一路连坐红了（detail 里 `找到=` 是空的）。
+    for ($i = 0; $i -lt $Tries; $i++) {
+        $b = @(Find-CtxButton -Hwnd $Hwnd -Text $Text)
+        if ($b.Count -ge 1) { return ,$b }
+        Start-Sleep -Milliseconds 200
+    }
+    return ,@()
+}
+# 行上的勾选框：**宽高都是 16** 是它唯一的特征（行里的按钮都是 20 高、图标是 16×46、行本身 46 高）
+function Find-CtxCheck([IntPtr]$Hwnd, [string]$RowLabel) {
+    $lab = @(Get-ChildControls -RootHandle $Hwnd | Where-Object { $_.Text -eq $RowLabel })
+    if ($lab.Count -eq 0) { return $null }
+    $boxes = @(Get-ChildControls -RootHandle $Hwnd |
+        Where-Object { $_.Width -eq 16 -and $_.Height -eq 16 -and $_.Class -like '*BUTTON*' })
+    $best = $null
+    $bestGap = 999
+    foreach ($b in $boxes) {
+        $gap = [Math]::Abs($b.Top - $lab[0].Top)
+        if ($gap -lt $bestGap) { $bestGap = $gap; $best = $b }
+    }
+    if ($bestGap -gt 40) { return $null }
+    return $best
+}
+# 勾上某一行（BM_CLICK 打在那个勾选框上），成功判据是底栏那句变了
+function Set-CtxCheck([IntPtr]$Hwnd, [string]$RowLabel, [bool]$Want) {
+    $box = Find-CtxCheck -Hwnd $Hwnd -RowLabel $RowLabel
+    if ($null -eq $box) { return $false }
+    $before = Get-CtxStatus $Hwnd
+    [void][TBGui]::Click($box.H)
+    for ($i = 0; $i -lt 20; $i++) {
+        Start-Sleep -Milliseconds 150
+        if ((Get-CtxStatus $Hwnd) -ne $before) { break }
+    }
+    return ((Get-CtxStatus $Hwnd) -ne $before)
+}
+function Wait-CtxValue([string]$Path, [string]$Name, [bool]$Want, [int]$Tries = 30) {
+    for ($i = 0; $i -lt $Tries; $i++) {
+        Start-Sleep -Milliseconds 200
+        $has = $false
+        try { $has = ((Get-ItemProperty -LiteralPath $Path -ErrorAction SilentlyContinue).PSObject.Properties.Name -contains $Name) }
+        catch { $has = $false }
+        if ($has -eq $Want) { return $true }
+    }
+    return $false
 }
 
 $ctxKeep = Join-Path 'HKCU:\Software\mxx1-toolbox\ctxmenu-test' '*\shell\Mxx1FixtureKeep'
 $ctxOff = Join-Path 'HKCU:\Software\mxx1-toolbox\ctxmenu-test' '*\shell\Mxx1FixtureOff'
 $ctxDel = Join-Path 'HKCU:\Software\mxx1-toolbox\ctxmenu-test' '*\shell\Mxx1FixtureDel'
-$ctxMachine = Join-Path 'HKCU:\Software\mxx1-toolbox\ctxmenu-test-machine' '*\shell\Mxx1FixtureMachine'
+$ctxSys = Join-Path 'HKCU:\Software\mxx1-toolbox\ctxmenu-test' '*\shell\Windows.Mxx1FixtureSys'
 
 try {
     New-CtxFixture ($ctxRootRel + '\*\shell') 'Mxx1FixtureKeep' '夹具·在用' ''
     New-CtxFixture ($ctxRootRel + '\*\shell') 'Mxx1FixtureOff' '夹具·已禁用' 'LegacyDisable'
     New-CtxFixture ($ctxRootRel + '\*\shell') 'Mxx1FixtureDel' '夹具·待删' ''
+    New-CtxFixture ($ctxRootRel + '\*\shell') 'Windows.Mxx1FixtureSys' '夹具·系统自带' ''
     New-CtxFixture ($ctxRootMachineRel + '\*\shell') 'Mxx1FixtureMachine' '夹具·系统区' ''
     $ctxExtParent = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey(
         $ctxRootRel + '\*\shellex\ContextMenuHandlers')
@@ -1471,171 +1532,226 @@ try {
 
     if ($manageWin) {
         $mw = $manageWin.H
-        $mwTexts = @(Get-ChildControls -RootHandle $mw | ForEach-Object { $_.Text })
+        $mwTexts = Get-CtxTexts $mw
         $mwBtns = @(Get-ChildControls -RootHandle $mw | Where-Object { $_.Class -like '*BUTTON*' } | ForEach-Object { $_.Text })
 
-        Check 'C18 窗口里有 5 个位置页签（文件 / 文件夹 / 文件夹空白处 / 桌面 / 磁盘）' `
-            ((@('文件', '文件夹', '文件夹空白处', '桌面', '磁盘') | Where-Object { $mwBtns -notcontains $_ }).Count -eq 0) `
-            ($mwBtns -join ' | ')
-        Check 'C19 窗口里有 6 个动作按钮（禁用 / 恢复 / 删除（先备份）/ 刷新 / 打开备份文件夹 / 关闭）' `
-            ((@('禁用', '恢复', '删除（先备份）', '刷新', '打开备份文件夹', '关闭') | Where-Object { $mwBtns -notcontains $_ }).Count -eq 0) `
-            ($mwBtns -join ' | ')
-        Check 'C19b 列表的数字对得上夹具（5 条 = 在用 3 / 已禁用 1 / 扩展项 1；其中 1 条在系统区）' `
-            ((Get-CtxHead $mw) -match '共 5 条（在用 3 / 已禁用 1 / 扩展项 1；其中 1 条在系统区') (Get-CtxHead $mw)
-        Check 'C19c 底部写明了"扩展项这一版只显示"和"改完立刻生效"（不说清楚用户会以为工具坏了）' `
-            ((($mwTexts -join ' ') -match '只显示、不给动') -and (($mwTexts -join ' ') -match '不用重启资源管理器')) `
-            (($mwTexts | Where-Object { $_ -match '扩展项|重启' }) -join ' || ')
+        # 页签上带条数（「文件 5」这种），所以按「名字 + 空格」前缀匹配
+        $tabHit = 0
+        foreach ($t in @('文件', '文件夹', '文件夹空白处', '桌面', '磁盘')) {
+            if (@($mwBtns | Where-Object { $_ -like ($t + ' *') }).Count -ge 1) { $tabHit++ }
+        }
+        Check 'C18 窗口里有 5 个位置页签（文件 / 文件夹 / 文件夹空白处 / 桌面 / 磁盘），而且每个都写着条数' `
+            ($tabHit -eq 5) ($mwBtns -join ' | ')
 
-        # 切一页：这一页没有夹具，所以列表是 0 条（同时证明"页签真的切换了内容"，不是死图）
-        $folderTab = @(Get-ChildControls -RootHandle $mw | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '文件夹' })
-        if ($folderTab.Count -eq 1) { [void][TBGui]::Click($folderTab[0].H) ; Start-Sleep -Milliseconds 600 }
-        Check 'C19d 点「文件夹」页签真的换了列表（那一页没有夹具 → 0 条）' `
-            ((Get-CtxHead $mw) -match '共 0 条') (Get-CtxHead $mw)
+        # ---- C19：底栏那一排（和主窗口底栏同款：右边一排小按钮），**没勾任何一项时动作按钮是灰的**
+        $wantBar = @('动作记录', '禁用选中的 0 项', '恢复选中的 0 项', '删除选中的 0 项', '刷新', '关闭')
+        $gotBar = @($wantBar | Where-Object { $mwBtns -contains $_ })
+        $threeGrey = $true
+        $barDetail = @()
+        foreach ($t in @('禁用选中的 0 项', '恢复选中的 0 项', '删除选中的 0 项')) {
+            $b = Wait-CtxButton -Hwnd $mw -Text $t
+            $en = $false
+            if ($b.Count -eq 1) { $en = $b[0].Enabled }
+            $barDetail += ($t + '=' + $b.Count + '/en=' + $en)
+            if (($b.Count -ne 1) -or $en) { $threeGrey = $false }
+        }
+        Check 'C19 底栏 6 个按钮都在，而且没勾任何一项时三个动作按钮都是灰的（绝不猜你要动哪一条）' `
+            (($gotBar.Count -eq 6) -and $threeGrey) (($barDetail -join ' ') + ' | ' + ($mwBtns -join ' | '))
+
+        # ---- C19b：段标题（按"谁装的"分四段）+ 行卡片里的字**读得到**
+        $caps = @($mwTexts | Where-Object { $_ -like '*（*）*' -and ($_ -match '程序装的|系统自带|DLL 扩展项|工具箱自己装的') })
+        $capsJoined = $caps -join ' || '
+        Check 'C19b 段标题按"谁装的"分段（程序装的 4 / 系统自带 1 / DLL 扩展项 1 都在）' `
+            ((($capsJoined -match '程序装的（4）') -and ($capsJoined -match '系统自带（1）') -and ($capsJoined -match 'DLL 扩展项（1）'))) `
+            $capsJoined
+        Check 'C19c 行卡片上的字（名称 / 状态 / 在哪儿）跨进程读得到 —— 不是画上去的' `
+            (($mwTexts -contains '夹具·在用') -and ($mwTexts -contains '夹具·已禁用') -and `
+             (($mwTexts | Where-Object { $_ -like '在用 · 用户区' }).Count -ge 1) -and `
+             (($mwTexts | Where-Object { $_ -like '已禁用 · 用户区' }).Count -ge 1)) `
+            (($mwTexts | Where-Object { $_ -like '夹具*' -or $_ -like '扩展项*' -or $_ -like '已禁用 ·*' }) -join ' | ')
+        Check 'C19d 底部写明了"改完立刻生效，不用重启资源管理器"和"扩展项这一版只显示"' `
+            ((($mwTexts -join ' ') -match '不用重启资源管理器') -and (($mwTexts -join ' ') -match '只显示、不给动')) `
+            (($mwTexts | Where-Object { $_ -match '重启|只显示' }) -join ' || ')
+        Check 'C19e 底栏那句小结写着这一页的真实条数（共 6 条 = 在用 4 / 已禁用 1 / 扩展项 1）' `
+            ((Get-CtxStatus $mw) -match '共 6 条（在用 4 / 已禁用 1 / 扩展项 1') (Get-CtxStatus $mw)
+
+        # ---- C19f：「系统自带」那一段默认收起，点「展开」才出来（默认藏起来，最不该动的先别挡路）
+        $sysRowShown = ($mwTexts -contains '夹具·系统自带（系统自带）')
+        $toggle = Wait-CtxButton -Hwnd $mw -Text '展开'
+        if ($toggle.Count -ge 1) { [void][TBGui]::Click($toggle[0].H) }
+        $sysShown2 = $false
+        for ($i = 0; $i -lt 20; $i++) {
+            Start-Sleep -Milliseconds 200
+            if ((Get-CtxTexts $mw) -contains '夹具·系统自带（系统自带）') { $sysShown2 = $true; break }
+        }
+        $mwTexts2 = Get-CtxTexts $mw
+        Check 'C19f 「系统自带」段默认收起、点「展开」之后那一行才出现' `
+            ((-not $sysRowShown) -and ($mwTexts2 -contains '夹具·系统自带（系统自带）')) `
+            ('收起时可见=' + $sysRowShown + ' 展开后可见=' + ($mwTexts2 -contains '夹具·系统自带（系统自带）'))
+
+        # ---- C19g：勾选 → 底栏按钮上的数字跟着变、按钮亮起来
+        $ok1 = Set-CtxCheck -Hwnd $mw -RowLabel '夹具·在用' -Want $true
+        $dis1 = Wait-CtxButton -Hwnd $mw -Text '禁用选中的 1 项'
+        Check 'C19g 勾上一行 → 底栏变成「禁用选中的 1 项」并亮起来' `
+            ($ok1 -and ($dis1.Count -eq 1) -and $dis1[0].Enabled) `
+            ('改动=' + $ok1 + ' 找到=' + $dis1.Count + ' :: ' + (Get-CtxStatus $mw))
+
+        # ---- C19h：批量禁用端到端：再勾一项 → 点一下 → 两个键里都多了隐藏开关（**不弹确认框**）
+        $ok2 = Set-CtxCheck -Hwnd $mw -RowLabel '夹具·待删' -Want $true
+        $dis2 = Wait-CtxButton -Hwnd $mw -Text '禁用选中的 2 项'
+        $dlgAfter = 0
+        if ($dis2.Count -eq 1 -and $dis2[0].Enabled) {
+            [void][TBGui]::Click($dis2[0].H)
+            for ($i = 0; $i -lt 25; $i++) {
+                Start-Sleep -Milliseconds 200
+                $dlgAfter = @((Get-TopWindows -ProcessId $proc.Id) |
+                    Where-Object { $_.H -ne $main -and $_.H -ne $mw -and $_.Visible -and $_.Text -eq '请确认' }).Count
+                if ($dlgAfter -gt 0) { break }
+            }
+        }
+        $keepHidden = Wait-CtxValue -Path $ctxKeep -Name 'LegacyDisable' -Want $true
+        $delHidden = Wait-CtxValue -Path $ctxDel -Name 'LegacyDisable' -Want $true
+        Check 'C19h 批量禁用：勾两项点一下 → 两个键里都写进了隐藏开关（键和标题原样留着）' `
+            (($dis2.Count -eq 1) -and $keepHidden -and $delHidden -and `
+             ("$((Get-ItemProperty -LiteralPath $ctxKeep).'(default)')" -eq '夹具·在用')) `
+            ('Keep 有开关=' + $keepHidden + ' Del 有开关=' + $delHidden)
+        Check 'C19i 禁用不弹确认框（用户拍板：完全可逆、记录里能撤销，就不拿确认框挡人）' ($dlgAfter -eq 0) ('弹了=' + $dlgAfter)
+
+        # ---- C19j：动作记录面板：能读到最后一步、并且**点一下就能撤销**
+        $logBtn = Find-CtxButton -Hwnd $mw -Text '动作记录'
+        if ($logBtn.Count -eq 1) { [void][TBGui]::Click($logBtn[0].H) ; Start-Sleep -Milliseconds 900 }
+        $recLine = @()
+        for ($i = 0; $i -lt 20; $i++) {
+            Start-Sleep -Milliseconds 200
+            $recLine = @((Get-CtxTexts $mw) | Where-Object { $_ -match '禁用「夹具·在用」' })
+            if ($recLine.Count -ge 1) { break }
+        }
+        $mwTexts3 = Get-CtxTexts $mw
+        $recLine = @($mwTexts3 | Where-Object { $_ -match '禁用「夹具·在用」' })
+        $undoBtn = Wait-CtxButton -Hwnd $mw -Text '恢复'
+        Check 'C19j 动作记录里读得到刚才那一步（含动了哪个键），而且后面挂着「恢复」' `
+            (($recLine.Count -ge 1) -and ($undoBtn.Count -ge 1) -and $undoBtn[0].Enabled) `
+            (($mwTexts3 | Where-Object { $_ -match '禁用「' }) -join ' || ')
+
+        if ($undoBtn.Count -ge 1) {
+            [void][TBGui]::Click($undoBtn[0].H)
+            $backOk = Wait-CtxValue -Path $ctxKeep -Name 'LegacyDisable' -Want $false
+            Check 'C19k 点「恢复」那个撤销按钮 → 隐藏开关真被删掉（端到端撤销）' $backOk `
+                ('读回还有开关=' + (-not $backOk))
+        } else {
+            Check 'C19k 点「恢复」那个撤销按钮 → 隐藏开关真被删掉（端到端撤销）' $false 'skipped（没找到撤销按钮）'
+        }
+
+        # ---- C19l：删除端到端：确认框里说清备份 → 删掉 → 备份真的生成了 → 「还原来」把键弄回来
+        $delBox = Find-CtxCheck -Hwnd $mw -RowLabel '夹具·待删'
+        if ($null -ne $delBox) { [void][TBGui]::Click($delBox.H) ; Start-Sleep -Milliseconds 600 }
+        $delBtn = Wait-CtxButton -Hwnd $mw -Text '删除选中的 1 项'
+        if ($delBtn.Count -eq 1 -and $delBtn[0].Enabled) { [void][TBGui]::Click($delBtn[0].H) }
+        $dlgDel = $null
+        for ($i = 0; $i -lt 40; $i++) {
+            Start-Sleep -Milliseconds 200
+            $dlgDel = @((Get-TopWindows -ProcessId $proc.Id) | Where-Object { $_.H -ne $main -and $_.Visible -and $_.Text -eq '请确认' })
+            if ($dlgDel.Count -ge 1) { break }
+        }
+        Check 'C19l 删除仍然弹确认框（列清单 + 说清每个键都会先备份）' ($dlgDel.Count -ge 1) ''
+        if ($dlgDel.Count -ge 1) {
+            $dlgText = (@(Get-ChildControls -RootHandle $dlgDel[0].H | ForEach-Object { $_.Text }) -join ' ')
+            Check 'C19m 确认框里写明了「各备份一份 .reg」「备份失败那一条就不删」「怎么还原」' `
+                ((($dlgText -match '备份') -and ($dlgText -match '\.reg')) -and ($dlgText -match '还原来|双击')) ''
+            $okDel = @(Get-ChildControls -RootHandle $dlgDel[0].H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '删除' })
+            if ($okDel.Count -eq 1) { [void][TBGui]::Click($okDel[0].H) } else { [void][TBGui]::CloseWindow($dlgDel[0].H) }
+            for ($i = 0; $i -lt 40; $i++) {
+                Start-Sleep -Milliseconds 250
+                if (-not (Test-Path -LiteralPath $ctxDel)) { break }
+            }
+        } else {
+            Check 'C19m 确认框里写明了「各备份一份 .reg」「备份失败那一条就不删」「怎么还原」' $false 'skipped'
+        }
+        $ctxBackupAfter = @(Get-ChildItem -LiteralPath $ctxBackupDir -File -ErrorAction SilentlyContinue |
+            Select-Object -ExpandProperty Name)
+        $ctxNewBackups = @($ctxBackupAfter | Where-Object { $ctxBackupBefore -notcontains $_ })
+        Check 'C19n 删除先备份成 .reg（真生成了、不是空壳），然后那个键才没了' `
+            ((($ctxNewBackups.Count -ge 1) -and `
+              (@($ctxNewBackups | Where-Object { (Get-Item -LiteralPath (Join-Path $ctxBackupDir $_)).Length -gt 0 }).Count -eq $ctxNewBackups.Count)) -and `
+             (-not (Test-Path -LiteralPath $ctxDel))) `
+            ('新备份=' + $ctxNewBackups.Count + ' 键还在=' + (Test-Path -LiteralPath $ctxDel))
+
+        $undo2 = Wait-CtxButton -Hwnd $mw -Text '还原来'
+        if ($undo2.Count -ge 1 -and $undo2[0].Enabled) {
+            [void][TBGui]::Click($undo2[0].H)
+            $restored = $false
+            for ($i = 0; $i -lt 40; $i++) {
+                Start-Sleep -Milliseconds 250
+                if (Test-Path -LiteralPath $ctxDel) { $restored = $true; break }
+            }
+            $titleOk = $false
+            if ($restored) { $titleOk = ("$((Get-ItemProperty -LiteralPath $ctxDel).'(default)')" -eq '夹具·待删') }
+            Check 'C19o 点「还原来」把那份 .reg 导回去 → 键回来了、标题一字不差（端到端撤销删除）' `
+                ($restored -and $titleOk) ('键回来了=' + $restored + ' 标题对=' + $titleOk)
+        } else {
+            Check 'C19o 点「还原来」把那份 .reg 导回去 → 键回来了、标题一字不差（端到端撤销删除）' `
+                $false ('skipped（没找到可点的「还原来」，找到=' + $undo2.Count + '）')
+        }
+
+        # ---- C19p：快选 + 搜索（项一多就靠它挑），并且**筛选会清空勾选**（免得"看到几条就动几条"说不清）
+        $box2 = Find-CtxCheck -Hwnd $mw -RowLabel '夹具·在用'
+        if ($null -ne $box2) { [void][TBGui]::Click($box2.H) ; Start-Sleep -Milliseconds 600 }
+        $fDis = Wait-CtxButton -Hwnd $mw -Text '已禁用'
+        if ($fDis.Count -eq 1) { [void][TBGui]::Click($fDis[0].H) ; Start-Sleep -Milliseconds 700 }
+        $mwTexts4 = Get-CtxTexts $mw
+        Check 'C19p 点「已禁用」快选：只剩已禁用的项，勾选被清空（底栏回到 0）' `
+            (((Get-CtxStatus $mw) -match '已勾选 0 项') -and ((Get-CtxStatus $mw) -match '筛选中：已禁用') -and `
+             (@($mwTexts4 | Where-Object { $_ -eq '夹具·在用' }).Count -eq 0)) `
+            (Get-CtxStatus $mw)
+        $fAll = Wait-CtxButton -Hwnd $mw -Text '全部'
+        if ($fAll.Count -eq 1) { [void][TBGui]::Click($fAll[0].H) ; Start-Sleep -Milliseconds 700 }
+        $mwTexts5 = Get-CtxTexts $mw
+        Check 'C19q 点回「全部」：那一项又回来了（筛选不会把东西真的藏掉）' `
+            ((@($mwTexts5 | Where-Object { $_ -eq '夹具·在用' }).Count -eq 1)) `
+            (($mwTexts5 | Where-Object { $_ -like '夹具*' }) -join ' | ')
+
+        # 切一页：那一页没有夹具 → 空状态那句话
+        $folderTab = @(Find-CtxButton -Hwnd $mw -Text '文件夹 0')
+        if ($folderTab.Count -eq 1) { [void][TBGui]::Click($folderTab[0].H) ; Start-Sleep -Milliseconds 800 }
+        Check 'C19r 切到「文件夹」页：那一页空着，而且写着"什么都没有"（不是一片空白让人以为坏了）' `
+            (((Get-CtxStatus $mw) -match '共 0 条') -and ((Get-CtxTexts $mw) -join ' ' -match '什么都没有')) `
+            (Get-CtxStatus $mw)
 
         [void][TBGui]::CloseWindow($mw)
         Start-Sleep -Milliseconds 500
     } else {
-        foreach ($nm in @('C18 窗口里有 5 个位置页签（文件 / 文件夹 / 文件夹空白处 / 桌面 / 磁盘）',
-                          'C19 窗口里有 6 个动作按钮（禁用 / 恢复 / 删除（先备份）/ 刷新 / 打开备份文件夹 / 关闭）',
-                          'C19b 列表的数字对得上夹具（5 条 = 在用 3 / 已禁用 1 / 扩展项 1；其中 1 条在系统区）',
-                          'C19c 底部写明了"扩展项这一版只显示"和"改完立刻生效"（不说清楚用户会以为工具坏了）',
-                          'C19d 点「文件夹」页签真的换了列表（那一页没有夹具 → 0 条）')) {
+        foreach ($nm in @('C18 窗口里有 5 个位置页签（文件 / 文件夹 / 文件夹空白处 / 桌面 / 磁盘），而且每个都写着条数',
+                          'C19 底栏 6 个按钮都在，而且没勾任何一项时三个动作按钮都是灰的（绝不猜你要动哪一条）',
+                          'C19b 段标题按"谁装的"分段（程序装的 4 / 系统自带 1 / DLL 扩展项 1 都在）',
+                          'C19c 行卡片上的字（名称 / 状态 / 在哪儿）跨进程读得到 —— 不是画上去的',
+                          'C19d 底部写明了"改完立刻生效，不用重启资源管理器"和"扩展项这一版只显示"',
+                          'C19e 底栏那句小结写着这一页的真实条数（共 6 条 = 在用 4 / 已禁用 1 / 扩展项 1）',
+                          'C19f 「系统自带」段默认收起、点「展开」之后那一行才出现',
+                          'C19g 勾上一行 → 底栏变成「禁用选中的 1 项」并亮起来',
+                          'C19h 批量禁用：勾两项点一下 → 两个键里都写进了隐藏开关（键和标题原样留着）',
+                          'C19i 禁用不弹确认框（用户拍板：完全可逆、记录里能撤销，就不拿确认框挡人）',
+                          'C19j 动作记录里读得到刚才那一步（含动了哪个键），而且后面挂着「恢复」',
+                          'C19k 点「恢复」那个撤销按钮 → 隐藏开关真被删掉（端到端撤销）',
+                          'C19l 删除仍然弹确认框（列清单 + 说清每个键都会先备份）',
+                          'C19m 确认框里写明了「各备份一份 .reg」「备份失败那一条就不删」「怎么还原」',
+                          'C19n 删除先备份成 .reg（真生成了、不是空壳），然后那个键才没了',
+                          'C19o 点「还原来」把那份 .reg 导回去 → 键回来了、标题一字不差（端到端撤销删除）',
+                          'C19p 点「已禁用」快选：只剩已禁用的项，勾选被清空（底栏回到 0）',
+                          'C19q 点回「全部」：那一项又回来了（筛选不会把东西真的藏掉）',
+                          'C19r 切到「文件夹」页：那一页空着，而且写着"什么都没有"（不是一片空白让人以为坏了）')) {
             Check $nm $false 'skipped（管理窗口没开出来）'
-        }
-    }
-
-    # ---- C19e–C19g：三个动作**端到端**（真点按钮 → 过确认框 → 读注册表看结果）--------------
-    # 用 --focus 直接开窗口并选中夹具那一行：跨进程点 ListView 的某一行做不到，
-    # 而 --focus 正是提权重开时用的那条路，顺带把它一起验了。
-    $mgr = Start-Manager -Focus 'files|Mxx1FixtureKeep'
-    Check 'C19e 带 --focus 打开时能起来（提权重开走的就是这条参数）' `
-        (($mgr -ne $null) -and (-not $mgr.HasExited) -and ($mgr.MainWindowHandle -ne [IntPtr]::Zero)) ''
-    $mwin = $mgr.MainWindowHandle
-    if ($mwin -ne [IntPtr]::Zero) {
-        $propBefore = Get-ItemProperty -LiteralPath $ctxKeep -ErrorAction SilentlyContinue
-        $dis = @(Get-ChildControls -RootHandle $mwin | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '禁用' })
-        $res = @(Get-ChildControls -RootHandle $mwin | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '恢复' })
-        Check 'C19f 选中"在用"那一行时：禁用可点、恢复是灰的（按选中项自动开关，不会点错）' `
-            (($dis.Count -eq 1) -and $dis[0].Enabled -and ($res.Count -eq 1) -and (-not $res[0].Enabled)) `
-            ('禁用=' + $(if ($dis.Count -eq 1) { $dis[0].Enabled } else { 'x' }) + ' 恢复=' + $(if ($res.Count -eq 1) { $res[0].Enabled } else { 'x' }))
-
-        if ($dis.Count -eq 1) {
-            [void][TBGui]::Click($dis[0].H)
-            # 自家的确认框（不是 MessageBox）—— 点它的「禁用」
-            $dlg = $null
-            for ($i = 0; $i -lt 40; $i++) {
-                Start-Sleep -Milliseconds 200
-                $dlg = @((Get-TopWindows -ProcessId $mgr.Id) | Where-Object { $_.H -ne $mwin -and $_.Visible -and $_.Text -eq '请确认' })
-                if ($dlg.Count -ge 1) { break }
-            }
-            Check 'C19g 点「禁用」先弹自家确认框（说清改了会怎样、怎么恢复）' ($dlg.Count -ge 1) ''
-            if ($dlg.Count -ge 1) {
-                $dlgText = (@(Get-ChildControls -RootHandle $dlg[0].H | ForEach-Object { $_.Text }) -join ' ')
-                Check 'C19h 确认框里写明了「随时能「恢复」」和"立刻生效"（不吓人、也不含糊）' `
-                    (($dlgText -match '恢复') -and ($dlgText -match '立刻')) ''
-                $okBtn = @(Get-ChildControls -RootHandle $dlg[0].H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '禁用' })
-                if ($okBtn.Count -eq 1) { [void][TBGui]::Click($okBtn[0].H) } else { [void][TBGui]::CloseWindow($dlg[0].H) }
-                Start-Sleep -Milliseconds 1200
-            }
-            # 结果：夹具键里多了隐藏开关（值就是实测灵的那个），而且那一行变成了"已禁用"
-            $propAfter = Get-ItemProperty -LiteralPath $ctxKeep -ErrorAction SilentlyContinue
-            $hideAfter = $propAfter.LegacyDisable
-            Check 'C19i 真写进去了：夹具键里多了一个 LegacyDisable（实测有效的那个隐藏开关）+ 标题原样留着' `
-                ((Test-Path -LiteralPath $ctxKeep) -and ($null -ne $propAfter) -and `
-                 ($propAfter.PSObject.Properties.Name -contains 'LegacyDisable') -and `
-                 ("$($propAfter.'(default)')" -eq "$($propBefore.'(default)')")) `
-                ('值=' + ($propAfter.PSObject.Properties.Name -join ',') + ' 标题=' + "$($propAfter.'(default)')")
-            Check 'C19j 报告框里说清了写了哪个键（用户能照着核对，不是"成功了"三个字）' `
-                ((@(Get-ChildControls -RootHandle $mwin | ForEach-Object { $_.Text }) -join ' ') -match 'LegacyDisable') `
-                (Get-CtxHead $mwin)
-
-            # ---- 再点「恢复」：那个值要被删掉
-            $res2 = @(Get-ChildControls -RootHandle $mwin | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '恢复' })
-            if ($res2.Count -eq 1 -and $res2[0].Enabled) {
-                [void][TBGui]::Click($res2[0].H)
-                $dlg2 = $null
-                for ($i = 0; $i -lt 40; $i++) {
-                    Start-Sleep -Milliseconds 200
-                    $dlg2 = @((Get-TopWindows -ProcessId $mgr.Id) | Where-Object { $_.H -ne $mwin -and $_.Visible -and $_.Text -eq '请确认' })
-                    if ($dlg2.Count -ge 1) { break }
-                }
-                if ($dlg2.Count -ge 1) {
-                    $ok2 = @(Get-ChildControls -RootHandle $dlg2[0].H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '恢复' })
-                    if ($ok2.Count -eq 1) { [void][TBGui]::Click($ok2[0].H) } else { [void][TBGui]::CloseWindow($dlg2[0].H) }
-                    Start-Sleep -Milliseconds 1200
-                }
-                $propBack = Get-ItemProperty -LiteralPath $ctxKeep -ErrorAction SilentlyContinue
-                Check 'C19k 点「恢复」把那个开关删掉了（键还在、菜单项回来了，不给用户留半截状态）' `
-                    ((Test-Path -LiteralPath $ctxKeep) -and (-not ($propBack.PSObject.Properties.Name -contains 'LegacyDisable'))) `
-                    ('值=' + ($propBack.PSObject.Properties.Name -join ','))
-            } else {
-                Check 'C19k 点「恢复」把那个开关删掉了（键还在、菜单项回来了，不给用户留半截状态）' $false 'skipped（恢复按钮当时不可点）'
-            }
-        } else {
-            foreach ($nm in @('C19f 选中"在用"那一行时：禁用可点、恢复是灰的（按选中项自动开关，不会点错）',
-                              'C19i 真写进去了：夹具键里多了一个 LegacyDisable（实测有效的那个隐藏开关）+ 标题原样留着',
-                              'C19j 报告框里说清了写了哪个键（用户能照着核对，不是"成功了"三个字）',
-                              'C19k 点「恢复」把那个开关删掉了（键还在、菜单项回来了，不给用户留半截状态）')) {
-                Check $nm $false 'skipped（--focus 那一轮没起来）'
-            }
-        }
-
-        # ---- 删除：先备份成 .reg（备份不成就绝不删），然后键真的没了
-        [void][TBGui]::CloseWindow($mwin)
-        Start-Sleep -Milliseconds 500
-        $mgr2 = Start-Manager -Focus 'files|Mxx1FixtureDel'
-        $mwin2 = $mgr2.MainWindowHandle
-        if ($mwin2 -ne [IntPtr]::Zero) {
-            $delBtn = @(Get-ChildControls -RootHandle $mwin2 | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '删除（先备份）' })
-            if ($delBtn.Count -eq 1) { [void][TBGui]::Click($delBtn[0].H) ; Start-Sleep -Milliseconds 400 }
-            $dlg3 = $null
-            for ($i = 0; $i -lt 40; $i++) {
-                Start-Sleep -Milliseconds 200
-                $dlg3 = @((Get-TopWindows -ProcessId $mgr2.Id) | Where-Object { $_.H -ne $mwin2 -and $_.Visible -and $_.Text -eq '请确认' })
-                if ($dlg3.Count -ge 1) { break }
-            }
-            if ($dlg3.Count -ge 1) {
-                $dlg3Text = (@(Get-ChildControls -RootHandle $dlg3[0].H | ForEach-Object { $_.Text }) -join ' ')
-                Check 'C19l 删除的确认框里写明了"先备份、备份没成功就绝不删"和"双击 .reg 就能还原"' `
-                    (($dlg3Text -match '备份') -and ($dlg3Text -match '\.reg')) ''
-                $ok3 = @(Get-ChildControls -RootHandle $dlg3[0].H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '删除' })
-                if ($ok3.Count -eq 1) { [void][TBGui]::Click($ok3[0].H) } else { [void][TBGui]::CloseWindow($dlg3[0].H) }
-                Start-Sleep -Milliseconds 1500
-            }
-            $ctxBackupAfter = @(Get-ChildItem -LiteralPath $ctxBackupDir -File -ErrorAction SilentlyContinue |
-                Select-Object -ExpandProperty Name)
-            $ctxNewBackups = @($ctxBackupAfter | Where-Object { $ctxBackupBefore -notcontains $_ })
-            Check 'C19m 删除先备份成 .reg（备份文件真生成了、不是空壳），然后那个键才没了' `
-                ((($ctxNewBackups.Count -ge 1) -and `
-                  (@($ctxNewBackups | Where-Object { (Get-Item -LiteralPath (Join-Path $ctxBackupDir $_)).Length -gt 0 }).Count -eq $ctxNewBackups.Count)) -and `
-                 (-not (Test-Path -LiteralPath $ctxDel))) `
-                ('新备份=' + ($ctxNewBackups -join ',') + ' 键还在=' + (Test-Path -LiteralPath $ctxDel))
-            [void][TBGui]::CloseWindow($mwin2)
-            Start-Sleep -Milliseconds 500
-        } else {
-            Check 'C19l 删除的确认框里写明了"先备份、备份没成功就绝不删"和"双击 .reg 就能还原"' $false 'skipped'
-            Check 'C19m 删除先备份成 .reg（备份文件真生成了、不是空壳），然后那个键才没了' $false 'skipped'
-        }
-    } else {
-        foreach ($nm in @('C19f 选中"在用"那一行时：禁用可点、恢复是灰的（按选中项自动开关，不会点错）',
-                          'C19i 真写进去了：夹具键里多了一个 LegacyDisable（实测有效的那个隐藏开关）+ 标题原样留着',
-                          'C19j 报告框里说清了写了哪个键（用户能照着核对，不是"成功了"三个字）',
-                          'C19k 点「恢复」把那个开关删掉了（键还在、菜单项回来了，不给用户留半截状态）',
-                          'C19l 删除的确认框里写明了"先备份、备份没成功就绝不删"和"双击 .reg 就能还原"',
-                          'C19m 删除先备份成 .reg（备份文件真生成了、不是空壳），然后那个键才没了')) {
-            Check $nm $false 'skipped（--focus 那一轮没起来）'
         }
     }
 
     # ---- 收尾：这一段全程只许碰测试根；用户真实那份右键菜单一个键都不许变
     $ctxRealAfter = @(Get-ChildItem -LiteralPath $ctxRealShell -ErrorAction SilentlyContinue |
         Select-Object -ExpandProperty PSChildName)
-    Check 'C19n 这一段只写了测试根：用户真实的右键菜单一个键都没变' `
+    Check 'C19s 这一段只写了测试根：用户真实的右键菜单一个键都没变' `
         (($ctxRealBefore -join ',') -eq ($ctxRealAfter -join ',')) `
         ('before=' + ($ctxRealBefore -join ',') + ' after=' + ($ctxRealAfter -join ','))
 }
 finally {
-    # 夹具与测试根删掉；测试自己产生的 .reg 备份也删掉（别在用户机器上留一堆测试备份）
+    # 夹具与测试根删掉；测试自己产生的 .reg 备份 / 动作记录也按原样放回（别在用户机器上留测试痕迹）
     Remove-Item -LiteralPath 'HKCU:\Software\mxx1-toolbox\ctxmenu-test' -Recurse -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath 'HKCU:\Software\mxx1-toolbox\ctxmenu-test-machine' -Recurse -Force -ErrorAction SilentlyContinue
     $ctxBackupNow = @(Get-ChildItem -LiteralPath $ctxBackupDir -File -ErrorAction SilentlyContinue |
@@ -1643,12 +1759,15 @@ finally {
     foreach ($n in @($ctxBackupNow | Where-Object { $ctxBackupBefore -notcontains $_ })) {
         Remove-Item -LiteralPath (Join-Path $ctxBackupDir $n) -Force -ErrorAction SilentlyContinue
     }
+    if ($ctxActionLogHad) { [System.IO.File]::WriteAllText($ctxActionLog, $ctxActionLogOld) }
+    elseif (Test-Path -LiteralPath $ctxActionLog) { Remove-Item -LiteralPath $ctxActionLog -Force -ErrorAction SilentlyContinue }
 }
-Check 'C19o 收尾干净：两个测试根删掉了、测试产生的备份文件也删掉了' `
+Check 'C19t 收尾干净：两个测试根删掉了、测试产生的备份与动作记录也收拾了' `
     (((Test-Path -LiteralPath 'HKCU:\Software\mxx1-toolbox\ctxmenu-test') -eq $false) -and `
      ((Test-Path -LiteralPath 'HKCU:\Software\mxx1-toolbox\ctxmenu-test-machine') -eq $false) -and `
      (@(Get-ChildItem -LiteralPath $ctxBackupDir -File -ErrorAction SilentlyContinue |
-        Select-Object -ExpandProperty Name | Where-Object { $ctxBackupBefore -notcontains $_ }).Count -eq 0)) ''
+        Select-Object -ExpandProperty Name | Where-Object { $ctxBackupBefore -notcontains $_ }).Count -eq 0) -and `
+     ((Test-Path -LiteralPath $ctxActionLog) -eq $ctxActionLogHad)) ''
 
 Check ('C02 点「清理优化」→ {0} 个按钮' -f $cleanNames.Count) (Switch-Tab -Handle $main -TabName '清理优化' -ExpectNames $cleanNames) ''
 Check ('C03 点「系统工具」→ {0} 个按钮' -f $sysNames.Count) (Switch-Tab -Handle $main -TabName '系统工具' -ExpectNames $sysNames) ''

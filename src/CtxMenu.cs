@@ -132,10 +132,20 @@ namespace Mxx1Toolbox
         /// <summary>删除时那份 .reg 的完整路径（「还原来」要导入它）。</summary>
         public string Backup = "";
         public string Title = "";
+        /// <summary>这一步的结果：成功 / 失败：原因 / 跳过：原因（2026-10-09 加的 —— 用户提的
+        /// 「成功和失败为什么写到工具箱日历（日志）去了？就直接写到动作记录里面不行？两个窗口操作太麻烦了」）。
+        /// 空 = 更早那版记录（那时候不记结果）。</summary>
+        public string Result = "";
         /// <summary>旧格式的明细（只有旧记录才有，用来在界面上照原样显示）。</summary>
         public string Detail = "";
         /// <summary>旧格式记录（撤不了）。</summary>
         public bool Legacy = false;
+
+        /// <summary>这一步是不是失败了（界面上整行画成危险色，用户一眼看到"哪条没成"）。</summary>
+        public bool Failed
+        {
+            get { return Result.StartsWith("失败", StringComparison.Ordinal); }
+        }
 
         /// <summary>这一条现在能不能撤销（删除要有备份文件；旧格式一律不行）。</summary>
         public bool CanUndo
@@ -180,6 +190,7 @@ namespace Mxx1Toolbox
             {
                 StringBuilder sb = new StringBuilder();
                 sb.Append(When).Append("  ").Append(Action).Append("「").Append(Title).Append("」");
+                if (Result.Length > 0) { sb.Append(" · ").Append(Result); }
                 if (ShortKey.Length > 0) { sb.Append(" · ").Append(ShortKey); }
                 else if (ZoneLabel.Length > 0) { sb.Append(" · ").Append(ZoneLabel); }
                 if (Action == "删除" && Backup.Length > 0)
@@ -261,7 +272,7 @@ namespace Mxx1Toolbox
         {
             if (id == GroupOurs) { return "想正规撤掉，回「右键增强」页点对应的「撤掉…」"; }
             if (id == GroupSystem) { return "Windows 自己的，建议用「禁用」而不是删除"; }
-            if (id == GroupShellex) { return "这一版只显示、不给动（另一套机制，见底部说明）"; }
+            if (id == GroupShellex) { return "这一版只显示、不给动（禁它要写系统级黑名单 + 重启资源管理器，第二版再说）"; }
             return "这些你可以禁用 / 删除";
         }
 
@@ -720,24 +731,26 @@ namespace Mxx1Toolbox
             StringBuilder sb = Head("禁用", e);
             if (!e.Actionable)
             {
-                sb.AppendLine("结果：没有处理 —— 扩展项这一版只显示（理由见窗口底部那行）。");
+                sb.AppendLine("结果：没有处理 —— 扩展项这一版只显示、不给动（那一类要写系统级黑名单 + 重启资源管理器，见段标题那行说明）。");
                 return sb.ToString();
             }
 
             int done = 0, failed = 0, missed = 0;
+            string why = "";        // 失败 / 跳过的原因（要写进动作记录那一行，用户不必再去翻日志）
             foreach (string key in RootsOf(e))
             {
                 try
                 {
                     using (RegistryKey k = OpenFull(key, true))
                     {
-                        if (k == null) { missed++; sb.AppendLine("· " + key + " —— 已经不在了，跳过"); continue; }
+                        if (k == null) { missed++; why = "键已经不在了"; sb.AppendLine("· " + key + " —— 已经不在了，跳过"); continue; }
                         bool had = (k.GetValue(HideValue, null) != null) || (k.GetValue(HideValue2, null) != null);
                         k.SetValue(HideValue, "", RegistryValueKind.String);
                         object back = k.GetValue(HideValue, null);
                         if (back == null)
                         {
-                            failed++; sb.AppendLine("· " + key + " —— 写不进去（读回是空的）"); continue;
+                            failed++; why = "写不进去（读回是空的）";
+                            sb.AppendLine("· " + key + " —— 写不进去（读回是空的）"); continue;
                         }
                         done++;
                         sb.AppendLine("· " + key + " —— 已写入 " + HideValue
@@ -747,6 +760,7 @@ namespace Mxx1Toolbox
                 catch (Exception ex)
                 {
                     failed++;
+                    why = ex.Message + AdminHint(e);
                     sb.AppendLine("· " + key + " —— 失败：" + ex.Message + AdminHint(e));
                 }
             }
@@ -757,16 +771,18 @@ namespace Mxx1Toolbox
                 sb.AppendLine("结果：已禁用 —— 键和标题原样留着，右键里不再出现。"
                     + "（不用重启资源管理器：静态菜单项是每次右键现场拼的，实测过）");
                 sb.AppendLine("想让它回来：选中这一行点「恢复」。");
-                Record("禁用", e, done.ToString(CultureInfo.InvariantCulture) + " 个键", "");
+                Record("禁用", e, done.ToString(CultureInfo.InvariantCulture) + " 个键", "", "成功");
             }
             else if (missed > 0 && done == 0)
             {
                 sb.AppendLine("结果：这个键已经不存在了（可能刚被别的东西删掉 / 撤掉）。点「刷新」重新读一遍。");
+                Record("禁用", e, "", "", "跳过：键已经不在了");
             }
             else
             {
                 sb.AppendLine("结果：没成功。"
                     + (e.NeedsAdmin ? "这一项在系统区，需要管理员权限（点一下会弹 UAC，重开这个窗口再来一次）。" : ""));
+                Record("禁用", e, "", "", "失败：" + FailWhy(why, e));
             }
             return sb.ToString();
         }
@@ -779,11 +795,12 @@ namespace Mxx1Toolbox
             StringBuilder sb = Head("恢复", e);
             if (!e.Actionable)
             {
-                sb.AppendLine("结果：没有处理 —— 扩展项这一版只显示（理由见窗口底部那行）。");
+                sb.AppendLine("结果：没有处理 —— 扩展项这一版只显示、不给动（那一类要写系统级黑名单 + 重启资源管理器，见段标题那行说明）。");
                 return sb.ToString();
             }
 
             int done = 0, failed = 0, nothing = 0;
+            string why = "";
             foreach (string key in RootsOf(e))
             {
                 try
@@ -804,7 +821,7 @@ namespace Mxx1Toolbox
                         bool gone = (k.GetValue(HideValue, null) == null) && (k.GetValue(HideValue2, null) == null);
                         if (!gone)
                         {
-                            failed++;
+                            failed++; why = "删不掉（读回还在）";
                             sb.AppendLine("· " + key + " —— 删不掉（读回还在）");
                             continue;
                         }
@@ -816,6 +833,7 @@ namespace Mxx1Toolbox
                 catch (Exception ex)
                 {
                     failed++;
+                    why = ex.Message + AdminHint(e);
                     sb.AppendLine("· " + key + " —— 失败：" + ex.Message + AdminHint(e));
                 }
             }
@@ -824,16 +842,18 @@ namespace Mxx1Toolbox
             if (ok)
             {
                 sb.AppendLine("结果：已恢复 —— 重新点一次右键就能看到它（不用重启资源管理器）。");
-                Record("恢复", e, done.ToString(CultureInfo.InvariantCulture) + " 个键", "");
+                Record("恢复", e, done.ToString(CultureInfo.InvariantCulture) + " 个键", "", "成功");
             }
             else if (nothing > 0 && done == 0)
             {
                 sb.AppendLine("结果：这一项本来就没被禁用，不需要恢复（你看到的状态可能是刚才改过、点「刷新」看新的）。");
+                Record("恢复", e, "", "", "跳过：本来就没被禁用");
             }
             else
             {
                 sb.AppendLine("结果：没成功。"
                     + (e.NeedsAdmin ? "这一项在系统区，需要管理员权限（点一下会弹 UAC，重开这个窗口再来一次）。" : ""));
+                Record("恢复", e, "", "", "失败：" + FailWhy(why, e));
             }
             return sb.ToString();
         }
@@ -847,12 +867,13 @@ namespace Mxx1Toolbox
             StringBuilder sb = Head("删除", e);
             if (!e.Actionable)
             {
-                sb.AppendLine("结果：没有处理 —— 扩展项这一版只显示（理由见窗口底部那行）。");
+                sb.AppendLine("结果：没有处理 —— 扩展项这一版只显示、不给动（那一类要写系统级黑名单 + 重启资源管理器，见段标题那行说明）。");
                 return sb.ToString();
             }
 
             List<string> backups = new List<string>();
             int done = 0, failed = 0;
+            string why = "";
             foreach (string key in RootsOf(e))
             {
                 // ① 备份（先做，做不成就绝不往下走）
@@ -860,7 +881,7 @@ namespace Mxx1Toolbox
                 string err = Export(key, out file);
                 if (err.Length > 0)
                 {
-                    failed++;
+                    failed++; why = "备份失败（" + err + "）";
                     sb.AppendLine("· " + key + " —— 备份失败，所以没有删：" + err);
                     continue;
                 }
@@ -885,14 +906,14 @@ namespace Mxx1Toolbox
                             try { still = (check.OpenSubKey(leaf, false) != null); }
                             catch { still = true; }
                         }
-                        if (still) { failed++; sb.AppendLine("   └ 删不掉（读回还在）"); continue; }
+                        if (still) { failed++; why = "删不掉（读回还在）"; sb.AppendLine("   └ 删不掉（读回还在）"); continue; }
                     }
                     done++;
                     sb.AppendLine("   └ 已删除：" + key);
                 }
                 catch (Exception ex)
                 {
-                    failed++;
+                    failed++; why = ex.Message + AdminHint(e);
                     sb.AppendLine("   └ 失败：" + ex.Message + AdminHint(e));
                 }
             }
@@ -902,13 +923,14 @@ namespace Mxx1Toolbox
             {
                 sb.AppendLine("结果：已删除。后悔了就双击上面那个 .reg 文件，菜单项就回来了"
                     + "（也可以在窗口里点「打开备份文件夹」）。");
-                Record("删除", e, done.ToString(CultureInfo.InvariantCulture) + " 个键", backupFile);
+                Record("删除", e, done.ToString(CultureInfo.InvariantCulture) + " 个键", backupFile, "成功");
                 ok = true;
             }
             else
             {
                 sb.AppendLine("结果：没全部成功。"
                     + (e.NeedsAdmin ? "这一项在系统区，需要管理员权限（点一下会弹 UAC，重开这个窗口再来一次）。" : ""));
+                Record("删除", e, "", backupFile, "失败：" + FailWhy(why, e));
             }
             return sb.ToString();
         }
@@ -923,6 +945,15 @@ namespace Mxx1Toolbox
             if (e.Command.Length > 0) { sb.Append("命令：").AppendLine(e.Command); }
             sb.AppendLine();
             return sb;
+        }
+
+        /// <summary>失败原因给用户看的那一句（记进动作记录那一行）。系统区的项还写不进去时，
+        /// 补一句"要管理员"，免得用户只看到一句"拒绝访问"不知道该干嘛。</summary>
+        private static string FailWhy(string why, CtxEntry e)
+        {
+            string s = (why == null || why.Length == 0) ? "没成功" : why;
+            if (e.NeedsAdmin) { s += "（这一项在系统区，需要管理员权限：点一下会弹 UAC，重开这个窗口再来一次）"; }
+            return s;
         }
 
         private static string AdminHint(CtxEntry e)
@@ -1030,23 +1061,24 @@ namespace Mxx1Toolbox
         /// 所以从 2026-10-09 界面重做起，这里必须记**完整键路径**（带 hive，撤销时要能直接打开）
         /// 和**备份文件名**（删除的还原来要 `reg import` 它）。
         /// ⚠️ 旧格式（那时候只有 6 列、只记键名）照样能读，但标成"撤不了" —— 绝不假装能撤。</summary>
-        private static void Record(string action, CtxEntry e, string detail, string backup)
+        private static void Record(string action, CtxEntry e, string detail, string backup, string result)
         {
             string key = (e.InMachine && !e.InUser) ? e.MachineKey : e.UserKey;
-            RecordRaw(action, e.ZoneId, e.ZoneLabel, key, backup, e.Title);
+            RecordRaw(action, e.ZoneId, e.ZoneLabel, key, backup, e.Title, result);
             Logger.Write("右键菜单管理", action + " · " + e.Title + " · " + e.ZoneLabel + " · " + e.Verb
                 + (detail.Length > 0 ? " · " + detail : ""));
         }
 
         /// <summary>记一笔动作（"键"直接给字符串的版本 —— 撤销那条路要照记录重建，手里没有 `CtxEntry`）。</summary>
-        private static void RecordRaw(string action, string zoneId, string zoneLabel, string key, string backup, string title)
+        private static void RecordRaw(string action, string zoneId, string zoneLabel, string key, string backup, string title, string result)
         {
             string line = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)
                 + "\t" + action
                 + "\t" + zoneId + "\t" + zoneLabel
                 + "\t" + key
                 + "\t" + (backup == null ? "" : backup)
-                + "\t" + title;
+                + "\t" + title
+                + "\t" + (result == null ? "" : result);
             try
             {
                 AppPaths.EnsureBase();
@@ -1055,7 +1087,7 @@ namespace Mxx1Toolbox
                     File.WriteAllText(ActionLogFile,
                         "# 萌新工具箱 · 右键菜单管理做过什么（界面上「动作记录」面板读它；撤销也靠它，别手改）"
                         + Environment.NewLine
-                        + "# 时间\t动作\t位置id\t位置\t完整键路径\t备份文件\t菜单上显示的字" + Environment.NewLine,
+                        + "# 时间\t动作\t位置id\t位置\t完整键路径\t备份文件\t菜单上显示的字\t结果（成功 / 失败：原因）" + Environment.NewLine,
                         new UTF8Encoding(false));
                 }
                 File.AppendAllText(ActionLogFile, line + Environment.NewLine, new UTF8Encoding(false));
@@ -1081,7 +1113,14 @@ namespace Mxx1Toolbox
                     a.Action = (f.Length > 1) ? f[1] : "";
                     a.ZoneId = (f.Length > 2) ? f[2] : "";
                     a.ZoneLabel = (f.Length > 3) ? f[3] : "";
-                    if (f.Length >= 7)
+                    if (f.Length >= 8)
+                    {
+                        a.Key = f[4];
+                        a.Backup = f[5];
+                        a.Title = f[6];
+                        a.Result = f[7];
+                    }
+                    else if (f.Length >= 7)
                     {
                         a.Key = f[4];
                         a.Backup = f[5];
@@ -1135,7 +1174,7 @@ namespace Mxx1Toolbox
                 }
                 sb.AppendLine("结果：已还原来（把备份 " + Path.GetFileName(a.Backup) + " 导回去了，键读回在）。");
                 ok = true;
-                RecordRaw("撤销·还原来", a.ZoneId, a.ZoneLabel, a.Key, a.Backup, a.Title);
+                RecordRaw("撤销·还原来", a.ZoneId, a.ZoneLabel, a.Key, a.Backup, a.Title, "成功");
                 return sb.ToString();
             }
 
@@ -1150,7 +1189,7 @@ namespace Mxx1Toolbox
                         k.SetValue(HideValue, "", RegistryValueKind.String);
                         if (k.GetValue(HideValue, null) == null) { sb.AppendLine("结果：没成功（读回是空的）"); return sb.ToString(); }
                         sb.AppendLine("结果：已再禁一次（那一项又藏起来了）。");
-                        RecordRaw("撤销·再禁一次", a.ZoneId, a.ZoneLabel, a.Key, "", a.Title);
+                        RecordRaw("撤销·再禁一次", a.ZoneId, a.ZoneLabel, a.Key, "", a.Title, "成功");
                     }
                     else
                     {
@@ -1162,7 +1201,7 @@ namespace Mxx1Toolbox
                             return sb.ToString();
                         }
                         sb.AppendLine("结果：已恢复（那一项回到菜单里了）。");
-                        RecordRaw("撤销·恢复", a.ZoneId, a.ZoneLabel, a.Key, "", a.Title);
+                        RecordRaw("撤销·恢复", a.ZoneId, a.ZoneLabel, a.Key, "", a.Title, "成功");
                     }
                     ok = true;
                 }

@@ -740,7 +740,7 @@ namespace Mxx1Toolbox
                 head.ForeColor = _theme.BarText;
                 head.Text = (list.Count == 0)
                     ? "动作记录：还没有动过任何一项（这里会记下每一次禁用 / 恢复 / 删除，每条后面能直接撤销）。"
-                    : "动作记录（最新的在最上面；点右边的按钮就能撤销那一步）：";
+                    : "动作记录（最新的在最上面；失败的那几条是红字；点右边的按钮就能撤销那一步）：";
                 _actionList.RowStyles.Add(new RowStyle(SizeType.AutoSize));
                 _actionList.Controls.Add(head);
 
@@ -761,12 +761,15 @@ namespace Mxx1Toolbox
                     line.AutoSize = true;
                     line.Margin = new Padding(2, 4, 8, 0);
                     line.Font = new Font("Microsoft YaHei", 8.25f, FontStyle.Regular, GraphicsUnit.Point);
-                    line.ForeColor = _theme.InputText;
+                    // 失败的整行画成危险色 —— 用户要的是"哪条没成、为什么"直接看得见，不用去翻日志
+                    line.ForeColor = a.Failed ? _theme.Danger : _theme.InputText;
                     line.Text = a.Line;
                     CtxAction captured = a;
                     _tips.SetToolTip(line, a.Legacy
                         ? "旧格式的记录（那时候只记了键名、没记完整键路径），撤不了。"
-                        : ("键：" + a.Key + (a.Backup.Length > 0 ? Environment.NewLine + "备份：" + a.Backup : "")));
+                        : ("结果：" + (a.Result.Length > 0 ? a.Result : "（旧记录没记结果）") + Environment.NewLine
+                           + "键：" + a.Key
+                           + (a.Backup.Length > 0 ? Environment.NewLine + "备份：" + a.Backup : "")));
                     row.Controls.Add(line, 0, 0);
 
                     Button undo = MakeBarButton(a.CanUndo ? a.UndoLabel : "撤不了", "把这一步反着做一遍");
@@ -798,7 +801,7 @@ namespace Mxx1Toolbox
             _busy = false;
             Logger.Write("右键菜单管理", report);
             LoadRows();
-            Flash(ok ? ("已撤销：" + a.Action + "「" + a.Title + "」") : "撤销没成功 —— 详情在工具箱日志里");
+            Flash(ok ? ("已撤销：" + a.Action + "「" + a.Title + "」") : "撤销没成功 —— 原因记在动作记录里（红字那行）");
         }
 
         // ------------------------------------------------------------------ 三个动作（批量）
@@ -858,7 +861,7 @@ namespace Mxx1Toolbox
             LoadRows();
             Flash(kind + "：成功 " + done.ToString(CultureInfo.InvariantCulture)
                 + " / 共 " + items.Count.ToString(CultureInfo.InvariantCulture) + " 项"
-                + (ok ? "" : "（有没成功的，逐条原因见工具箱日志）"));
+                + (ok ? "" : "（没成功的那几条在动作记录里，红字那行写着原因）"));
             // 动完之后，"刚才到底动了哪几个键"的答案就在动作记录里 —— 收起着就替用户展开一次
             if (_actionPanel != null && !_actionPanel.Visible) { ToggleActionPanel(); }
         }

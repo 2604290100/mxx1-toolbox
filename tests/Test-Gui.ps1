@@ -1500,12 +1500,14 @@ function Wait-CtxValue([string]$Path, [string]$Name, [bool]$Want, [int]$Tries = 
 $ctxKeep = Join-Path 'HKCU:\Software\mxx1-toolbox\ctxmenu-test' '*\shell\Mxx1FixtureKeep'
 $ctxOff = Join-Path 'HKCU:\Software\mxx1-toolbox\ctxmenu-test' '*\shell\Mxx1FixtureOff'
 $ctxDel = Join-Path 'HKCU:\Software\mxx1-toolbox\ctxmenu-test' '*\shell\Mxx1FixtureDel'
+$ctxGone = Join-Path 'HKCU:\Software\mxx1-toolbox\ctxmenu-test' '*\shell\Mxx1FixtureGone'
 $ctxSys = Join-Path 'HKCU:\Software\mxx1-toolbox\ctxmenu-test' '*\shell\Windows.Mxx1FixtureSys'
 
 try {
     New-CtxFixture ($ctxRootRel + '\*\shell') 'Mxx1FixtureKeep' '夹具·在用' ''
     New-CtxFixture ($ctxRootRel + '\*\shell') 'Mxx1FixtureOff' '夹具·已禁用' 'LegacyDisable'
     New-CtxFixture ($ctxRootRel + '\*\shell') 'Mxx1FixtureDel' '夹具·待删' ''
+    New-CtxFixture ($ctxRootRel + '\*\shell') 'Mxx1FixtureGone' '夹具·待删二' ''
     New-CtxFixture ($ctxRootRel + '\*\shell') 'Windows.Mxx1FixtureSys' '夹具·系统自带' ''
     New-CtxFixture ($ctxRootMachineRel + '\*\shell') 'Mxx1FixtureMachine' '夹具·系统区' ''
     $ctxExtParent = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey(
@@ -1561,8 +1563,8 @@ try {
         # ---- C19b：段标题（按"谁装的"分四段）+ 行卡片里的字**读得到**
         $caps = @($mwTexts | Where-Object { $_ -like '*（*）*' -and ($_ -match '程序装的|系统自带|DLL 扩展项|工具箱自己装的') })
         $capsJoined = $caps -join ' || '
-        Check 'C19b 段标题按"谁装的"分段（程序装的 4 / 系统自带 1 / DLL 扩展项 1 都在）' `
-            ((($capsJoined -match '程序装的（4）') -and ($capsJoined -match '系统自带（1）') -and ($capsJoined -match 'DLL 扩展项（1）'))) `
+        Check 'C19b 段标题按"谁装的"分段（程序装的 5 / 系统自带 1 / DLL 扩展项 1 都在）' `
+            ((($capsJoined -match '程序装的（5）') -and ($capsJoined -match '系统自带（1）') -and ($capsJoined -match 'DLL 扩展项（1）'))) `
             $capsJoined
         Check 'C19c 行卡片上的字（名称 / 状态 / 在哪儿）跨进程读得到 —— 不是画上去的' `
             (($mwTexts -contains '夹具·在用') -and ($mwTexts -contains '夹具·已禁用') -and `
@@ -1572,8 +1574,8 @@ try {
         Check 'C19d 底部写明了"改完立刻生效，不用重启资源管理器"和"扩展项这一版只显示"' `
             ((($mwTexts -join ' ') -match '不用重启资源管理器') -and (($mwTexts -join ' ') -match '只显示、不给动')) `
             (($mwTexts | Where-Object { $_ -match '重启|只显示' }) -join ' || ')
-        Check 'C19e 底栏那句小结写着这一页的真实条数（共 6 条 = 在用 4 / 已禁用 1 / 扩展项 1）' `
-            ((Get-CtxStatus $mw) -match '共 6 条（在用 4 / 已禁用 1 / 扩展项 1') (Get-CtxStatus $mw)
+        Check 'C19e 底栏那句小结写着这一页的真实条数（共 7 条 = 在用 5 / 已禁用 1 / 扩展项 1）' `
+            ((Get-CtxStatus $mw) -match '共 7 条（在用 5 / 已禁用 1 / 扩展项 1') (Get-CtxStatus $mw)
 
         # ---- C19f：「系统自带」那一段默认收起，点「展开」才出来（默认藏起来，最不该动的先别挡路）
         $sysRowShown = ($mwTexts -contains '夹具·系统自带（系统自带）')
@@ -1629,8 +1631,9 @@ try {
         $mwTexts3 = Get-CtxTexts $mw
         $recLine = @($mwTexts3 | Where-Object { $_ -match '禁用「夹具·在用」' })
         $undoBtn = Wait-CtxButton -Hwnd $mw -Text '恢复'
-        Check 'C19j 动作记录里读得到刚才那一步（含动了哪个键），而且后面挂着「恢复」' `
-            (($recLine.Count -ge 1) -and ($undoBtn.Count -ge 1) -and $undoBtn[0].Enabled) `
+        Check 'C19j 动作记录里读得到刚才那一步（含「成功」和动了哪个键），而且后面挂着「恢复」' `
+            (($recLine.Count -ge 1) -and (($recLine -join ' ') -match '成功') -and `
+             ($undoBtn.Count -ge 1) -and $undoBtn[0].Enabled) `
             (($mwTexts3 | Where-Object { $_ -match '禁用「' }) -join ' || ')
 
         if ($undoBtn.Count -ge 1) {
@@ -1710,6 +1713,31 @@ try {
             ((@($mwTexts5 | Where-Object { $_ -eq '夹具·在用' }).Count -eq 1)) `
             (($mwTexts5 | Where-Object { $_ -like '夹具*' }) -join ' | ')
 
+        # ---- C19s：**失败也要写进动作记录**（用户提的：成功和失败都别让他去翻工具箱日志）
+        # 怎么造一次确定的失败：把夹具那个键从**外面**删掉，窗口里还留着那一行 → 点删除时备份就失败了
+        Remove-Item -LiteralPath $ctxGone -Recurse -Force -ErrorAction SilentlyContinue
+        $goneBox = Find-CtxCheck -Hwnd $mw -RowLabel '夹具·待删二'
+        if ($null -ne $goneBox) { [void][TBGui]::Click($goneBox.H) ; Start-Sleep -Milliseconds 700 }
+        $delBtn2 = Wait-CtxButton -Hwnd $mw -Text '删除选中的 1 项'
+        if ($delBtn2.Count -eq 1 -and $delBtn2[0].Enabled) { [void][TBGui]::Click($delBtn2[0].H) }
+        $dlgGone = $null
+        for ($i = 0; $i -lt 40; $i++) {
+            Start-Sleep -Milliseconds 200
+            $dlgGone = @((Get-TopWindows -ProcessId $proc.Id) | Where-Object { $_.H -ne $main -and $_.Visible -and $_.Text -eq '请确认' })
+            if ($dlgGone.Count -ge 1) { break }
+        }
+        if ($dlgGone.Count -ge 1) {
+            $okGone = @(Get-ChildControls -RootHandle $dlgGone[0].H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '删除' })
+            if ($okGone.Count -eq 1) { [void][TBGui]::Click($okGone[0].H) } else { [void][TBGui]::CloseWindow($dlgGone[0].H) }
+        }
+        $failLine = @()
+        for ($i = 0; $i -lt 25; $i++) {
+            Start-Sleep -Milliseconds 200
+            $failLine = @((Get-CtxTexts $mw) | Where-Object { $_ -match '失败' -and $_ -match '夹具·待删二' })
+            if ($failLine.Count -ge 1) { break }
+        }
+        Check 'C19s 失败的那一条也写进了动作记录（写着「失败：…」并带着原因）' `
+            ($failLine.Count -ge 1) (($failLine -join ' ') + ' :: ' + (Get-CtxStatus $mw))
         # 切一页：那一页没有夹具 → 空状态那句话
         $folderTab = @(Find-CtxButton -Hwnd $mw -Text '文件夹 0')
         if ($folderTab.Count -eq 1) { [void][TBGui]::Click($folderTab[0].H) ; Start-Sleep -Milliseconds 800 }
@@ -1722,10 +1750,10 @@ try {
     } else {
         foreach ($nm in @('C18 窗口里有 5 个位置页签（文件 / 文件夹 / 文件夹空白处 / 桌面 / 磁盘），而且每个都写着条数',
                           'C19 底栏 6 个按钮都在，而且没勾任何一项时三个动作按钮都是灰的（绝不猜你要动哪一条）',
-                          'C19b 段标题按"谁装的"分段（程序装的 4 / 系统自带 1 / DLL 扩展项 1 都在）',
+                          'C19b 段标题按"谁装的"分段（程序装的 5 / 系统自带 1 / DLL 扩展项 1 都在）',
                           'C19c 行卡片上的字（名称 / 状态 / 在哪儿）跨进程读得到 —— 不是画上去的',
                           'C19d 底部写明了"改完立刻生效，不用重启资源管理器"和"扩展项这一版只显示"',
-                          'C19e 底栏那句小结写着这一页的真实条数（共 6 条 = 在用 4 / 已禁用 1 / 扩展项 1）',
+                          'C19e 底栏那句小结写着这一页的真实条数（共 7 条 = 在用 5 / 已禁用 1 / 扩展项 1）',
                           'C19f 「系统自带」段默认收起、点「展开」之后那一行才出现',
                           'C19g 勾上一行 → 底栏变成「禁用选中的 1 项」并亮起来',
                           'C19h 批量禁用：勾两项点一下 → 两个键里都写进了隐藏开关（键和标题原样留着）',
@@ -1738,7 +1766,8 @@ try {
                           'C19o 点「还原来」把那份 .reg 导回去 → 键回来了、标题一字不差（端到端撤销删除）',
                           'C19p 点「已禁用」快选：只剩已禁用的项，勾选被清空（底栏回到 0）',
                           'C19q 点回「全部」：那一项又回来了（筛选不会把东西真的藏掉）',
-                          'C19r 切到「文件夹」页：那一页空着，而且写着"什么都没有"（不是一片空白让人以为坏了）')) {
+                          'C19r 切到「文件夹」页：那一页空着，而且写着"什么都没有"（不是一片空白让人以为坏了）',
+                          'C19s 失败的那一条也写进了动作记录（写着「失败：…」并带着原因）')) {
             Check $nm $false 'skipped（管理窗口没开出来）'
         }
     }

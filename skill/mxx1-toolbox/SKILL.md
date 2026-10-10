@@ -8,7 +8,7 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
 **主界面 = 多行多列的小按钮墙**，点一下按钮就启动一个已经做好的程序 / 脚本 / 功能。
 加按钮只是往 `tools\*.json` 丢配置，**不需要重新编译主程序**。
 
-- 程序名 **萌新工具箱**，标题栏 `萌新工具箱 v1.5.5`；署名 `mxx1` / `mxx1.cn`；GPL-3.0-or-later
+- 程序名 **萌新工具箱**，标题栏 `萌新工具箱 v1.5.6`；署名 `mxx1` / `mxx1.cn`；GPL-3.0-or-later
 - 工程目录 **`D:\萌新工具开发\toolbox\`**，与隔壁 `permanent-delete-menu` **互不修改**（只调它的 exe）
 - 支持范围 **Windows 7 SP1 / 10 / 11**（用户 2026-10-05 收窄的：**只考虑这三版**）；见「兼容性」一节
 - 外观参考：`C:\Users\Administrator\Pictures\Snipaste_2026-10-04_10-29-34.png`（那种紧凑按钮墙）
@@ -45,14 +45,12 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
 > （原来写死 20 → 字被上下切）。正本 `docs\DESIGN.md` §12.66 ⑦、截图 `docs\ctxmenu-shot.png`。
 > 回归：界面 **C17–C19t**（换了一轮判据）+ 命令行 M49–M54。
 
-- 版本 **1.5.5**（`src\AssemblyInfo.cs` 是唯一来源），已打 tag `v1.5.5` 并发 Release：
-  <https://github.com/2604290100/mxx1-toolbox/releases/tag/v1.5.5>（`Mxx1Toolbox.exe` 842,240 字节 +
-  `Mxx1Toolbox-package.zip` 1,308,446 字节，说明里带 SHA256）。CI 绿的。
-  ⚠️ **zip 发版后重传过一版**（第一版 1,304,367 字节；CI 那次假红修好之后重打重传 —— 里面装着 `tests\`，
-  **exe 一个字节没变**，所以 exe 那个 SHA256 前后一致）。
-- 测试 **452 项** = 命令行 **286**（285 通过 + 1 项环境不满足跳过）+ 界面 **166**（两套都完整跑过、
-  0 失败、**没有没跑的组**）；编码体检 204 个文件。本地实测：命令行约 2 分钟（挑组 `-Only T` 只要 2.9 秒）、
-  界面约 2.5 分钟。
+- 版本 **1.5.6**（`src\AssemblyInfo.cs` 是唯一来源），已打 tag `v1.5.6` 并发 Release：
+  <https://github.com/2604290100/mxx1-toolbox/releases/tag/v1.5.6>（`Mxx1Toolbox.exe` 904,192 字节 +
+  `Mxx1Toolbox-package.zip` 1,472,161 字节，说明里带 SHA256）。上一版 `v1.5.5`（2026-10-09）：
+  exe 842,240 字节 + zip 1,308,446 字节，zip 因 CI 假红**重传过一版**（exe 一个字节没变）。
+- 测试 **492 项** = 命令行 **293** + 界面 **199**；编码体检 **209** 个文件。
+  本地实测：命令行全套约 2 分钟、界面全套约 2.5 分钟（挑组跑 C,F,N 只要 1 分钟出头）。
 - ⚠️ **夹具根已经规范化过**：两个套件都用 `$tmpRoot = [System.IO.Path]::GetFullPath($env:TEMP)`，
   套件里**不许**再写"`Join-Path` 直接接 `$env:TEMP`"（CI 的 `%TEMP%` 是 8.3 短名，程序报长名 →
   四条断言假红，A 组 **A03e** 是盯着这件事的看门狗）。**改版本号要连 `Test-Cli.ps1` 的
@@ -877,17 +875,16 @@ powershell -File tools\Make-AppIcon.ps1       # 重生成 assets\app.ico（改�
 2. **外部工具目录 `bin-tools\`**：① 工具目录、③ 扫 `tool.json` 自动长按钮 **都已实现**（见上面那节与
    `docs\DESIGN.md` §13.7）。还没做的只有 ② 「把 `bin-tools\` 里的 exe 内嵌进 exe、首次点击释放到固定目录」
    —— **等用户说"我只想拷一个 exe"再做，别自己开工。**
-3. ✅ **v1.5.5 已经发布**（2026-10-09）：版本号 `1.5.5`（`src\AssemblyInfo.cs`，标题栏跟着变 ——
-   唯一来源），`CHANGELOG.md` 里是 `[1.5.5] - 2026-10-09`；已打 tag **`v1.5.5`** 并发 Release
-   （附 `Mxx1Toolbox.exe` 842,240 字节 + `Mxx1Toolbox-package.zip` 1,308,446 字节 + 说明里的 SHA256；
-   zip 发版后因为"CI 那次假红"重传过一版、exe 没变），CI 绿的。
-   ⚠️ **这一版没改条款正文**（`docs\DISCLAIMER.md` 一个字没动）→ 同意指纹没变，
-   用户这次打开**不会**再被要求确认。
-   上一版（v1.5.4，2026-10-06）指向 `e5c1bdb`。
-   **下一次要发版还是先问用户**（原话："推送的时候不要每次都推送，太卡了要问过我才行"、"发布工具"
-   —— Release 的说明文字要他点头）。
+3. ✅ **v1.5.6 已经发布**（2026-10-11）：版本号 `1.5.6`（`src\AssemblyInfo.cs` 唯一来源，标题栏跟着变），
+   `CHANGELOG.md` 里是 `[1.5.6] - 2026-10-11`（内容 = 「右键菜单管理」整块 + 取得所有权 +
+   确认框按钮被挤出窗口的修复 + 记录里键路径少了 `S`）；tag **`v1.5.6`** + Release 附
+   `Mxx1Toolbox.exe` 904,192 字节 + `Mxx1Toolbox-package.zip` 1,472,161 字节（说明里带 SHA256）。
+   ⚠️ **改版本号必须连测试一起改**：`tests\Test-Cli.ps1` 的 **A03** 与 **S11** 是写死的断言（这次已改）。
+   上一版 v1.5.5（2026-10-09）：942K exe / 1,308,446 字节 zip，zip 因 CI 假红重传过一版。
+   **下一次要发版还是先问用户**（原话："推送的时候不要每次都推送，太卡了要问过我才行"、"发布工具"）。
    流程照旧：`build.ps1 -Package` → 算 SHA256 → `git tag -a vX.Y.Z` + push →
    `gh release create vX.Y.Z bin\Mxx1Toolbox.exe bin\Mxx1Toolbox-package.zip --title … --notes-file …`。
+   ⚠️ 顺序上有个坑：**改完测试文件要重新打包**（zip 里装着 `tests\`），否则包里的测试是旧的。
    ⚠️ 改版本号要连测试一起改：`tests\Test-Cli.ps1` 的 **A03**（`status` 报的版本号）与
    **S11**（`checkupdate` 关掉时也报版本号）两处是硬编码断言，漏改就红。
 4. 条款正文（`docs\DISCLAIMER.md`）**改一个字就会让所有人下次打开重新确认一次**（记的是正文指纹）。

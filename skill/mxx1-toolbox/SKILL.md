@@ -238,7 +238,13 @@ D:\萌新工具开发\toolbox\
                                    CLI `hash <文件> [--expect=]` 用的是同一份 HashTool
   src\HelpForm.cs                  **本轮新增**：「功能说明」窗口（右键 →「功能说明…」/ 选中按钮按 F1）。
                                    正文 = MainForm.HelpText（hint + about），窗口与 CLI `tip <id> --full` 同一份
-  src\ConfirmForm.cs               自家的确认窗口「请确认」（不再用 MessageBox 甩命令，见 §"运行反馈"）
+  src\ConfirmForm.cs               自家的确认窗口「请确认」（不再用 MessageBox 甩命令，见 §"运行反馈"）。
+                                   **所有确认框共用的一个窗口**（主窗口危险按钮 / 右键菜单管理的删除与
+                                   取得所有权 / 解除占用 / 提权子进程）→ 改它要跑 界面 F,C,N。
+                                   ⚠️ **2026-10-11 修过"按钮被挤出窗口"**：正文进 `AutoScroll` 面板占
+                                   `Percent` 行、按钮行单独一行 `Absolute`（量出来的高）、`OnLoad` 里
+                                   `FitToContent()` 按内容定高度 —— `TableLayoutPanel` 装不下时**不压行高、
+                                   把最后一行推到容器外面**（坑 50）
   src\UserTools.cs                 用户层 tools.json 的读写（最小 JSON writer，写入前备份 .bak）
   src\ToolFolders.cs               **v1.5.3**：扫 bin-tools\ 的工具文件夹，自动长出按钮（只读，
                                    撞 id 就让位；`ToolItem.AutoLayer` 标记它不可编辑）

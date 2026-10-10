@@ -1500,6 +1500,30 @@ function Wait-CtxButton([IntPtr]$Hwnd, [string]$Text, [int]$Tries = 20) {
     }
     return ,@()
 }
+# 动作记录里**某一条**记录后面的撤销按钮（而不是"随便找一个叫这个名字的按钮"）。
+# ⚠️ 2026-10-10 踩过：用户自己 23:51 也点过「取得所有权并禁用」，他的真实记录和测试夹具的记录
+# 在同一个记录文件里 → 窗口里同时有 3 个「还原权限」按钮，`Wait-CtxButton`（按文字找）当场假红
+# （找到=3）；而且要是随便点一个，点掉的可能是**用户自己的记录**。所以改成按记录行绑定：
+# 先找到写着那一段文字的记录行（记录行是 STATIC，"行内"还带着 · 成功 / · 失败 / · 跳过），
+# 再取同一行里最右边那个按钮。找不到返回 $null（调用方自己判）。
+function Wait-CtxUndoFor([IntPtr]$Hwnd, [string]$RowText, [int]$Tries = 20) {
+    for ($i = 0; $i -lt $Tries; $i++) {
+        $lines = @(Get-ChildControls -RootHandle $Hwnd |
+            Where-Object { $_.Class -like '*STATIC*' -and $_.Text -like ('*' + $RowText + '*') -and
+                           $_.Text -match '·\s*(成功|失败|跳过)' })
+        if ($lines.Count -ge 1) {
+            $l = $lines[0]
+            $buts = @(Get-ChildControls -RootHandle $Hwnd |
+                Where-Object { $_.Class -like '*BUTTON*' -and $_.Visible -and
+                               ($_.Left -gt $l.Left) -and ([Math]::Abs($_.Top - $l.Top) -le 12) })
+            if ($buts.Count -ge 1) {
+                return ($buts | Sort-Object -Property Left -Descending | Select-Object -First 1)
+            }
+        }
+        Start-Sleep -Milliseconds 200
+    }
+    return $null
+}
 # 行上的勾选框：**宽高都是 16** 是它唯一的特征（行里的按钮都是 20 高、图标是 16×46、行本身 46 高）
 function Find-CtxCheck([IntPtr]$Hwnd, [string]$RowLabel) {
     $lab = @(Get-ChildControls -RootHandle $Hwnd | Where-Object { $_.Text -eq $RowLabel })
@@ -1742,6 +1766,11 @@ try {
             $dlgText = (@(Get-ChildControls -RootHandle $dlgDel[0].H | ForEach-Object { $_.Text }) -join ' ')
             Check 'C19m 确认框里写明了「各备份一份 .reg」「备份失败那一条就不删」「怎么还原」' `
                 ((($dlgText -match '备份') -and ($dlgText -match '\.reg')) -and ($dlgText -match '还原来|双击')) ''
+            # 删除清单最长（最多 8 项 + 4 句说明）：这个框的按钮也必须留在窗口里（2026-10-10 那条教训）
+            $delFit = Get-FitReport -Hwnd $dlgDel[0].H
+            Check 'C19m2 删除确认框（正文最长的那一类）：按钮没被几句说明顶到窗口外面去' `
+                (($delFit.Widgets -ge 3) -and ($delFit.Clipped -eq 0)) `
+                ('控件=' + $delFit.Widgets + ' 被切=' + $delFit.Clipped + ' 客户区高=' + $delFit.ClientH + ' 底部空白=' + $delFit.Gap + ' ' + $delFit.Worst)
             $okDel = @(Get-ChildControls -RootHandle $dlgDel[0].H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '删除' })
             if ($okDel.Count -eq 1) { [void][TBGui]::Click($okDel[0].H) } else { [void][TBGui]::CloseWindow($dlgDel[0].H) }
             for ($i = 0; $i -lt 40; $i++) {
@@ -1750,6 +1779,7 @@ try {
             }
         } else {
             Check 'C19m 确认框里写明了「各备份一份 .reg」「备份失败那一条就不删」「怎么还原」' $false 'skipped'
+            Check 'C19m2 删除确认框（正文最长的那一类）的按钮在窗口里 —— 不是被几句说明顶到窗口外面去' $false 'skipped'
         }
         $ctxBackupAfter = @(Get-ChildItem -LiteralPath $ctxBackupDir -File -ErrorAction SilentlyContinue |
             Select-Object -ExpandProperty Name)
@@ -1858,6 +1888,14 @@ try {
             Check 'C19x 取得所有权要过**重确认**：写明会改所有者 / 追加完全控制 / 可还原' `
                 (($dlgT.Count -ge 1) -and ($dlgTText -match 'TrustedInstaller') -and `
                  ($dlgTText -match '所有者') -and ($dlgTText -match '还原')) $dlgTText
+            # ⭐ 2026-10-10 用户报的就是这个框：「它窗口没有自动适应文字高度，按钮完全遮挡了」——
+            # 实测当时标题行 + 正文 238px + 按钮行一共要 334px，窗口却写死 260px：正文最后一行被切、
+            # **两个按钮整个落在客户区外面**（y=290 > 260），用户根本点不到。`Get-FitReport` 的
+            # `Clipped` 数的正是"可见控件跑出客户区"（按钮 + 标签都算），`Gap` 数的是"底部白留多少"。
+            $takeFit = Get-FitReport -Hwnd $dlgT[0].H
+            Check 'C19x2 取得所有权那个重确认框：正文再长，两个按钮也留在窗口里看得见、点得到' `
+                (($takeFit.Widgets -ge 4) -and ($takeFit.Clipped -eq 0)) `
+                ('控件=' + $takeFit.Widgets + ' 被切=' + $takeFit.Clipped + ' 客户区高=' + $takeFit.ClientH + ' 底部空白=' + $takeFit.Gap + ' ' + $takeFit.Worst)
             if ($dlgT.Count -ge 1) {
                 $okT = @(Get-ChildControls -RootHandle $dlgT[0].H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '取得所有权并禁用' })
                 if ($okT.Count -eq 1) { [void][TBGui]::Click($okT[0].H) } else { [void][TBGui]::CloseWindow($dlgT[0].H) }
@@ -1871,11 +1909,19 @@ try {
                 (($null -ne $protAfter) -and ($protAfter.PSObject.Properties.Name -contains 'LegacyDisable')) `
                 ('值=' + ($protAfter.PSObject.Properties.Name -join ','))
 
-            $undoAcl = Wait-CtxButton -Hwnd $mwP -Text '还原权限'
-            Check 'C19z 动作记录里那一条挂着「还原权限」（不是「恢复」——它要还的是权限）' `
-                (($undoAcl.Count -eq 1) -and $undoAcl[0].Enabled) ('找到=' + $undoAcl.Count)
-            if ($undoAcl.Count -eq 1 -and $undoAcl[0].Enabled) {
-                [void][TBGui]::Click($undoAcl[0].H)
+            # ⚠️ 按**记录行**绑按钮，不按按钮文字找：用户自己 2026-10-10 23:51 也点过「取得所有权并禁用」，
+            # 他的真实记录和夹具的记录在同一个记录文件里 → 窗口里同时有 3 个「还原权限」→
+            # 原来那个 `Wait-CtxButton -Text '还原权限'` 当场假红（找到=3），而且乱点一个还可能点到
+            # **用户自己的记录**上去。改成：先找写着夹具名字的那一行（记录行是 STATIC，行内带 · 成功），
+            # 再取同一行里最右边那个按钮。
+            $undoAcl = Wait-CtxUndoFor -Hwnd $mwP -RowText '夹具·受保护'
+            $allUndo = @(Find-CtxButton -Hwnd $mwP -Text '还原权限')
+            Check 'C19z 动作记录里**夹具那一条**挂着「还原权限」（不是「恢复」——它要还的是权限）' `
+                (($null -ne $undoAcl) -and $undoAcl.Enabled) `
+                ('绑到夹具那行=' + $(if ($null -eq $undoAcl) { '没找到' } else { '是/en=' + $undoAcl.Enabled }) +
+                 ' 窗口里「还原权限」共 ' + $allUndo.Count + ' 个（用户自己点过的话会更多，所以按行绑）')
+            if (($null -ne $undoAcl) -and $undoAcl.Enabled) {
+                [void][TBGui]::Click($undoAcl.H)
                 # 判据用**行为口径**，不拿整串 SDDL 比字符串：程序内部那次还原已经比过 SDDL 了，
                 # 界面上该验的是"用户能不能看出还回去了" —— 开关没了 + 那个键又变回写不动 + 所有者复原。
                 $sddlBack = ''
@@ -1912,8 +1958,9 @@ try {
             }
         } else {
             foreach ($nm in @('C19x 取得所有权要过**重确认**：写明会改所有者 / 追加完全控制 / 可还原',
+                              'C19x2 取得所有权那个重确认框：正文再长，两个按钮也留在窗口里看得见、点得到',
                               'C19y 端到端：取得所有权之后真的把隐藏开关写进去了（那一项藏起来了）',
-                              'C19z 动作记录里那一条挂着「还原权限」（不是「恢复」——它要还的是权限）',
+                              'C19z 动作记录里**夹具那一条**挂着「还原权限」（不是「恢复」——它要还的是权限）',
                               'C19z2 点「还原权限」：隐藏开关删掉 + 全所有者/权限写回原样（SDDL 一字不差）')) {
                 Check $nm $false 'skipped（取得所有权按钮没亮）'
             }
@@ -1944,6 +1991,7 @@ try {
                           'C19k 点「恢复」那个撤销按钮 → 隐藏开关真被删掉（端到端撤销）',
                           'C19l 删除仍然弹确认框（列清单 + 说清每个键都会先备份）',
                           'C19m 确认框里写明了「各备份一份 .reg」「备份失败那一条就不删」「怎么还原」',
+                          'C19m2 删除确认框（正文最长的那一类）的按钮在窗口里 —— 不是被几句说明顶到窗口外面去',
                           'C19n 删除先备份成 .reg（真生成了、不是空壳），然后那个键才没了',
                           'C19o 点「还原来」把那份 .reg 导回去 → 键回来了、标题一字不差（端到端撤销删除）',
                           'C19p 点「已禁用」快选：只剩已禁用的项，勾选被清空（底栏回到 0）',
@@ -2519,6 +2567,11 @@ if ($dialog.Count -gt 0) {
     # 默认按钮必须是「取消」：危险动作要真的去点「执行」（Enter / Esc 都等于取消）
     $dlgButtons = @(Get-ChildControls -RootHandle $dialog[0].H | Where-Object { $_.Class -like '*BUTTON*' } | ForEach-Object { $_.Text })
     Check 'F02c 确认窗口有「执行 / 取消」两个按钮' (($dlgButtons -contains '执行') -and ($dlgButtons -contains '取消')) ($dlgButtons -join ' ')
+    # 普通确认框也不能出现"按钮跑到窗口外面"（2026-10-10 取得所有权那个框就是这么坏的）
+    $ffit = Get-FitReport -Hwnd $dialog[0].H
+    Check 'F02d 确认框里的按钮完整落在窗口里（正文长了也不许把按钮顶出去）' `
+        (($ffit.Widgets -ge 2) -and ($ffit.Clipped -eq 0)) `
+        ('控件=' + $ffit.Widgets + ' 被切=' + $ffit.Clipped + ' 客户区高=' + $ffit.ClientH + ' 底部空白=' + $ffit.Gap + ' ' + $ffit.Worst)
     [void][TBGui]::CloseWindow($dialog[0].H)
     Start-Sleep -Milliseconds 600
     Check 'F03 取消后确认框关掉了' (@(Get-Dialogs -ProcessId $proc.Id -Main $main).Count -eq 0) ''
@@ -2526,6 +2579,7 @@ if ($dialog.Count -gt 0) {
     Check 'F02 确认框标题是「请确认」' $false '没有弹出确认框'
     Check 'F02b 确认窗口里有一句人话说明这个按钮干什么' $false 'skipped'
     Check 'F02c 确认窗口有「执行 / 取消」两个按钮' $false 'skipped'
+    Check 'F02d 确认框里的按钮完整落在窗口里（正文长了也不许把按钮顶出去）' $false 'skipped'
     Check 'F03 取消后确认框关掉了' $false 'skipped'
 }
 

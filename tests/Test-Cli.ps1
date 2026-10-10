@@ -2148,6 +2148,27 @@ try {
         ('--zone=folder 的 zone 行=' + (@($cxFolder.Out -split "`r?`n" | Where-Object { $_ -like 'zone*' }) -join ' | ') + `
          ' 全部位置=' + ($cxZoneKeys -join ','))
 
+    # M55：系统区根**写成完整 hive 名**（`HKEY_LOCAL_MACHINE\…`）也得认得出来。
+    # ⚠️ 这是 2026-10-10 抓到的一个真 bug：`HKEY_LOCAL_MACHINE\` 是 **19** 个字符，而代码里写的是
+    # `Substring(20)` → 拼出来是 `HKEY_LOCAL_MACHINE\oftware\…`（**吃掉一个 S**），于是去读一个
+    # 不存在的键：界面上那一行也显示成 `HKLM\oftware\…`（用户自己那条真实记录里就是这么写的）。
+    # `HKEY_CURRENT_USER\` 恰好 18，所以只有 HKCU 那半一直是对的。
+    # ⚠️ 这个根是**系统区那一档的基根**（`…\Software\Classes`），不是某一个位置目录 ——
+    # 位置路径（`Drive\shell` 之类）是程序自己往它后面接的，根写深了会变成
+    # `…\Drive\shell\Drive\shell`（第一版就这么写错了：条数 0，看着像"修了还是读不到"，
+    # 其实是测试自己拼错了根）。这里拿**真实 HKLM 的基根**当只读根：一个字节都不写。
+    $cxEnvFull = @{
+        MXX1_CTXMENU_ROOT         = 'HKCU\Software\mxx1-toolbox\ctxmenu-test'
+        MXX1_CTXMENU_ROOT_MACHINE = 'HKEY_LOCAL_MACHINE\Software\Classes'
+    }
+    $cxFull = Invoke-Exe 'rightmenu list --zone=drive' 60 $Exe $cxEnvFull
+    $cxFullEntries = @($cxFull.Out -split "`r?`n" | Where-Object { $_ -like "entry`tdrive`t*" })
+    Check 'M55 系统区根写成完整 hive 名（HKEY_LOCAL_MACHINE\…）也认：真盘符菜单读得到（不是去读 ofware\…）' `
+        (($cxFull.Code -eq 0) -and ($cxFullEntries.Count -ge 1) -and `
+         ($cxFull.Out -match '(?m)^系统区：HKEY_LOCAL_MACHINE\\Software\\Classes\s*$')) `
+        ('exit=' + $cxFull.Code + ' 条=' + $cxFullEntries.Count + ' 头=' +
+         (@($cxFull.Out -split "`r?`n" | Where-Object { $_ -like '系统区：*' }) -join ' | '))
+
     # ---- 底线：命令行**只有只读入口**。`rightmenu disable / delete / restore` 这类"带动作"的写法
     #      一律不认（退出码 2）—— 写注册表只能从界面点，这条和 sysreg 是同一个规矩（L07 钉着它）。
     $cxBad1 = Invoke-Exe 'rightmenu disable Mxx1FixtureKeep' 60 $Exe $cxEnv

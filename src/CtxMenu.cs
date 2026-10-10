@@ -183,15 +183,27 @@ namespace Mxx1Toolbox
             }
         }
 
-        /// <summary>键路径的短写法（`HKEY_CURRENT_USER\\Software\\Classes\\…` → `HKCU\\Software\\Classes\\…`）——
-        /// 界面上那行要能一眼看出"动了哪个键"，完整 hive 名太占地方。</summary>
+        /// <summary>键路径的短写法（`HKEY_CURRENT_USER\Software\Classes\…` → `HKCU\Software\Classes\…`）——
+        /// 界面上那行要能一眼看出"动了哪个键"，完整 hive 名太占地方。
+        ///
+        /// ⚠️ 偏移量**一律用 `"前缀".Length` 算出来**，别写数字：这里 2026-10-10 就踩过一次 ——
+        /// `HKEY_LOCAL_MACHINE\` 是 **19** 个字符，代码里写的是 `Substring(20)`，于是
+        /// 用户自己那条真实记录显示成 `HKLM\oftware\Classes\Drive\shell\cmd`（**把 S 吃掉了**，
+        /// 文件里存的是对的、只有界面上那行是错的）。`HKEY_CURRENT_USER\` 恰好 18，所以 HKCU
+        /// 那条一直是好的 —— 这种"只有一半错"的 bug 靠肉眼很难发现。</summary>
         public string ShortKey
         {
             get
             {
                 string s = Key;
-                if (s.StartsWith("HKEY_CURRENT_USER\\", StringComparison.OrdinalIgnoreCase)) { s = "HKCU\\" + s.Substring(18); }
-                else if (s.StartsWith("HKEY_LOCAL_MACHINE\\", StringComparison.OrdinalIgnoreCase)) { s = "HKLM\\" + s.Substring(20); }
+                if (s.StartsWith("HKEY_CURRENT_USER\\", StringComparison.OrdinalIgnoreCase))
+                {
+                    s = "HKCU\\" + s.Substring("HKEY_CURRENT_USER\\".Length);
+                }
+                else if (s.StartsWith("HKEY_LOCAL_MACHINE\\", StringComparison.OrdinalIgnoreCase))
+                {
+                    s = "HKLM\\" + s.Substring("HKEY_LOCAL_MACHINE\\".Length);
+                }
                 return s;
             }
         }
@@ -382,19 +394,22 @@ namespace Mxx1Toolbox
             }
             if (s.StartsWith("HKCU\\", StringComparison.OrdinalIgnoreCase))
             {
-                return HiveCurrentUser + "\\" + s.Substring(5);
+                return HiveCurrentUser + "\\" + s.Substring("HKCU\\".Length);
             }
             if (s.StartsWith("HKEY_CURRENT_USER\\", StringComparison.OrdinalIgnoreCase))
             {
-                return HiveCurrentUser + "\\" + s.Substring(18);
+                return HiveCurrentUser + "\\" + s.Substring("HKEY_CURRENT_USER\\".Length);
             }
             if (s.StartsWith("HKLM\\", StringComparison.OrdinalIgnoreCase))
             {
-                return HiveLocalMachine + "\\" + s.Substring(5);
+                return HiveLocalMachine + "\\" + s.Substring("HKLM\\".Length);
             }
             if (s.StartsWith("HKEY_LOCAL_MACHINE\\", StringComparison.OrdinalIgnoreCase))
             {
-                return HiveLocalMachine + "\\" + s.Substring(20);
+                // ⚠️ 这里原来写的是 `Substring(20)`，而 `HKEY_LOCAL_MACHINE\` 只有 19 个字符 →
+                // 用完整 hive 名设系统区根（`MXX1_CTXMENU_ROOT_MACHINE=HKEY_LOCAL_MACHINE\…`）会被
+                // 拼成 `HKEY_LOCAL_MACHINE\oftware\…`，然后去读一个不存在的键（M55 盯着这条）。
+                return HiveLocalMachine + "\\" + s.Substring("HKEY_LOCAL_MACHINE\\".Length);
             }
             return defaultHive + "\\" + s;
         }
@@ -408,7 +423,7 @@ namespace Mxx1Toolbox
             }
             else if (s.StartsWith("HKLM\\", StringComparison.OrdinalIgnoreCase))
             {
-                hive = HiveLocalMachine; sub = s.Substring(5);
+                hive = HiveLocalMachine; sub = s.Substring("HKLM\\".Length);
             }
             else if (s.StartsWith(HiveCurrentUser + "\\", StringComparison.OrdinalIgnoreCase))
             {
@@ -416,7 +431,7 @@ namespace Mxx1Toolbox
             }
             else if (s.StartsWith("HKCU\\", StringComparison.OrdinalIgnoreCase))
             {
-                hive = HiveCurrentUser; sub = s.Substring(5);
+                hive = HiveCurrentUser; sub = s.Substring("HKCU\\".Length);
             }
             else
             {

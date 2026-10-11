@@ -46,7 +46,10 @@ namespace Mxx1Toolbox
     /// ③ **底栏按钮上的数字跟着勾选实时变**，没勾任何一项时是灰的（绝不猜你要动哪一条）；
     /// ④ `--focus=&lt;位置&gt;|&lt;键名&gt;[,&lt;键名&gt;…]` 只负责"打开窗口 + 把这几项勾上"（提权重开时把用户
     ///    刚才的勾选带过来）；**命令行里不存在"带动作"的参数**，写注册表只能由用户点出来；
-    /// ⑤ 要管理员的项：弹一次 UAC，带管理员权限重开窗口（勾选会跟过来），再点一次才生效。</summary>
+    /// ⑤ 要管理员的项：弹一次 UAC，带管理员权限重开窗口（勾选会跟过来），再点一次才生效；
+    /// ⑥ **"当前行"变了就必须刷底栏**（`SetCurrent` 里那句 `UpdateBar()`，2026-10-11 补的）：
+    ///    底栏的「取得所有权」和那句"怎么办"都是按**当前行**算的，而点一行只会走到 `SetCurrent` ——
+    ///    别指望勾选框那条路帮你刷新（受保护行的勾选框是禁用的，它永远不触发）。</summary>
     internal sealed class CtxMenuForm : Mxx1Form
     {
         /// <summary>页签行高度 —— 和主窗口同一个数（`MainForm.TabBarHeight`）。**必须写死**，
@@ -84,7 +87,7 @@ namespace Mxx1Toolbox
         private Panel _actionPanel;
         private TableLayoutPanel _actionList;
         private Label _status;
-        private Button _logBtn, _disableBtn, _restoreBtn, _deleteBtn, _takeBtn, _refreshBtn, _closeBtn;
+        private Button _logBtn, _disableBtn, _restoreBtn, _deleteBtn, _takeBtn, _dllBtn, _clsidBtn, _restartBtn, _refreshBtn, _closeBtn;
         private ToolTip _tips;
 
         /// <summary>`focus` = `--focus=&lt;位置id&gt;|&lt;键名&gt;[,&lt;键名&gt;…]`（空 = 打开第一页）。</summary>
@@ -236,19 +239,24 @@ namespace Mxx1Toolbox
             AddFilter(filters, "shellex", "扩展项");
             row.Controls.Add(filters, 1, 0);
 
-            // 常驻那句：回答"是不是要重启资源管理器才生效"（不然用户会怀疑没生效）
+            // 常驻那句：回答"是不是要重启资源管理器才生效"（不然用户会怀疑没生效）。
+            // 2026-10-11 起两种东西**生效方式不一样**了，所以这句必须分开说：
+            // 静态菜单项是每次右键现场拼的（改完立刻生效，实测过五个位置）；DLL 扩展项是
+            // explorer 启动时加载进去的 COM 组件，改黑名单**必须重启资源管理器**。
             _hint = new Label();
             _hint.AutoSize = true;
             _hint.Anchor = AnchorStyles.Right;
             _hint.Font = new Font("Microsoft YaHei", 8.25f, FontStyle.Regular, GraphicsUnit.Point);
             _hint.ForeColor = _theme.BarText;
-            _hint.Text = "改完立刻生效，不用重启资源管理器";
+            _hint.Text = "静态项不用重启资源管理器；扩展项要重启才生效";
             _hint.Margin = new Padding(8, 0, 4, 0);
             row.Controls.Add(_hint, 3, 0);
 
             _searchRow.Controls.Add(row);
             _root.Controls.Add(_searchRow, 0, 1);
-            _tips.SetToolTip(_hint, "静态菜单项是每次右键现场拼的 —— 2026-10-09 用只读探针在五个位置实测过。");
+            _tips.SetToolTip(_hint, "静态菜单项是每次右键现场拼的（2026-10-09 用只读探针在五个位置实测过），"
+                + "改完再点一次右键就是新的；DLL 扩展项是资源管理器启动时加载进去的，"
+                + "改完必须重启资源管理器才看得到。");
         }
 
         private void AddFilter(FlowLayoutPanel host, string id, string text)
@@ -365,6 +373,25 @@ namespace Mxx1Toolbox
                 + "然后才写得动。会先存下原样的权限（可还原）；这一步要管理员。");
             _takeBtn.Click += delegate { DoTakeOwn(); };
             right.Controls.Add(_takeBtn);
+
+            // 「打开 DLL 目录」/「复制 CLSID」：只给**当前选中的那一行**用（一次一项）——
+            // 扩展项那一行背后的东西（DLL 在哪、CLSID 是多少）光看名字看不出来，
+            // 要排查"这是谁装的"就得能拿到这两样。都不改任何东西。
+            _dllBtn = MakeBarButton("打开 DLL 目录", "在资源管理器里定位当前选中那一条扩展的 DLL（只打开文件夹，不改任何东西）");
+            _dllBtn.Click += delegate { DoRevealDll(); };
+            right.Controls.Add(_dllBtn);
+
+            _clsidBtn = MakeBarButton("复制 CLSID", "把当前选中那一条扩展的 CLSID 复制到剪贴板（搜它是谁装的、写反馈都用得上）");
+            _clsidBtn.Click += delegate { DoCopyClsid(); };
+            right.Controls.Add(_clsidBtn);
+
+            // 「重启资源管理器」：扩展项的停用 / 恢复**必须重启资源管理器才生效**（DLL 是 explorer
+            // 启动时加载进去的），所以这件事得有个一步就能点的地方 —— 不然用户改完看不到变化，
+            // 只会以为"这功能没用"。命令走工具箱自己那颗按钮（见 DoRestartExplorer 的说明）。
+            _restartBtn = MakeBarButton("重启资源管理器", "让扩展项的停用 / 恢复立刻生效：会关掉所有已打开的文件夹窗口、"
+                + "任务栏闪一下（有确认框）；跑的就是「常用设置」页那颗按钮");
+            _restartBtn.Click += delegate { DoRestartExplorer(); };
+            right.Controls.Add(_restartBtn);
 
             _refreshBtn = MakeBarButton("刷新", "重新读一遍注册表（别的软件刚装完 / 刚卸完时用）");
             _refreshBtn.Click += delegate { LoadRows(); };
@@ -502,9 +529,11 @@ namespace Mxx1Toolbox
                     if (!_expanded[groupId]) { continue; }
                     foreach (CtxEntry e in mine)
                     {
-                        // 扩展项和"被 Windows 保护"的项都勾不动：前者这一版不给动，后者要单独走
-                        // 「取得所有权」（改系统安全描述符）——不能让它们混在批量里被顺手改掉。
-                        CtxRow row = new CtxRow(e, _theme, e.Actionable && !e.Protected);
+                        // 扩展项 2026-10-11 起**也能勾了**（停用 / 恢复走系统黑名单那条路），
+                        // 但三种情形是灰的（黑名单写在系统区 / CLSID 认不出来 / 登记键读不动）——
+                        // 判据全在 `CtxEntry.Checkable` 里，这里只负责取。
+                        // 「被 Windows 保护」的项勾不动：它要单独走「取得所有权」，不能混进批量里。
+                        CtxRow row = new CtxRow(e, _theme, e.Checkable && !e.Protected);
                         row.Toggled += delegate { UpdateBar(); };
                         row.Activated += delegate(object s, EventArgs a) { SetCurrent(s as CtxRow); };
                         row.Margin = new Padding(0, 0, 0, 1);
@@ -607,9 +636,19 @@ namespace Mxx1Toolbox
             BuildRows();
         }
 
+        /// <summary>换"当前行"（键盘上下键 / 鼠标点某一行走这里）。
+        ///
+        /// ⚠️ **这里必须顺手 `UpdateBar()`** —— 底栏那个「取得所有权」是按"当前行是不是被 Windows 保护"
+        /// 亮灭的（`_takeBtn.Enabled = curProtected`），而"当前行"就是这里改的。
+        /// 2026-10-11 用户问「为什么【取得所有权】按钮一直都是灰色的」：真鼠标点受保护那一行时，
+        /// 底栏**一次都不刷新** —— 唯一会刷新的那条路是勾选框的 `CheckedChanged → Toggled → UpdateBar`，
+        /// 而受保护那一行的勾选框是**禁用的**，永远不触发。于是：蓝线高亮了、底栏那句提示没有、
+        /// 按钮永远灰着（只有 `--focus` 那条提权重开的路径会亮，回归 C19w 走的正好是它，
+        /// 所以自动测试一直没发现）。实测三行：点普通行 → 「已勾选 1 项」；点受保护行 → 一个字都不变。</summary>
         private void SetCurrent(CtxRow row)
         {
             foreach (CtxRow r in _rows) { r.Current = (r == row); }
+            UpdateBar();
         }
 
         private void UpdateTabColors()
@@ -638,15 +677,26 @@ namespace Mxx1Toolbox
             }
         }
 
-        /// <summary>底栏：左边那句小结 + 右边按钮上的数字（都跟着勾选实时变）。</summary>
+        /// <summary>底栏：左边那句小结 + 右边按钮上的数字（都跟着勾选实时变）。
+        /// ⚠️ 勾选的项**分两类**（2026-10-11 起）：
+        ///  · 静态菜单项 → 「禁用 / 恢复」（往那个键写/删隐藏开关，改完立刻生效）；
+        ///  · DLL 扩展项（含黑名单残留）→ 「停用 / 恢复扩展」（往用户区系统黑名单写/删一条，
+        ///    **要重启资源管理器才生效**）。所以按钮上的字会跟着勾选换（勾到扩展就写「停用」）。</summary>
         private void UpdateBar()
         {
             List<CtxRow> checkedRows = CheckedRows();
-            int canDisable = 0, canRestore = 0;
+            int canDisable = 0, canRestore = 0, extDisable = 0, extRestore = 0;
             foreach (CtxRow r in checkedRows)
             {
+                if (r.Entry.Shellex)
+                {
+                    // 扩展项（含黑名单残留）：黑名单里有它 → 这一步是"恢复"，没有 → 是"停用"
+                    if (r.Entry.BlockedUser) { canRestore++; extRestore++; } else { canDisable++; extDisable++; }
+                    continue;
+                }
                 if (r.Entry.Disabled) { canRestore++; } else { canDisable++; }
             }
+            bool anyExt = (extDisable + extRestore) > 0;
 
             StringBuilder sb = new StringBuilder();
             sb.Append("已勾选 ").Append(checkedRows.Count.ToString(CultureInfo.InvariantCulture)).Append(" 项");
@@ -665,15 +715,35 @@ namespace Mxx1Toolbox
             {
                 sb.Append(" · 选中这一项被 Windows 保护（所有者是 TrustedInstaller，连管理员也写不动）→ 点右边「取得所有权」");
             }
+            else if (cur != null && cur.Entry.Shellex && cur.Entry.Blocked)
+            {
+                // 扩展项：状态是从系统黑名单读的，这里顺便把黑名单里那个"人看的名字"念出来 ——
+                // 那个名字往往比注册表里的英文名好认（比如「打开方式(H)」）。
+                sb.Append(" · 选中这一项已被系统停用");
+                if (cur.Entry.BlockedName.Length > 0)
+                {
+                    sb.Append("（黑名单里写的名字是「").Append(cur.Entry.BlockedName).Append("」）");
+                }
+                sb.Append(cur.Entry.BlockedUser ? " → 点「恢复」能让它回到菜单里" : "，那份写在系统区，本工具箱不动它");
+            }
+            else if (cur != null && cur.Entry.Shellex && !cur.Entry.Zombie)
+            {
+                sb.Append(" · 选中这一项是 DLL 扩展（不在黑名单里 = 在用；停用它要重启资源管理器）");
+            }
             _status.Text = sb.ToString();
 
-            SetButtonText(_disableBtn, "禁用选中的 " + canDisable.ToString(CultureInfo.InvariantCulture) + " 项");
+            // ⚠️ 勾到扩展项时这个按钮改叫「停用」（它干的事是写系统黑名单，而且要重启资源管理器才生效）；
+            // **恢复那一个不改字** —— "恢复"对两类都说得通（清黑名单 / 删隐藏开关）。
+            SetButtonText(_disableBtn, (anyExt ? "停用选中的 " : "禁用选中的 ") + canDisable.ToString(CultureInfo.InvariantCulture) + " 项");
             SetButtonText(_restoreBtn, "恢复选中的 " + canRestore.ToString(CultureInfo.InvariantCulture) + " 项");
             SetButtonText(_deleteBtn, "删除选中的 " + checkedRows.Count.ToString(CultureInfo.InvariantCulture) + " 项");
             _disableBtn.Enabled = (!_busy && canDisable > 0);
             _restoreBtn.Enabled = (!_busy && canRestore > 0);
             _deleteBtn.Enabled = (!_busy && checkedRows.Count > 0);
             _takeBtn.Enabled = (!_busy && curProtected);
+            // 「打开 DLL 目录」/「复制 CLSID」作用于**当前选中的那一行**（没选 / 选中的不是扩展就是灰的）
+            _dllBtn.Enabled = (!_busy && cur != null && cur.Entry.DllPath.Length > 0);
+            _clsidBtn.Enabled = (!_busy && cur != null && cur.Entry.Clsid.Length > 0);
             _refreshBtn.Enabled = !_busy;
         }
 
@@ -830,6 +900,11 @@ namespace Mxx1Toolbox
 
         // ------------------------------------------------------------------ 三个动作（批量）
 
+        /// <summary>批量动作。⚠️ 2026-10-11 起勾选的项**要分成两拨**（两套完全不同的机制）：
+        ///  · 静态菜单项 → `CtxMenu.DisableMany / RestoreMany / DeleteMany`（改那个登记键，立刻生效）；
+        ///  · DLL 扩展项（含黑名单残留）→ `CtxMenu.BlockMany / UnblockMany`（写用户区系统黑名单，
+        ///    **要重启资源管理器**才生效；「删除」对它们没有意义 —— 登记的键不是我们该删的）。
+        /// 两拨各自跑完，报告拼在一起写进日志；动作记录是逐条记的，所以撤销也是逐条的。</summary>
         private void DoAction(string kind)
         {
             if (_busy) { return; }
@@ -837,21 +912,32 @@ namespace Mxx1Toolbox
             if (checkedRows.Count == 0) { return; }
 
             List<CtxEntry> items = new List<CtxEntry>();
+            List<CtxEntry> exts = new List<CtxEntry>();
             foreach (CtxRow r in checkedRows)
             {
+                if (r.Entry.Shellex)
+                {
+                    if (kind == "删除") { continue; }        // 扩展项不走"删键"（那是别的东西）
+                    if (kind == "禁用" && r.Entry.BlockedUser) { continue; }
+                    if (kind == "恢复" && !r.Entry.BlockedUser) { continue; }
+                    exts.Add(r.Entry);
+                    continue;
+                }
                 if (kind == "禁用" && r.Entry.Disabled) { continue; }
                 if (kind == "恢复" && !r.Entry.Disabled) { continue; }
                 items.Add(r.Entry);
             }
-            if (items.Count == 0) { return; }
+            if (items.Count == 0 && exts.Count == 0) { return; }
 
-            if (!Consent.EnsureAccepted(this, _theme, "右键菜单管理：" + kind + " " + items.Count + " 项"))
+            if (!Consent.EnsureAccepted(this, _theme, "右键菜单管理：" + kind + " "
+                + (items.Count + exts.Count).ToString(CultureInfo.InvariantCulture) + " 项"))
             {
                 Flash("没有同意《免责声明与服务条款》，这个动作被拦下了。");
                 return;
             }
 
-            // 需要管理员：弹一次 UAC、带管理员权限重开窗口（勾选跟过来），让用户再点一次
+            // 需要管理员：弹一次 UAC、带管理员权限重开窗口（勾选跟过来），让用户再点一次。
+            // ⚠️ 扩展项恒为"不用管理员"（黑名单只写用户区那份，见 CtxEntry.NeedsAdmin）。
             bool needAdmin = false;
             foreach (CtxEntry e in items) { if (e.NeedsAdmin) { needAdmin = true; break; } }
             if (needAdmin && !CtxMenu.IsAdmin())
@@ -862,30 +948,50 @@ namespace Mxx1Toolbox
 
             // 删除有确认框（列清单、说清备份）；禁用 / 恢复不弹 —— 完全可逆，记录里能撤销
             if (kind == "删除" && !ConfirmDelete(items)) { return; }
-
+            // 「停用扩展」要重启资源管理器才生效，而且**一次影响所有位置** —— 这件事必须在点之前说清楚。
+            // 但它本身完全可逆（黑名单里删一条就回来了），所以**不弹确认框**（和禁用同一条口径：
+            // 可逆的动作不拿确认框挡人），改写进底栏那句 + 动作报告 + 记录里。
             _busy = true;
             UpdateBar();
             int done;
             bool ok;
-            string report;
+            StringBuilder report = new StringBuilder();
             try
             {
-                if (kind == "禁用") { report = CtxMenu.DisableMany(items, out done, out ok); }
-                else if (kind == "恢复") { report = CtxMenu.RestoreMany(items, out done, out ok); }
-                else { report = CtxMenu.DeleteMany(items, out done, out ok); }
+                int one = 0;
+                bool sub;
+                if (items.Count > 0)
+                {
+                    if (kind == "禁用") { report.Append(CtxMenu.DisableMany(items, out one, out sub)); }
+                    else if (kind == "恢复") { report.Append(CtxMenu.RestoreMany(items, out one, out sub)); }
+                    else { report.Append(CtxMenu.DeleteMany(items, out one, out sub)); }
+                    done = one;
+                    ok = sub;
+                }
+                else { done = 0; ok = true; }
+                if (exts.Count > 0)
+                {
+                    int two;
+                    bool sub2;
+                    if (kind == "禁用") { report.Append(CtxMenu.BlockMany(exts, out two, out sub2)); }
+                    else { report.Append(CtxMenu.UnblockMany(exts, out two, out sub2)); }
+                    done += two;
+                    ok = ok && sub2;
+                }
             }
             catch (Exception ex)
             {
-                report = kind + "失败：" + ex.Message;
+                report.Append(kind).Append("失败：").Append(ex.Message);
                 done = 0;
                 ok = false;
             }
             _busy = false;
-            Logger.Write("右键菜单管理", report);
+            Logger.Write("右键菜单管理", report.ToString());
             LoadRows();
+            string tail = (exts.Count > 0) ? "（扩展项要重启资源管理器才生效 —— 点底栏「重启资源管理器」）" : "";
             Flash(kind + "：成功 " + done.ToString(CultureInfo.InvariantCulture)
-                + " / 共 " + items.Count.ToString(CultureInfo.InvariantCulture) + " 项"
-                + (ok ? "" : "（没成功的那几条在动作记录里，红字那行写着原因）"));
+                + " / 共 " + (items.Count + exts.Count).ToString(CultureInfo.InvariantCulture) + " 项"
+                + (ok ? "" : "（没成功的那几条在动作记录里，红字那行写着原因）") + tail);
             // 动完之后，"刚才到底动了哪几个键"的答案就在动作记录里 —— 收起着就替用户展开一次
             if (_actionPanel != null && !_actionPanel.Visible) { ToggleActionPanel(); }
         }
@@ -950,6 +1056,135 @@ namespace Mxx1Toolbox
             Flash(ok ? ("已取得所有权并禁用「" + e.Title + "」（想还原就点记录里的「还原权限」）")
                      : "没成功 —— 原因在动作记录里（红字那行）");
             if (_actionPanel != null && !_actionPanel.Visible) { ToggleActionPanel(); }
+        }
+
+        /// <summary>底栏「打开 DLL 目录」：在资源管理器里定位**当前选中**那一条扩展的 DLL。
+        /// 只打开文件夹、不改任何东西。`MXX1_NO_OPEN=1` 时**只写一行日志、不真打开** ——
+        /// 和主窗口「打开网址」用同一个开关（见 `MainForm.OpenUrl`）：测试点完去读日志，两边都干净。</summary>
+        private void DoRevealDll()
+        {
+            CtxRow cur = CurrentRow();
+            if (cur == null || cur.Entry.DllPath.Length == 0) { return; }
+            string path = cur.Entry.DllPath;
+            string off = Environment.GetEnvironmentVariable("MXX1_NO_OPEN");
+            bool noOpen = (off != null) && (off.Trim() == "1");
+            Logger.Write("右键菜单管理", (noOpen ? "（测试模式，没有真打开）" : "") + "打开扩展 DLL 目录 · "
+                + cur.Entry.Title + " · " + path);
+            if (noOpen)
+            {
+                Flash("测试模式：没有真打开，只写进了日志 · " + path);
+                return;
+            }
+            Launcher.RevealInExplorer(path);
+            Flash("已经在资源管理器里定位到那个 DLL：" + System.IO.Path.GetFileName(path));
+        }
+
+        /// <summary>底栏「复制 CLSID」：把**当前选中**那一条扩展的 CLSID 复制到剪贴板
+        /// （拿去搜"这是谁装的"、写给作者看都用得上）。不改任何东西。</summary>
+        private void DoCopyClsid()
+        {
+            CtxRow cur = CurrentRow();
+            if (cur == null || cur.Entry.Clsid.Length == 0) { return; }
+            string text = cur.Entry.Clsid;
+            string err = WriteClipboard(text);
+            Logger.Write("右键菜单管理", "复制 CLSID · " + cur.Entry.Title + " · " + text
+                + (err.Length > 0 ? "（失败：" + err + "）" : ""));
+            Flash(err.Length > 0 ? ("复制失败：" + err) : ("已复制到剪贴板：" + text));
+        }
+
+        /// <summary>写剪贴板。**必须 copy=true**：窗口关掉之后剪贴板里还得留着
+        /// （和 `CopyPath.WriteClipboard` 同一条教训）。失败重试 3 次 —— 剪贴板是全局资源，
+        /// 别的程序正开着它很正常。</summary>
+        private static string WriteClipboard(string text)
+        {
+            string last = "";
+            for (int i = 0; i < 3; i++)
+            {
+                try
+                {
+                    Clipboard.SetDataObject(text, true);
+                    return "";
+                }
+                catch (Exception ex)
+                {
+                    last = ex.Message;
+                    System.Threading.Thread.Sleep(150);
+                }
+            }
+            return (last.Length > 0) ? last : "剪贴板打不开";
+        }
+
+        /// <summary>底栏「重启资源管理器」：让扩展项的停用 / 恢复**立刻生效**
+        /// （DLL 是 explorer 启动时加载进去的，不重启看不到变化）。
+        ///
+        /// 三条（2026-10-11 定的）：
+        /// ① 命令**只有一个来源** —— 工具箱「常用设置」页那颗「重启资源管理器」按钮
+        ///    （`tools\common.json` 里的 `restart-explorer`）。这里照 id 把那个 `ToolItem` 找出来、
+        ///    走 `Launcher.Run` 跑它，**绝不在这里重抄一遍 `taskkill /f /im explorer.exe`**
+        ///    （抄一份就有两处要维护，以后改一处忘一处）。
+        /// ② 会**关掉所有已经打开的文件夹窗口**、任务栏闪一下，所以先过一次确认框
+        ///    （那颗按钮自己也是 `confirm: true`）；确认框里把命令原样写出来给用户看。
+        /// ③ `MXX1_NO_EXPLORER_RESTART=1` 时**只写日志、不真做** —— 回归测试点它的时候绝不许
+        ///    把用户（或测试机）的 explorer 杀掉。</summary>
+        private void DoRestartExplorer()
+        {
+            if (_busy) { return; }
+            ToolItem t = FindToolById("restart-explorer");
+            if (t == null)
+            {
+                Flash("工具清单里找不到「重启资源管理器」那颗按钮（tools\\common.json 被改过？）");
+                return;
+            }
+            if (!Consent.EnsureAccepted(this, _theme, "右键菜单管理：重启资源管理器"))
+            {
+                Flash("没有同意《免责声明与服务条款》，这个动作被拦下了。");
+                return;
+            }
+            Settings settings = Settings.Load();
+            string cmd = Launcher.DescribeCommand(t, settings, false);
+            StringBuilder body = new StringBuilder();
+            body.Append("扩展项的「停用 / 恢复」要重启资源管理器才生效")
+                .AppendLine("（DLL 是在 explorer 启动时加载进去的，改完当场看不到变化）。").AppendLine();
+            body.AppendLine("现在会做这件事：");
+            body.AppendLine("· 结束 explorer.exe，然后立刻把它拉起来；");
+            body.AppendLine("· 任务栏和桌面会闪一下 —— 所有已经打开的文件夹窗口会一起关掉（没保存的先存一下）；");
+            body.AppendLine("· 托盘图标、任务栏上固定的按钮会重新出现。");
+            body.AppendLine();
+            body.AppendLine("跑的就是工具箱「常用设置」页那颗按钮，命令原样是：");
+            body.Append("  ").AppendLine(cmd);
+            bool go;
+            using (ConfirmForm f = new ConfirmForm("要重启资源管理器吗？", body.ToString(), "重启资源管理器", _theme))
+            {
+                go = (f.ShowDialog(this) == DialogResult.OK);
+            }
+            if (!go) { return; }
+
+            string off = Environment.GetEnvironmentVariable("MXX1_NO_EXPLORER_RESTART");
+            if (off != null && off.Trim() == "1")
+            {
+                Logger.Write("右键菜单管理", "（测试模式，没有真重启）重启资源管理器：" + cmd);
+                Flash("测试模式：没有真重启，只写进了日志");
+                return;
+            }
+            LaunchResult r = Launcher.Run(t, settings, false, false);
+            Logger.Write("右键菜单管理", "重启资源管理器：" + cmd
+                + ((r == null) ? " · （没有结果）" : (" · " + r.Message)));
+            Flash("已经重启资源管理器 —— 现在再点一次右键看看（扩展项的停用 / 恢复这下才生效）");
+        }
+
+        /// <summary>按 id 从工具清单里找那一颗按钮（找不到返回 null）。</summary>
+        private static ToolItem FindToolById(string id)
+        {
+            try
+            {
+                List<string> warnings = new List<string>();
+                foreach (ToolItem t in ToolRegistry.LoadAll(warnings))
+                {
+                    if (string.Equals(t.Id, id, StringComparison.OrdinalIgnoreCase)) { return t; }
+                }
+            }
+            catch { }
+            return null;
         }
 
         private bool ConfirmDelete(List<CtxEntry> items)
@@ -1078,18 +1313,28 @@ namespace Mxx1Toolbox
             return base.ProcessCmdKey(ref msg, keyData);
         }
 
+        /// <summary>"当前行"（键盘上下键 / 鼠标点出来的那一条），**没选就是 null**。
+        ///
+        /// ⚠️ 这里**故意不兜底取 `_rows[0]`**（2026-10-11 用户拍板改掉的）。原来是
+        /// `return (_rows.Count > 0) ? _rows[0] : null;`，后果是"按钮亮着"并不等于"你选中了东西"：
+        /// 某一页的第一条碰巧是被 Windows 保护的项，一打开窗口按钮就是亮的，而底栏那句
+        /// 「选中这一项被 Windows 保护 → 点右边…」也不会出现 —— 用户没法把因果关系看清楚。
+        /// 现在：**按钮亮 = 你真的点中了那一行**。顺带修掉另一个同源的小毛病：什么都没选中时
+        /// 按空格会去勾第 1 行（`ProcessCmdKey` 拿 `CurrentRow()` 用的就是它）。</summary>
         private CtxRow CurrentRow()
         {
             foreach (CtxRow r in _rows) { if (r.Current) { return r; } }
-            return (_rows.Count > 0) ? _rows[0] : null;
+            return null;
         }
 
+        /// <summary>键盘上下键换当前行。**从"什么都没选"起步时，↓ 落到第 1 行、↑ 也落到第 1 行**
+        /// （`index = -1` 起步就是为这个：原来兜底取第 1 行，从那儿再往下会跳过第 1 行）。</summary>
         private void MoveCurrent(int delta)
         {
             if (_rows.Count == 0) { return; }
-            int index = 0;
+            int index = -1;
             for (int i = 0; i < _rows.Count; i++) { if (_rows[i].Current) { index = i; break; } }
-            int want = index + delta;
+            int want = (index < 0) ? 0 : index + delta;
             if (want < 0) { want = 0; }
             if (want >= _rows.Count) { want = _rows.Count - 1; }
             SetCurrent(_rows[want]);

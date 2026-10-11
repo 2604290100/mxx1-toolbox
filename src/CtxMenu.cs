@@ -51,8 +51,10 @@ namespace Mxx1Toolbox
         /// 只写用户区那份、系统区那份还在的话，菜单里那一项不会消失。</summary>
         public bool InUser = false;
         public bool InMachine = false;
-        /// <summary>扩展项（`shellex\ContextMenuHandlers`，真正干活的是 DLL）——
-        /// **这一版只显示、不给动**（见 docs\DESIGN.md §12.66 ①）。</summary>
+        /// <summary>扩展项（`shellex\ContextMenuHandlers`，真正干活的是 DLL）。
+        /// ⚠️ 它**不走「禁用 / 恢复 / 删除」那三个动作**（那两个是改登记键的）—— 它走
+        /// **「停用扩展 / 恢复扩展」**：往系统黑名单里写/删一条（值名 = CLSID），
+        /// 登记键一个字都不动，而且要**重启资源管理器**才生效。见 §12.66 与 §12.68。</summary>
         public bool Shellex = false;
         /// <summary>已经带着隐藏开关（我们写的，或者别人写的）。</summary>
         public bool Disabled = false;
@@ -77,16 +79,69 @@ namespace Mxx1Toolbox
         /// 列表里每行显示"这一项自己的图标"就靠它，抽不出来再退回按段给的内嵌图标。</summary>
         public string IconValue = "";
 
+        // ---- 扩展项（shellex）专有的四样（2026-10-11 加的：那之前扩展项既不看黑名单也不给动）----
+        /// <summary>扩展项真正的 CLSID（原样，用来显示和「复制 CLSID」）。</summary>
+        public string Clsid = "";
+        /// <summary>规范化后的 CLSID（`{小写-guid}`）——**黑名单是按 GUID 认的**，
+        /// 有的软件写 `{...}`、有的不带花括号、有的还多打一个字符（实测遇到过一个尾部多一个横杠的畸形键名）。
+        /// 规范不出来就是空串：那种项**不参与黑名单匹配**（宁可不认，也不去猜）。</summary>
+        public string ClsidNorm = "";
+        /// <summary>扩展的 DLL 完整路径（`HKCR\CLSID\{…}\InprocServer32` 里那个；抽不出来就是空串）——
+        /// 底栏「打开 DLL 目录」用它。</summary>
+        public string DllPath = "";
+        /// <summary>系统黑名单里有没有它（用户区 / 系统区各一份，用户区那份不用管理员就能写）。</summary>
+        public bool BlockedUser = false;
+        public bool BlockedMachine = false;
+        /// <summary>黑名单里写的那个**人看的名字**（值数据；资源管理器不看它，别的工具写给用户看的）——
+        /// 比如 `打开方式(H)` 这种。抽不到就是空串。</summary>
+        public string BlockedName = "";
+        /// <summary>黑名单里有它、可**机器上已经找不到对应的扩展**了（卸载残留）。
+        /// 这种行不占位置的条数（它跟位置无关，只在「文件」那一页的最后一段列出来）。</summary>
+        public bool Zombie = false;
+
+        /// <summary>这一项在系统黑名单里吗（用户区或系统区任一处有就算）。</summary>
+        public bool Blocked { get { return BlockedUser || BlockedMachine; } }
+
         /// <summary>用户区那份的完整键路径（要写先写它）。</summary>
         public string UserKey { get { return CtxMenu.UserRoot + "\\" + Sub + "\\" + Verb; } }
         public string MachineKey { get { return CtxMenu.MachineRoot + "\\" + Sub + "\\" + Verb; } }
 
-        /// <summary>列表「状态」那一列。</summary>
+        /// <summary>这一项在注册表里的完整键路径 —— **动作记录里写的就是它，撤销也照它打开**。
+        /// ⚠️ 扩展项的"键"**不是**它那个登记键，而是**系统黑名单那个键 + 值名（CLSID）**：
+        /// 停用/恢复改的只有黑名单，登记键一个字都没动（所以撤销时把"路径最后那一段"当 CLSID 用，
+        /// 见 `Undo`）。「黑名单残留」那种连登记键都没有，同理。</summary>
+        public string FullKey
+        {
+            get
+            {
+                if (Shellex)
+                {
+                    string root = Zombie
+                        ? (BlockedUser ? CtxMenu.BlockedUserRoot : CtxMenu.BlockedMachineRoot)
+                        : CtxMenu.BlockedUserRoot;
+                    string id = Zombie ? Verb : (ClsidNorm.Length > 0 ? ClsidNorm : Verb);
+                    return root + "\\" + id;
+                }
+                return (InMachine && !InUser) ? MachineKey : UserKey;
+            }
+        }
+
+        /// <summary>列表「状态」那一列。
+        /// ⚠️ 扩展项这一档 2026-10-11 起**分两种情况**了：系统黑名单里有它 = 已经停用（它现在其实
+        /// 不在右键菜单里），没有才是"在用"。以前一律写「扩展项」，等于把已经停用的项当成在用的 ——
+        /// 用户在这台机器上量到：列出来的 19 个 CLSID 里有 **6 个早就在黑名单里**了。</summary>
         public string StateLabel
         {
             get
             {
-                if (Shellex) { return "扩展项"; }
+                if (Zombie) { return "黑名单残留"; }
+                if (Shellex)
+                {
+                    if (BlockedUser && BlockedMachine) { return "已停用（两处都写了）"; }
+                    if (BlockedUser) { return "已停用"; }
+                    if (BlockedMachine) { return "已停用（系统区）"; }
+                    return "扩展项";
+                }
                 return Disabled ? "已禁用" : "在用";
             }
         }
@@ -102,18 +157,42 @@ namespace Mxx1Toolbox
             }
         }
 
-        /// <summary>这一项能不能被这三个动作处理（扩展项不行）。</summary>
+        /// <summary>这一项能不能被这三个动作处理（扩展项不行 —— 它走「停用扩展」那条黑名单路）。</summary>
         public bool Actionable { get { return !Shellex; } }
 
-        /// <summary>改它要不要管理员（系统区里有一份、而当前不是管理员）。</summary>
-        public bool NeedsAdmin { get { return InMachine && !CtxMenu.IsAdmin(); } }
+        /// <summary>这一行**能不能勾**（批量动作按它算，界面上的勾选框也跟着它灰）。
+        /// 静态项一直能勾；扩展项 2026-10-11 起也能勾了，但三种情形是灰的：
+        /// ① 黑名单**系统区**那份有它 —— 那是别的工具/安装程序写的，本工具箱只写用户区（勾了也动不了）；
+        /// ② CLSID 认不出来（不规范的那种）—— 没有一个能写进黑名单的 GUID；
+        /// ③ 那个登记键读不动（`KeyLocked`，只看得到登记名）。
+        /// 「黑名单残留」那一段相反：**用户区**的残留能勾（点「恢复」= 把它从黑名单里清掉），系统区的不能。</summary>
+        public bool Checkable
+        {
+            get
+            {
+                if (Zombie) { return BlockedUser; }
+                if (Shellex) { return (ClsidNorm.Length > 0) && (!BlockedMachine) && (!KeyLocked); }
+                return true;
+            }
+        }
+
+        /// <summary>那个登记键**读不动**（权限被保护）—— 只看得到登记名。
+        /// ⚠️ 这和 `Protected` **不是一回事**：`Protected` 说的是"要取得所有权才写得动这个键"，
+        /// 而扩展项根本不用写那个键（停用 = 写黑名单），所以登记键读不动 ≠ 不能停用它。</summary>
+        public bool KeyLocked = false;
+
+        /// <summary>改它要不要管理员（系统区里有一份、而当前不是管理员）。
+        /// ⚠️ 扩展项恒为 false：黑名单只写**用户区**那一份（不用管理员、只影响当前用户、随时能删），
+        /// 系统区那份一个字都不动 —— 不然会为一个根本不需要提权的动作弹 UAC。</summary>
+        public bool NeedsAdmin { get { return !Shellex && InMachine && !CtxMenu.IsAdmin(); } }
 
         /// <summary>列表里的段（对着用户的眼睛分，不是对着注册表分）：
-        /// 工具箱自己装的 / 程序装的 / 系统自带的 / DLL 扩展项。</summary>
+        /// 工具箱自己装的 / 程序装的 / 系统自带的 / DLL 扩展项 / 黑名单残留。</summary>
         public string GroupId
         {
             get
             {
+                if (Zombie) { return CtxMenu.GroupZombie; }
                 if (Shellex) { return CtxMenu.GroupShellex; }
                 if (Ours) { return CtxMenu.GroupOurs; }
                 return Systemish ? CtxMenu.GroupSystem : CtxMenu.GroupApps;
@@ -254,10 +333,14 @@ namespace Mxx1Toolbox
     ///
     /// ## 三条底线
     /// ① **只动用户选中的那一个键**（禁用只加一个值；删除前必备份成 .reg，备份没成功就不删）；
-    /// ② **扩展项（DLL）这一版只显示不给动** —— 那是另一套机制（要多写一份系统级黑名单、
-    ///    必须重启资源管理器、而且禁了是所有位置一起没了），不在这一版的范围里；
-    /// ③ **测试要把根挪走**：环境变量 `MXX1_CTXMENU_ROOT`（用户区）与 `MXX1_CTXMENU_ROOT_MACHINE`
-    ///    （系统区）。回归测试一律用它，绝不碰用户真实的右键菜单。
+    /// ② **扩展项（DLL）走另一套开关**（2026-10-11 补的，见 §12.68）：停用/恢复 = 往**用户区的**
+    ///    系统黑名单里写/删一条（值名 = CLSID），登记键一个字都不动，而且**必须重启资源管理器**
+    ///    才生效；黑名单是**按 CLSID 认的、全局的**，所以停用它 = 所有右键位置一起没。
+    ///    ⚠️ 系统区那份黑名单（`HKLM`，这台机器上那 16 条就是 WinRAR / WPS / 火绒那些装进去的）
+    ///    只读、一个字都不动 —— 那是别人的地盘，而且会影响所有用户；
+    /// ③ **测试要把根挪走**：环境变量 `MXX1_CTXMENU_ROOT` / `_MACHINE`（菜单项那两个根）
+    ///    与 `MXX1_CTXMENU_BLOCKED` / `_BLOCKED_MACHINE`（黑名单那两个根）。
+    ///    回归测试一律用它，绝不碰用户真实的右键菜单、也绝不碰真实黑名单。
     ///
     /// 命令行只有**只读**出口（`rightmenu list`）；写只在界面里点（和 `sysreg` / `rightmenu` 同一条规矩）。
     /// 需要管理员时由界面把自己以管理员身份重开一次（`rightmenu manage --focus=…`），
@@ -277,11 +360,15 @@ namespace Mxx1Toolbox
         public const string GroupApps = "apps";
         public const string GroupSystem = "system";
         public const string GroupShellex = "shellex";
+        /// <summary>最后那一段：**系统黑名单里有、可机器上已经没有这个扩展了**的那些 CLSID。
+        /// ⚠️ 它跟"在哪一页"无关（黑名单是按 GUID 认的、全局），所以只在**「文件」那一页**列出来 ——
+        /// 五个位置各列一遍的话，每个位置的条数都会虚高，用户会以为"菜单里真有这么多"。</summary>
+        public const string GroupZombie = "blockedorphan";
 
         /// <summary>段的顺序（从上到下）。</summary>
         public static readonly string[] GroupIds = new string[]
         {
-            GroupOurs, GroupApps, GroupSystem, GroupShellex
+            GroupOurs, GroupApps, GroupSystem, GroupShellex, GroupZombie
         };
 
         public static string GroupLabel(string id)
@@ -289,6 +376,7 @@ namespace Mxx1Toolbox
             if (id == GroupOurs) { return "工具箱自己装的"; }
             if (id == GroupSystem) { return "系统自带"; }
             if (id == GroupShellex) { return "DLL 扩展项"; }
+            if (id == GroupZombie) { return "黑名单里的残留条目"; }
             return "程序装的";
         }
 
@@ -297,14 +385,23 @@ namespace Mxx1Toolbox
         {
             if (id == GroupOurs) { return "想正规撤掉，回「右键增强」页点对应的「撤掉…」"; }
             if (id == GroupSystem) { return "Windows 自己的，建议用「禁用」而不是删除"; }
-            if (id == GroupShellex) { return "这一版只显示、不给动（禁它要写系统级黑名单 + 重启资源管理器，第二版再说）"; }
+            if (id == GroupShellex)
+            {
+                return "状态是从系统黑名单读的：写着「已停用」的其实已经不在菜单里了；"
+                    + "勾上能停用 / 恢复，但要重启资源管理器才生效（而且一停是所有位置一起没）";
+            }
+            if (id == GroupZombie)
+            {
+                return "这些 CLSID 还在系统黑名单里，可机器上已经找不到对应的扩展了（多半是卸载残留）——"
+                    + "跟位置无关，统一放在「文件」这一页";
+            }
             return "这些你可以禁用 / 删除";
         }
 
-        /// <summary>段默认收起吗（系统自带的项最长、但最不该动，默认收起来）。</summary>
+        /// <summary>段默认收起吗（系统自带的项最长、但最不该动，默认收起来；黑名单残留同理）。</summary>
         public static bool GroupCollapsedByDefault(string id)
         {
-            return id == GroupSystem;
+            return id == GroupSystem || id == GroupZombie;
         }
 
         /// <summary>上一版那批不带序号的旧键名（换名迁移之后就没了，但老用户那边可能还在）。
@@ -374,6 +471,33 @@ namespace Mxx1Toolbox
         private const string HiveLocalMachine = "HKEY_LOCAL_MACHINE";
         private const string ClassesSub = "Software\\Classes";
 
+        // ---- 系统黑名单（DLL 扩展项真正的开关）------------------------------------------------------
+        // 扩展项不是"注册表里一个键 = 一项"那种做法，它是 COM 的 shell 扩展：**停用它 = 把它的 CLSID
+        // 写进一份黑名单**，资源管理器启动时看到 CLSID 在黑名单里就跳过它。有两个地方要记住：
+        //   ① 值名 = CLSID（带花括号），值数据 = 一个**人看的名字**（资源管理器根本不看这个数据，
+        //      它是别的工具写给用户看的 —— 实测这台机器上 16 条值数据写的就是「打开方式(H)」这种）；
+        //   ② **必须重启资源管理器才生效**（DLL 是在 explorer 启动时加载进去的），和静态项
+        //      「改完再点一次右键就是新的」完全不是一回事。
+        // 用户区那份（HKCU）不用管理员，系统区那份（HKLM）是别的工具/安装程序写的 —— 本工具箱
+        // **只写用户区那份**（ID 隔离、可逆、不碰别人的东西），系统区那几条只读出来告诉用户。
+        /// <summary>黑名单的相对键路径（挂在 `HKCU` 或 `HKLM` 下面）。</summary>
+        public const string BlockedSub = "Software\\Microsoft\\Windows\\CurrentVersion\\Shell Extensions\\Blocked";
+
+        /// <summary>用户区黑名单的整根（带 hive）。环境变量 `MXX1_CTXMENU_BLOCKED` 可以整根挪走
+        /// —— ⚠️ **回归测试必须挪走**：不挪的话测试会把用户真实那份黑名单当成自己的夹具，
+        /// 于是在这台机器上会凭空多出十几条「黑名单残留」（那 16 条都在 HKLM 里）。</summary>
+        public static string BlockedUserRoot
+        {
+            get { return Normalize(Environment.GetEnvironmentVariable("MXX1_CTXMENU_BLOCKED"), HiveCurrentUser, BlockedSub); }
+        }
+
+        /// <summary>系统区黑名单的整根（默认 `HKLM\...\Blocked`）。同上，测试用
+        /// `MXX1_CTXMENU_BLOCKED_MACHINE` 挪走（挪到 HKCU 下面就行，只读它的时候不需要管理员）。</summary>
+        public static string BlockedMachineRoot
+        {
+            get { return Normalize(Environment.GetEnvironmentVariable("MXX1_CTXMENU_BLOCKED_MACHINE"), HiveLocalMachine, BlockedSub); }
+        }
+
         public static bool IsTestRoot
         {
             get
@@ -386,11 +510,17 @@ namespace Mxx1Toolbox
         /// <summary>把环境变量给的根名整成"hive + 子键"的完整形式（`HKCU\Xxx` / `Software\Xxx` 都收）。</summary>
         private static string Normalize(string custom, string defaultHive)
         {
+            return Normalize(custom, defaultHive, ClassesSub);
+        }
+
+        /// <summary>同上，但默认子键可以换（黑名单那两个根用的不是 `Software\Classes`）。</summary>
+        private static string Normalize(string custom, string defaultHive, string defaultSub)
+        {
             string s = AppPaths.Expand(custom);
             s = (s == null) ? "" : s.Trim().TrimStart('\\');
             if (s.Length == 0)
             {
-                return defaultHive + "\\" + ClassesSub;
+                return defaultHive + "\\" + defaultSub;
             }
             if (s.StartsWith("HKCU\\", StringComparison.OrdinalIgnoreCase))
             {
@@ -459,6 +589,71 @@ namespace Mxx1Toolbox
             return baseKey.OpenSubKey(sub, false);
         }
 
+        // ------------------------------------------------------------------ 系统黑名单
+
+        /// <summary>黑名单里的一条（同一个 CLSID 可能在用户区和系统区各写了一份）。</summary>
+        internal sealed class BlockedHit
+        {
+            public bool InUser = false;
+            public bool InMachine = false;
+            public string UserName = "";
+            public string MachineName = "";
+            /// <summary>值数据里那个"人看的名字"（用户区优先）；两条都是空的就返回空串。</summary>
+            public string Name { get { return (UserName.Length > 0) ? UserName : MachineName; } }
+        }
+
+        /// <summary>把黑名单里的值名整成 `{xxxxxxxx-xxxx-…}` 全小写形态。
+        /// **黑名单是按 GUID 认的**，可写它的工具五花八门：带花括号的 / 不带的 / 大写小写混着的
+        /// （实测这台机器 16 条值里就是大小写混着写的）。规范不出来（长度不对 —— 实测遇到过一个
+        /// 尾部多打一个横杠的畸形注册）就返回空串：那种项**不参与黑名单匹配**，宁可不认也不猜。</summary>
+        public static string NormalizeClsid(string s)
+        {
+            if (s == null) { return ""; }
+            string t = s.Trim().Trim('{', '}').Replace(" ", "");
+            if (t.Length != 36) { return ""; }
+            return "{" + t.ToLowerInvariant() + "}";
+        }
+
+        /// <summary>读系统黑名单（用户区 + 系统区各读一份，合并成 CLSID → 命中信息）。
+        /// 只读；一个字节都不写。</summary>
+        public static Dictionary<string, BlockedHit> ReadBlocked()
+        {
+            Dictionary<string, BlockedHit> map = new Dictionary<string, BlockedHit>(StringComparer.OrdinalIgnoreCase);
+            AddBlocked(map, BlockedUserRoot, true);
+            AddBlocked(map, BlockedMachineRoot, false);
+            return map;
+        }
+
+        private static void AddBlocked(Dictionary<string, BlockedHit> map, string root, bool user)
+        {
+            try
+            {
+                using (RegistryKey k = OpenFull(root, false))
+                {
+                    if (k == null) { return; }
+                    foreach (string name in k.GetValueNames())
+                    {
+                        string id = NormalizeClsid(name);
+                        if (id.Length == 0) { continue; }
+                        BlockedHit h;
+                        if (!map.TryGetValue(id, out h)) { h = new BlockedHit(); map[id] = h; }
+                        string val = Str(k.GetValue(name, null));
+                        if (user)
+                        {
+                            h.InUser = true;
+                            if (val.Length > 0) { h.UserName = val; }
+                        }
+                        else
+                        {
+                            h.InMachine = true;
+                            if (val.Length > 0) { h.MachineName = val; }
+                        }
+                    }
+                }
+            }
+            catch { }
+        }
+
         // ------------------------------------------------------------------ 列表
 
         /// <summary>列出某个位置里真实存在的项（zoneId 为空 = 全部位置）。
@@ -466,6 +661,7 @@ namespace Mxx1Toolbox
         /// 但 `InUser` / `InMachine` 两个标记都会亮 —— 写的时候两份都要写。</summary>
         public static List<CtxEntry> List(string zoneId)
         {
+            Dictionary<string, BlockedHit> blocked = ReadBlocked();
             List<CtxEntry> list = new List<CtxEntry>();
             foreach (CtxZone z in Table)
             {
@@ -480,9 +676,85 @@ namespace Mxx1Toolbox
                 if (zoneId != null && zoneId.Length > 0
                     && !string.Equals(z.Id, zoneId, StringComparison.OrdinalIgnoreCase)) { continue; }
                 Dictionary<string, CtxEntry> seen = new Dictionary<string, CtxEntry>(StringComparer.OrdinalIgnoreCase);
-                foreach (string cls in z.Classes) { AddShellEx(list, seen, z, cls); }
+                foreach (string cls in z.Classes) { AddShellEx(list, seen, z, cls, blocked); }
+            }
+            // 「黑名单残留」那一段只挂在「文件」这一页（理由见 GroupZombie 的注释）
+            CtxZone files = Table[0];
+            bool wantZombies = (zoneId == null) || (zoneId.Length == 0)
+                || string.Equals(zoneId, files.Id, StringComparison.OrdinalIgnoreCase);
+            if (wantZombies && blocked.Count > 0)
+            {
+                // ⚠️ "这台机器上还有没有这个扩展"必须扫**五个位置**：上面两轮循环在"只看一页"时
+                // 只扫了这一页 —— 拿它当判据会把别的位置独有的扩展误判成卸载残留。
+                Dictionary<string, bool> registered = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+                CollectRegisteredClsids(registered);
+                AddZombies(list, blocked, registered, files);
             }
             return list;
+        }
+
+        /// <summary>把**五个位置**里登记过的扩展 CLSID 全收一遍（判"黑名单残留"用，只读）。</summary>
+        private static void CollectRegisteredClsids(Dictionary<string, bool> registered)
+        {
+            foreach (CtxZone z in Table)
+            {
+                foreach (string cls in z.Classes)
+                {
+                    string rel = cls + "\\shellex\\ContextMenuHandlers";
+                    foreach (string root in new string[] { UserRoot, MachineRoot })
+                    {
+                        using (RegistryKey k = OpenFull(root + "\\" + rel, false))
+                        {
+                            if (k == null) { continue; }
+                            string[] names;
+                            try { names = k.GetSubKeyNames(); }
+                            catch { continue; }
+                            foreach (string name in names)
+                            {
+                                if (name == null || name.Length == 0) { continue; }
+                                try
+                                {
+                                    using (RegistryKey h = k.OpenSubKey(name, false))
+                                    {
+                                        if (h == null) { continue; }
+                                        string id = NormalizeClsid(HandlerClsid(name, Str(h.GetValue(null, null))));
+                                        if (id.Length > 0) { registered[id] = true; }
+                                    }
+                                }
+                                catch { }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        /// <summary>黑名单里有、可机器上已经找不到对应扩展的 CLSID（卸载残留）→ 列成「黑名单残留」那一段。
+        /// ⚠️ 系统区那份是别的工具写的：本工具箱只写用户区，所以系统区那几条**只显示、不给动**
+        /// （界面上的判据就是 `BlockedUser`）。</summary>
+        private static void AddZombies(List<CtxEntry> list, Dictionary<string, BlockedHit> blocked,
+            Dictionary<string, bool> registered, CtxZone z)
+        {
+            List<string> ids = new List<string>(blocked.Keys);
+            ids.Sort(StringComparer.OrdinalIgnoreCase);
+            foreach (string id in ids)
+            {
+                if (registered.ContainsKey(id)) { continue; }
+                BlockedHit h = blocked[id];
+                CtxEntry e = new CtxEntry();
+                e.ZoneId = z.Id; e.ZoneLabel = z.Label;
+                e.Sub = ""; e.Verb = id;
+                e.Shellex = true;
+                e.Zombie = true;
+                e.Clsid = id; e.ClsidNorm = id;
+                e.BlockedUser = h.InUser; e.BlockedMachine = h.InMachine; e.BlockedName = h.Name;
+                e.InUser = h.InUser; e.InMachine = h.InMachine;
+                e.Title = (h.Name.Length > 0) ? h.Name : id;
+                e.Note = "黑名单里有这条 CLSID，可机器上已经找不到它对应的扩展了（多半是卸载残留）"
+                    + (h.InUser ? " · 用户区那份能清掉" : "")
+                    + (h.InMachine ? " · 系统区那份是别的工具写的，本工具箱不动" : "");
+                list.Add(e);
+            }
         }
 
         private static void AddVerbs(List<CtxEntry> list, Dictionary<string, CtxEntry> seen, CtxZone z, string cls)
@@ -613,7 +885,8 @@ namespace Mxx1Toolbox
             }
         }
 
-        private static void AddShellEx(List<CtxEntry> list, Dictionary<string, CtxEntry> seen, CtxZone z, string cls)
+        private static void AddShellEx(List<CtxEntry> list, Dictionary<string, CtxEntry> seen, CtxZone z, string cls,
+            Dictionary<string, BlockedHit> blocked)
         {
             string rel = cls + "\\shellex\\ContextMenuHandlers";
             foreach (string root in new string[] { UserRoot, MachineRoot })
@@ -648,10 +921,28 @@ namespace Mxx1Toolbox
                             string realClsid = HandlerClsid(name, value);
                             e.Systemish = HandlerDllIsSystem(realClsid);
                             e.IconValue = HandlerDllPath(realClsid);
-                            e.Title = HandlerTitle(name, value)
-                                + (e.Systemish ? "（扩展项，系统自带）" : "（扩展项）");
+                            e.Clsid = realClsid;
+                            e.ClsidNorm = NormalizeClsid(realClsid);
+                            e.DllPath = HandlerDllPath(realClsid);
+                            string title = HandlerTitle(name, value);
+                            // 黑名单里那个"人看的名字"只在**我们自己解不出名字**时才拿来当标题
+                            // （解得出就用注册表里那个 —— 那个才是这项扩展真正的名字）
+                            BlockedHit bh;
+                            if (e.ClsidNorm.Length > 0 && blocked.TryGetValue(e.ClsidNorm, out bh) && bh != null)
+                            {
+                                e.BlockedUser = bh.InUser;
+                                e.BlockedMachine = bh.InMachine;
+                                e.BlockedName = bh.Name;
+                                if (title.StartsWith("{", StringComparison.Ordinal) && e.BlockedName.Length > 0)
+                                {
+                                    title = e.BlockedName;
+                                }
+                            }
+                            e.Title = title + (e.Systemish ? "（扩展项，系统自带）" : "（扩展项）");
+                            // 副标题只留"这一项是什么"：状态（在用 / 已停用）在右边的状态列里，
+                            // 黑名单里那个名字在选中它时底栏那句里说（副标题太长会被省略号吃掉）。
                             e.Note = "扩展项（CLSID " + (realClsid.Length > 0 ? realClsid : "没写")
-                                + "，" + HandlerDll(realClsid) + "）—— 这一版只显示、不给动";
+                                + "，" + HandlerDll(realClsid) + "）";
                             seen[name] = e;
                             list.Add(e);
                         }
@@ -663,8 +954,19 @@ namespace Mxx1Toolbox
                             broken.Sub = rel; broken.Verb = name;
                             broken.InUser = isUser; broken.InMachine = !isUser;
                             broken.Shellex = true;
+                            broken.Clsid = name;                    // 尽力：键名常常就是 CLSID
+                            broken.ClsidNorm = NormalizeClsid(name);
+                            broken.KeyLocked = true;
                             broken.Title = name + "（扩展项）";
-                            broken.Note = "这一项读不动（权限被保护）—— 只看得到登记名。";
+                            broken.Note = "这一项读不动（那个登记键的权限被保护）—— 只看得到登记名。"
+                                + "不过**停用它不用写那个键**：停用是往系统黑名单里写一条，照样能做。";
+                            BlockedHit bh2;
+                            if (broken.ClsidNorm.Length > 0 && blocked.TryGetValue(broken.ClsidNorm, out bh2) && bh2 != null)
+                            {
+                                broken.BlockedUser = bh2.InUser;
+                                broken.BlockedMachine = bh2.InMachine;
+                                broken.BlockedName = bh2.Name;
+                            }
                             seen[name] = broken;
                             list.Add(broken);
                         }
@@ -793,12 +1095,14 @@ namespace Mxx1Toolbox
         /// <summary>一页的小结数字（窗口顶部与命令行都用它，只算一遍）。</summary>
         public static string Summary(List<CtxEntry> list)
         {
-            int active = 0, disabled = 0, shellex = 0, machine = 0;
+            int active = 0, disabled = 0, shellex = 0, machine = 0, zombie = 0, blockedExt = 0;
             foreach (CtxEntry e in list)
             {
-                if (e.Shellex) { shellex++; }
+                if (e.Zombie) { zombie++; }
+                else if (e.Shellex) { shellex++; }
                 else if (e.Disabled) { disabled++; }
                 else { active++; }
+                if (e.Shellex && !e.Zombie && e.Blocked) { blockedExt++; }
                 if (e.InMachine) { machine++; }
             }
             StringBuilder sb = new StringBuilder();
@@ -806,12 +1110,23 @@ namespace Mxx1Toolbox
             sb.Append("（在用 ").Append(active.ToString(CultureInfo.InvariantCulture));
             sb.Append(" / 已禁用 ").Append(disabled.ToString(CultureInfo.InvariantCulture));
             sb.Append(" / 扩展项 ").Append(shellex.ToString(CultureInfo.InvariantCulture));
+            if (zombie > 0) { sb.Append(" / 黑名单残留 ").Append(zombie.ToString(CultureInfo.InvariantCulture)); }
             int prot = 0;
             foreach (CtxEntry e in list) { if (e.Protected) { prot++; } }
             if (machine > 0)
             {
                 sb.Append("；其中 ").Append(machine.ToString(CultureInfo.InvariantCulture))
                   .Append(" 条在系统区，改它要管理员");
+            }
+            if (blockedExt > 0)
+            {
+                sb.Append("；其中 ").Append(blockedExt.ToString(CultureInfo.InvariantCulture))
+                  .Append(" 个扩展项已被系统停用（其实已经不在菜单里了）");
+            }
+            if (zombie > 0)
+            {
+                sb.Append("；黑名单里还有 ").Append(zombie.ToString(CultureInfo.InvariantCulture))
+                  .Append(" 条已经没有对应扩展了（卸载残留，只在「文件」那一页列出来）");
             }
             if (prot > 0)
             {
@@ -832,7 +1147,8 @@ namespace Mxx1Toolbox
             StringBuilder sb = Head("禁用", e);
             if (!e.Actionable)
             {
-                sb.AppendLine("结果：没有处理 —— 扩展项这一版只显示、不给动（那一类要写系统级黑名单 + 重启资源管理器，见段标题那行说明）。");
+                sb.AppendLine("结果：没有处理 —— 这是 DLL 扩展项，不走这三个动作（它走「停用扩展 / 恢复扩展」"
+                    + "那条路：写系统黑名单，而且要重启资源管理器才生效，见段标题那行说明）。");
                 return sb.ToString();
             }
 
@@ -896,7 +1212,8 @@ namespace Mxx1Toolbox
             StringBuilder sb = Head("恢复", e);
             if (!e.Actionable)
             {
-                sb.AppendLine("结果：没有处理 —— 扩展项这一版只显示、不给动（那一类要写系统级黑名单 + 重启资源管理器，见段标题那行说明）。");
+                sb.AppendLine("结果：没有处理 —— 这是 DLL 扩展项，不走这三个动作（它走「停用扩展 / 恢复扩展」"
+                    + "那条路：写系统黑名单，而且要重启资源管理器才生效，见段标题那行说明）。");
                 return sb.ToString();
             }
 
@@ -973,7 +1290,8 @@ namespace Mxx1Toolbox
             StringBuilder sb = Head("取得所有权并禁用", e);
             if (!e.Actionable)
             {
-                sb.AppendLine("结果：没有处理 —— 扩展项这一版只显示、不给动。");
+                sb.AppendLine("结果：没有处理 —— 这是 DLL 扩展项，不走「取得所有权」这条路"
+                    + "（扩展项不用写那个登记键：停用/恢复是写系统黑名单，见「停用扩展」）。");
                 return sb.ToString();
             }
             if (!IsAdmin())
@@ -1067,7 +1385,8 @@ namespace Mxx1Toolbox
             StringBuilder sb = Head("删除", e);
             if (!e.Actionable)
             {
-                sb.AppendLine("结果：没有处理 —— 扩展项这一版只显示、不给动（那一类要写系统级黑名单 + 重启资源管理器，见段标题那行说明）。");
+                sb.AppendLine("结果：没有处理 —— 这是 DLL 扩展项，不走这三个动作（它走「停用扩展 / 恢复扩展」"
+                    + "那条路：写系统黑名单，而且要重启资源管理器才生效，见段标题那行说明）。");
                 return sb.ToString();
             }
 
@@ -1263,7 +1582,8 @@ namespace Mxx1Toolbox
         /// ⚠️ 旧格式（那时候只有 6 列、只记键名）照样能读，但标成"撤不了" —— 绝不假装能撤。</summary>
         private static void Record(string action, CtxEntry e, string detail, string backup, string result)
         {
-            string key = (e.InMachine && !e.InUser) ? e.MachineKey : e.UserKey;
+            // 键路径一律走 `e.FullKey`：扩展项/残留条目的"键"不是菜单项那个键（见 CtxEntry.FullKey）
+            string key = e.FullKey;
             RecordRaw(action, e.ZoneId, e.ZoneLabel, key, backup, e.Title, result);
             Logger.Write("右键菜单管理", action + " · " + e.Title + " · " + e.ZoneLabel + " · " + e.Verb
                 + (detail.Length > 0 ? " · " + detail : ""));
@@ -1385,6 +1705,61 @@ namespace Mxx1Toolbox
                 return sb.ToString();
             }
 
+            if (a.Action == "停用扩展" || a.Action == "恢复扩展")
+            {
+                // 撤销扩展项那一步 = 反着做一次（改的只有**用户区**黑名单里那一条值）。
+                // ⚠️ 记录里的"键"是 `<黑名单键>\<CLSID>`：**最后那一段是值名**，不是子键
+                // （所以这里不能走 `OpenFull` —— 那样会去开一个叫 CLSID 的键，永远开不到）。
+                int cut = a.Key.LastIndexOf('\\');
+                if (cut <= 0)
+                {
+                    sb.AppendLine("结果：没做 —— 记录里那个路径看不出 CLSID（" + a.Key + "）。");
+                    return sb.ToString();
+                }
+                string clsid = a.Key.Substring(cut + 1);
+                bool wantBlocked = (a.Action == "恢复扩展");     // 「恢复」的撤销 = 再停用一次
+                try
+                {
+                    using (RegistryKey k = OpenBlocked(wantBlocked))
+                    {
+                        if (k == null)
+                        {
+                            sb.AppendLine("结果：没做 —— 那个黑名单键不存在（大概是你刚把它手工删了）。");
+                            return sb.ToString();
+                        }
+                        if (wantBlocked)
+                        {
+                            k.SetValue(clsid, MenuNameOf(a.Title), RegistryValueKind.String);
+                            if (k.GetValue(clsid, null) == null)
+                            {
+                                sb.AppendLine("结果：没成功（写回之后读回是空的）");
+                                return sb.ToString();
+                            }
+                            sb.AppendLine("结果：已再停用一次（黑名单里又有 " + clsid + " 了）—— 重启资源管理器后生效。");
+                            RecordRaw("撤销·再停用扩展", a.ZoneId, a.ZoneLabel, a.Key, "", a.Title, "成功");
+                        }
+                        else
+                        {
+                            k.DeleteValue(clsid, false);
+                            if (k.GetValue(clsid, null) != null)
+                            {
+                                sb.AppendLine("结果：没成功（删完读回它还在）");
+                                return sb.ToString();
+                            }
+                            sb.AppendLine("结果：已恢复（黑名单里的 " + clsid + " 删掉了）—— 重启资源管理器后生效。");
+                            RecordRaw("撤销·撤销停用扩展", a.ZoneId, a.ZoneLabel, a.Key, "", a.Title, "成功");
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    sb.AppendLine("结果：没成功 —— " + ex.Message);
+                    return sb.ToString();
+                }
+                ok = true;
+                return sb.ToString();
+            }
+
             if (a.Action == "删除")
             {
                 if (a.Backup.Length == 0 || !File.Exists(a.Backup))
@@ -1484,8 +1859,197 @@ namespace Mxx1Toolbox
             return "上一次：" + a.Action + "「" + a.Title + "」 · " + a.When;
         }
 
-        // ------------------------------------------------------------------ 批量
+        // ------------------------------------------------------------------ 停用 / 恢复 DLL 扩展
 
+        /// <summary>打开**用户区**那份黑名单键。`create` 时才新建 —— 黑名单那个键**本来可能不存在**
+        /// （实测用户这台机器的 `HKCU` 下就没有，16 条全在 `HKLM` 里，是别的工具写的），
+        /// 所以"要写"的时候必须能建。这是相对 `OpenFull` 那条"只打开已存在的键"的**有意例外**：
+        /// 建这个键本身就是这个功能的正常动作，不像"给一个不存在的菜单项写隐藏开关"那样造垃圾。
+        /// ⚠️ `create=false` 时**必须以可写方式打开**（先探一下存在、再 `OpenSubKey(sub, true)`）：
+        /// `OpenSubKey(sub, false)` 拿到的是**只读**句柄，拿它去 `DeleteValue` 会抛
+        /// 「无法写入到注册表项」—— 2026-10-11 实测踩过：整个「恢复扩展」都失败，界面上只有一句
+        /// 「没成功」，原因只写在工具日志里（探针一看就明白了：`结果：没成功 —— 无法写入到注册表项。`）。</summary>
+        private static RegistryKey OpenBlocked(bool create)
+        {
+            string hive, sub;
+            SplitFull(BlockedUserRoot, out hive, out sub);
+            RegistryKey baseKey = string.Equals(hive, HiveLocalMachine, StringComparison.OrdinalIgnoreCase)
+                ? Registry.LocalMachine : Registry.CurrentUser;
+            if (create) { return baseKey.CreateSubKey(sub); }
+            using (RegistryKey probe = baseKey.OpenSubKey(sub, false))
+            {
+                if (probe == null) { return null; }
+            }
+            return baseKey.OpenSubKey(sub, true);
+        }
+
+        /// <summary>写进黑名单的"人看的名字"：黑名单里原来有名字就用它；没有就把界面上加的括号尾巴
+        /// （`（扩展项）` / `（扩展项，系统自带）`）去掉（值数据只是给人看的，别塞界面用词）。</summary>
+        private static string MenuName(CtxEntry e)
+        {
+            if (e.BlockedName.Length > 0) { return e.BlockedName; }
+            return MenuNameOf(e.Title);
+        }
+
+        /// <summary>同上，只是手里只有那串标题（撤销那条路是从动作记录里读回来的）。</summary>
+        private static string MenuNameOf(string title)
+        {
+            string t = (title == null) ? "" : title;
+            const string ext = "（扩展项）";
+            const string extSys = "（扩展项，系统自带）";
+            if (t.EndsWith(extSys, StringComparison.Ordinal)) { return t.Substring(0, t.Length - extSys.Length); }
+            if (t.EndsWith(ext, StringComparison.Ordinal)) { return t.Substring(0, t.Length - ext.Length); }
+            return t;
+        }
+
+        /// <summary>停用一个 DLL 扩展 = 把它的 CLSID 写进**用户区**那份系统黑名单
+        /// （值名 = CLSID，值数据 = 菜单上那个名字）。
+        ///
+        /// 四条边界（2026-10-11 定的，别改）：
+        /// ① **只写用户区**（`HKCU`）：不用管理员、只影响当前用户、随时能删干净；系统区那份（`HKLM`）
+        ///    是别的工具或安装程序写的，本工具箱**一个字都不动**（别人的地盘，而且影响所有用户）；
+        /// ② **不碰登记键**：`shellex\ContextMenuHandlers\…` 一个字都不改 —— 所以"恢复"永远是干净的
+        ///    （把黑名单里那条删掉就行），不像删键那样要备份；
+        /// ③ ⚠️ **必须重启资源管理器才生效**：DLL 是 explorer 启动时加载进去的。写完立刻读回核对
+        ///    （证明"真写进去了"），但菜单里那一项还在，直到资源管理器重启；
+        /// ④ ⚠️ 黑名单是**按 CLSID 认的、全局的**：停用它 = 它在**所有**右键位置一起消失
+        ///    （不像静态项能只停某一个位置）—— 界面上的提示就是这么写的。</summary>
+        public static string BlockExt(CtxEntry e, out bool ok)
+        {
+            ok = false;
+            StringBuilder sb = Head("停用扩展", e);
+            if (!e.Shellex)
+            {
+                sb.AppendLine("结果：没有处理 —— 这一条不是 DLL 扩展项（它是静态菜单项，用「禁用」）。");
+                return sb.ToString();
+            }
+            if (e.ClsidNorm.Length == 0)
+            {
+                sb.AppendLine("结果：没有处理 —— 这一项的 CLSID 认不出来（登记名不规范），"
+                    + "没有一个能写进黑名单的 GUID。原始登记名：" + e.Verb);
+                return sb.ToString();
+            }
+            if (e.BlockedMachine)
+            {
+                sb.AppendLine("结果：没有处理 —— 系统区那份黑名单里已经有它了（" + BlockedMachineRoot + "）。"
+                    + "那是别的工具或安装程序写的，本工具箱不动系统区；它现在本来就是停用的。");
+                return sb.ToString();
+            }
+            if (e.BlockedUser)
+            {
+                sb.AppendLine("结果：没有处理 —— 用户区那份黑名单里已经有它了（可能就是你刚才停用的）。");
+                return sb.ToString();
+            }
+            string clsid = e.ClsidNorm;
+            string name = MenuName(e);
+            sb.Append("黑名单键：").AppendLine(BlockedUserRoot);
+            try
+            {
+                using (RegistryKey k = OpenBlocked(true))
+                {
+                    if (k == null)
+                    {
+                        sb.AppendLine("结果：没成功 —— 打不开（也建不了）那个黑名单键。");
+                        sb.AppendLine(FailWhy("写不进黑名单", e));
+                        return sb.ToString();
+                    }
+                    k.SetValue(clsid, name, RegistryValueKind.String);
+                    object back = k.GetValue(clsid, null);
+                    if (back == null)
+                    {
+                        sb.AppendLine("结果：没成功（写完读回是空的）—— 那个键可能不让写。");
+                        sb.AppendLine(FailWhy("写不进黑名单", e));
+                        return sb.ToString();
+                    }
+                    sb.AppendLine("· 已写入 " + clsid + " = " + name + "（读回核对过）");
+                }
+            }
+            catch (Exception ex)
+            {
+                sb.AppendLine("结果：没成功 —— " + ex.Message);
+                return sb.ToString();
+            }
+            sb.AppendLine("结果：已停用 —— 它不再出现在**任何位置**的右键菜单里了。");
+            sb.AppendLine("⚠️ 要**重启资源管理器**才生效（DLL 是 explorer 启动时加载进去的）："
+                + "点窗口底栏的「重启资源管理器」就行。");
+            sb.AppendLine("后悔了：点底栏「恢复」把黑名单里那一条删掉，再重启一次资源管理器。");
+            ok = true;
+            Record("停用扩展", e, clsid + " = " + name, "", "成功");
+            return sb.ToString();
+        }
+
+        /// <summary>恢复一个 DLL 扩展 = 把**用户区**黑名单里那一条删掉（登记键本来就一个字没动）。
+        /// 系统区那份有它的话就删不动（那要管理员、而且是别人的东西）—— 如实说明、不假装成功。</summary>
+        public static string UnblockExt(CtxEntry e, out bool ok)
+        {
+            ok = false;
+            StringBuilder sb = Head("恢复扩展", e);
+            if (!e.Shellex)
+            {
+                sb.AppendLine("结果：没有处理 —— 这一条不是 DLL 扩展项（静态菜单项用「恢复」）。");
+                return sb.ToString();
+            }
+            if (!e.BlockedUser)
+            {
+                if (e.BlockedMachine)
+                {
+                    sb.AppendLine("结果：没有处理 —— 它只写在**系统区**那份黑名单里（" + BlockedMachineRoot + "），"
+                        + "那是别的工具或安装程序写的：本工具箱不动系统区（要管理员，而且会影响所有用户）。"
+                        + "想让它回来只能去那个工具/安装程序里取消，或者手工删那条值。");
+                }
+                else
+                {
+                    sb.AppendLine("结果：没有处理 —— 用户区那份黑名单里本来就没有它。");
+                }
+                return sb.ToString();
+            }
+            string clsid = e.ClsidNorm.Length > 0 ? e.ClsidNorm : e.Verb;
+            sb.Append("黑名单键：").AppendLine(BlockedUserRoot);
+            try
+            {
+                using (RegistryKey k = OpenBlocked(false))
+                {
+                    if (k == null)
+                    {
+                        sb.AppendLine("结果：没成功 —— 那个黑名单键不存在（没什么可删的？）。");
+                        return sb.ToString();
+                    }
+                    k.DeleteValue(clsid, false);
+                    if (k.GetValue(clsid, null) != null)
+                    {
+                        sb.AppendLine("结果：没成功（删完读回它还在）—— 那个键可能不让写。");
+                        sb.AppendLine(FailWhy("删不掉黑名单里那一条", e));
+                        return sb.ToString();
+                    }
+                    sb.AppendLine("· 已删掉黑名单里的 " + clsid);
+                }
+            }
+            catch (Exception ex)
+            {
+                sb.AppendLine("结果：没成功 —— " + ex.Message);
+                return sb.ToString();
+            }
+            bool stillMachine = e.BlockedMachine;
+            sb.AppendLine(stillMachine
+                ? "结果：用户区那条删掉了，可**系统区那份还在**（别的工具写的）→ 它还是不会回到菜单里。"
+                : "结果：已恢复 —— 它又会出现在**所有位置**的右键菜单里。");
+            sb.AppendLine("⚠️ 要**重启资源管理器**才生效：点窗口底栏的「重启资源管理器」就行。");
+            ok = !stillMachine;
+            Record("恢复扩展", e, clsid, "", ok ? "成功" : "成功（系统区那份还在，所以菜单里仍然没有它）");
+            return sb.ToString();
+        }
+
+        public static string BlockMany(List<CtxEntry> items, out int done, out bool ok)
+        {
+            return Many("停用扩展", items, delegate(CtxEntry e, out bool one) { return BlockExt(e, out one); }, out done, out ok);
+        }
+
+        public static string UnblockMany(List<CtxEntry> items, out int done, out bool ok)
+        {
+            return Many("恢复扩展", items, delegate(CtxEntry e, out bool one) { return UnblockExt(e, out one); }, out done, out ok);
+        }
+
+        // ------------------------------------------------------------------ 批量
         /// <summary>批量动作的公共骨架：**逐条做、互不影响** —— 一条失败（比如系统区那份写不进去）
         /// 不让别的条跟着失败，最后给一行总计。每条各自记一笔，所以撤销也是逐条的。</summary>
         private static string Many(string action, List<CtxEntry> items,
@@ -1662,7 +2226,9 @@ namespace Mxx1Toolbox
                 if (zoneId != null && zoneId.Length > 0
                     && !string.Equals(z.Id, zoneId, StringComparison.OrdinalIgnoreCase)) { continue; }
                 List<CtxEntry> mine = new List<CtxEntry>();
-                foreach (CtxEntry e in all) { if (e.ZoneId == z.Id) { mine.Add(e); } }
+                // ⚠️ 「黑名单残留」那些**不算任何位置的条数**（它们压根不是这一页菜单里的东西、
+                // 跟位置无关）—— 只在下面单独列一段。这条线不划清楚，每个位置的条数都会虚高。
+                foreach (CtxEntry e in all) { if (e.ZoneId == z.Id && !e.Zombie) { mine.Add(e); } }
                 sb.Append('[').Append(z.Label).Append("] ").Append(z.Note).Append(" —— ")
                   .AppendLine(Summary(mine));
                 if (mine.Count == 0) { sb.AppendLine("  （什么都没有）"); }
@@ -1679,13 +2245,31 @@ namespace Mxx1Toolbox
                 sb.AppendLine();
             }
 
+            // 「黑名单残留」：跟位置无关（黑名单是按 CLSID 认的），所以统一列一段，不塞进任何一页。
+            List<CtxEntry> zombies = new List<CtxEntry>();
+            foreach (CtxEntry e in all) { if (e.Zombie) { zombies.Add(e); } }
+            if (zombies.Count > 0)
+            {
+                sb.Append("[黑名单残留] ").Append(GroupNote(GroupZombie)).Append(" —— ")
+                  .AppendLine(Summary(zombies));
+                int zn = 0;
+                foreach (CtxEntry e in zombies)
+                {
+                    zn++;
+                    sb.Append("  ").Append(zn.ToString(CultureInfo.InvariantCulture)).Append(". ")
+                      .Append(e.Title).Append("　[").Append(e.StateLabel).Append(" · ")
+                      .Append(e.WhereLabel).Append(']').AppendLine();
+                }
+                sb.AppendLine();
+            }
+
             sb.AppendLine("（机器可读：zone 与 entry 两行）");
             foreach (CtxZone z in Table)
             {
                 if (zoneId != null && zoneId.Length > 0
                     && !string.Equals(z.Id, zoneId, StringComparison.OrdinalIgnoreCase)) { continue; }
                 List<CtxEntry> mine = new List<CtxEntry>();
-                foreach (CtxEntry e in all) { if (e.ZoneId == z.Id) { mine.Add(e); } }
+                foreach (CtxEntry e in all) { if (e.ZoneId == z.Id && !e.Zombie) { mine.Add(e); } }
                 int active = 0, disabled = 0, shellex = 0, machine = 0;
                 foreach (CtxEntry e in mine)
                 {
@@ -1710,6 +2294,31 @@ namespace Mxx1Toolbox
                       .Append(e.Protected ? "protected" : "writable").AppendLine();
                 }
             }
+
+            // ---- 系统黑名单（机器可读）----------------------------------------------------------
+            // 扩展项的开关**不在菜单项那些键里**，而在这份黑名单里（值名 = CLSID，值数据 = 人看的名字）：
+            // 上面那些 entry 行说的是"这一项是不是已停用"，这一节说的是"黑名单里到底有什么" ——
+            // 包括机器上已经没有对应扩展的残留条目（卸载残留）。回归测试认这几行。
+            Dictionary<string, BlockedHit> bl = ReadBlocked();
+            sb.Append("blockeduser\t").Append(BlockedUserRoot).AppendLine();
+            sb.Append("blockedmachine\t").Append(BlockedMachineRoot).AppendLine();
+            Dictionary<string, bool> registered = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+            CollectRegisteredClsids(registered);
+            List<string> ids = new List<string>(bl.Keys);
+            ids.Sort(StringComparer.OrdinalIgnoreCase);
+            int orphan = 0;
+            foreach (string id in ids)
+            {
+                BlockedHit h = bl[id];
+                bool live = registered.ContainsKey(id);
+                if (!live) { orphan++; }
+                sb.Append("blocked\t").Append(id).Append('\t')
+                  .Append(h.InUser ? (h.InMachine ? "both" : "user") : "machine").Append('\t')
+                  .Append(live ? "registered" : "orphan").Append('\t')
+                  .Append(h.Name).AppendLine();
+            }
+            sb.Append("blockedcount\t").Append(bl.Count.ToString(CultureInfo.InvariantCulture))
+              .Append('\t').Append(orphan.ToString(CultureInfo.InvariantCulture)).AppendLine();
             return sb.ToString();
         }
 

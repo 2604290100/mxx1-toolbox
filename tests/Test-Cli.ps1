@@ -2142,9 +2142,16 @@ Check 'M23b 撤掉测试项没动用户真实那份图标目录（文件数不�
 # 用户真实那份右键菜单一个键都不许碰。
 $cxRootRel = 'Software\mxx1-toolbox\ctxmenu-test'
 $cxRootRelMachine = 'Software\mxx1-toolbox\ctxmenu-test-machine'
+# ⚠️ 2026-10-11 起还要把**系统黑名单那两个根**也挪走（`MXX1_CTXMENU_BLOCKED` / `_MACHINE`）：
+# 扩展项的状态现在是从黑名单读的，不挪的话这一套会把用户真实那份 HKLM 黑名单（这台机器上 16 条）
+# 当成自己的夹具 —— 于是凭空多出十几条「黑名单残留」、zone 行的数字全对不上。
+$cxBlockedRel = 'Software\mxx1-toolbox\ctxmenu-test-blocked'
+$cxBlockedRelMachine = 'Software\mxx1-toolbox\ctxmenu-test-blocked-machine'
 $cxEnv = @{
-    MXX1_CTXMENU_ROOT         = 'HKCU\Software\mxx1-toolbox\ctxmenu-test'
-    MXX1_CTXMENU_ROOT_MACHINE = 'HKCU\Software\mxx1-toolbox\ctxmenu-test-machine'
+    MXX1_CTXMENU_ROOT                 = 'HKCU\Software\mxx1-toolbox\ctxmenu-test'
+    MXX1_CTXMENU_ROOT_MACHINE         = 'HKCU\Software\mxx1-toolbox\ctxmenu-test-machine'
+    MXX1_CTXMENU_BLOCKED              = 'HKCU\Software\mxx1-toolbox\ctxmenu-test-blocked'
+    MXX1_CTXMENU_BLOCKED_MACHINE      = 'HKCU\Software\mxx1-toolbox\ctxmenu-test-blocked-machine'
 }
 $cxBackupDir = Join-Path $env:LOCALAPPDATA 'mxx1-toolbox\ctxmenu-backup'
 $cxActionLog = Join-Path $env:LOCALAPPDATA 'mxx1-toolbox\ctxmenu-actions.tsv'
@@ -2172,9 +2179,11 @@ function New-CtxFixture {
 }
 
 # 测试根下面所有值的一张快照（键路径|值名=值），用来断言"这一串只读命令一个字节都没写"。
+# ⚠️ 2026-10-11 起把**黑名单那两个根**也算进来：扩展项的状态是从黑名单读的、夹具就写在里面，
+# 不盯着它的话"只读"这条断言会漏掉一半。
 function Get-CtxTestSnapshot {
     $lines = @()
-    foreach ($rel in @($script:cxRootRel, $script:cxRootRelMachine)) {
+    foreach ($rel in @($script:cxRootRel, $script:cxRootRelMachine, $script:cxBlockedRel, $script:cxBlockedRelMachine)) {
         $stack = New-Object System.Collections.Stack
         $stack.Push($rel)
         while ($stack.Count -gt 0) {
@@ -2200,16 +2209,29 @@ try {
     $cxExtKey.SetValue('', '{23170F69-40C1-278A-1000-000100020000}')
     $cxExtKey.Close()
     $cxExtParent.Close()
+    # 黑名单夹具（2026-10-11）：扩展项真正的开关是**系统黑名单**（值名 = CLSID，值数据 = 人看的名字）。
+    # 三条各验一件事：① CLSID 跟上面那个扩展夹具一样 → 那一行的状态该报「已停用」；
+    # ② 用户区一条谁都不认的 CLSID → 「黑名单残留」（而且是**能清**的那一种）；
+    # ③ 系统区一条 → 同样是残留，但那是别的工具写的，本工具箱**只显示不动它**。
+    $cxBlkU = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey($cxBlockedRel)
+    $cxBlkU.SetValue('{23170F69-40C1-278A-1000-000100020000}', '夹具·扩展项的黑名单名字')
+    $cxBlkU.SetValue('{AABBCCDD-1122-3344-5566-778899AABBCC}', '夹具·残留条目')
+    $cxBlkU.Close()
+    $cxBlkM = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey($cxBlockedRelMachine)
+    $cxBlkM.SetValue('{11111111-2222-3333-4444-555555555555}', '夹具·系统区黑名单')
+    $cxBlkM.Close()
     $cxSnapBefore = Get-CtxTestSnapshot
 
     $cxList = Invoke-Exe 'rightmenu list --zone=files' 60 $Exe $cxEnv
     $cxEntry = @($cxList.Out -split "`r?`n" | Where-Object { $_ -like "entry`tfiles`t*" })
-    Check 'M49 只读列出这一页的项：夹具五条都在，状态（在用 / 已禁用 / 扩展项）与位置（用户区 / 系统区）都对' `
+    Check 'M49 只读列出这一页的项：夹具五条都在，状态（在用 / 已禁用 / 已停用）与位置（用户区 / 系统区）都对' `
         (($cxList.Code -eq 0) -and ($cxEntry.Count -eq 5) -and `
          (@($cxEntry | Where-Object { $_ -match "Mxx1FixtureKeep`t夹具·在用`t在用`tuser" }).Count -eq 1) -and `
          (@($cxEntry | Where-Object { $_ -match "Mxx1FixtureOff`t夹具·已禁用`t已禁用`tuser" }).Count -eq 1) -and `
          (@($cxEntry | Where-Object { $_ -match "Mxx1FixtureMachine`t夹具·系统区`t在用`tmachine" }).Count -eq 1) -and `
-         (@($cxEntry | Where-Object { $_ -match "shellex`tMxx1FixtureExt`t.*扩展项`tuser" }).Count -eq 1)) `
+         # ⚠️ 这一条 2026-10-11 从「扩展项」改成「已停用」：扩展夹具那个 CLSID 现在就写在黑名单夹具里
+         # （见上面那段注释）—— 状态列报的是**黑名单里的真实状态**，这正是这一轮要修的东西。
+         (@($cxEntry | Where-Object { $_ -match "shellex`tMxx1FixtureExt`t.*`t已停用`tuser" }).Count -eq 1)) `
         ('exit=' + $cxList.Code + ' 行=' + $cxEntry.Count + ' :: ' + ($cxEntry -join ' / '))
 
     $cxZone = @($cxList.Out -split "`r?`n" | Where-Object { $_ -like "zone`tfiles`t*" })
@@ -2246,8 +2268,10 @@ try {
     # `…\Drive\shell\Drive\shell`（第一版就这么写错了：条数 0，看着像"修了还是读不到"，
     # 其实是测试自己拼错了根）。这里拿**真实 HKLM 的基根**当只读根：一个字节都不写。
     $cxEnvFull = @{
-        MXX1_CTXMENU_ROOT         = 'HKCU\Software\mxx1-toolbox\ctxmenu-test'
-        MXX1_CTXMENU_ROOT_MACHINE = 'HKEY_LOCAL_MACHINE\Software\Classes'
+        MXX1_CTXMENU_ROOT                 = 'HKCU\Software\mxx1-toolbox\ctxmenu-test'
+        MXX1_CTXMENU_ROOT_MACHINE         = 'HKEY_LOCAL_MACHINE\Software\Classes'
+        MXX1_CTXMENU_BLOCKED              = 'HKCU\Software\mxx1-toolbox\ctxmenu-test-blocked'
+        MXX1_CTXMENU_BLOCKED_MACHINE      = 'HKCU\Software\mxx1-toolbox\ctxmenu-test-blocked-machine'
     }
     $cxFull = Invoke-Exe 'rightmenu list --zone=drive' 60 $Exe $cxEnvFull
     $cxFullEntries = @($cxFull.Out -split "`r?`n" | Where-Object { $_ -like "entry`tdrive`t*" })
@@ -2257,14 +2281,41 @@ try {
         ('exit=' + $cxFull.Code + ' 条=' + $cxFullEntries.Count + ' 头=' +
          (@($cxFull.Out -split "`r?`n" | Where-Object { $_ -like '系统区：*' }) -join ' | '))
 
+    # ---- M56–M58：扩展项的真实状态来自**系统黑名单**（2026-10-11 加）-----------------------------
+    # 为什么非做不可：用户这台机器上「扩展项」列出来的 19 个 CLSID 里有 **6 个早就写在黑名单里**了
+    # （WinRAR / WPS / 火绒 / QQ 那些安装时写的），以前一律显示成「扩展项」= 告诉用户"它们还在菜单里"。
+    # 扩展项不是"注册表一个键 = 一项"那种做法：停用它 = 把 CLSID 写进黑名单，**必须重启资源管理器**
+    # 才生效（静态项是每次右键现场拼的，改完就是新的）。这三条盯的只有**读**这一半。
+    $cxBlk = @($cxList.Out -split "`r?`n" | Where-Object { $_ -like "blocked`t*" })
+    $cxBlkCount = @($cxList.Out -split "`r?`n" | Where-Object { $_ -like "blockedcount`t*" })
+    Check 'M56 黑名单本身也报出来：值名（CLSID）/ 在哪个区 / 还有没有对应扩展 / 黑名单里写的那个名字' `
+        (($cxBlk.Count -eq 3) -and `
+         (@($cxBlk | Where-Object { $_ -eq "blocked`t{23170f69-40c1-278a-1000-000100020000}`tuser`tregistered`t夹具·扩展项的黑名单名字" }).Count -eq 1) -and `
+         (@($cxBlk | Where-Object { $_ -eq "blocked`t{aabbccdd-1122-3344-5566-778899aabbcc}`tuser`torphan`t夹具·残留条目" }).Count -eq 1) -and `
+         (@($cxBlk | Where-Object { $_ -eq "blocked`t{11111111-2222-3333-4444-555555555555}`tmachine`torphan`t夹具·系统区黑名单" }).Count -eq 1)) `
+        ($cxBlk -join ' / ')
+
+    Check 'M57 blockedcount 报"黑名单共几条 / 其中几条已经没有对应扩展了"（3 条里 2 条是残留）' `
+        (($cxBlkCount.Count -eq 1) -and ($cxBlkCount[0] -eq "blockedcount`t3`t2")) ($cxBlkCount -join ' / ')
+
+    # 「黑名单残留」跟位置无关（黑名单是按 CLSID 认的），所以只在「文件」那一页列一段；
+    # 别的页**混进去就是不诚实**：那些 CLSID 根本不在那一页的菜单里，条数会虚高。
+    $cxFolderBlk = @($cxFolder.Out -split "`r?`n" | Where-Object { $_ -like "entry`tfolder`t*" })
+    Check 'M58 「黑名单残留」不混进别的页（--zone=folder 里既没有残留条目、那一页的条数仍是 0）' `
+        (($cxFolderBlk.Count -eq 0) -and ($cxFolder.Out -notmatch '黑名单残留\]') -and `
+         ($cxFolder.Out -match '(?m)^zone\tfolder\t文件夹\t0\t0\t0\t0\t0\r?$')) `
+        ('folder entry 行=' + $cxFolderBlk.Count + ' 有残留段=' + ($cxFolder.Out -match '黑名单残留\]'))
+
     # ---- 底线：命令行**只有只读入口**。`rightmenu disable / delete / restore` 这类"带动作"的写法
     #      一律不认（退出码 2）—— 写注册表只能从界面点，这条和 sysreg 是同一个规矩（L07 钉着它）。
     $cxBad1 = Invoke-Exe 'rightmenu disable Mxx1FixtureKeep' 60 $Exe $cxEnv
     $cxBad2 = Invoke-Exe 'rightmenu delete Mxx1FixtureDel' 60 $Exe $cxEnv
     $cxBad3 = Invoke-Exe 'rightmenu restore Mxx1FixtureOff' 60 $Exe $cxEnv
-    Check 'M52 命令行没有"带动作"的入口：disable / delete / restore 一律不认（退出码 2）' `
-        (($cxBad1.Code -eq 2) -and ($cxBad2.Code -eq 2) -and ($cxBad3.Code -eq 2)) `
-        ('exit=' + $cxBad1.Code + '/' + $cxBad2.Code + '/' + $cxBad3.Code + ' err=' + $cxBad1.Err)
+    $cxBad4 = Invoke-Exe 'rightmenu block {23170F69-40C1-278A-1000-000100020000}' 60 $Exe $cxEnv
+    $cxBad5 = Invoke-Exe 'rightmenu unblock {23170F69-40C1-278A-1000-000100020000}' 60 $Exe $cxEnv
+    Check 'M52 命令行没有"带动作"的入口：disable / delete / restore / block / unblock 一律不认（退出码 2）' `
+        (($cxBad1.Code -eq 2) -and ($cxBad2.Code -eq 2) -and ($cxBad3.Code -eq 2) -and ($cxBad4.Code -eq 2) -and ($cxBad5.Code -eq 2)) `
+        ('exit=' + $cxBad1.Code + '/' + $cxBad2.Code + '/' + $cxBad3.Code + '/' + $cxBad4.Code + '/' + $cxBad5.Code + ' err=' + $cxBad4.Err)
 
     $cxSnapAfter = Get-CtxTestSnapshot
     $cxRealKeysAfter = @(Get-ChildItem -LiteralPath 'HKCU:\Software\Classes\*\shell' -ErrorAction SilentlyContinue |
@@ -2281,13 +2332,17 @@ try {
 finally {
     Remove-Item -LiteralPath 'HKCU:\Software\mxx1-toolbox\ctxmenu-test' -Recurse -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath 'HKCU:\Software\mxx1-toolbox\ctxmenu-test-machine' -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath 'HKCU:\Software\mxx1-toolbox\ctxmenu-test-blocked' -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath 'HKCU:\Software\mxx1-toolbox\ctxmenu-test-blocked-machine' -Recurse -Force -ErrorAction SilentlyContinue
     # 这一串只读命令本来就不该产生动作流水；真产生了（= 有东西写了）也按原样放回去，别留给用户。
     if ($cxActionLogHad) { [System.IO.File]::WriteAllText($cxActionLog, $cxActionLogOld) }
     elseif (Test-Path -LiteralPath $cxActionLog) { Remove-Item -LiteralPath $cxActionLog -Force -ErrorAction SilentlyContinue }
 }
-Check 'M54 收尾干净：两个测试根都删掉了' `
+Check 'M54 收尾干净：四个测试根（两个菜单根 + 两个黑名单根）都删掉了' `
     (((Test-Path -LiteralPath 'HKCU:\Software\mxx1-toolbox\ctxmenu-test') -eq $false) -and `
-     ((Test-Path -LiteralPath 'HKCU:\Software\mxx1-toolbox\ctxmenu-test-machine') -eq $false)) ''
+     ((Test-Path -LiteralPath 'HKCU:\Software\mxx1-toolbox\ctxmenu-test-machine') -eq $false) -and `
+     ((Test-Path -LiteralPath 'HKCU:\Software\mxx1-toolbox\ctxmenu-test-blocked') -eq $false) -and `
+     ((Test-Path -LiteralPath 'HKCU:\Software\mxx1-toolbox\ctxmenu-test-blocked-machine') -eq $false)) ''
 
 }
 

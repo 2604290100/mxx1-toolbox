@@ -108,6 +108,16 @@ $script:CtxRootMachineHad = Test-Path Env:MXX1_CTXMENU_ROOT_MACHINE
 $script:CtxRootMachineOld = $env:MXX1_CTXMENU_ROOT_MACHINE
 $env:MXX1_CTXMENU_ROOT = 'HKCU\Software\mxx1-toolbox\ctxmenu-test'
 $env:MXX1_CTXMENU_ROOT_MACHINE = 'HKCU\Software\mxx1-toolbox\ctxmenu-test-machine'
+# ⚠️ 2026-10-11 起**系统黑名单那两个根也必须挪走**（`MXX1_CTXMENU_BLOCKED` / `_MACHINE`）：
+# 扩展项的真实状态现在是从黑名单读的，不挪走的话这一套会把用户真实那份 HKLM 黑名单
+# （这台机器上 16 条）当成自己的夹具 —— 于是「文件」那一页凭空多出十几条「黑名单残留」，
+# C19b/C19e 的段序和条数断言全对不上。
+$script:CtxBlockedHad = Test-Path Env:MXX1_CTXMENU_BLOCKED
+$script:CtxBlockedOld = $env:MXX1_CTXMENU_BLOCKED
+$script:CtxBlockedMachineHad = Test-Path Env:MXX1_CTXMENU_BLOCKED_MACHINE
+$script:CtxBlockedMachineOld = $env:MXX1_CTXMENU_BLOCKED_MACHINE
+$env:MXX1_CTXMENU_BLOCKED = 'HKCU\Software\mxx1-toolbox\ctxmenu-test-blocked'
+$env:MXX1_CTXMENU_BLOCKED_MACHINE = 'HKCU\Software\mxx1-toolbox\ctxmenu-test-blocked-machine'
 
 # 更新检查同理：界面一起来就会查一次 GitHub（只读版本号）。测试不该谈外网，也不该因为
 # "仓库里真有新版本"把底栏按钮文字改掉（D01 盯的就是底栏那 5 个按钮的文字）。
@@ -1559,6 +1569,41 @@ function Find-CtxCheck([IntPtr]$Hwnd, [string]$RowLabel) {
     if ($bestGap -gt 40) { return $null }
     return $best
 }
+# 真鼠标点某一行（按行标题找那个 Label，再点它的正中间）。
+# ⚠️ **为什么必须真点**（2026-10-11 补的）：底栏那句"选中这一项被 Windows 保护 → 点右边「取得所有权」"
+# 和那个按钮都是按**当前行**算的，而点一行只会走到 `SetCurrent` —— 原来这里只用 `--focus`
+# （程序自己选中那一行，注释里还写着"比真鼠标点某一行确定性强得多"）来验，**正好绕开了坏掉的那条路**：
+# `SetCurrent` 忘了刷新底栏，于是真鼠标点受保护那一行时按钮永远亮不起来。用户报「按钮一直都是灰色的」。
+# 判据：`ok` = 点到了；`not-found` = 那一行现在不在列表里（多半被筛选/搜索弄没了）；
+# `offscreen` = 那一行滚出客户区了（调用方该 Skip，不是失败）。
+function Click-CtxRowLabel([IntPtr]$Hwnd, [string]$RowLabel) {
+    $lab = @(Get-ChildControls -RootHandle $Hwnd | Where-Object { $_.Text -eq $RowLabel -and $_.Visible })
+    if ($lab.Count -eq 0) { return 'not-found' }
+    $r = $lab[0]
+    $cl = [TBGui]::ClientRect($Hwnd)
+    if (($r.Top -lt $cl[1]) -or ($r.Bottom -gt $cl[3]) -or ($r.Left -lt $cl[0]) -or ($r.Right -gt $cl[2])) { return 'offscreen' }
+    $x = [int](($r.Left + $r.Right) / 2)
+    $y = [int](($r.Top + $r.Bottom) / 2)
+    $saved = [TBGui]::CursorAt()
+    try {
+        [void][TBGui]::Focus($Hwnd)
+        Start-Sleep -Milliseconds 200
+        [TBGui]::RealClick($x, $y)
+        Start-Sleep -Milliseconds 450
+    } finally {
+        [void][TBGui]::MoveCursor($saved[0], $saved[1])
+    }
+    return 'ok'
+}
+# 等底栏回到"已勾选 N 项…"那句（刚做完动作时底栏是 `Flash` 的临时提示，读不到就以空串轮询）
+function Wait-CtxStatus([IntPtr]$Hwnd, [int]$Tries = 25) {
+    for ($i = 0; $i -lt $Tries; $i++) {
+        $s = Get-CtxStatus $Hwnd
+        if ($s.Length -gt 0) { return $s }
+        Start-Sleep -Milliseconds 200
+    }
+    return ''
+}
 # 勾上某一行（BM_CLICK 打在那个勾选框上），成功判据是底栏那句变了
 function Set-CtxCheck([IntPtr]$Hwnd, [string]$RowLabel, [bool]$Want) {
     $box = Find-CtxCheck -Hwnd $Hwnd -RowLabel $RowLabel
@@ -1570,6 +1615,18 @@ function Set-CtxCheck([IntPtr]$Hwnd, [string]$RowLabel, [bool]$Want) {
         if ((Get-CtxStatus $Hwnd) -ne $before) { break }
     }
     return ((Get-CtxStatus $Hwnd) -ne $before)
+}
+# 把某一行弄成**确定没勾**（`Set-CtxCheck` 是"点一下"= 切换，盲点会把已经勾上的翻过去 ——
+# 2026-10-11 就因为这个红了两条：前面用真鼠标点过那一行 = 顺手把它勾上了，这里再点一下正好取消）。
+function Clear-CtxCheck([IntPtr]$Hwnd, [string]$RowLabel, [int]$Tries = 4) {
+    for ($i = 0; $i -lt $Tries; $i++) {
+        if ((Get-CtxStatus $Hwnd) -match '已勾选 0 项') { return $true }
+        $box = Find-CtxCheck -Hwnd $Hwnd -RowLabel $RowLabel
+        if ($null -eq $box) { return $false }
+        [void][TBGui]::Click($box.H)
+        Start-Sleep -Milliseconds 450
+    }
+    return ((Get-CtxStatus $Hwnd) -match '已勾选 0 项')
 }
 function Wait-CtxValue([string]$Path, [string]$Name, [bool]$Want, [int]$Tries = 30) {
     for ($i = 0; $i -lt $Tries; $i++) {
@@ -1696,9 +1753,9 @@ try {
              (($mwTexts | Where-Object { $_ -like '在用 · 用户区' }).Count -ge 1) -and `
              (($mwTexts | Where-Object { $_ -like '已禁用 · 用户区' }).Count -ge 1)) `
             (($mwTexts | Where-Object { $_ -like '夹具*' -or $_ -like '扩展项*' -or $_ -like '已禁用 ·*' }) -join ' | ')
-        Check 'C19d 底部写明了"改完立刻生效，不用重启资源管理器"和"扩展项这一版只显示"' `
-            ((($mwTexts -join ' ') -match '不用重启资源管理器') -and (($mwTexts -join ' ') -match '只显示、不给动')) `
-            (($mwTexts | Where-Object { $_ -match '重启|只显示' }) -join ' || ')
+        Check 'C19d 底部那句把两种生效方式分开了（静态项不用重启资源管理器；扩展项看系统黑名单、要重启才生效）' `
+            ((($mwTexts -join ' ') -match '静态项不用重启资源管理器') -and (($mwTexts -join ' ') -match '系统黑名单')) `
+            (($mwTexts | Where-Object { $_ -match '重启|黑名单' }) -join ' || ')
         Check 'C19e 底栏那句小结写着这一页的真实条数（共 7 条 = 在用 5 / 已禁用 1 / 扩展项 1）' `
             ((Get-CtxStatus $mw) -match '共 8 条（在用 6 / 已禁用 1 / 扩展项 1') (Get-CtxStatus $mw)
 
@@ -1884,6 +1941,31 @@ try {
         # 而且 `--focus` 正是提权重开时走的那条路（顺带把它也验了）。
         $takeBtn0 = Wait-CtxButton -Hwnd $mw -Text '取得所有权'
         $greyBefore = ($takeBtn0.Count -eq 1) -and (-not $takeBtn0[0].Enabled)
+
+        # ---- C19v2/C19v3/C19v4：**真鼠标点一行**（2026-10-11 用户报「取得所有权一直是灰的」之后补的）----
+        # 这一组盯的是"当前行 → 底栏"这条路：点一行必须让底栏重画（`SetCurrent` 里那句 `UpdateBar()`）。
+        # 原来只用 `--focus` 验（程序自己选中那一行），正好绕过坏掉的那条路，所以这个 bug 一直没被发现。
+        $statusIdle = Wait-CtxStatus $mw
+        [TBGui]::Key($mw, 0x20)                     # VK_SPACE：以前什么都没选中时会去勾第 1 行
+        Start-Sleep -Milliseconds 450
+        $statusAfterSpace = Get-CtxStatus $mw
+        Check 'C19v2 什么都没选中时按空格：不许去勾第 1 行（"当前行"不兜底取第 1 行）' `
+            (($statusIdle.Length -gt 0) -and ($statusAfterSpace -eq $statusIdle)) `
+            ('按之前=' + $statusIdle + ' ；按之后=' + $statusAfterSpace)
+
+        $hitProt = Click-CtxRowLabel -Hwnd $mw -RowLabel '夹具·受保护（Windows 保护）'
+        $btnAfter = Wait-CtxButton -Hwnd $mw -Text '取得所有权'
+        $hintAfter = (((Get-CtxTexts $mw) -join ' ') -match '被 Windows 保护')
+        Check 'C19v3 真鼠标点受保护那一行（不是 --focus）：底栏出现"怎么办"那句，而且按钮这时候才亮' `
+            (($hitProt -eq 'ok') -and ($btnAfter.Count -eq 1) -and $btnAfter[0].Enabled -and $hintAfter) `
+            ('点=' + $hitProt + ' 按钮=' + $(if ($btnAfter.Count -eq 1) { $btnAfter[0].Enabled } else { 'x' }) + ' 提示=' + $hintAfter + ' :: ' + (Get-CtxStatus $mw))
+
+        $hitKeep = Click-CtxRowLabel -Hwnd $mw -RowLabel '夹具·在用'
+        $btnBack = Wait-CtxButton -Hwnd $mw -Text '取得所有权'
+        Check 'C19v4 再真点一次普通行：按钮回到灰的（亮 = 你点中的就是那一行，不是"随便亮着"）' `
+            (($hitKeep -eq 'ok') -and ($btnBack.Count -eq 1) -and (-not $btnBack[0].Enabled)) `
+            ('点=' + $hitKeep + ' 按钮=' + $(if ($btnBack.Count -eq 1) { $btnBack[0].Enabled } else { 'x' }) + ' :: ' + (Get-CtxStatus $mw))
+
         [void][TBGui]::CloseWindow($mw)
         Start-Sleep -Milliseconds 700
         $mgrP = Start-Manager -Focus 'files|Mxx1FixtureProtected'
@@ -1987,6 +2069,184 @@ try {
         }
 
         # 切一页：那一页没有夹具 → 空状态那句话
+        # ---- C19v5–C19v7：DLL 扩展项（状态从系统黑名单读 + 打开 DLL 目录 / 复制 CLSID）-------------
+        # 2026-10-11 加的。**为什么非做不可**：这台机器上「扩展项」列出来的 19 个 CLSID 里有 **6 个早就
+        # 写在系统黑名单里**了（WinRAR / WPS / 火绒 / QQ 那些安装时写的），以前一律显示成「扩展项」，
+        # 等于告诉用户"它们还在你的菜单里"—— 其实就是错的。
+        # 判据三件：① 黑名单里写进夹具那个 CLSID → 刷新之后状态变「已停用」、选中它底栏念出黑名单里的名字；
+        #           ② 「复制 CLSID」点一下真的把 CLSID 复制出去（日志留痕，剪贴板也查一下）；
+        #           ③ 「打开 DLL 目录」的亮灭跟着"这台机器上查不查得到那个 DLL"，而且 `MXX1_NO_OPEN=1`
+        #              时只写日志、不真打开资源管理器（测试机不许被弹出窗口）。
+        # ⚠️ 这两行必须**折成标量**（`[string](...)`）：PowerShell 的 `-match` 作用在**数组**上时
+        # 只返回匹配的元素、**不填 `$Matches`** —— 第一版写成 `@(...)` 取第一条，于是 `$extClsid`
+        # 一直是空的（C19v5/v5b/v6 三条一起红，而 detail 里那个副标题看着明明是对的）。
+        $extTitle = [string](@((Get-CtxTexts $mw) | Where-Object { $_ -like '*（扩展项）' }) | Select-Object -First 1)
+        $extSub = [string](@((Get-CtxTexts $mw) | Where-Object { $_ -like '扩展项（CLSID*' }) | Select-Object -First 1)
+        $extClsid = ''
+        if ($extSub -match 'CLSID (\{[0-9A-Fa-f\-]{36}\})') { $extClsid = $Matches[1] }
+        $dllKnown = (($extSub.Length -gt 0) -and ($extSub -notmatch '不知道是哪个 DLL'))
+        # 工具箱日志（「复制 CLSID」「打开 DLL 目录」都往里写一行；`status` 报的就是这个路径 ——
+        # 别在这里自己拼 %LOCALAPPDATA% 的路径，那是第二处来源）
+        $cxLogPath = ''
+        $cxStatTxt = Invoke-Exe 'status' 30
+        if ($cxStatTxt -match '(?m)^log=([^\r\n]+)') { $cxLogPath = $Matches[1].Trim() }
+        $cxLogLines = 0
+        if (($cxLogPath.Length -gt 0) -and (Test-Path -LiteralPath $cxLogPath)) {
+            $cxLogLines = @(Get-Content -LiteralPath $cxLogPath -Encoding UTF8 -ErrorAction SilentlyContinue).Count
+        }
+
+        # 把夹具那个 CLSID 写进**测试黑名单根**（模拟"别的工具早就把它停用了"）→ 点「刷新」
+        $wk = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('Software\mxx1-toolbox\ctxmenu-test-blocked')
+        if ($extClsid.Length -gt 0) { $wk.SetValue($extClsid, '夹具·别的工具写的名字') }
+        $wk.Close()
+        $rf = Wait-CtxButton -Hwnd $mw -Text '刷新'
+        if ($rf.Count -eq 1) { [void][TBGui]::Click($rf[0].H) ; Start-Sleep -Milliseconds 1200 }
+        $txtAfterRefresh = Get-CtxTexts $mw
+        Check 'C19v5 扩展项的状态是从系统黑名单读的：黑名单里有那个 CLSID → 状态列写「已停用」' `
+            (($extClsid.Length -gt 0) -and (@($txtAfterRefresh | Where-Object { $_ -like '已停用 · 用户区' }).Count -ge 1)) `
+            ('行=' + $extTitle + ' CLSID=' + $extClsid + ' 状态列=' + (@($txtAfterRefresh | Where-Object { $_ -like '已停用*' }) -join ' | '))
+
+        $hitExt = Click-CtxRowLabel -Hwnd $mw -RowLabel $extTitle
+        $stExt = Wait-CtxStatus $mw
+        Check 'C19v5b 选中那条已停用的扩展：底栏把黑名单里写的名字念出来，并说清点「恢复」能弄回来' `
+            (($hitExt -eq 'ok') -and ($stExt -match '已被系统停用') -and ($stExt -match '黑名单里写的名字是')) $stExt
+
+        # ② 「复制 CLSID」：日志留痕 + 剪贴板里真是那个 CLSID
+        $cpLogBefore = $cxLogLines
+        $cpBtn = Wait-CtxButton -Hwnd $mw -Text '复制 CLSID'
+        $cpClicked = $false
+        if ($cpBtn.Count -eq 1 -and $cpBtn[0].Enabled) { [void][TBGui]::Click($cpBtn[0].H) ; $cpClicked = $true }
+        $cpLine = ''
+        for ($i = 0; $i -lt 15; $i++) {
+            Start-Sleep -Milliseconds 200
+            if (-not (Test-Path -LiteralPath $cxLogPath)) { break }
+            $fresh = @(Get-Content -LiteralPath $cxLogPath -Encoding UTF8 -ErrorAction SilentlyContinue | Select-Object -Skip $cpLogBefore | Where-Object { $_ -match '复制 CLSID' })
+            if ($fresh.Count -ge 1) { $cpLine = [string]$fresh[0] ; break }
+        }
+        $clipNow = ''
+        try { $clipNow = [System.Windows.Forms.Clipboard]::GetText() } catch { $clipNow = '' }
+        Check 'C19v6 「复制 CLSID」：选中扩展项时亮起来，点一下真把那个 CLSID 复制出去（日志与剪贴板都对得上）' `
+            ($cpClicked -and ($cpLine.IndexOf($extClsid) -ge 0) -and ($clipNow -eq $extClsid)) `
+            ('点了=' + $cpClicked + ' 日志=' + $cpLine + ' 剪贴板=' + $clipNow + ' 期望=' + $extClsid)
+
+        # ③ 「打开 DLL 目录」：亮灭跟着"查不查得到 DLL"；MXX1_NO_OPEN=1 的窗口里点它只写日志
+        $mgrNo = Start-Manager -Focus 'files|Mxx1FixtureExt' -Env @{ MXX1_NO_OPEN = '1' }
+        $mwNo = $mgrNo.MainWindowHandle
+        $dllLogBefore = $cxLogLines
+        $dllBtn = Wait-CtxButton -Hwnd $mwNo -Text '打开 DLL 目录'
+        $dllOn = ($dllBtn.Count -eq 1) -and $dllBtn[0].Enabled
+        if ($dllOn) { [void][TBGui]::Click($dllBtn[0].H) }
+        $dllLine = ''
+        for ($i = 0; $i -lt 15; $i++) {
+            Start-Sleep -Milliseconds 200
+            if (-not (Test-Path -LiteralPath $cxLogPath)) { break }
+            $fresh2 = @(Get-Content -LiteralPath $cxLogPath -Encoding UTF8 -ErrorAction SilentlyContinue | Select-Object -Skip $dllLogBefore | Where-Object { $_ -match '打开扩展 DLL 目录' })
+            if ($fresh2.Count -ge 1) { $dllLine = [string]$fresh2[0] ; break }
+        }
+        $dllNoWin = 0
+        foreach ($wp in (Get-TopWindows -ProcessId $mgrNo.Id)) { if ($wp.Visible) { $dllNoWin++ } }
+        [void][TBGui]::CloseWindow($mwNo)
+        Check 'C19v7 「打开 DLL 目录」按"查不查得到那个 DLL"亮灭；MXX1_NO_OPEN=1 时只写日志、不真弹资源管理器' `
+            (($dllBtn.Count -eq 1) -and ($dllOn -eq $dllKnown) -and `
+             ((-not $dllOn) -or (($dllLine -match '测试模式') -and ($dllNoWin -le 1)))) `
+            ('按钮找到=' + $dllBtn.Count + ' 亮=' + $dllOn + ' 查到DLL=' + $dllKnown + ' 副标题=' + $extSub + ' 日志=' + $dllLine + ' 该进程窗口数=' + $dllNoWin)
+        Start-Sleep -Milliseconds 400
+
+        # ---- C19v8/C19v9：扩展项真能「恢复 / 停用」（写的是**用户区系统黑名单**那一条值）-------------
+        # 这是**端到端**：真勾选 → 点底栏按钮 → 直接读注册表看那一条值有没有消失/出现，再看动作记录。
+        # ⚠️ 改的是**测试黑名单根**（`MXX1_CTXMENU_BLOCKED`）；用户真实那份黑名单（这台机器上 16 条、
+        # 全在 HKLM）一个字节都不许碰。
+        # 两个动作都**不该弹确认框**（完全可逆，和禁用同一条口径），弹了就是没照口径做。
+        $cxBlockedPath = 'HKCU:\Software\mxx1-toolbox\ctxmenu-test-blocked'
+        # ⚠️ 先把这一行弄成"确定没勾"：上面 C19v5b 用**真鼠标点过那一行**，而"点整行 = 勾上"（交互模型 A）
+        # —— 盲点一下会把它翻过去（第一版就这么红的）。
+        $clearedExt = Clear-CtxCheck -Hwnd $mw -RowLabel $extTitle
+        $okExt = Set-CtxCheck -Hwnd $mw -RowLabel $extTitle -Want $true
+        $resBtn = Wait-CtxButton -Hwnd $mw -Text '恢复选中的 1 项'
+        $restored = $false
+        $dlgOnRestore = 0
+        if ($resBtn.Count -eq 1 -and $resBtn[0].Enabled) {
+            [void][TBGui]::Click($resBtn[0].H)
+            for ($i = 0; $i -lt 25; $i++) {
+                Start-Sleep -Milliseconds 200
+                $nowB = Get-ItemProperty -LiteralPath $cxBlockedPath -ErrorAction SilentlyContinue
+                if (($null -eq $nowB) -or ($nowB.PSObject.Properties.Name -notcontains $extClsid)) { $restored = $true; break }
+            }
+            $dlgOnRestore = @((Get-TopWindows -ProcessId $proc.Id) |
+                Where-Object { $_.H -ne $main -and $_.H -ne $mw -and $_.Visible -and $_.Text -eq '请确认' }).Count
+        }
+        Check 'C19v8 扩展项「恢复」端到端：真把用户区黑名单里那一条删掉了，而且不弹确认框（可逆的动作不挡人）' `
+            ($okExt -and $restored -and ($dlgOnRestore -eq 0)) `
+            ('勾上=' + $okExt + ' 删掉了=' + $restored + ' 弹框=' + $dlgOnRestore + ' :: ' + (Get-CtxStatus $mw))
+
+        # 再停用一次：先归零勾选 → 勾上 → 按钮该叫「停用选中的 1 项」→ 点一下 → 黑名单里出现那条值
+        $clearedExt2 = Clear-CtxCheck -Hwnd $mw -RowLabel $extTitle
+        $okExt2 = Set-CtxCheck -Hwnd $mw -RowLabel $extTitle -Want $true
+        $disExtBtn = Wait-CtxButton -Hwnd $mw -Text '停用选中的 1 项'
+        $blockedNow = ''
+        if ($disExtBtn.Count -eq 1 -and $disExtBtn[0].Enabled) {
+            [void][TBGui]::Click($disExtBtn[0].H)
+            for ($i = 0; $i -lt 25; $i++) {
+                Start-Sleep -Milliseconds 200
+                $nowC = Get-ItemProperty -LiteralPath $cxBlockedPath -ErrorAction SilentlyContinue
+                if (($null -ne $nowC) -and ($nowC.PSObject.Properties.Name -contains $extClsid)) {
+                    $blockedNow = [string]$nowC.PSObject.Properties[$extClsid].Value
+                    break
+                }
+            }
+        }
+        $actText = ''
+        if (Test-Path -LiteralPath $ctxActionLog) { $actText = [System.IO.File]::ReadAllText($ctxActionLog) }
+        Check 'C19v9 扩展项「停用」端到端：写进用户区黑名单（值名 = CLSID、值数据 = 菜单上的名字，不带界面用的括号尾巴），动作记录也记上了' `
+            ($okExt2 -and ($blockedNow.Length -gt 0) -and ($blockedNow -notmatch '（扩展项') -and `
+             ($actText -match '停用扩展') -and `
+             ($actText.ToLowerInvariant().IndexOf($extClsid.ToLowerInvariant()) -ge 0)) `
+            ('按钮找到=' + $disExtBtn.Count + ' 值=' + $blockedNow + ' 记录里有停用扩展=' + ($actText -match '停用扩展') + `
+             ' 记录里有这个 CLSID=' + ($actText.ToLowerInvariant().IndexOf($extClsid.ToLowerInvariant()) -ge 0))
+        # 两个判据：① 点它**先弹确认框**（会关掉所有文件夹窗口，不能默默干）—— 确认框的窗口标题一律是
+        #            「请确认」（`ConfirmForm` 里写死的），看着像我要的那个标题是**里面那个 Label**，
+        #            所以按 hwnd 找：那个进程里新出现的一个「请确认」就是它；
+        #          ② `MXX1_NO_EXPLORER_RESTART=1` 时点确认**只写日志**，explorer 进程一个都不许少
+        #             —— 测试绝不许把用户（或测试机）的资源管理器杀掉。
+        $expBefore = @(Get-Process explorer -ErrorAction SilentlyContinue).Count
+        $mgrR = Start-Manager -Env @{ MXX1_NO_EXPLORER_RESTART = '1' }
+        $mwR = $mgrR.MainWindowHandle
+        $rLogBefore = 0
+        if (Test-Path -LiteralPath $cxLogPath) { $rLogBefore = @(Get-Content -LiteralPath $cxLogPath -Encoding UTF8 -ErrorAction SilentlyContinue).Count }
+        $rBtn = Wait-CtxButton -Hwnd $mwR -Text '重启资源管理器'
+        $rClicked = $false
+        $dlgR = @()
+        if ($rBtn.Count -eq 1 -and $rBtn[0].Enabled) {
+            [void][TBGui]::Click($rBtn[0].H)
+            for ($i = 0; $i -lt 30; $i++) {
+                Start-Sleep -Milliseconds 200
+                $dlgR = @((Get-TopWindows -ProcessId $mgrR.Id) | Where-Object { $_.H -ne $mwR -and $_.Visible -and $_.Text -eq '请确认' })
+                if ($dlgR.Count -ge 1) { break }
+            }
+            if ($dlgR.Count -ge 1) {
+                # ⚠️ 文字要在**点 OK 之前**读：点完那个窗口就销毁了，`Get-ChildControls` 读回来是空的
+                # —— 第一版就是在下面（点完之后）读的，两条 `-match` 全落空、检查假红。
+                $dlgRText = (@(Get-ChildControls -RootHandle $dlgR[0].H | ForEach-Object { $_.Text }) -join ' ')
+                $okR = @(Get-ChildControls -RootHandle $dlgR[0].H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '重启资源管理器' })
+                if ($okR.Count -eq 1) { [void][TBGui]::Click($okR[0].H) ; $rClicked = $true }
+            }
+        }
+        $rLine = ''
+        for ($i = 0; $i -lt 15; $i++) {
+            Start-Sleep -Milliseconds 200
+            if (-not (Test-Path -LiteralPath $cxLogPath)) { break }
+            $freshR = @(Get-Content -LiteralPath $cxLogPath -Encoding UTF8 -ErrorAction SilentlyContinue | Select-Object -Skip $rLogBefore | Where-Object { $_ -match '重启资源管理器' })
+            if ($freshR.Count -ge 1) { $rLine = [string]$freshR[0] ; break }
+        }
+        Start-Sleep -Milliseconds 600
+        $expAfter = @(Get-Process explorer -ErrorAction SilentlyContinue).Count
+        [void][TBGui]::CloseWindow($mwR)
+        Check 'C19v10 「重启资源管理器」先弹确认框（说清会关掉文件夹窗口、把命令原样写出来）；测试模式下只写日志，explorer 一个都不许少' `
+            (($rBtn.Count -eq 1) -and ($dlgR.Count -eq 1) -and ($dlgRText -match '文件夹窗口') -and ($dlgRText -match 'taskkill') -and `
+             $rClicked -and ($rLine -match '测试模式') -and ($expAfter -ge $expBefore)) `
+            ('按钮=' + $rBtn.Count + ' 确认框=' + $dlgR.Count + ' 点了确认=' + $rClicked + ' 弹框文字=' + $dlgRText + ' 日志=' + $rLine + ' explorer=' + $expBefore + '→' + $expAfter)
+        Start-Sleep -Milliseconds 400
+
         # 切一页：那一页没有夹具 → 空状态那句话
         $folderTab = @(Find-CtxButton -Hwnd $mw -Text '文件夹 0')
         if ($folderTab.Count -eq 1) { [void][TBGui]::Click($folderTab[0].H) ; Start-Sleep -Milliseconds 800 }
@@ -3823,6 +4083,13 @@ if ($script:CtxRootHad) { $env:MXX1_CTXMENU_ROOT = $script:CtxRootOld }
 else { Remove-Item Env:MXX1_CTXMENU_ROOT -ErrorAction SilentlyContinue }
 if ($script:CtxRootMachineHad) { $env:MXX1_CTXMENU_ROOT_MACHINE = $script:CtxRootMachineOld }
 else { Remove-Item Env:MXX1_CTXMENU_ROOT_MACHINE -ErrorAction SilentlyContinue }
+if ($script:CtxBlockedHad) { $env:MXX1_CTXMENU_BLOCKED = $script:CtxBlockedOld }
+else { Remove-Item Env:MXX1_CTXMENU_BLOCKED -ErrorAction SilentlyContinue }
+if ($script:CtxBlockedMachineHad) { $env:MXX1_CTXMENU_BLOCKED_MACHINE = $script:CtxBlockedMachineOld }
+else { Remove-Item Env:MXX1_CTXMENU_BLOCKED_MACHINE -ErrorAction SilentlyContinue }
+# 黑名单那两个测试根也要删干净（跟夹具根一样：绝不在用户机器上留测试痕迹）
+Remove-Item -LiteralPath 'HKCU:\Software\mxx1-toolbox\ctxmenu-test-blocked' -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath 'HKCU:\Software\mxx1-toolbox\ctxmenu-test-blocked-machine' -Recurse -Force -ErrorAction SilentlyContinue
 
 Write-Host ''
 Write-Host '----------------------------------------------------------'

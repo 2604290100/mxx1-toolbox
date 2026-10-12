@@ -1487,7 +1487,10 @@ function Clear-CtxLeftover([string]$RootRel) {
         Reset-CtxAcl $RootRel
         Reset-CtxAcl ($RootRel + '\*\shell\Mxx1FixtureProtected')
         Reset-CtxAcl ($RootRel + '\*\shell\Mxx1FixtureProtected\command')
-        [Microsoft.Win32.Registry]::CurrentUser.DeleteSubKeyTree($RootRel, $false)
+        # ⚠️ 2026-10-11 起还要把「子键被保护」那条夹具的 `command` 也复位：它故意是**只读**的，
+    # 不复位的话删根会失败（删一个键要连子键一起删），下一轮测试连造夹具都会被拒。
+    Reset-CtxAcl ($RootRel + '\*\shell\Mxx1FixtureSubLocked\command')
+    [Microsoft.Win32.Registry]::CurrentUser.DeleteSubKeyTree($RootRel, $false)
     } catch { }
 }
 
@@ -1690,6 +1693,32 @@ try {
     } catch { $ctxWritableOk = $false }
     Check 'C19u 夹具自检：那条「受保护」的夹具**确实写不动**了（不然下面几条等于没测）' `
         ((-not $ctxWritableOk) -and ($ctxProtSddl.Length -gt 20)) ('能可写打开=' + $ctxWritableOk)
+    # 夹具：一条「**它下面的子键**被 Windows 保护」的项 —— **它自己可写**（禁用 / 恢复都能用），
+    # 只有它那个 `command` 子键是只读的。这一档是 2026-10-11 查用户报的「最小两条删除记录失败」
+    # 才提出来的：真机上 `Drive\shell\cmd` 就是这一档 —— 自己 10-10 抢过所有权了（所以界面上
+    # 不标"受保护"、按钮也不亮），可子键 `command` 还归 TrustedInstaller，于是**删除永远失败**，
+    # 记录里只留下一句误导人的「该子项不存在，因此无法删除子项目录树。」（.NET 把"打不开子键"
+    # 说成了"不存在"）。下面 C19v11–C19v17 盯的就是这一档：标注 / 删除前体检 / 连子键一起拿 / 再删掉。
+    New-CtxFixture ($ctxRootRel + '\*\shell') 'Mxx1FixtureSubLocked' '夹具·子键受保护' ''
+    Set-CtxReadOnly ($ctxRootRel + '\*\shell\Mxx1FixtureSubLocked\command')
+    $ctxSubRel = $ctxRootRel + '\*\shell\Mxx1FixtureSubLocked'
+    $ctxSubKey = Join-Path 'HKCU:\Software\mxx1-toolbox\ctxmenu-test' '*\shell\Mxx1FixtureSubLocked'
+    $ctxSubChildKey = Join-Path 'HKCU:\Software\mxx1-toolbox\ctxmenu-test' '*\shell\Mxx1FixtureSubLocked\command'
+    $ctxSubChildWritable = $false
+    try {
+        $probeSub = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($ctxSubRel + '\command', $true)
+        $ctxSubChildWritable = ($null -ne $probeSub)
+        if ($probeSub) { $probeSub.Close() }
+    } catch { $ctxSubChildWritable = $false }
+    $ctxSubSelfWritable = $false
+    try {
+        $probeSelf = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($ctxSubRel, $true)
+        $ctxSubSelfWritable = ($null -ne $probeSelf)
+        if ($probeSelf) { $probeSelf.Close() }
+    } catch { $ctxSubSelfWritable = $false }
+    Check 'C19u2 夹具自检：这条夹具**自己写得动、子键写不动**（不然下面几条等于没测）' `
+        ($ctxSubSelfWritable -and (-not $ctxSubChildWritable)) `
+        ('自己可写=' + $ctxSubSelfWritable + ' 子键可写=' + $ctxSubChildWritable)
     New-CtxFixture ($ctxRootRel + '\*\shell') 'Windows.Mxx1FixtureSys' '夹具·系统自带' ''
     New-CtxFixture ($ctxRootMachineRel + '\*\shell') 'Mxx1FixtureMachine' '夹具·系统区' ''
     $ctxExtParent = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey(
@@ -1745,8 +1774,8 @@ try {
         # ---- C19b：段标题（按"谁装的"分四段）+ 行卡片里的字**读得到**
         $caps = @($mwTexts | Where-Object { $_ -like '*（*）*' -and ($_ -match '程序装的|系统自带|DLL 扩展项|工具箱自己装的') })
         $capsJoined = $caps -join ' || '
-        Check 'C19b 段标题按"谁装的"分段（程序装的 5 / 系统自带 1 / DLL 扩展项 1 都在）' `
-            ((($capsJoined -match '程序装的（6）') -and ($capsJoined -match '系统自带（1）') -and ($capsJoined -match 'DLL 扩展项（1）'))) `
+        Check 'C19b 段标题按"谁装的"分段（程序装的 7 / 系统自带 1 / DLL 扩展项 1 都在）' `
+            ((($capsJoined -match '程序装的（7）') -and ($capsJoined -match '系统自带（1）') -and ($capsJoined -match 'DLL 扩展项（1）'))) `
             $capsJoined
         Check 'C19c 行卡片上的字（名称 / 状态 / 在哪儿）跨进程读得到 —— 不是画上去的' `
             (($mwTexts -contains '夹具·在用') -and ($mwTexts -contains '夹具·已禁用') -and `
@@ -1756,8 +1785,8 @@ try {
         Check 'C19d 底部那句把两种生效方式分开了（静态项不用重启资源管理器；扩展项看系统黑名单、要重启才生效）' `
             ((($mwTexts -join ' ') -match '静态项不用重启资源管理器') -and (($mwTexts -join ' ') -match '系统黑名单')) `
             (($mwTexts | Where-Object { $_ -match '重启|黑名单' }) -join ' || ')
-        Check 'C19e 底栏那句小结写着这一页的真实条数（共 7 条 = 在用 5 / 已禁用 1 / 扩展项 1）' `
-            ((Get-CtxStatus $mw) -match '共 8 条（在用 6 / 已禁用 1 / 扩展项 1') (Get-CtxStatus $mw)
+        Check 'C19e 底栏那句小结写着这一页的真实条数（共 9 条 = 在用 7 / 已禁用 1 / 扩展项 1）' `
+            ((Get-CtxStatus $mw) -match '共 9 条（在用 7 / 已禁用 1 / 扩展项 1') (Get-CtxStatus $mw)
 
         # ---- C19f：「系统自带」那一段默认收起，点「展开」才出来（默认藏起来，最不该动的先别挡路）
         $sysRowShown = ($mwTexts -contains '夹具·系统自带（系统自带）')
@@ -1901,8 +1930,11 @@ try {
             ((@($mwTexts5 | Where-Object { $_ -eq '夹具·在用' }).Count -eq 1)) `
             (($mwTexts5 | Where-Object { $_ -like '夹具*' }) -join ' | ')
 
-        # ---- C19s：**失败也要写进动作记录**（用户提的：成功和失败都别让他去翻工具箱日志）
-        # 怎么造一次确定的失败：把夹具那个键从**外面**删掉，窗口里还留着那一行 → 点删除时备份就失败了
+        # ---- C19s：**没做成的事也要写进动作记录**（用户提的：成功和失败都别让他去翻工具箱日志）
+        # 怎么造这一种：把夹具那个键从**外面**删掉，窗口里还留着那一行 → 点删除时那一条就不做了。
+        # ⚠️ 2026-10-11 起这一种报的是**「跳过：键已经不在了」**，不再是"失败：备份失败（…）"：
+        # 删除现在动手前先体检（`RegAcl.Exists`）—— 键都不在了，那件事其实已经达成，报"失败"会把
+        # "没做成"和"本来就是这样"混在一起。**真正的失败**另有一条盯着：C19v14（子键写不动 → 没删）。
         Remove-Item -LiteralPath $ctxGone -Recurse -Force -ErrorAction SilentlyContinue
         $goneBox = Find-CtxCheck -Hwnd $mw -RowLabel '夹具·待删二'
         if ($null -ne $goneBox) { [void][TBGui]::Click($goneBox.H) ; Start-Sleep -Milliseconds 700 }
@@ -1921,10 +1953,10 @@ try {
         $failLine = @()
         for ($i = 0; $i -lt 25; $i++) {
             Start-Sleep -Milliseconds 200
-            $failLine = @((Get-CtxTexts $mw) | Where-Object { $_ -match '失败' -and $_ -match '夹具·待删二' })
+            $failLine = @((Get-CtxTexts $mw) | Where-Object { $_ -match '跳过' -and $_ -match '夹具·待删二' })
             if ($failLine.Count -ge 1) { break }
         }
-        Check 'C19s 失败的那一条也写进了动作记录（写着「失败：…」并带着原因）' `
+        Check 'C19s 从外面删掉那一项之后再点删除：记录里如实写「跳过：键已经不在了」（不是一句看不懂的"备份失败"）' `
             ($failLine.Count -ge 1) (($failLine -join ' ') + ' :: ' + (Get-CtxStatus $mw))
         # ---- C19v–C19y：Windows 保护的那类项（取得所有权并禁用）----------------------------
         # 用户 2026-10-10 问「为什么管理员权限启动也无法禁止？」→ 量出来是所有者 TrustedInstaller、
@@ -2067,6 +2099,165 @@ try {
                 Check $nm $false 'skipped（取得所有权按钮没亮）'
             }
         }
+
+        # ---- C19v11–C19v17：「**子键**被 Windows 保护」那一档（2026-10-11 加的）-------------------
+        # 为什么非做不可：用户报「最小两条删除记录失败」—— 磁盘那两个键**自己**10-10 早就抢过
+        # 所有权了（所以界面上不标"受保护"、「取得所有权」按钮也不亮），可它们下面的 `command`
+        # 还归 TrustedInstaller（那份 DACL 是"不接受继承"的，父键上追加的完全控制落不到它身上），
+        # 于是**删除永远失败**，记录里只留一句误导人的「该子项不存在，因此无法删除子项目录树。」
+        # （.NET 的 `Arg_RegSubKeyAbsent`：把"打不开子键"说成了"不存在"）。
+        # 这一档要验五件事：① 行上标出来、而且**勾得动**（和"自己受保护"那条不一样）；
+        #                  ② 选中它底栏说清"删除会被挡住"+「取得所有权」按钮亮；
+        #                  ③ 点删除：确认框先说明白 → 键真的没删 → 记录里如实写"是谁挡着"；
+        #                  ④ 取得所有权：**连子键一起**拿（重确认框写明），档案里存的是子键那一条；
+        #                  ⑤ 再删一次 → 整个树真没了（这就是这一轮修的东西）。
+        $subLabel = '夹具·子键受保护（子键被 Windows 保护）'
+        $subMarked = @(Get-CtxTexts $mw | Where-Object { $_ -like '*（子键被 Windows 保护）' })
+        $subBox = Find-CtxCheck -Hwnd $mw -RowLabel $subLabel
+        Check 'C19v11 这一档在行上标出来了（「子键被 Windows 保护」），而且勾选框**能勾**（它自己写得动）' `
+            (($subMarked.Count -eq 1) -and ($null -ne $subBox) -and $subBox.Enabled) `
+            ('标出来的行=' + $subMarked.Count + ' 勾选框=' + $(if ($null -eq $subBox) { '没找到' } else { 'en=' + $subBox.Enabled }) +
+             ' 全部名字=' + (@(Get-CtxTexts $mw | Where-Object { $_ -like '夹具·*' }) -join ' | '))
+
+        $rcSub = Click-CtxRowLabel -Hwnd $mw -RowLabel $subLabel
+        $stSub = Wait-CtxStatus $mw
+        $takeSub = Wait-CtxButton -Hwnd $mw -Text '取得所有权'
+        Check 'C19v12 选中它：底栏说清「command 被 Windows 保护 → 删除会被挡住」，「取得所有权」按钮这时才亮' `
+            (($rcSub -eq 'ok') -and ($stSub -match 'command') -and ($stSub -match '删除') -and `
+             ($takeSub.Count -eq 1) -and $takeSub[0].Enabled) `
+            ('点行=' + $rcSub + ' 底栏=【' + $stSub + '】 按钮=' + $takeSub.Count + '/en=' + $(if ($takeSub.Count -eq 1) { $takeSub[0].Enabled } else { '-' }))
+
+        # ③ 删除前先体检：确认框里就该写明"这几项目前删不掉"，而不是删完才在记录里看到失败
+        [void](Clear-CtxCheck -Hwnd $mw -RowLabel $subLabel)
+        [void](Set-CtxCheck -Hwnd $mw -RowLabel $subLabel)
+        $delSub = Wait-CtxButton -Hwnd $mw -Text '删除选中的 1 项'
+        $dlgSub = @()
+        if ($delSub.Count -eq 1) {
+            [void][TBGui]::Click($delSub[0].H)
+            for ($i = 0; $i -lt 30; $i++) {
+                Start-Sleep -Milliseconds 200
+                $dlgSub = @((Get-TopWindows -ProcessId $mgrP.Id) | Where-Object { $_.H -ne $main -and $_.Visible -and $_.Text -eq '请确认' })
+                if ($dlgSub.Count -ge 1) { break }
+            }
+        }
+        $dlgSubText = ''
+        if ($dlgSub.Count -ge 1) { $dlgSubText = (@(Get-ChildControls -RootHandle $dlgSub[0].H | ForEach-Object { $_.Text }) -join ' ') }
+        Check 'C19v13 删除确认框**先把"这几项目前删不掉"说明白**（原因 + 该怎么办都在上面）' `
+            (($dlgSub.Count -ge 1) -and ($dlgSubText -match '删不掉') -and ($dlgSubText -match '子键') -and `
+             ($dlgSubText -match '取得所有权')) $dlgSubText
+        if ($dlgSub.Count -ge 1) {
+            $okSub = @(Get-ChildControls -RootHandle $dlgSub[0].H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '删除' })
+            if ($okSub.Count -eq 1) { [void][TBGui]::Click($okSub[0].H) } else { [void][TBGui]::CloseWindow($dlgSub[0].H) }
+        }
+        $subStill = $null
+        for ($i = 0; $i -lt 30; $i++) {
+            Start-Sleep -Milliseconds 250
+            $subStill = Get-ItemProperty -LiteralPath $ctxSubKey -ErrorAction SilentlyContinue
+            if ($null -ne $subStill) { break }
+        }
+        $subRec = ''
+        for ($i = 0; $i -lt 30; $i++) {
+            Start-Sleep -Milliseconds 250
+            $subRec = [string](@(Get-CtxTexts $mw | Where-Object { $_ -like '*夹具·子键受保护*' -and $_ -match '·\s*失败' }) | Select-Object -First 1)
+            if ($subRec.Length -gt 0) { break }
+        }
+        Check 'C19v14 体检拦住了：键**真的没删**（连子键都还在），记录里写的是"是谁挡着"——不是那句误导人的「该子项不存在」' `
+            (($null -ne $subStill) -and ($null -ne (Get-ItemProperty -LiteralPath $ctxSubChildKey -ErrorAction SilentlyContinue)) -and `
+             ($subRec -match 'command') -and ($subRec -notmatch '该子项不存在')) `
+            ('键还在=' + ($null -ne $subStill) + ' 记录=【' + $subRec + '】')
+
+        # ④ 取得所有权：这一档也要能点「取得所有权」，而且**连子键一起**拿
+        [void](Clear-CtxCheck -Hwnd $mw -RowLabel $subLabel)
+        $rcSub2 = Click-CtxRowLabel -Hwnd $mw -RowLabel $subLabel
+        $takeSub2 = Wait-CtxButton -Hwnd $mw -Text '取得所有权'
+        $dlgT2 = @()
+        if (($takeSub2.Count -eq 1) -and $takeSub2[0].Enabled) {
+            [void][TBGui]::Click($takeSub2[0].H)
+            for ($i = 0; $i -lt 30; $i++) {
+                Start-Sleep -Milliseconds 200
+                $dlgT2 = @((Get-TopWindows -ProcessId $mgrP.Id) | Where-Object { $_.H -ne $main -and $_.Visible -and $_.Text -eq '请确认' })
+                if ($dlgT2.Count -ge 1) { break }
+            }
+        }
+        $dlgT2Text = ''
+        if ($dlgT2.Count -ge 1) { $dlgT2Text = (@(Get-ChildControls -RootHandle $dlgT2[0].H | ForEach-Object { $_.Text }) -join ' ') }
+        Check 'C19v15 「取得所有权」的重确认框对这一档写明"**连子键一起拿**"（command 点名，还会存原样权限）' `
+            (($dlgT2.Count -ge 1) -and ($dlgT2Text -match 'command') -and ($dlgT2Text -match '子键') -and `
+             ($dlgT2Text -match '删除')) $dlgT2Text
+        $subFilesBefore = @(Get-ChildItem -LiteralPath $ctxBackupDir -Filter '*.sddl' -File -ErrorAction SilentlyContinue |
+            Select-Object -ExpandProperty Name)
+        if ($dlgT2.Count -ge 1) {
+            $okT2 = @(Get-ChildControls -RootHandle $dlgT2[0].H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '取得所有权并禁用' })
+            if ($okT2.Count -eq 1) { [void][TBGui]::Click($okT2[0].H) } else { [void][TBGui]::CloseWindow($dlgT2[0].H) }
+        }
+        $subChildNow = $false
+        for ($i = 0; $i -lt 40; $i++) {
+            Start-Sleep -Milliseconds 250
+            $subChildNow = $false
+            try {
+                $probeNow = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($ctxSubRel + '\command', $true)
+                $subChildNow = ($null -ne $probeNow)
+                if ($probeNow) { $probeNow.Close() }
+            } catch { $subChildNow = $false }
+            if ($subChildNow) { break }
+        }
+        $newSddl = @(Get-ChildItem -LiteralPath $ctxBackupDir -Filter '*.sddl' -File -ErrorAction SilentlyContinue |
+            Where-Object { $subFilesBefore -notcontains $_.Name })
+        $sddlKeys = @()
+        if ($newSddl.Count -ge 1) {
+            $sddlKeys = @(Get-Content -LiteralPath $newSddl[0].FullName -ErrorAction SilentlyContinue |
+                Where-Object { $_ -match '^HKEY_' })
+        }
+        $sddlChildLine = [string](@($sddlKeys | Where-Object { $_ -match '\\command' }) | Select-Object -First 1)
+        $sddlParentLine = [string](@($sddlKeys | Where-Object { $_ -notmatch '\\command' }) | Select-Object -First 1)
+        Check 'C19v16 端到端：**连子键一起**拿过来了（command 现在写得动），而且只存了写不动的那一个键的原样权限' `
+            ($subChildNow -and ($newSddl.Count -eq 1) -and ($sddlChildLine.Length -gt 0) -and ($sddlParentLine.Length -eq 0)) `
+            ('子键可写=' + $subChildNow + ' 新存档=' + $newSddl.Count +
+             ' 键行=' + $sddlKeys.Count + ' 子键那行=' + $(if ($sddlChildLine.Length -gt 0) { '有' } else { '没有' }) +
+             ' 父键那行=' + $(if ($sddlParentLine.Length -gt 0) { '有' } else { '没有' }))
+
+        # ⑤ 再删一次：这一次该真删掉了（整棵树，含那个子键）
+        # ⚠️ 行上的**后缀这时候应该没了**（子键拿过来之后"写不动"这件事就不成立了）—— 顺手也验它：
+        # 第一版这里还拿带后缀的老标签去找勾选框 → 找不到 → 没勾上 → 删除按钮还是"0 项"，
+        # 于是确认框根本不会出现（C19v17 当场红，detail 里"第二次确认框"是空的）。
+        $subLabelAfter = '夹具·子键受保护'
+        $markAfter = @(Get-CtxTexts $mw | Where-Object { $_ -eq $subLabelAfter })
+        $dlgSub2 = @()
+        $dlgSub2Text = ''
+        if ($markAfter.Count -ge 1) {
+            [void](Clear-CtxCheck -Hwnd $mw -RowLabel $subLabelAfter)
+            [void](Set-CtxCheck -Hwnd $mw -RowLabel $subLabelAfter)
+            $delSub2 = Wait-CtxButton -Hwnd $mw -Text '删除选中的 1 项'
+            if ($delSub2.Count -eq 1) {
+                [void][TBGui]::Click($delSub2[0].H)
+                for ($i = 0; $i -lt 30; $i++) {
+                    Start-Sleep -Milliseconds 200
+                    $dlgSub2 = @((Get-TopWindows -ProcessId $mgrP.Id) | Where-Object { $_.H -ne $main -and $_.Visible -and $_.Text -eq '请确认' })
+                    if ($dlgSub2.Count -ge 1) { break }
+                }
+            }
+        }
+        if ($dlgSub2.Count -ge 1) {
+            $dlgSub2Text = (@(Get-ChildControls -RootHandle $dlgSub2[0].H | ForEach-Object { $_.Text }) -join ' ')
+            $okSub2 = @(Get-ChildControls -RootHandle $dlgSub2[0].H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '删除' })
+            if ($okSub2.Count -eq 1) { [void][TBGui]::Click($okSub2[0].H) } else { [void][TBGui]::CloseWindow($dlgSub2[0].H) }
+        }
+        $subGone = $false
+        for ($i = 0; $i -lt 40; $i++) {
+            Start-Sleep -Milliseconds 250
+            if ($null -eq (Get-ItemProperty -LiteralPath $ctxSubKey -ErrorAction SilentlyContinue)) { $subGone = $true; break }
+        }
+        $subRec2 = ''
+        for ($i = 0; $i -lt 20; $i++) {
+            Start-Sleep -Milliseconds 250
+            $subRec2 = [string](@(Get-CtxTexts $mw | Where-Object { $_ -like '*夹具·子键受保护*' -and $_ -match '·\s*成功' }) | Select-Object -First 1)
+            if ($subRec2.Length -gt 0) { break }
+        }
+        Check 'C19v17 取得所有权之后再删一次：**整棵树真没了**（父键 + command 都查不到），记录里那一条是成功' `
+            ($subGone -and ($null -eq (Get-ItemProperty -LiteralPath $ctxSubChildKey -ErrorAction SilentlyContinue)) -and `
+             ($markAfter.Count -ge 1) -and ($dlgSub2.Count -ge 1) -and ($dlgSub2Text -notmatch '删不掉') -and `
+             ($subRec2.Length -gt 0)) `
+            ('树没了=' + $subGone + ' 行上后缀没了=' + ($markAfter.Count -ge 1) + ' 第二次确认框=【' + $dlgSub2Text + '】 成功记录=【' + $subRec2 + '】')
 
         # 切一页：那一页没有夹具 → 空状态那句话
         # ---- C19v5–C19v7：DLL 扩展项（状态从系统黑名单读 + 打开 DLL 目录 / 复制 CLSID）-------------
@@ -2259,10 +2450,10 @@ try {
     } else {
         foreach ($nm in @('C18 窗口里有 5 个位置页签（文件 / 文件夹 / 文件夹空白处 / 桌面 / 磁盘），而且每个都写着条数',
                           'C19 底栏 6 个按钮都在，而且没勾任何一项时三个动作按钮都是灰的（绝不猜你要动哪一条）',
-                          'C19b 段标题按"谁装的"分段（程序装的 5 / 系统自带 1 / DLL 扩展项 1 都在）',
+                          'C19b 段标题按"谁装的"分段（程序装的 7 / 系统自带 1 / DLL 扩展项 1 都在）',
                           'C19c 行卡片上的字（名称 / 状态 / 在哪儿）跨进程读得到 —— 不是画上去的',
                           'C19d 底部写明了"改完立刻生效，不用重启资源管理器"和"扩展项这一版只显示"',
-                          'C19e 底栏那句小结写着这一页的真实条数（共 7 条 = 在用 5 / 已禁用 1 / 扩展项 1）',
+                          'C19e 底栏那句小结写着这一页的真实条数（共 9 条 = 在用 7 / 已禁用 1 / 扩展项 1）',
                           'C19f 「系统自带」段默认收起、点「展开」之后那一行才出现',
                           'C19g 勾上一行 → 底栏变成「禁用选中的 1 项」并亮起来',
                           'C19h 批量禁用：勾两项点一下 → 两个键里都写进了隐藏开关（键和标题原样留着）',
@@ -2277,7 +2468,14 @@ try {
                           'C19p 点「已禁用」快选：只剩已禁用的项，勾选被清空（底栏回到 0）',
                           'C19q 点回「全部」：那一项又回来了（筛选不会把东西真的藏掉）',
                           'C19r 切到「文件夹」页：那一页空着，而且写着"什么都没有"（不是一片空白让人以为坏了）',
-                          'C19s 失败的那一条也写进了动作记录（写着「失败：…」并带着原因）')) {
+                          'C19s 从外面删掉那一项之后再点删除：记录里如实写「跳过：键已经不在了」（不是一句看不懂的"备份失败"）',
+                          'C19v11 这一档在行上标出来了（「子键被 Windows 保护」），而且勾选框**能勾**（它自己写得动）',
+                          'C19v12 选中它：底栏说清「command 被 Windows 保护 → 删除会被挡住」，「取得所有权」按钮这时才亮',
+                          'C19v13 删除确认框**先把"这几项目前删不掉"说明白**（原因 + 该怎么办都在上面）',
+                          'C19v14 体检拦住了：键**真的没删**（连子键都还在），记录里写的是"是谁挡着"——不是那句误导人的「该子项不存在」',
+                          'C19v15 「取得所有权」的重确认框对这一档写明"**连子键一起拿**"（command 点名，还会存原样权限）',
+                          'C19v16 端到端：**连子键一起**拿过来了（command 现在写得动），而且只存了写不动的那一个键的原样权限',
+                          'C19v17 取得所有权之后再删一次：**整棵树真没了**（父键 + command 都查不到），记录里那一条是成功')) {
             Check $nm $false 'skipped（管理窗口没开出来）'
         }
     }

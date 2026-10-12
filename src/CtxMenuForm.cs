@@ -369,7 +369,11 @@ namespace Mxx1Toolbox
             // 「取得所有权」：只给"被 Windows 保护"的项用（所有者 TrustedInstaller、管理员只给读）。
             // 它和前面三个动作**不是一回事** —— 那个是改系统安全描述符，所以单独一个按钮 + 重确认，
             // 而且只作用在**当前选中的那一项**上（一次一项，绝不混进批量里）。
-            _takeBtn = MakeBarButton("取得所有权", "给被 Windows 保护的项用：把那个键的所有者改成管理员并追加完全控制，"
+            // ⚠️ 2026-10-11 起这个按钮**也管"子键被保护"那一档**（自己写不动、或者它下面的子键写不动）：
+            // 后者就是"能禁用、能恢复，可删除永远失败"的那批（真机上磁盘那两个键），
+            // 让它在这里把子键一起拿过来 —— 不然用户没有任何办法删掉那种项。
+            _takeBtn = MakeBarButton("取得所有权", "给被 Windows 保护的项用：把这个键（以及它下面写不动的子键）的所有者改成管理员"
+                + "并追加完全控制，"
                 + "然后才写得动。会先存下原样的权限（可还原）；这一步要管理员。");
             _takeBtn.Click += delegate { DoTakeOwn(); };
             right.Controls.Add(_takeBtn);
@@ -711,9 +715,18 @@ namespace Mxx1Toolbox
             // 选中的那一项被 Windows 保护时，把"怎么办"直接写在底栏（以前是点了才知道没反应）
             CtxRow cur = CurrentRow();
             bool curProtected = (cur != null) && cur.Entry.Protected;
+            bool curSubLocked = (cur != null) && cur.Entry.SubLocked;
             if (curProtected)
             {
                 sb.Append(" · 选中这一项被 Windows 保护（所有者是 TrustedInstaller，连管理员也写不动）→ 点右边「取得所有权」");
+                if (curSubLocked) { sb.Append("（它下面的子键也一起拿，删得掉）"); }
+            }
+            else if (curSubLocked)
+            {
+                // ⚠️ 这一档 2026-10-11 才加的：这一项**自己**能写（禁用/恢复都行），可它下面的子键
+                // 还是 TrustedInstaller 的 → **删除会被挡住**。不写这句，用户就只能"点了删除才知道"。
+                sb.Append(" · 选中这一项下面的 ").Append(SubNames(cur.Entry)).Append(" 被 Windows 保护")
+                  .Append("（所以「删除」会被挡住）→ 点右边「取得所有权」把子键一起拿过来，就能删了");
             }
             else if (cur != null && cur.Entry.Shellex && cur.Entry.Blocked)
             {
@@ -740,7 +753,7 @@ namespace Mxx1Toolbox
             _disableBtn.Enabled = (!_busy && canDisable > 0);
             _restoreBtn.Enabled = (!_busy && canRestore > 0);
             _deleteBtn.Enabled = (!_busy && checkedRows.Count > 0);
-            _takeBtn.Enabled = (!_busy && curProtected);
+            _takeBtn.Enabled = (!_busy && (curProtected || curSubLocked));
             // 「打开 DLL 目录」/「复制 CLSID」作用于**当前选中的那一行**（没选 / 选中的不是扩展就是灰的）
             _dllBtn.Enabled = (!_busy && cur != null && cur.Entry.DllPath.Length > 0);
             _clsidBtn.Enabled = (!_busy && cur != null && cur.Entry.Clsid.Length > 0);
@@ -752,6 +765,22 @@ namespace Mxx1Toolbox
             List<CtxRow> list = new List<CtxRow>();
             foreach (CtxRow r in _rows) { if (r.Checked && r.CanCheck) { list.Add(r); } }
             return list;
+        }
+
+        /// <summary>被保护的那些子键的名字（底栏 / 确认框里念出来；最多念 3 个）。</summary>
+        private static string SubNames(CtxEntry e)
+        {
+            StringBuilder sb = new StringBuilder();
+            int shown = 0;
+            foreach (string k in e.LockedSubs)
+            {
+                if (shown >= 3) { sb.Append(" 等 ").Append(e.LockedSubs.Count.ToString(CultureInfo.InvariantCulture)).Append(" 个"); break; }
+                if (shown > 0) { sb.Append("、"); }
+                int i = k.LastIndexOf('\\');
+                sb.Append(i < 0 ? k : k.Substring(i + 1));
+                shown++;
+            }
+            return sb.ToString();
         }
 
         private void CheckVerbs(string verbList, bool elevated)
@@ -996,14 +1025,16 @@ namespace Mxx1Toolbox
             if (_actionPanel != null && !_actionPanel.Visible) { ToggleActionPanel(); }
         }
 
-        /// <summary>「取得所有权」：只对**当前选中**的那一项（一次一项）。
-        /// ① 不是管理员 → 走提权重开那条路（和别的动作一样）；
-        /// ② 重确认：把"改所有者 + 追加完全控制 + 可还原"说清楚，再动手。</summary>
+        /// <summary>「取得所有权」：只对**当前选中**的那一项（一次一项）。它管**两档**：
+        /// ① 这一项自己写不动（`Protected`）；② 它下面的子键写不动（`SubLocked`，删除会被挡住的那批）。
+        /// 不是管理员 → 走提权重开那条路（和别的动作一样）；然后重确认：把"改所有者 + 追加完全控制
+        /// + 连子键一起 + 可还原"说清楚，再动手。</summary>
         private void DoTakeOwn()
         {
             if (_busy) { return; }
             CtxRow cur = CurrentRow();
-            if (cur == null || !cur.Entry.Protected) { return; }
+            if (cur == null) { return; }
+            if (!cur.Entry.Protected && !cur.Entry.SubLocked) { return; }
             CtxEntry e = cur.Entry;
 
             if (!Consent.EnsureAccepted(this, _theme, "右键菜单管理：取得所有权「" + e.Title + "」"))
@@ -1022,18 +1053,28 @@ namespace Mxx1Toolbox
             }
 
             StringBuilder body = new StringBuilder();
-            body.Append("这一项被 Windows 保护（所有者是 NT SERVICE\\TrustedInstaller，管理员只有读权限），")
-                .AppendLine("所以连管理员也写不动 —— 想禁用它，必须先把这个注册表键的所有权拿过来。")
-                .AppendLine();
-            body.AppendLine("会做三件事：");
-            body.AppendLine("· 先把原样的所有者和权限存成一份文件（备份文件夹里，扩展名 .sddl）；");
-            body.AppendLine("· 把所有者改成 Administrators，并追加一条「管理员：完全控制」（原有的权限一条都不删）；");
+            if (e.Protected)
+            {
+                body.Append("这一项被 Windows 保护（所有者是 NT SERVICE\\TrustedInstaller，管理员只有读权限），")
+                    .AppendLine("所以连管理员也写不动 —— 想禁用它，必须先把这个注册表键的所有权拿过来。");
+            }
+            else
+            {
+                body.Append("这一项自己能写（禁用 / 恢复都能用），可它下面的 ").Append(SubNames(e))
+                    .AppendLine(" 被 Windows 保护（所有者是 NT SERVICE\\TrustedInstaller，管理员只有读权限）。")
+                    .AppendLine("这就是为什么「删除」会被挡住：删一个键要连它下面的子键一起删，那个子键动不了。");
+            }
+            body.AppendLine();
+            body.AppendLine("会做四件事：");
+            body.AppendLine("· 先把这个键和它下面写不动的子键的原样所有者和权限存成一份文件（备份文件夹里，扩展名 .sddl）；");
+            body.AppendLine("· 把这些键的所有者逐个改成 Administrators，并各追加一条「管理员：完全控制」（原有的权限一条都不删）；");
+            body.AppendLine("· 本来就写得动的键一个都不碰（改的键越少越好）；");
             body.AppendLine("· 然后写隐藏开关，让那一项从右键里消失。");
             body.AppendLine();
-            body.AppendLine("后悔了：动作记录里点那一条的「还原权限」—— 隐藏开关删掉、原样的所有者和权限写回去。");
+            body.AppendLine("后悔了：动作记录里点那一条的「还原权限」—— 隐藏开关删掉、每个键原样的所有者和权限逐个写回去。");
             // 用户 2026-10-10 问过「取得所有权是不是只需要执行一次下次打开就不需要了？」——
             // 答案是"是、永久生效"，那就把这句话写在他会看到的地方（别让他下次再问一遍）。
-            body.AppendLine("这一个键抢过一次就一直是你的：以后再禁用它（或恢复）都不用再点这个按钮，"
+            body.AppendLine("这些键抢过一次就一直是你的：以后再禁用它（或恢复）都不用再点这个按钮，"
                 + "只有点「还原权限」才会把权限还回去。别的项、别的位置是另外的键，要各自处理。");
             body.Append("注意：这是改系统的安全设置（比写一个值重得多）；Windows 以后更新时也可能把它再收回去。");
 
@@ -1205,6 +1246,33 @@ namespace Mxx1Toolbox
                 .AppendLine(" 个键各备份一份 .reg，都备份成功了才开始删；任何一份备份失败，那一条就不删。")
                 .AppendLine("后悔了：动作记录里点那一条的「还原来」，或者双击备份文件夹里的文件。")
                 .AppendLine("只删选中的这些键，别的键一个都不动。");
+            // ⚠️ 2026-10-11 补：**目前删不掉的那些先说明白**，别等用户点了才在记录里看到失败。
+            // 判据两档：自己写不动（Protected）、或者它下面的子键写不动（SubLocked —— 真机上
+            // 磁盘那两个键就是这一档：自己抢过所有权、子键 `command` 还在 TrustedInstaller 手里）。
+            int blocked = 0;
+            StringBuilder names = new StringBuilder();
+            foreach (CtxEntry e in items)
+            {
+                if (!e.Protected && !e.SubLocked) { continue; }
+                blocked++;
+                if (blocked <= 5)
+                {
+                    if (blocked > 1) { names.Append("、"); }
+                    names.Append(e.Title);
+                }
+            }
+            if (blocked > 0)
+            {
+                body.AppendLine();
+                body.Append("其中 ").Append(blocked.ToString(CultureInfo.InvariantCulture))
+                    .Append(" 项目前删不掉：").Append(names.ToString());
+                if (blocked > 5) { body.Append(" 等"); }
+                body.AppendLine("。");
+                body.AppendLine("原因：它们自己、或者它们下面的子键还归 Windows（TrustedInstaller）管，"
+                    + "删一个键要连下面的子键一起删，那个子键动不了。");
+                body.AppendLine("这几项会原样留着，动作记录里会写明是谁挡着；"
+                    + "想删它们：先在列表里选中那一行点底栏「取得所有权」（它会把子键一起拿过来），然后再删。");
+            }
             using (ConfirmForm f = new ConfirmForm(
                 "要删除这 " + items.Count.ToString(CultureInfo.InvariantCulture) + " 项吗？", body.ToString(), "删除", _theme))
             {

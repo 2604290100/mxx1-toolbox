@@ -438,7 +438,7 @@ Write-Host 'A 组 · status 与 list'
 $status = Invoke-Exe 'status'
 Check 'A01 status 退出码 0' ($status.Code -eq 0) ('exit=' + $status.Code)
 Check 'A02 中文输出没有乱码（UTF-8）' ($status.Out -match 'name=萌新工具箱') ('name=' + (Get-Key $status.Out 'name'))
-Check 'A03 版本号 1.5.6' ((Get-Key $status.Out 'version') -eq '1.5.6') (Get-Key $status.Out 'version')
+Check 'A03 版本号 1.5.7' ((Get-Key $status.Out 'version') -eq '1.5.7') (Get-Key $status.Out 'version')
 
 # 自我看门狗（2026-10-09 加，见文件开头 $tmpRoot 那段）：套件里**不许**直接拿 %TEMP% 拼夹具路径。
 # CI 的 %TEMP% 是 8.3 短名，程序报的是规范长名 → 拼出来的路径和程序报的对不上，四条断言假红。
@@ -2220,6 +2220,40 @@ try {
     $cxBlkM = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey($cxBlockedRelMachine)
     $cxBlkM.SetValue('{11111111-2222-3333-4444-555555555555}', '夹具·系统区黑名单')
     $cxBlkM.Close()
+
+    # ⚠️ 2026-10-11 加：「**它下面的子键**写不动」那一档（M59/M60）的夹具。
+    # 它放在**自己的一个小根**里（`ctxmenu-test\sublock`），不进上面那一堆 —— 上面那些条数断言
+    # （M49/M50：共 5 条 = 在用 3 / 已禁用 1 / 扩展项 1）是拿夹具数当判据的，往里塞一条会连坐。
+    # 只把它的 `command` 子键弄成只读（切断继承）= 真机上 `Drive\shell\cmd` 的形状：
+    # 自己可写、子键归别人 → **删除会被挡住**（.NET 的递归删键删到子键就打不开它）。
+    $cxSubRootRel = $cxRootRel + '\sublock'
+    New-CtxFixture ($cxSubRootRel + '\*\shell') 'Mxx1FixtureSubLocked' '夹具·子键受保护' ''
+    $cxSubChildRel = $cxSubRootRel + '\*\shell\Mxx1FixtureSubLocked\command'
+    $cxSubChildFull = 'HKEY_CURRENT_USER\' + $cxSubChildRel
+    $cxSubChildWritable = $false
+    try {
+        $cxSubK = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($cxSubChildRel,
+            [Microsoft.Win32.RegistryKeyPermissionCheck]::ReadWriteSubTree,
+            [System.Security.AccessControl.RegistryRights]::ChangePermissions)
+        $cxSubSec = $cxSubK.GetAccessControl([System.Security.AccessControl.AccessControlSections]::Access)
+        # 切断继承 + 只给「读 + 删」（留 Delete 是为了收尾删得掉；"能不能可写打开"这个判据不受影响）
+        $cxSubSec.SetAccessRuleProtection($true, $false)
+        foreach ($r in @($cxSubSec.GetAccessRules($true, $true, [System.Security.Principal.NTAccount]))) {
+            [void]$cxSubSec.RemoveAccessRule($r)
+        }
+        $cxMeName = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+        $cxRights = [System.Security.AccessControl.RegistryRights]::ReadKey -bor `
+                    [System.Security.AccessControl.RegistryRights]::Delete
+        $cxSubSec.AddAccessRule((New-Object System.Security.AccessControl.RegistryAccessRule($cxMeName, $cxRights, 'Allow')))
+        $cxSubK.SetAccessControl($cxSubSec)
+        $cxSubK.Close()
+    } catch { }
+    try {
+        $cxSubW = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($cxSubChildRel, $true)
+        $cxSubChildWritable = ($null -ne $cxSubW)
+        if ($cxSubW) { $cxSubW.Close() }
+    } catch { $cxSubChildWritable = $false }
+
     $cxSnapBefore = Get-CtxTestSnapshot
 
     $cxList = Invoke-Exe 'rightmenu list --zone=files' 60 $Exe $cxEnv
@@ -2306,6 +2340,40 @@ try {
          ($cxFolder.Out -match '(?m)^zone\tfolder\t文件夹\t0\t0\t0\t0\t0\r?$')) `
         ('folder entry 行=' + $cxFolderBlk.Count + ' 有残留段=' + ($cxFolder.Out -match '黑名单残留\]'))
 
+    # ---- M59–M60：「**它下面的子键**写不动」（删除会被挡住）—— 2026-10-11 查那次删除失败加的 ----
+    # 为什么非做不可：用户报「最小两条删除记录失败」—— 磁盘那两个键**自己**10-10 抢过所有权
+    # （所以 entry 行报的是 `writable`、界面上也不标"受保护"），可它们下面的 `command` 还归
+    # TrustedInstaller（那份 DACL 是"不接受继承"的），于是**删除永远失败**，记录里只留下一句
+    # 误导人的「该子项不存在，因此无法删除子项目录树。」。这一档以前**看不见**，现在报出来：
+    # `subblocked` 逐条报（哪一项 / 哪个子键 / 子键归谁），`subblockedcount` 报总数。
+    # ⚠️ 上面那些 entry 行**一个字段都没动**（老断言按列读，动它会连坐一片假红）—— 这是新加的行。
+    $cxSubEnv = @{
+        MXX1_CTXMENU_ROOT            = 'HKCU\Software\mxx1-toolbox\ctxmenu-test\sublock'
+        MXX1_CTXMENU_ROOT_MACHINE    = 'HKCU\Software\mxx1-toolbox\ctxmenu-test\sublock-machine'
+        MXX1_CTXMENU_BLOCKED         = 'HKCU\Software\mxx1-toolbox\ctxmenu-test-blocked'
+        MXX1_CTXMENU_BLOCKED_MACHINE = 'HKCU\Software\mxx1-toolbox\ctxmenu-test-blocked-machine'
+    }
+    $cxSub = Invoke-Exe 'rightmenu list --zone=files' 60 $Exe $cxSubEnv
+    $cxSubLines = @($cxSub.Out -split "`r?`n" | Where-Object { $_ -like "subblocked`t*" })
+    $cxSubParts = @()
+    if ($cxSubLines.Count -ge 1) { $cxSubParts = $cxSubLines[0] -split "`t" }
+    Check 'M59 报得出「这一项下面的子键写不动（删除会被挡）」：哪一项 / 哪个子键 / 子键归谁' `
+        (($cxSub.Code -eq 0) -and ($cxSubLines.Count -eq 1) -and ($cxSubParts.Count -eq 5) -and `
+         ($cxSubParts[0] -eq 'subblocked') -and ($cxSubParts[1] -eq 'files') -and `
+         ($cxSubParts[2] -eq 'Mxx1FixtureSubLocked') -and ($cxSubParts[3] -eq $cxSubChildFull) -and `
+         ($cxSubParts[4].Length -gt 0) -and ($cxSub.Out -match '子键被 Windows 保护')) `
+        ('exit=' + $cxSub.Code + ' 行=' + $cxSubLines.Count + ' :: ' + ($cxSubLines -join ' / ') +
+         ' 夹具子键可写=' + $cxSubChildWritable)
+
+    # M60 是对照组：普通夹具（子键写得动）**一个都不许被标出来** —— 判据要是"一律都标"，
+    # "删除会被挡"这句话就成了噪音（用户报的那两条也说明以前根本没有这个概念）。
+    Check 'M60 对照组：子键写得动的项一个都不标（subblockedcount 0），而且 entry 行的列没被改坏' `
+        ((@($cxList.Out -split "`r?`n" | Where-Object { $_ -like "subblocked`t*" }).Count -eq 0) -and `
+         ($cxList.Out -match '(?m)^subblockedcount\t0\r?$') -and `
+         ($cxEntry.Count -eq 5) -and (@($cxEntry | Where-Object { $_ -match "Mxx1FixtureKeep`t夹具·在用`t在用`tuser`twritable$" }).Count -eq 1)) `
+        ('主根的 subblocked 行=' + (@($cxList.Out -split "`r?`n" | Where-Object { $_ -like 'subblocked`t*' }).Count) +
+         ' 计数行=' + (@($cxList.Out -split "`r?`n" | Where-Object { $_ -like 'subblockedcount*' }) -join '/'))
+
     # ---- 底线：命令行**只有只读入口**。`rightmenu disable / delete / restore` 这类"带动作"的写法
     #      一律不认（退出码 2）—— 写注册表只能从界面点，这条和 sysreg 是同一个规矩（L07 钉着它）。
     $cxBad1 = Invoke-Exe 'rightmenu disable Mxx1FixtureKeep' 60 $Exe $cxEnv
@@ -2330,6 +2398,20 @@ try {
          ' 动作流水=' + $cxActionLogHad + '→' + $cxActionLogAfter)
 }
 finally {
+    # ⚠️ 先复位那条"子键只读"夹具的 ACL：`ctxmenu-test\sublock\…\command` 是**故意的只读键**，
+    # 不复位的话递归删根会在那个子键上失败（删一个键要连子键一起删）—— 下一轮测试连造夹具都会被拒。
+    try {
+        $cxFixK = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey(
+            'Software\mxx1-toolbox\ctxmenu-test\sublock\*\shell\Mxx1FixtureSubLocked\command',
+            [Microsoft.Win32.RegistryKeyPermissionCheck]::ReadWriteSubTree,
+            [System.Security.AccessControl.RegistryRights]::ChangePermissions)
+        if ($cxFixK) {
+            $cxFixSec = $cxFixK.GetAccessControl([System.Security.AccessControl.AccessControlSections]::Access)
+            $cxFixSec.SetAccessRuleProtection($false, $true)
+            $cxFixK.SetAccessControl($cxFixSec)
+            $cxFixK.Close()
+        }
+    } catch { }
     Remove-Item -LiteralPath 'HKCU:\Software\mxx1-toolbox\ctxmenu-test' -Recurse -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath 'HKCU:\Software\mxx1-toolbox\ctxmenu-test-machine' -Recurse -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath 'HKCU:\Software\mxx1-toolbox\ctxmenu-test-blocked' -Recurse -Force -ErrorAction SilentlyContinue
@@ -2338,11 +2420,12 @@ finally {
     if ($cxActionLogHad) { [System.IO.File]::WriteAllText($cxActionLog, $cxActionLogOld) }
     elseif (Test-Path -LiteralPath $cxActionLog) { Remove-Item -LiteralPath $cxActionLog -Force -ErrorAction SilentlyContinue }
 }
-Check 'M54 收尾干净：四个测试根（两个菜单根 + 两个黑名单根）都删掉了' `
+Check 'M54 收尾干净：四个测试根（两个菜单根 + 两个黑名单根）都删掉了，连那条只读夹具的子键也没留下' `
     (((Test-Path -LiteralPath 'HKCU:\Software\mxx1-toolbox\ctxmenu-test') -eq $false) -and `
      ((Test-Path -LiteralPath 'HKCU:\Software\mxx1-toolbox\ctxmenu-test-machine') -eq $false) -and `
      ((Test-Path -LiteralPath 'HKCU:\Software\mxx1-toolbox\ctxmenu-test-blocked') -eq $false) -and `
-     ((Test-Path -LiteralPath 'HKCU:\Software\mxx1-toolbox\ctxmenu-test-blocked-machine') -eq $false)) ''
+     ((Test-Path -LiteralPath 'HKCU:\Software\mxx1-toolbox\ctxmenu-test-blocked-machine') -eq $false) -and `
+     ((Test-Path -LiteralPath 'HKCU:\Software\mxx1-toolbox\ctxmenu-test\sublock') -eq $false)) ''
 
 }
 
@@ -2716,7 +2799,7 @@ Check 'S09 help 里能查到 checkupdate / disclaimer / consent 三个命令' `
 $cuOff = Invoke-Exe 'checkupdate' 60 $Exe @{ MXX1_NO_UPDATE = '1' }
 Check 'S10 MXX1_NO_UPDATE=1 时一个字节都不发（update=disabled，退出码 1 = 这次没结论）' `
     (($cuOff.Code -eq 1) -and ($cuOff.Out -match '(?m)^update=disabled\r?$')) (Get-Key $cuOff.Out 'update')
-Check 'S11 关掉时也报版本号（脚本据此判断）' ((Get-Key $cuOff.Out 'version') -eq '1.5.6') (Get-Key $cuOff.Out 'version')
+Check 'S11 关掉时也报版本号（脚本据此判断）' ((Get-Key $cuOff.Out 'version') -eq '1.5.7') (Get-Key $cuOff.Out 'version')
 
 $cuBad = Invoke-Exe 'checkupdate' 60 $Exe @{
     MXX1_RESOURCE_URL = 'http://127.0.0.1:9/apis/resources'

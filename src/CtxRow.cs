@@ -106,7 +106,11 @@ namespace Mxx1Toolbox
             _name.Margin = new Padding(0);
             // 受 Windows 保护的项（所有者 TrustedInstaller、连管理员也写不动）在标题后面直接标出来 ——
             // 用户 2026-10-10 问「为什么管理员权限启动也无法禁止？」之后加的：这件事必须在**点之前**看见。
-            _name.Text = e.Protected ? (e.Title + "（Windows 保护）") : e.Title;
+            // ⚠️ 2026-10-11 起**分两档**（用户报「最小两条删除记录失败」之后补的）：
+            //   ① `Protected` = 这个键**自己**写不动（禁用/恢复就动不了，要取得所有权）；
+            //   ② `SubLocked` = 它**下面的子键**写不动 —— 禁用/恢复照样能用，但**删除会被挡住**
+            //      （删一个键要连子键一起删）。真机上那 8 项全是这一档的 `command` 子键。
+            _name.Text = e.Title + LockMark(e);
             _name.ForeColor = (e.Actionable && !e.Disabled) ? theme.InputText : theme.BarText;
             _name.BackColor = Color.Transparent;
             _name.Cursor = Cursor;
@@ -225,6 +229,15 @@ namespace Mxx1Toolbox
         {
             if (e.Command.Length > 0) { return e.Command; }
             return e.Note;
+        }
+
+        /// <summary>标题后面那个括号（两档保护分开写 —— 用户看到的字必须和"他能做什么"对上）。</summary>
+        private static string LockMark(CtxEntry e)
+        {
+            if (e.Protected && e.SubLocked) { return "（自己和子键都被 Windows 保护）"; }
+            if (e.Protected) { return "（Windows 保护）"; }
+            if (e.SubLocked) { return "（子键被 Windows 保护）"; }
+            return "";
         }
 
         /// <summary>自绘两样：勾选 / 当前行左边那条亮线（和主窗口当前页签的底线同一个颜色），

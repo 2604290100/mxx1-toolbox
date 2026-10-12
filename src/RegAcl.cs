@@ -1,6 +1,7 @@
 ﻿// SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 mxx1.cn
 using System;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Security.AccessControl;
 using System.Security.Principal;
@@ -37,7 +38,16 @@ namespace Mxx1Toolbox
     /// 一个"权限被改过、还不知道原来是什么样"的系统键）。
     ///
     /// ⚠️ 只对**单个键**动手，只加一条"管理员完全控制"，不删任何原有 ACE（`AddAccessRule`），
-    /// 这样即使还原失败，原有权也还在。</summary>
+    /// 这样即使还原失败，原有权也还在。
+    ///
+    /// ## 2026-10-11 补：**要连子树一起拿**（用户报「最小两条删除记录失败」之后查出来的）
+    ///
+    /// 只抢"点击的那一个键"是**不够**的：`HKLM\SOFTWARE\Classes\Drive\shell\cmd` 抢下来之后，
+    /// 它下面的 `command` 还是 `TrustedInstaller` 的（那份 DACL 是 `D:PAI`＝**不接受继承**，
+    /// 所以在父键上追加的"管理员完全控制"落不到它身上）。于是那一项**禁用/恢复立刻就好、
+    /// 删除却永远失败** —— .NET 的递归删键删到子键就卡住，还把它说成"子项不存在"（实测复现过，
+    /// 见 `docs\DESIGN.md` §12.69）。所以：`TreeKeys` 把整棵列出来、逐个 `TakeOwnOne`，
+    /// 并且**每个键的原样 SDDL 一起存**（「还原权限」按它逐个还回去）。</summary>
     internal static class RegAcl
     {
         // ---- 特权 ----
@@ -159,20 +169,109 @@ namespace Mxx1Toolbox
             catch { return ""; }
         }
 
-        /// <summary>取得所有权：把所有者改成内置管理员组，并**追加**一条"管理员完全控制"。
-        /// ⚠️ 会先打开 `SeTakeOwnershipPrivilege`；只加 ACE、不删原有 ACE。</summary>
-        public static string TakeOwn(string full, out bool ok)
+        /// <summary>这个键在不在（只读判断）。</summary>
+        public static bool Exists(string full)
         {
-            ok = false;
-            System.Text.StringBuilder sb = new System.Text.StringBuilder();
-            sb.AppendLine("取得所有权：" + full);
+            try
+            {
+                string sub;
+                RegistryKey baseKey = BaseOf(full, out sub);
+                using (RegistryKey k = baseKey.OpenSubKey(sub, false))
+                {
+                    return (k != null);
+                }
+            }
+            catch { return false; }
+        }
+
+        /// <summary>这个键的所有者（先按账号名给，解不出来就退回 SID；读不到就空串）。
+        /// 界面上「所有者是 NT SERVICE\TrustedInstaller」那种话就来自它。</summary>
+        public static string OwnerOf(string full)
+        {
+            try
+            {
+                string sub;
+                RegistryKey baseKey = BaseOf(full, out sub);
+                using (RegistryKey k = baseKey.OpenSubKey(sub, RegistryKeyPermissionCheck.ReadWriteSubTree,
+                           RegistryRights.ReadPermissions))
+                {
+                    if (k == null) { return ""; }
+                    SecurityIdentifier sid = (SecurityIdentifier)k
+                        .GetAccessControl(AccessControlSections.Owner)
+                        .GetOwner(typeof(SecurityIdentifier));
+                    try { return sid.Translate(typeof(NTAccount)).ToString(); }
+                    catch { return sid.ToString(); }
+                }
+            }
+            catch { return ""; }
+        }
+
+        /// <summary>这个键现在**为什么**写不动（给人看的一句话）。能写就返回空串。
+        /// ⚠️ 调用方要先 `Exists` —— 键不在的时候这里返回空串（"写不动"和"没这个键"是两件事，
+        /// 混成一句会让报告说谎）。</summary>
+        public static string WhyLocked(string full)
+        {
+            if (CanWrite(full)) { return ""; }
+            if (!Exists(full)) { return ""; }
+            string owner = OwnerOf(full);
+            return "写不动（所有者是 " + (owner.Length > 0 ? owner : "看不出来")
+                + "，管理员只有读取权限）—— 要「取得所有权」才动得了";
+        }
+
+        /// <summary>一个键的**整棵**（自己在前、子键在后；父一定排在子的前面）。
+        /// 用于"递归取得所有权"和"删除前体检"。读不动的键就停在那一条、**不抛异常**
+        /// —— 体检本身不该被一个古怪的子键带走（2026-10-11：`Drive\shell\cmd` 下面那个
+        /// `command` 就是被 TrustedInstaller 保护的，删不掉它的真正原因）。</summary>
+        public static List<string> TreeKeys(string full)
+        {
+            List<string> list = new List<string>();
+            try
+            {
+                string sub;
+                RegistryKey baseKey = BaseOf(full, out sub);
+                using (RegistryKey k = baseKey.OpenSubKey(sub, false))
+                {
+                    if (k == null) { return list; }
+                    list.Add(full);
+                    Collect(k, full, list);
+                }
+            }
+            catch { }
+            return list;
+        }
+
+        private static void Collect(RegistryKey parent, string path, List<string> list)
+        {
+            string[] names;
+            try { names = parent.GetSubKeyNames(); }
+            catch { return; }
+            foreach (string name in names)
+            {
+                if (name == null || name.Length == 0) { continue; }
+                string child = path + "\\" + name;
+                list.Add(child);
+                try
+                {
+                    using (RegistryKey c = parent.OpenSubKey(name, false))
+                    {
+                        if (c != null) { Collect(c, child, list); }
+                    }
+                }
+                catch { }
+            }
+        }
+
+        /// <summary>取得所有权：把所有者改成内置管理员组，并**追加**一条"管理员完全控制"。
+        /// ⚠️ 会先打开 `SeTakeOwnershipPrivilege`；只加 ACE、不删原有 ACE。
+        /// **成功返回空串，失败返回一句原因** —— 子树里要逐键调用，所以报告文本由调用方拼
+        /// （2026-10-11 起「取得所有权」是**整棵**做的，见 `CtxMenu.TakeOwnAndDisable`）。</summary>
+        public static string TakeOwnOne(string full)
+        {
             if (!EnablePrivilege("SeTakeOwnershipPrivilege"))
             {
-                sb.AppendLine("结果：没成功 —— 拿不到「取得所有权」特权 SeTakeOwnershipPrivilege");
-                sb.AppendLine("（这个特权只有管理员有，而且默认是关着的；请确认这个窗口是**以管理员身份**重开过的。）");
-                return sb.ToString();
+                return "拿不到「取得所有权」特权 SeTakeOwnershipPrivilege（只有管理员有，而且默认是关着的；"
+                    + "请确认这个窗口是以管理员身份重开过的）";
             }
-            sb.AppendLine("· 已启用特权 SeTakeOwnershipPrivilege");
             try
             {
                 string sub;
@@ -182,48 +281,29 @@ namespace Mxx1Toolbox
                 using (RegistryKey k = baseKey.OpenSubKey(sub, RegistryKeyPermissionCheck.ReadWriteSubTree,
                            RegistryRights.TakeOwnership))
                 {
-                    if (k == null)
-                    {
-                        sb.AppendLine("结果：没成功 —— 打不开这个键（可能已经被删了）");
-                        return sb.ToString();
-                    }
+                    if (k == null) { return "打不开这个键（可能已经被删了）"; }
                     RegistrySecurity sec = k.GetAccessControl(AccessControlSections.Owner);
                     sec.SetOwner(Administrators());
                     k.SetAccessControl(sec);
                 }
-                sb.AppendLine("· 所有者已改成 BUILTIN\\Administrators");
 
                 // ② 追加一条"管理员完全控制"（不删任何原有 ACE）
                 using (RegistryKey k = baseKey.OpenSubKey(sub, RegistryKeyPermissionCheck.ReadWriteSubTree,
                            RegistryRights.ChangePermissions))
                 {
-                    if (k == null)
-                    {
-                        sb.AppendLine("结果：没成功 —— 换了所有者之后仍然打不开（ChangePermissions）");
-                        return sb.ToString();
-                    }
+                    if (k == null) { return "换了所有者之后仍然打不开（ChangePermissions）"; }
                     RegistrySecurity sec = k.GetAccessControl(AccessControlSections.Access);
                     sec.AddAccessRule(new RegistryAccessRule(Administrators(), RegistryRights.FullControl,
                         InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit,
                         PropagationFlags.None, AccessControlType.Allow));
                     k.SetAccessControl(sec);
                 }
-                sb.AppendLine("· 已追加一条「Administrators：完全控制」（原有的权限一条都没删）");
 
                 // ③ 读回核对：现在真的能写了吗
-                if (!CanWrite(full))
-                {
-                    sb.AppendLine("结果：没成功 —— 改完权限还是不能可写打开");
-                    return sb.ToString();
-                }
-                sb.AppendLine("结果：已取得所有权（现在这个键可以写了）。");
-                ok = true;
+                if (!CanWrite(full)) { return "改完权限还是不能可写打开"; }
+                return "";
             }
-            catch (Exception ex)
-            {
-                sb.AppendLine("结果：失败 —— " + ex.Message);
-            }
-            return sb.ToString();
+            catch (Exception ex) { return ex.Message; }
         }
 
         /// <summary>把安全描述符写回原样（界面上的「还原权限」）。要给回 TrustedInstaller 这样的所有者，

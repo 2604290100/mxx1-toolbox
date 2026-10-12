@@ -65,6 +65,16 @@ namespace Mxx1Toolbox
         /// 实测那几个键：`HKLM\SOFTWARE\Classes\Drive\shell\cmd` 之类，所有者 `NT SERVICE\TrustedInstaller`、
         /// `BUILTIN\Administrators` 只有 `ReadKey`。</summary>
         public bool Protected = false;
+        /// <summary>这一项**自己**能写，但它**下面的子键**里有写不动的（Windows 保护的那种）。
+        /// ⚠️ 和 `Protected` 是**两件事**：`Protected` 说"这个键自己写不动"，这一条说"它下面有
+        /// 写不动的子键"。删除要连子键一起删，所以**这一条会让删除失败**（记录里那句
+        /// 「该子项不存在，因此无法删除子项目录树。」就是这么来的，2026-10-11 用户报的
+        /// 「最小两条删除记录失败」—— 真机上那 8 项全是 `command` 这个子键）。
+        /// 「取得所有权」2026-10-11 起会把子键一起拿，所以这一条也是那个按钮的判据之一。</summary>
+        public bool SubLocked = false;
+        /// <summary>写不动的那些子键（完整键路径；自己不在里面）—— 底栏那句、删除报告、
+        /// 命令行报告都用它说清"到底是谁挡着"。</summary>
+        public List<string> LockedSubs = new List<string>();
         /// <summary>键里有 `Extended` = 只在按住 Shift 右键时才出现。</summary>
         public bool ShiftOnly = false;
         /// <summary>级联子菜单的父项（`SubCommands` / `ExtendedSubCommandsKey`）。</summary>
@@ -883,6 +893,36 @@ namespace Mxx1Toolbox
                        + "）：菜单上显示的字和图标由那个程序自己决定。")
                     : "这个键下面没有 command 子键（点了不会有动作，或者它用的是别的机制）";
             }
+
+            // ⚠️ 最后再扫一遍子树（只读判断）：删得删除不掉，取决于**它下面的子键**写不写得动。
+            // 真机上 `Drive\shell\cmd` 这一项自己抢过所有权（能写），可它的 `command` 还是
+            // TrustedInstaller 的 —— 不在这里标出来，用户就只能"点了删除才知道删不掉"。
+            FillLockedSubs(e);
+        }
+
+        /// <summary>把"子树里写不动的子键"填进 `LockedSubs` / `SubLocked`（只读判断：逐个试一次
+        /// 可写打开，一个字节都不写）。**不含它自己** —— 自己写不动是 `Protected`，两件事分开说。</summary>
+        private static void FillLockedSubs(CtxEntry e)
+        {
+            e.LockedSubs.Clear();
+            foreach (string key in RootsOf(e))
+            {
+                List<string> locked = LockedSubKeysOf(key);
+                foreach (string one in locked) { e.LockedSubs.Add(one); }
+            }
+            e.SubLocked = (e.LockedSubs.Count > 0);
+        }
+
+        /// <summary>一个键**下面**（不含它自己）写不动的子键，完整键路径，父在前。</summary>
+        private static List<string> LockedSubKeysOf(string key)
+        {
+            List<string> list = new List<string>();
+            List<string> tree = RegAcl.TreeKeys(key);
+            for (int i = 1; i < tree.Count; i++)      // tree[0] 是它自己
+            {
+                if (!RegAcl.CanWrite(tree[i])) { list.Add(tree[i]); }
+            }
+            return list;
         }
 
         private static void AddShellEx(List<CtxEntry> list, Dictionary<string, CtxEntry> seen, CtxZone z, string cls,
@@ -1113,6 +1153,8 @@ namespace Mxx1Toolbox
             if (zombie > 0) { sb.Append(" / 黑名单残留 ").Append(zombie.ToString(CultureInfo.InvariantCulture)); }
             int prot = 0;
             foreach (CtxEntry e in list) { if (e.Protected) { prot++; } }
+            int subLocked = 0;
+            foreach (CtxEntry e in list) { if (e.SubLocked) { subLocked++; } }
             if (machine > 0)
             {
                 sb.Append("；其中 ").Append(machine.ToString(CultureInfo.InvariantCulture))
@@ -1132,6 +1174,11 @@ namespace Mxx1Toolbox
             {
                 sb.Append("；").Append(prot.ToString(CultureInfo.InvariantCulture))
                   .Append(" 条被 Windows 保护（连管理员也写不动，要「取得所有权并禁用」）");
+            }
+            if (subLocked > 0)
+            {
+                sb.Append("；").Append(subLocked.ToString(CultureInfo.InvariantCulture))
+                  .Append(" 条下面的子键被 Windows 保护（删除会被挡住，要先「取得所有权」把子键一起拿过来）");
             }
             sb.Append("）");
             return sb.ToString();
@@ -1278,12 +1325,16 @@ namespace Mxx1Toolbox
 
         /// <summary>「取得所有权并禁用」：给 Windows 保护的那些项用的（`src\RegAcl.cs`）。
         ///
-        /// 三步，**顺序不能换**：① 先把原样的安全描述符（SDDL，含所有者和 DACL）存成一份文件 ——
-        /// **存不下就绝不动手**（宁可不做，也不留一个"权限被改过、还不知道原来什么样"的系统键）；
-        /// ② 取得所有权（所有者改 Administrators + 追加一条完全控制，原有 ACE 一条不删）；
-        /// ③ 写隐藏开关（这时才写得动）。那份 SDDL 文件记在动作记录的"备份文件"那一列，
-        /// 界面上「还原权限」就是把它写回去。
-        /// ⚠️ 这是**改系统安全描述符**，比写一个值重得多，所以界面上过一次**重确认**才走到这里。</summary>
+        /// ⚠️ 2026-10-11 起是**递归**的（用户报「最小两条删除记录失败」之后查出来改的）：
+        /// 以前只抢**点击的那一个键**，于是 `HKLM\...\Drive\shell\cmd` 这种"自己抢下来了、
+        /// 可下面的 `command` 还是 TrustedInstaller 的"项，禁用/恢复立刻就好、**删除却永远失败**
+        /// （.NET 的递归删键删到那个子键就打不开它，还把它说成"子项不存在"）。
+        /// 现在：整棵子树里**写不动的那些键**全抢一遍，并把**每一个键的原样 SDDL 一起存**进同一份
+        /// 文件（「还原权限」按它逐个还回去，从深到浅还）。
+        ///
+        /// 三步，**顺序不能换**：① 先把要抢的键挑出来、原样权限存成一份文件 ——
+        /// **有一个键的 SDDL 存不下就整件事作罢**（宁可不做，也不留一个「权限被改过、还不知道原来
+        /// 什么样」的系统键）；② 逐个取得所有权（父在前）；③ 写隐藏开关（这时才写得动）。</summary>
         public static string TakeOwnAndDisable(CtxEntry e, out bool ok)
         {
             ok = false;
@@ -1300,41 +1351,97 @@ namespace Mxx1Toolbox
                     + "点一下会弹 UAC，重开这个窗口之后再来一次。");
                 return sb.ToString();
             }
-            if (!e.Protected)
+            // 判据两档：**自己**写不动（Protected）、或者**它下面的子键**写不动（SubLocked）。
+            // 后者是 2026-10-11 补的 —— 磁盘那两个键自己早就抢下来了，挡住删除的其实是子键。
+            if (!e.Protected && !e.SubLocked)
             {
-                sb.AppendLine("结果：没做 —— 这一项本来就能写，直接点「禁用」就行（不用抢所有权）。");
+                sb.AppendLine("结果：没做 —— 这一项自己和它下面的键都写得动，直接点「禁用」就行（不用抢所有权）。");
                 return sb.ToString();
             }
 
-            int done = 0, failed = 0;
-            string sddlFile = "";
+            List<string> roots = RootsOf(e);
+            List<string> need = new List<string>();       // 写不动、要抢的键
+            List<string> parts = new List<string>();      // 权限存档的行：<键路径>\t<原样 SDDL>
+            int total = 0;
+            foreach (string key in roots)
+            {
+                List<string> tree = RegAcl.TreeKeys(key);
+                total += tree.Count;
+                foreach (string k in tree)
+                {
+                    if (RegAcl.CanWrite(k)) { continue; }     // 能写的键**不动它**：改的键越少越好
+                    string sddl = RegAcl.ReadSddl(k);
+                    if (sddl.Length == 0)
+                    {
+                        sb.AppendLine("结果：没做 —— " + k + " 的原样权限（SDDL）存不下来。");
+                        sb.AppendLine("（没有它就不许改权限：宁可不做，也不留下一个「权限被改过、"
+                            + "还不知道原来什么样」的系统键。）");
+                        Record("取得所有权并禁用", e, "", "", "失败：存不下原样的权限（SDDL），宁可不做");
+                        return sb.ToString();
+                    }
+                    need.Add(k);
+                    parts.Add(k + "\t" + sddl);
+                }
+            }
+            sb.Append("· 这一项整棵 ").Append(total.ToString(CultureInfo.InvariantCulture)).Append(" 个键；写不动的 ")
+              .Append(need.Count.ToString(CultureInfo.InvariantCulture)).AppendLine(" 个（要抢的就这些）");
+            foreach (string k in need)
+            {
+                sb.Append("   └ ").Append(k).Append(IsOwnKey(roots, k) ? "（这一项自己）" : "（子键）")
+                  .Append(" —— ").AppendLine(RegAcl.WhyLocked(k));
+            }
+            if (need.Count == 0)
+            {
+                sb.AppendLine();
+                sb.AppendLine("结果：没做 —— 一个写不动的键都没找到（可能刚刚被别的东西改过权限），"
+                    + "点「刷新」看新的状态。");
+                Record("取得所有权并禁用", e, "", "", "跳过：没有写不动的键");
+                return sb.ToString();
+            }
+
+            // ① 原样权限先存好（存不下就整件事作罢）
+            string sddlFile;
+            try
+            {
+                Directory.CreateDirectory(BackupDir);
+                sddlFile = Path.Combine(BackupDir,
+                    DateTime.Now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture)
+                    + "_acl_" + SafeName(roots[0]) + ".sddl");
+                File.WriteAllText(sddlFile, AclFileHeader + Environment.NewLine
+                    + string.Join(Environment.NewLine, parts.ToArray()) + Environment.NewLine,
+                    new UTF8Encoding(false));
+            }
+            catch (Exception ex)
+            {
+                sb.AppendLine("结果：没做 —— 存不下这份权限存档：" + ex.Message);
+                Record("取得所有权并禁用", e, "", "", "失败：存不下权限存档（" + ex.Message + "）");
+                return sb.ToString();
+            }
+            sb.Append("· 原样权限已存（").Append(need.Count.ToString(CultureInfo.InvariantCulture))
+              .Append(" 个键）：").AppendLine(sddlFile);
+
+            // ② 逐个取得所有权（父在前 —— TreeKeys 的顺序就是父在前）
+            int failed = 0, done = 0, took = 0;
             string why = "";
-            foreach (string key in RootsOf(e))
+            foreach (string k in need)
+            {
+                string err = RegAcl.TakeOwnOne(k);
+                if (err.Length > 0) { failed++; why = err; sb.AppendLine("   └ " + k + " —— 失败：" + err); }
+                else { took++; sb.AppendLine("   └ 已取得所有权：" + k); }
+            }
+            if (took == 0)
+            {
+                sb.AppendLine();
+                sb.AppendLine("结果：没成功 —— 一个键都没抢下来。");
+                Record("取得所有权并禁用", e, "", sddlFile, "失败：" + FailWhy(why, e));
+                return sb.ToString();
+            }
+
+            // ③ 写隐藏开关
+            foreach (string key in roots)
             {
                 try
                 {
-                    if (!RegAcl.CanWrite(key))
-                    {
-                        string sddl = RegAcl.ReadSddl(key);
-                        if (sddl.Length == 0)
-                        {
-                            failed++; why = "存不下原样的权限（SDDL），宁可不做";
-                            sb.AppendLine("· " + key + " —— 存不下原样权限，跳过（没有它就不许改权限）");
-                            continue;
-                        }
-                        Directory.CreateDirectory(BackupDir);
-                        string file = Path.Combine(BackupDir,
-                            DateTime.Now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture)
-                            + "_acl_" + SafeName(key) + ".sddl");
-                        File.WriteAllText(file, sddl, new UTF8Encoding(false));
-                        sb.AppendLine("· 原样权限已存：" + file);
-
-                        bool took;
-                        string report = RegAcl.TakeOwn(key, out took);
-                        sb.AppendLine(report.TrimEnd());
-                        if (!took) { failed++; why = "取得所有权失败"; continue; }
-                        sddlFile = file;
-                    }
                     using (RegistryKey k = OpenFull(key, true))
                     {
                         if (k == null)
@@ -1360,12 +1467,13 @@ namespace Mxx1Toolbox
                     sb.AppendLine("· " + key + " —— 失败：" + ex.Message);
                 }
             }
+
             ok = (failed == 0 && done > 0);
             sb.AppendLine();
             if (ok)
             {
-                sb.AppendLine("结果：已取得所有权并禁用 —— 那一项从右键里消失了，原样的权限存在上面那个文件里。");
-                sb.AppendLine("想连权限一起放回去：动作记录里点「还原权限」。");
+                sb.AppendLine("结果：已取得所有权并禁用 —— 那一项从右键里消失了，整棵原样的权限存在上面那个文件里。");
+                sb.AppendLine("想连权限一起放回去：动作记录里点「还原权限」（这棵里的每个键会逐个还回去）。");
                 Record("取得所有权并禁用", e, done.ToString(CultureInfo.InvariantCulture) + " 个键", sddlFile, "成功");
             }
             else
@@ -1376,8 +1484,25 @@ namespace Mxx1Toolbox
             return sb.ToString();
         }
 
-        /// <summary>删除：**先备份成 .reg，备份没成功就不删**。
-        /// 删除不是"隐藏"，键真的没了 —— 所以备份是这一步的硬前提（用户双击那个 .reg 就能还原）。</summary>
+        /// <summary>这个键是不是"这一项自己"那个键（报告里用来区分自己和子键）。</summary>
+        private static bool IsOwnKey(List<string> roots, string key)
+        {
+            foreach (string r in roots)
+            {
+                if (string.Equals(r, key, StringComparison.OrdinalIgnoreCase)) { return true; }
+            }
+            return false;
+        }
+
+        /// <summary>删除：**先体检、再备份成 .reg、最后才删**；备份没成功就不删。
+        /// 删除不是"隐藏"，键真的没了 —— 所以备份是这一步的硬前提（用户双击那个 .reg 就能还原）。
+        ///
+        /// ⚠️ 2026-10-11 起**动手前先体检这个键和它下面的子键**（`RegAcl.WhyLocked` /
+        /// `LockedSubKeysOf`）：写不动就**不删**，并把"是谁挡着、该怎么办"如实写出来。
+        /// 以前没有这一步，于是 `Drive\shell\cmd` 这类项会一路删到 .NET 的递归删键里失败，
+        /// 记录里只留下一句**误导人的**「该子项不存在，因此无法删除子项目录树。」
+        /// （那是 .NET 的 `Arg_RegSubKeyAbsent`：它把"打不开子键"说成了"不存在"，
+        /// 用户报的「最小两条删除记录失败」就是这两条）。</summary>
         public static string Delete(CtxEntry e, out string backupFile, out bool ok)
         {
             ok = false;
@@ -1391,11 +1516,47 @@ namespace Mxx1Toolbox
             }
 
             List<string> backups = new List<string>();
-            int done = 0, failed = 0;
+            int done = 0, failed = 0, missed = 0;
             string why = "";
             foreach (string key in RootsOf(e))
             {
-                // ① 备份（先做，做不成就绝不往下走）
+                // ① 体检：这个键自己写不动 → 删不了（取得所有权之后才能删）
+                if (!RegAcl.Exists(key))
+                {
+                    missed++;
+                    sb.AppendLine("· " + key + " —— 已经不在了，跳过");
+                    continue;
+                }
+                string ownWhy = RegAcl.WhyLocked(key);
+                if (ownWhy.Length > 0)
+                {
+                    failed++;
+                    why = ownWhy + "；先在窗口里选中这一行点「取得所有权」，再删";
+                    sb.AppendLine("· " + key + " —— 没有删：" + ownWhy);
+                    sb.AppendLine("   └ 怎么办：选中这一行点底栏「取得所有权」，然后再点一次删除。");
+                    continue;
+                }
+                // ② 体检：它**下面的子键**写不动 → 也删不了（删一个键要连子键一起删）。
+                // 这一条就是 2026-10-11 那次失败的真因：自己抢过所有权、子键还在 TrustedInstaller 手里。
+                List<string> locked = LockedSubKeysOf(key);
+                if (locked.Count > 0)
+                {
+                    failed++;
+                    why = "它下面的 " + LeafName(locked[0]) + " 写不动（"
+                        + RegAcl.OwnerOf(locked[0]) + "）；「取得所有权」会把子键一起拿过来，再删就能删掉";
+                    sb.Append("· ").Append(key).Append(" —— 没有删：它下面有 ")
+                      .Append(locked.Count.ToString(CultureInfo.InvariantCulture)).AppendLine(" 个子键写不动");
+                    foreach (string l in locked)
+                    {
+                        sb.Append("   └ ").Append(l).Append("（").Append(LeafName(l)).Append("）—— ")
+                          .AppendLine(RegAcl.WhyLocked(l));
+                    }
+                    sb.AppendLine("   └ 怎么办：选中这一行点底栏「取得所有权」（现在会把子键一起拿过来），"
+                        + "然后再点一次删除；不想删就用「禁用」把它藏起来。");
+                    continue;
+                }
+
+                // ③ 备份（做不成就绝不往下走）
                 string file;
                 string err = Export(key, out file);
                 if (err.Length > 0)
@@ -1407,7 +1568,7 @@ namespace Mxx1Toolbox
                 backups.Add(file);
                 sb.AppendLine("· 已备份：" + file);
 
-                // ② 删（用 .NET 的删键，不拼 reg.exe 的命令行 —— 键名里有空格 / 斜杠时不会出错）
+                // ④ 删（用 .NET 的删键，不拼 reg.exe 的命令行 —— 键名里有空格 / 斜杠时不会出错）
                 try
                 {
                     string parent, leaf;
@@ -1445,6 +1606,11 @@ namespace Mxx1Toolbox
                 Record("删除", e, done.ToString(CultureInfo.InvariantCulture) + " 个键", backupFile, "成功");
                 ok = true;
             }
+            else if (missed > 0 && done == 0 && failed == 0)
+            {
+                sb.AppendLine("结果：这些键已经不在了（可能刚被别的东西删掉 / 撤掉）。点「刷新」重新读一遍。");
+                Record("删除", e, "", "", "跳过：键已经不在了");
+            }
             else
             {
                 sb.AppendLine("结果：没全部成功。"
@@ -1452,6 +1618,14 @@ namespace Mxx1Toolbox
                 Record("删除", e, "", backupFile, "失败：" + FailWhy(why, e));
             }
             return sb.ToString();
+        }
+
+        /// <summary>键路径的最后一段（`…\shell\cmd\command` → `command`）—— 报告里说"是谁挡着"用。</summary>
+        private static string LeafName(string key)
+        {
+            if (key == null || key.Length == 0) { return ""; }
+            int i = key.LastIndexOf('\\');
+            return (i < 0) ? key : key.Substring(i + 1);
         }
 
         private static StringBuilder Head(string action, CtxEntry e)
@@ -1506,6 +1680,41 @@ namespace Mxx1Toolbox
 
         /// <summary>动作流水（`ctxmenu-actions.tsv`）：窗口底部那行"上一次…"和事后排查都读它。</summary>
         public static string ActionLogFile { get { return Path.Combine(AppPaths.BaseDir, "ctxmenu-actions.tsv"); } }
+
+        /// <summary>权限存档（`.sddl`）**新格式**的头部：一行一个键（`<完整键路径>\t<原样 SDDL>`）。
+        /// 2026-10-11 起「取得所有权」是整棵做的 → 一份文件里要装好几个键；那一版之前的文件
+        /// **整份就是一个键的 SDDL**（没有这一行），照样认（键路径从动作记录里拿）。
+        /// ⚠️ SDDL 里不会有 TAB 也不会有换行，所以这个格式不用转义。</summary>
+        public const string AclFileHeader = "# mxx1-toolbox · 右键菜单管理：权限存档（一行一个键：完整键路径 TAB 原样安全描述符）";
+
+        /// <summary>读那份权限存档：新的（带头部、一行一个键）和旧的（整份就是一个 SDDL）都认。
+        /// 读不出来就返回空的两个列表（调用方据此"不做"）。</summary>
+        private static void ParseAclFile(string text, string keyFromRecord, out List<string> keys, out List<string> sddls)
+        {
+            keys = new List<string>();
+            sddls = new List<string>();
+            string t = (text == null) ? "" : text.Trim();
+            if (t.Length == 0) { return; }
+            if (t.StartsWith(AclFileHeader, StringComparison.Ordinal))
+            {
+                string[] lines = t.Replace("\r\n", "\n").Split('\n');
+                foreach (string line in lines)
+                {
+                    string s = line.Trim();
+                    if (s.Length == 0 || s.StartsWith("#", StringComparison.Ordinal)) { continue; }
+                    int tab = s.IndexOf('\t');
+                    if (tab <= 0) { continue; }
+                    keys.Add(s.Substring(0, tab).Trim());
+                    sddls.Add(s.Substring(tab + 1).Trim());
+                }
+                return;
+            }
+            if (keyFromRecord != null && keyFromRecord.Length > 0)
+            {
+                keys.Add(keyFromRecord);
+                sddls.Add(t);
+            }
+        }
 
         /// <summary>`reg.exe export` 一份。成功返回空串，失败返回原因（**失败就绝不删**）。
         /// ⚠️ 边跑边读输出：先 WaitForExit 再 ReadToEnd 在输出超过管道缓冲时会父子互等（本仓库踩过）。</summary>
@@ -1682,6 +1891,9 @@ namespace Mxx1Toolbox
             if (a.Action == "取得所有权并禁用")
             {
                 // ① 先把隐藏开关删掉（让那一项回到菜单里）；② 再把安全描述符写回原样
+                // ⚠️ 2026-10-11 起「取得所有权」是**整棵**做的 → 存档里可能有好几个键，
+                // 那就逐个还；**从深到浅**还（先子键、后父键）：反过来的话，父键一还原就可能
+                // 把继承重新收紧，子键还没还就打不开它了。
                 try
                 {
                     using (RegistryKey k = OpenFull(a.Key, true))
@@ -1694,14 +1906,61 @@ namespace Mxx1Toolbox
                     }
                 }
                 catch (Exception ex) { sb.AppendLine("· 删隐藏开关时：" + ex.Message); }
-                string sddl = "";
-                try { if (File.Exists(a.Backup)) { sddl = File.ReadAllText(a.Backup, Encoding.UTF8).Trim(); } }
+                string text = "";
+                try { if (File.Exists(a.Backup)) { text = File.ReadAllText(a.Backup, Encoding.UTF8); } }
                 catch { }
-                bool okAcl;
-                string rep = RegAcl.RestoreSddl(a.Key, sddl, out okAcl);
-                sb.AppendLine(rep.TrimEnd());
-                ok = okAcl;
-                if (ok) { RecordRaw("撤销·还原权限", a.ZoneId, a.ZoneLabel, a.Key, a.Backup, a.Title, "成功"); }
+                List<string> keys, sddls;
+                ParseAclFile(text, a.Key, out keys, out sddls);
+                if (keys.Count == 0)
+                {
+                    sb.AppendLine("结果：没做 —— 那份权限存档读不出来（"
+                        + (a.Backup.Length > 0 ? a.Backup : "记录里没写") + "）。");
+                    return sb.ToString();
+                }
+                if (keys.Count > 1)
+                {
+                    // ⚠️ 排序**不能只排键名**（那样键和 SDDL 就配错了）：排下标。
+                    // 深的在前（路径长的排前面）—— 先子键、后父键。
+                    List<int> order = new List<int>();
+                    for (int i = 0; i < keys.Count; i++) { order.Add(i); }
+                    order.Sort(delegate(int x, int y) { return keys[y].Length.CompareTo(keys[x].Length); });
+                    List<string> k2 = new List<string>(), s2 = new List<string>();
+                    foreach (int i in order) { k2.Add(keys[i]); s2.Add(sddls[i]); }
+                    keys = k2; sddls = s2;
+                }
+                int okAclCount = 0, failAclCount = 0;
+                for (int i = 0; i < keys.Count; i++)
+                {
+                    string k = keys[i];
+                    string sddl = (i < sddls.Count) ? sddls[i] : "";
+                    bool one;
+                    string rep = RegAcl.RestoreSddl(k, sddl, out one);
+                    if (one)
+                    {
+                        okAclCount++;
+                        sb.AppendLine("· ").Append(k).AppendLine(" —— 已还原成原样");
+                    }
+                    else
+                    {
+                        failAclCount++;
+                        sb.AppendLine("· ").Append(k).AppendLine(" —— 没还成：");
+                        sb.AppendLine(rep.TrimEnd());
+                    }
+                }
+                ok = (failAclCount == 0);
+                if (ok)
+                {
+                    sb.AppendLine("结果：已还原成原来的所有者和权限（" + okAclCount.ToString(CultureInfo.InvariantCulture)
+                        + " 个键）。收起的那一项也回到菜单里了。");
+                    RecordRaw("撤销·还原权限", a.ZoneId, a.ZoneLabel, a.Key, a.Backup, a.Title, "成功");
+                }
+                else
+                {
+                    sb.AppendLine("结果：没全部还回去（成功 " + okAclCount.ToString(CultureInfo.InvariantCulture)
+                        + " / 共 " + keys.Count.ToString(CultureInfo.InvariantCulture) + " 个键）。");
+                    RecordRaw("撤销·还原权限", a.ZoneId, a.ZoneLabel, a.Key, a.Backup, a.Title,
+                        "失败：" + failAclCount.ToString(CultureInfo.InvariantCulture) + " 个键没还成");
+                }
                 return sb.ToString();
             }
 
@@ -2240,6 +2499,7 @@ namespace Mxx1Toolbox
                       .Append(e.Title).Append("　[").Append(e.StateLabel).Append(" · ").Append(e.WhereLabel).Append(']');
                     if (e.Command.Length > 0) { sb.Append("　").Append(Shorten(e.Command, 90)); }
                     else if (e.Note.Length > 0) { sb.Append("　").Append(Shorten(e.Note, 90)); }
+                    if (e.SubLocked) { sb.Append("　[子键被 Windows 保护，删除会被挡]"); }
                     sb.AppendLine();
                 }
                 sb.AppendLine();
@@ -2292,8 +2552,18 @@ namespace Mxx1Toolbox
                       .Append(e.StateLabel).Append('\t')
                       .Append(e.InMachine ? (e.InUser ? "both" : "machine") : "user").Append('\t')
                       .Append(e.Protected ? "protected" : "writable").AppendLine();
+                    // ⚠️ **新加的一行，不改上面那行的列**（老断言按列读，动它会连坐一片假红）：
+                    // "这一项下面的子键写不动"（删除会被挡住）—— 2026-10-11 查那次删除失败才有的概念。
+                    foreach (string l in e.LockedSubs)
+                    {
+                        sb.Append("subblocked\t").Append(z.Id).Append('\t').Append(e.Verb).Append('\t')
+                          .Append(l).Append('\t').Append(RegAcl.OwnerOf(l)).AppendLine();
+                    }
                 }
             }
+            int subLockedTotal = 0;
+            foreach (CtxEntry e in all) { if (e.SubLocked) { subLockedTotal++; } }
+            sb.Append("subblockedcount\t").Append(subLockedTotal.ToString(CultureInfo.InvariantCulture)).AppendLine();
 
             // ---- 系统黑名单（机器可读）----------------------------------------------------------
             // 扩展项的开关**不在菜单项那些键里**，而在这份黑名单里（值名 = CLSID，值数据 = 人看的名字）：

@@ -57,6 +57,11 @@ function Get-Shape {
         @('rightmenu.copy.off',    'minus'),
         @('rightmenu.terminal.on', 'terminal'),
         @('rightmenu.terminal.off','minus'),
+        # 2026-10-15 加的两项：图片转换 = 循环箭头（"换一种格式"最直观）、图标提取 = 两张纸（把图标取出来存一份）
+        @('rightmenu.convert.on',  'refresh'),
+        @('rightmenu.convert.off', 'minus'),
+        @('rightmenu.icon.on',     'copy'),
+        @('rightmenu.icon.off',    'minus'),
         @('rightmenu.rebuild',    'refresh'),
         @('rightmenu.help',       'doc'),
         @('update-cache',   'trash'),

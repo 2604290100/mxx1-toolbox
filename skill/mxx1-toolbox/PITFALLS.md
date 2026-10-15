@@ -514,3 +514,73 @@
       测试还拿带后缀的老标签去找勾选框 → 找不到 → 没勾上 → 底栏按钮还是"0 项" → 确认框根本不出现
       （detail 里"第二次确认框"是空的，看着像功能的锅，其实是断言的锅）。
       **规矩**：动作前后**各读一次控件文字**，把"该变的字"也当成判据（这次顺手把它写进了 C19v17）。
+  65. **`GetObject` 在 gdi32 里，不在 kernel32**（2026-10-15，图标提取第一次跑就撞）：
+      `[DllImport("kernel32.dll")] GetObjectW` **能编译过**，运行时才抛
+      「无法在 DLL"kernel32.dll"中找到名为"GetObjectW"的入口点。」
+      —— 表现是"每个文件都抽不出图标"（被我们自己的 catch 包成一句人话），
+      看着像功能坏了，其实是导入写错了。同族的还有 `GetDIBits` / `CreateCompatibleDC`（都在 gdi32）、
+      `LoadImage` / `DestroyIcon` / `GetIconInfo` / `CreateIconFromResourceEx`（都在 user32）、
+      `ExtractIconEx` / `SHGetFileInfo`（shell32）。
+      **规矩**：新写一个 P/Invoke，第一件事是让它在**一个最小输入上真跑一次**
+      （别等整条链路做完才发现入口点找不到）。
+  66. **Win10 的 `notepad.exe` 图标在 MUI 资源重定向里 —— 同一个文件的副本抽不出图标**
+      （2026-10-15，差点被当成"枚举写错了"）：SHA256 一模一样的同一个 exe，
+      `LoadLibraryEx(AS_DATAFILE)` + `EnumResourceNames(RT_GROUP_ICON)` 在
+      `System32\notepad.exe` 上给出 **13 个 RT_ICON / 1 个组**，把它复制到 `%TEMP%` 或 `D:\`
+      就**一个都没有**（`ExtractIconEx` 同样报 0）。
+      用自己写的 PE 解析器逐字节看它的资源目录：只有 `EDPENLIGHTENEDAPPINFOID` /
+      `EDPPERMISSIVEAPPINFOID` / `MUI` / VERSION / MANIFEST —— **exe 自己身上根本没有图标资源**，
+      是加载器按 `MUI` 那条线索去找的（所以"挪个地方"就没有了）。
+      **规矩**：① 要"有图标资源的文件"当夹具，就用**自己编出来的 exe**
+      （工具箱自己的 exe 有 8 档 256/128/64/48/32/24/20/16，复制走也照样抽得到 —— 实测过）；
+      ② 抽不到时**如实退回**资源管理器那张 32 / 16 图标，别谎报失败、也别拿放大图充数。
+  67. **WIC 的 DDS 解码器只认压缩写法**（2026-10-15）：我们手写的**不压缩** DDS
+      （`DDPF_RGB|DDPF_ALPHAPIXELS` + BGRA8 掩码）被 `BitmapDecoder`（WPF / WIC）拒：
+      「无法对此图像进行解码。该图像头可能已损坏。」—— 把头部 7 种变体
+      （flags 带/不带 PITCH、LINEARSIZE、MIPMAPCOUNT、IM 那套 caps、mips=1…）**全试了一遍都被拒**；
+      而同一个解码器读 ImageMagick 写的 **DXT5** DDS 一点问题都没有。
+      ⇒ 不是我们的头坏了，是它只认 BC/DXT 那一类。
+      **规矩**：验"自己手写的格式"要挑**第三方且宽松**的读法（这里用 ImageMagick 的 `identify` +
+      `%[pixel:…]` **独立读数**），别把某一个挑剔的解码器当唯一判据；反过来也别因为它拒绝就乱改格式。
+  68. **`Table` 里多一行 = 所有老项一起装到新位置上去**（2026-10-15，加"图片文件"位置时差点踩）：
+      `RightMenu.LocationsOf` 的兜底分支是 `take = true`（"没特别说明的项装在所有位置"），
+      所以往位置表里加一行（`SystemFileAssociations\image\shell`），
+      「解除文件占用」「常用功能」「复制…」会**跟着**出现在图片文件上。
+      **规矩**：加位置时把每一项的判断写成**显式**的（`loc.Id == "images" → 只有图片转换`），
+      并且配一条专门的回归（**M62b**：老项一个都不许渗到新位置）。
+  69. **PowerShell 里 `"$名字: 文字"` 会解析报错**（2026-10-15，临时脚本里踩）：
+      `Write-Host "$tree: 没有"` → `Variable reference is not valid. ':' was not followed by a valid
+      variable name character`（`$tree:` 被当成"作用域限定的变量名"）。
+      **规矩**：变量后面紧跟冒号时写 `${tree}`（或改成 `($tree + ': 没有')`）。
+  70. **GUI 子系统程序（winexe）用 `&` 调用 + `$LASTEXITCODE` 判定 = 不可信**（2026-10-15，
+      收尾复核时差点把自己的功能判成"八种全失败"）：工具箱是 `/target:winexe`，
+      在 PowerShell 里 `$r = & $exe convert-image … 2>&1` 这种写法**不保证同步等它结束**：
+      输出会跟下一轮的命令**交错**打印（当时 `paths=` / `result=ok` 出现在下一条标题之后），
+      而 `$LASTEXITCODE` 读到的是**旧值 / 空值** → 八种转换明明都成功（产物就在磁盘上），
+      检测却报"坏的=jpg,png,gif,bmp,tiff,ico,tga,dds"，而且 `Get-ChildItem` 还漏掉了最后两个
+      （那两条进程当时还在写文件）。
+      **规矩**：验工具箱的输出与退出码**一律**走 `ProcessStartInfo`（`UseShellExecute=false` +
+      `RedirectStandardOutput` + `ReadToEndAsync` + `WaitForExit`，这是两个套件里 `Invoke-Exe` 的写法）；
+      临时手敲也照抄那段，别用 `&` + `$LASTEXITCODE`。
+      （顺带：`Start-Process -Wait` 只等在"进程退出"，输出仍要自己重定向，所以套件没用它。）
+  71. **`Type.GetType("…, 简单程序集名")` 对 GAC 里的强名程序集返回 `null`（而且不报错）**
+      （2026-10-15，JPEG XR 探测踩）：写 `Type.GetType("System.Windows.Media.Imaging.WmpBitmapEncoder,
+      PresentationCore", false)` → **永远 null**（这台机器上 WPF 明明装着），于是"能力探测"永远说
+      "不支持"、菜单里那一行永远不出现（一个**静默**的功能缺失，日志里也没有异常）。
+      正确的写法是先 `Assembly.Load("PresentationCore, Version=4.0.0.0, Culture=neutral,
+      PublicKeyToken=31bf3856ad364e35")`（完整强名），再退回 `Assembly.Load("PresentationCore")`，
+      最后才是 `asm.GetType(name, false)`。
+      **规矩**：用反射做"这个类型在不在"的探测时，**先 Load 再 GetType**；探测结果**必须有一条回归
+      盯着"探测说能用 → 菜单里真有那一项"**（这次是界面/命令行都读 `jxr=1` + M62c）。
+  72. **给这个 WinForms 程序挂 WPF 依赖的三个坑**（2026-10-15，JPEG XR 那一档）：
+      ① `build.ps1` **不能**只写 `/reference:PresentationCore.dll` —— `PresentationCore` /
+      `WindowsBase` / `System.Xaml` 都在 **GAC**（`WindowsBase`、`System.Xaml` 在 `GAC_MSIL`，
+      `PresentationCore` 按位数分在 `GAC_32` / `GAC_64`），没装目标包的机器上 `Reference Assemblies`
+      那个目录是**空的**；现在按"目标包 → GAC 三个目录"的顺序找，**找不到就 `/define:MXX1_NO_JXR`**
+      （实测：那样编出来的 exe 能跑，只是少一种格式、并如实说"这一份没带"）。
+      ② 只引 `PresentationCore` + `WindowsBase` **不够**：`csc` 会报
+      `CS0012: 类型"System.Windows.Markup.IUriContext"未在未引用的程序集中定义` —— 还要 **`System.Xaml`**。
+      ③ **碰 WPF 类型的代码要单独放一个方法**（`JxrWriter.Write` 只探测 + 转发，真正用
+      `BitmapSource` / `WmpBitmapEncoder` 的是 `WriteCore`）：否则 JIT 编译外层方法时就要解析那些类型，
+      机器上真没有 WPF 时会**先抛异常**，连"如实说一句为什么"都做不到。
+      **规矩**：可选依赖（WPF / COM / 扩展）都要"探测 + 单独方法 + 如实说原因"这三件套。

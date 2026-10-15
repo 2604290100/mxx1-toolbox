@@ -3,8 +3,91 @@
 > 这是 skill 的**按需**文件：`SKILL.md` 只留当前状态与规矩，历史放这里。
 > 什么时候读：想知道"某个功能当初为什么这么做"、"用户当时的原话是什么"、
 > "上一版报过什么问题"的时候。查某个坑的判据去 `PITFALLS.md`。
-> 最近更新：2026-10-11 晚（**那两条删除失败查清了**：挡住删除的是**子键**的权限 ——
-> 「取得所有权」改成连子键一起拿 + 删除前先体检）。
+> 最近更新：2026-10-15（**两个新右键项**：「图片转换」八种格式 + 「图标提取」；
+> 零依赖能做到哪些格式是**量出来**的 —— WebP 只有解码器、HEIC 存不下去、JPEG XR 要挂 WPF）。
+
+## 2026-10-15（「图片转换」+「图标提取」：能加哪些格式是量出来的，不是猜的）
+
+**用户原话**（先问、再拍板）：
+> 「**图片转换支持的格式是不是有点少，你可以加一点？**」
+> （把范围摆给他之后）「**这些都做**」——指 ① 图标提取 + ② 图片转换六种 GDI+ 格式 + ③ 手写 TGA / DDS；
+> 另外三句：「**推荐插在「在此处打开终端」之后（段 7 / 8）**」「**选择这个 2 行（保存为 ICO / 保存为 PNG）**」
+> 「**直接生成新文件不用二次确认**」。系统默认动词那条旧护栏他说「**这个不管他**」。
+
+**为什么先量再写**：上一轮他说「ImageMagick 不用这个，不现实」之后，这一轮问"能不能多几种格式"，
+就不能拍脑袋答。量的结论（完整表在 `docs\DESIGN.md` §12.70）：
+
+1. **GDI+ 只能写 5 种**（BMP / JPEG / GIF / TIFF / PNG）—— `ImageCodecInfo.GetImageEncoders()` 数出来的；
+   **WebP / ICO / TGA / DDS 一个都没有**；
+2. **WPF 那一层（= WIC 的薄封装）多一个 JPEG XR**（`WmpBitmapEncoder` 真写出 `.jxr`、
+   头 `49 49 bc 01`、能解码回来）；但它的 `PresentationCore` 在 **GAC** 里
+   （`GAC_32` / `GAC_64` 各一份），要给 `csc` 加三个引用 —— **这一版没加**，列着等用户点头；
+3. **WinRT 的编解码器清单**（`BitmapEncoder/Decoder.Get…InformationEnumerator()`）把话说死了：
+   编码器有 BMP/GIF/JPEG/PNG/TIFF/WMPhoto/**DDS**/**Microsoft HEIF**；解码器还多
+   **WebP（只有解码器！）**、HEIC/AVIF（靠扩展）、DNG/RAW、ICO/CUR；
+4. 于是：**WebP 输出不做**（这台机器上只有解码器；自己写 VP8/VP8L 不在零依赖这条线里）、
+   **HEIC / 不压缩 DDS 也做不了**（WIC 清单里有 HEIF Encoder，`BitmapEncoder.Create(guid)` 也建得出来，
+   但一 `Save` 就抛「未找到适用于完成此操作的图像处理组件」—— WPF 那层只存它认识的容器，
+   用 C# 小工具验了两遍）。
+
+**动手顺序**（每步都是先量后写，踩的坑都进了 `PITFALLS.md` 65–69）：
+
+1. **先量编码器行为**：透明 PNG 直接存 JPG → 透明处变**黑**（`R0 G0 B0`），加白底才是白的；
+   GIF 从 32bppArgb 存 → 透明处变**不透明黑**；BMP 默认存 32bpp 但**不留 alpha**（`Format32bppRgb`）；
+   TIFF 的 LZW 参数真生效（1122 → 1432 字节）。
+2. **手写三种格式**（`src\ImgOut.cs`：`RawImage` + `IcoFile` / `TgaFile` / `DdsFile`）：
+   ICO 一档一张（16→256，**只缩不放**，≤128 用 BMP 写法、256 用 PNG 写法）；
+   TGA 不压缩 32 位 BGRA + 左上角原点；DDS 不压缩 + BGRA8 掩码。
+3. **验方向**：用"只有左上角是红的"非对称夹具，ImageMagick 读回来左上角仍是红的
+   （TGA / DDS / ICO / PNG 四种都对）—— 不这么验，上下翻了自己看不出来。
+4. **图标提取四条路**（`src\IconExtract.cs`）：`.ico` 自己的档位 → exe/dll 的 `RT_GROUP_ICON`
+   → 注册表登记的 `DefaultIcon` → 资源管理器那张 32/16；像素走
+   `GetIconInfo` + `GetDIBits`，**alpha 全是 0 时回头读掩码位图**（老图标不然是一块黑方块）。
+5. **注册位置用只读探针量**：`SystemFileAssociations\image\shell` 在 PNG 上出现、TXT 上不出现；
+   `*\shell` 两边都出现；`.png\shell` **不出现**（`.png` 解析到的是 `pngfile` 这个类）。
+   ⇒ 「图片转换」只装图片位置、「图标提取」只装 `*`（文件夹不装）。
+6. **接进右键 / 界面 / CLI**：两个 verb 接在 7 / 8、两棵树 + 两对按钮（这一页 17 → 21 个）、
+   CLI 两个新命令 `convert-image` / `extract-icon`；卡片沿用现成那张 5 秒卡（汇总一句话，明细进日志）。
+
+**两个"看着像功能坏了、其实是环境"的**（都写进 PITFALLS 了）：
+`GetObject` 写在 `kernel32` 的 DllImport **编译能过、运行才炸**；
+Win10 的 `notepad.exe` 图标在 **MUI 资源重定向**里 —— 同一个文件（哈希一致）在原位置能枚举出
+13 个图标、复制到别处一个都没有，所以测试夹具改用**工具箱自己 exe 的副本**（8 档）。
+
+**没验到的**：写不进去退桌面那条分支（要造 ACL 目录，人工看过一次）、HEIC 输入（没有样本）、
+界面里点「装上图片转换」那一步（界面套件没有右键根隔离，会把项装进用户真实菜单 —— 只在命令行套件验）。
+
+**同一轮后半（用户紧接着补了两句）**：「**JPEG XR（.jxr）这个格式也做一下然后，
+你看下兼容性 win7-win11 的**」→ 于是加了**第九种格式**，并把两个新功能的兼容性逐条过了一遍：
+
+1. **先查权威文档再动手**（不猜）：JPEG XR 是 WIC 的 **native codec**（在"built into Windows"那一拨，
+   不是 WebP / HEIF / RAW 那种 Store 扩展）；编码器 `CLSID_WICWmpEncoder`
+   `{ac4ce3cb-e1c1-44cd-8215-5a1665509ec2}` 在这台机器上指向 `wmphoto.dll`（**实测读注册表**）；
+   文件签名 `49 49 BC 01`。⚠️ 文档里那句关键：**"In Windows 8, the HD Photo codec has been updated to
+   support JPEG XR. The encoder now always outputs a JPEG XR–compliant bit stream."**
+   → **Win7 上写出来的是 HD Photo 那一代的码流**（解码器两代都认，Win8+ 读得回来）。
+2. **实现走 WPF 那层**（`WmpBitmapEncoder`，比自己写 200 行 WIC COM 互操作省），落进新文件
+   `src\JxrWriter.cs`；`build.ps1` 加"找 WPF 三个程序集"的那段（目标包 → GAC 三级目录，
+   找不到就 `/define:MXX1_NO_JXR`）。
+3. **三个实测才知道的细节**：① **两个"质量"旋钮类型不一样** —— `ImageQualityLevel` 是 Single（0..1），
+   `QualityLevel` 是 Byte（1..255，而且 **1 = 无损**）：第一版探针往 `QualityLevel` 上赋 0.9
+   被取整成 1，"想要 0.9"实际拿到的是**无损**文件（64×64 只 401 字节就看出来了）；
+   ② 透明保得住（`InterleavedAlpha=false`，读回来透明处仍是 `0,0,0,0`）；
+   ③ **写完要核头 3 字节**（免得"编码器在、写出来是别的东西"静默溜过去，ImageMagick 转 HEIC 就这么骗过人）。
+4. **不给用户摆一个点了必然失败的菜单项**：探测三条（编译时带没带 / 注册表 CLSID / WPF 那个类），
+   探测不过**就不写菜单里那一行**（`AvailableTargets()`），回归 **M62c** 钉住"菜单里的行 ↔ 探测结果"。
+5. **两个坑进 PITFALLS 71 / 72**：`Type.GetType("…, PresentationCore")`（简单程序集名）对 GAC 里的
+   强名程序集**返回 null 且不报错** → 探测永远说"不支持"、菜单里永远没有那一行（静默缺失！）；
+   以及挂 WPF 的三件事（GAC 路径、**还要 `System.Xaml`** 否则 CS0012、碰 WPF 的代码要单独放一个方法
+   免得 JIT 先炸）。
+6. **兼容性过了一遍**（正本 DESIGN §12.70 ⑨ 有整张表）：两个新功能用到的 API **没有一处是 Win8+ 才有的**
+   （GDI+ 那五种 XP+、SHGetFileInfo / LoadImage / EnumResourceNames / GetIconInfo 都是 2000+、
+   提示卡是我们自己画的、HKCU 静态 verb 与 `ExtendedSubCommandsKey` Vista+）；
+   **Win7 上唯一要人眼确认的**是「右键图片时『图片转换』有没有出现」（`SystemFileAssociations\image` 那一层），
+   以及 Win7 下 `.jxr` 没有文件关联（缩略图 / 双击不会自己打开 —— 那是文件关联，不是文件坏了）。
+7. **验证**：命令行全套再跑一遍（新增 M62c / M64b / M71 三条）；
+   `bin\Mxx1Toolbox.exe` 975,872 字节（+3,584）；另外**单独编了一份 `/define:MXX1_NO_JXR`
+   且不引 WPF 的退路 exe** 实测能跑、`convertrows` 只列八种、转 JXR 时如实说"这一份没带"。
 
 ## 2026-10-11 晚（「最小两条删除记录失败」查清了：挡住删除的是**子键**的权限）
 

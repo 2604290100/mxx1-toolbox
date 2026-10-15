@@ -1395,7 +1395,7 @@ if ($rightProbe.Count -eq 0 -or $rightShot -eq $null) {
 }
 
 # C01e：右键增强页的段序（用户 2026-10-06 晚六：「【状态与修补】这个说明栏和里面的按钮
-#   应该放到底部才对」→ 放到**倒数第一**）。这一页现在有 8 段，段标题是一个个 STATIC 标签，
+#   应该放到底部才对」→ 放到**倒数第一**）。这一页现在有 10 段，段标题是一个个 STATIC 标签，
 #   按屏幕上的 Top 排一遍就是页面顺序。这条断言把**整页顺序**钉住：以后谁把段号调回去，
 #   或者新加一段插错地方，这里当场红。
 # ⚠ 第一条为什么是「隔壁工具」而不是「解除文件占用」：**置顶的按钮排在本页最前**
@@ -1403,28 +1403,33 @@ if ($rightProbe.Count -eq 0 -or $rightShot -eq $null) {
 #   段号管不了它。第一次按段号顺序写这条断言，实测就是这个项排在最上面。
 # ⚠ 「复制文件名」和「复制文件路径」是**两段**（两对按钮）：用户 2026-10-06 晚六最后定的
 #   「各配一对，共 16 个按钮」，所以这里必须看到它们各自成段 —— 谁把两段并回一段这里就红。
+# ⚠ 2026-10-15 又加了**两段**「图片转换」「图标提取」（各一对按钮，插在「在此处打开终端」之后、
+#   「隔壁工具」之前 —— 用户拍板：「插在在此处打开终端之后，状态与修补仍最底」）。
 $wantRightCaps = @('隔壁工具（永久删除）',
                    '右键菜单 · 解除文件占用', '右键菜单 · 一键解除占用', '右键菜单 · 常用功能',
                    '右键菜单 · 复制文件名', '右键菜单 · 复制文件路径',
                    '右键菜单 · 在此处打开终端（cmd / PowerShell）',
+                   '右键菜单 · 图片转换', '右键菜单 · 图标提取',
                    '状态与修补')
 $gotRightCaps = @(Get-ChildControls -RootHandle $main |
     Where-Object { $wantRightCaps -contains $_.Text } | Sort-Object Top | ForEach-Object { $_.Text })
-Check ('C01e 右键增强页的段序：8 段，最后一段是「状态与修补」（共 {0} 段）' -f $wantRightCaps.Count) `
+Check ('C01e 右键增强页的段序：10 段，最后一段是「状态与修补」（共 {0} 段）' -f $wantRightCaps.Count) `
     (($gotRightCaps -join ' | ') -eq ($wantRightCaps -join ' | ')) `
     ('实际=' + ($gotRightCaps -join ' | '))
 
-# C01f：这一页的按钮数 = 17（6 对装 / 撤 + 隔壁工具 1 + 状态与修补 4）。用户 2026-10-06 晚六
+# C01f：这一页的按钮数 = 21（8 对装 / 撤 + 隔壁工具 1 + 状态与修补 4）。用户 2026-10-06 晚六
 #   明确要「记得加上安装和卸载按钮」，所以两对复制按钮必须都在**同一页**上、而且是真按钮；
 #   2026-10-09 又在「状态与修补」段加了第 4 个「右键菜单管理」（用户拍板塞在这一段，没另开一段，
-#   所以 C01e 的 8 段段序不用动）。
+#   所以 C01e 的段序只多了一段）；
+#   2026-10-15 加了「图片转换」「图标提取」两对（各成一**段**，见 C01e）。
 $rightBtns = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*BUTTON*' })
 $wantRightBtns = @('永久删除工具', '装上解除占用', '撤掉解除占用', '装上一键解除占用', '撤掉一键解除占用',
                    '装上常用功能', '撤掉常用功能', '装上复制文件名', '撤掉复制文件名',
                    '装上复制文件路径', '撤掉复制文件路径', '装上在此处打开终端', '撤掉在此处打开终端',
+                   '装上图片转换', '撤掉图片转换', '装上图标提取', '撤掉图标提取',
                    '右键菜单状态', '重建常用功能', '右键增强说明', '右键菜单管理')
 $gotRightBtns = @($rightBtns | Where-Object { $wantRightBtns -contains $_.Text } | ForEach-Object { $_.Text })
-Check ('C01f 右键增强页 17 个按钮都在（两对复制各一对 = {0} 个）' -f $wantRightBtns.Count) `
+Check ('C01f 右键增强页 21 个按钮都在（八对装 / 撤各一对 = {0} 个）' -f $wantRightBtns.Count) `
     (($gotRightBtns.Count -eq $wantRightBtns.Count) -and `
      (@($gotRightBtns | Sort-Object) -join '|') -eq (@($wantRightBtns | Sort-Object) -join '|')) `
     ('实际=' + ($gotRightBtns -join ' | '))

@@ -91,6 +91,14 @@ namespace Mxx1Toolbox
         /// 终端要不要也照做」时，他选「**保持子菜单一条**」）：菜单里只出现一项，
         /// 鼠标移上去弹出「cmd / PowerShell」。</summary>
         public const string TerminalVerb = "Mxx1Toolbox.6.Terminal";
+        /// <summary>「图片转换」的**父项** verb（级联子菜单，八行：JPG / PNG / GIF / BMP / TIFF /
+        /// ICO / TGA / DDS）—— 2026-10-15 用户拍板加的第八项（见 DESIGN §12.70）。
+        /// 它只装在**图片文件**上（`SystemFileAssociations\image\shell`），别的文件不出现。</summary>
+        public const string ConvertVerb = "Mxx1Toolbox.7.ImageConvert";
+        /// <summary>「图标提取」的**父项** verb（级联子菜单，两行：保存为 ICO / 保存为 PNG）——
+        /// 装在所有文件上（`*\shell`）：.exe 是文件、.lnk 是文件、.png 也是文件。
+        /// **文件夹上不装**（`*` 本来也不覆盖文件夹）—— 文件夹图标这一版不做。</summary>
+        public const string ExtractIconVerb = "Mxx1Toolbox.8.ExtractIcon";
 
         /// <summary>**这一版之前**那六个 verb 名（2026-10-06 晚六及更早，不带序号）。
         /// 老用户那边这些键由 MigrateLegacyNames 就地换名 —— **先写新的、新键写成读回核对过了
@@ -123,12 +131,18 @@ namespace Mxx1Toolbox
         /// 子项命令里的占位符跟父项一样按位置替换，所以这两种不能共用一棵树（见 TreeKeyOf）。</summary>
         public const string TerminalTreeKey = "Mxx1Toolbox.Terminal";
         public const string TerminalBgTreeKey = "Mxx1Toolbox.Terminal.bg";
+        /// <summary>「图片转换」「图标提取」各自的子项树（两个都只装在**一个**位置，
+        /// 命令里的占位符都是 `%1`，所以各一棵就够，不用像终端那样按 `%1` / `%V` 分两棵）。</summary>
+        public const string ConvertTreeKey = "Mxx1Toolbox.ImageConvert";
+        public const string ExtractIconTreeKey = "Mxx1Toolbox.ExtractIcon";
         public const string UnlockTitle = "解除文件占用";
         public const string AutoTitle = "一键解除占用";
         public const string CommonTitle = "常用功能";
         public const string CopyNameTitle = "复制文件名";
         public const string CopyPathTitle = "复制文件路径";
         public const string TerminalTitle = "在此处打开终端";
+        public const string ConvertTitle = "图片转换";
+        public const string ExtractIconTitle = "图标提取";
         /// <summary>终端子菜单里那两行的名字。**「复制」已经没有子菜单了**（两条平铺的一级项，
         /// 名字就是 `CopyNameTitle` / `CopyPathTitle`）：用户先要「相对路径」、随后发现
         /// **折出来的就是文件名**（右键时的工作目录就是文件所在的那个文件夹），于是改口
@@ -142,21 +156,25 @@ namespace Mxx1Toolbox
         public const string ItemCopyName = "copyname";
         public const string ItemCopyPath = "copypath";
         public const string ItemTerminal = "terminal";
+        public const string ItemConvert = "convert";
+        public const string ItemExtractIcon = "extracticon";
         public const string BackupName = "rightmenu-installed.tsv";
 
-        /// <summary>六个菜单项。**这里的顺序 = 菜单里的顺序**（= 键名里那个序号），所以状态报告、
+        /// <summary>八个菜单项。**这里的顺序 = 菜单里的顺序**（= 键名里那个序号），所以状态报告、
         /// 说明、残留检测都按它排 —— 别在别处另写一份名单。
         /// 用户 2026-10-06 晚七拍板的顺序：复制文件名 / 复制文件路径 / 解除文件占用 /
-        /// 一键解除占用 / 常用功能 / 在此处打开终端。
+        /// 一键解除占用 / 常用功能 / 在此处打开终端；**2026-10-15 用户拍板在后面接上**
+        /// 「图片转换」「图标提取」（见 DESIGN §12.70）。
         ///
-        /// 其中只有两项是**级联子菜单**（「常用功能」和「在此处打开终端」：父项写
-        /// `ExtendedSubCommandsKey`，内容写在共用的子项树里）；另外四项（复制文件名 / 复制文件路径 /
-        /// 解除文件占用 / 一键解除占用）都是直接挂命令的普通项。
-        /// 界面上是 **6 对**装 / 撤按钮（一共 16 个按钮），一对只管一项 ——
+        /// 其中只有四项是**级联子菜单**（「常用功能」「在此处打开终端」「图片转换」「图标提取」：
+        /// 父项写 `ExtendedSubCommandsKey`，内容写在共用的子项树里）；另外四项
+        /// （复制文件名 / 复制文件路径 / 解除文件占用 / 一键解除占用）都是直接挂命令的普通项。
+        /// 界面上是 **8 对**装 / 撤按钮（一共 20 个按钮），一对只管一项 ——
         /// ⚠️ **界面那一段的顺序没跟着动**（用户只要求改右键菜单里的顺序，见 tools\rightmenu.json）。</summary>
         public static readonly string[] AllItems = new string[]
         {
             ItemCopyName, ItemCopyPath, ItemUnlock, ItemAuto, ItemCommon, ItemTerminal,
+            ItemConvert, ItemExtractIcon,
         };
 
         /// <summary>命令里给"右键选中的那个路径"的占位：Explorer 会把它换成真实路径。</summary>
@@ -175,6 +193,11 @@ namespace Mxx1Toolbox
         public const string CopyNameIconId = "rightmenu.copyname.on";
         public const string CopyPathIconId = "rightmenu.copy.on";
         public const string TerminalIconId = "rightmenu.terminal.on";
+        /// <summary>2026-10-15 加的两项（「图片转换」「图标提取」）—— 图标源同样是
+        /// **界面按钮的 id**（`assets\icons\rightmenu.convert.on.png` /
+        /// `rightmenu.icon.on.png`，由 tools\Make-Icons.ps1 生成）。</summary>
+        public const string ConvertIconId = "rightmenu.convert.on";
+        public const string ExtractIconIconId = "rightmenu.icon.on";
 
         // ------------------------------------------------------------------ item（unlock / auto / common / copyname / copypath / terminal）
         //
@@ -196,6 +219,8 @@ namespace Mxx1Toolbox
             if (item == ItemCopyName) { return CopyNameVerb; }
             if (item == ItemCopyPath) { return CopyPathVerb; }
             if (item == ItemTerminal) { return TerminalVerb; }
+            if (item == ItemConvert) { return ConvertVerb; }
+            if (item == ItemExtractIcon) { return ExtractIconVerb; }
             return UnlockVerb;
         }
 
@@ -219,6 +244,8 @@ namespace Mxx1Toolbox
             if (item == ItemCopyName) { return CopyNameTitle; }
             if (item == ItemCopyPath) { return CopyPathTitle; }
             if (item == ItemTerminal) { return TerminalTitle; }
+            if (item == ItemConvert) { return ConvertTitle; }
+            if (item == ItemExtractIcon) { return ExtractIconTitle; }
             return UnlockTitle;
         }
 
@@ -229,20 +256,25 @@ namespace Mxx1Toolbox
             if (item == ItemCopyName) { return CopyNameIconId; }
             if (item == ItemCopyPath) { return CopyPathIconId; }
             if (item == ItemTerminal) { return TerminalIconId; }
+            if (item == ItemConvert) { return ConvertIconId; }
+            if (item == ItemExtractIcon) { return ExtractIconIconId; }
             return UnlockIconId;
         }
 
         /// <summary>这一项是不是**级联子菜单**（父项不写命令，只写 `ExtendedSubCommandsKey`）。
-        /// 只剩「常用功能」和「在此处打开终端」两项 —— 「复制」那两条是普通项。</summary>
+        /// 现在是四项：「常用功能」「在此处打开终端」「图片转换」「图标提取」 ——
+        /// 「复制」「解除占用」「一键解除占用」都是普通项（直接挂命令）。</summary>
         private static bool IsSubmenu(string item)
         {
-            return (item == ItemCommon) || (item == ItemTerminal);
+            return (item == ItemCommon) || (item == ItemTerminal)
+                || (item == ItemConvert) || (item == ItemExtractIcon);
         }
 
         /// <summary>直接挂在父项上的命令（不是子菜单的那四项）。unlock = 开那个结果窗口；
         /// auto = 不弹窗、直接解锁；copyname / copypath = 复制文件名 / 复制完整路径，
-        /// **都不带 `--quote`**（用户要的"两边不许有引号"）。子菜单那两项的命令写在子项树里
-        /// （见 FixedChildren）。</summary>
+        /// **都不带 `--quote`**（用户要的"两边不许有引号"）。子菜单那几项
+        /// （常用功能 / 在此处打开终端 / 图片转换 / 图标提取）的命令写在子项树里
+        /// （见 FixedChildren），**不走这里**。</summary>
         private static string CommandOf(string item, string placeholder)
         {
             if (item == ItemAuto) { return QuoteExe() + " rightmenu unlock --auto \"" + placeholder + "\""; }
@@ -251,18 +283,29 @@ namespace Mxx1Toolbox
             return QuoteExe() + " rightmenu unlock \"" + placeholder + "\"";
         }
 
-        /// <summary>这一项装在哪几个位置。解锁那三项四个位置都有；**「复制文件名」和
-        /// 「复制文件路径」只装在"有选中东西"的两个位置**（任意文件 / 文件夹）—— 背景位置没有
-        /// 选中项，装上去点一下只会得到一句"路径不存在"；「在此处打开终端」反过来：
-        /// **背景那两个位置才是重点**（"在这个文件夹里开终端"），加上右键文件夹那一个。</summary>
+        /// <summary>这一项装在哪几个位置。
+        ///
+        /// 解锁那四项四个位置都有；**「复制文件名」和「复制文件路径」只装在"有选中东西"的两个位置**
+        /// （任意文件 / 文件夹）—— 背景位置没有选中项，装上去点一下只会得到一句"路径不存在"；
+        /// 「在此处打开终端」反过来：**背景那两个位置才是重点**（"在这个文件夹里开终端"）。
+        ///
+        /// 2026-10-15 加的两项各自只有一个位置（**别把这一条漏了**：Table 里多一行，
+        /// 下面这个 `take = true` 的兜底会让**所有老项**都跟着装到新位置上去）：
+        ///   · 「图片转换」只装 `SystemFileAssociations\image\shell`（只有图片文件看得见）；
+        ///   · 「图标提取」只装 `*\shell`（任意文件 —— .exe / .lnk / .png 都是文件；
+        ///     文件夹不装，`*` 本来也不覆盖文件夹）。</summary>
         private static RightMenuLocation[] LocationsOf(string item)
         {
             List<RightMenuLocation> list = new List<RightMenuLocation>();
             foreach (RightMenuLocation loc in Table)
             {
-                bool take = true;
-                if (item == ItemCopyName || item == ItemCopyPath) { take = (loc.Id == "files") || (loc.Id == "folder"); }
+                bool take;
+                if (loc.Id == "images") { take = (item == ItemConvert); }
+                else if (item == ItemConvert) { take = false; }
+                else if (item == ItemExtractIcon) { take = (loc.Id == "files"); }
+                else if (item == ItemCopyName || item == ItemCopyPath) { take = (loc.Id == "files") || (loc.Id == "folder"); }
                 else if (item == ItemTerminal) { take = (loc.Id == "folder") || (loc.Id == "folderbg") || (loc.Id == "desktop"); }
+                else { take = true; }
                 if (take) { list.Add(loc); }
             }
             return list.ToArray();
@@ -274,6 +317,11 @@ namespace Mxx1Toolbox
             new RightMenuLocation("folder",   "文件夹",             "Directory\\shell",           SelectedPlaceholder),
             new RightMenuLocation("folderbg", "文件夹里的空白处",   "Directory\\Background\\shell", BackgroundPlaceholder),
             new RightMenuLocation("desktop",  "桌面空白处",         "DesktopBackground\\Shell",   BackgroundPlaceholder),
+            // 2026-10-15：「图片转换」只装这一个位置。`SystemFileAssociations\image` 是 Windows
+            // 给"所有图片类型"留的公共位置（实测：写在这里的项在 PNG 上出现、在 TXT 上**不**出现，
+            // 而写 `*` 的项两边都出现；写 `.png\shell` 反而**不**出现 —— `.png` 解析到的是 pngfile
+            // 这个类，不是一个位置。量法与对照见 DESIGN §12.70）。
+            new RightMenuLocation("images",   "图片文件",           "SystemFileAssociations\\image\\shell", SelectedPlaceholder),
         };
 
         /// <summary>这一项装不装在这个位置（和 LocationsOf 同一张表，单独问一个位置时用它，
@@ -304,6 +352,8 @@ namespace Mxx1Toolbox
         private static string TreeKeyOf(string item, RightMenuLocation loc)
         {
             if (item == ItemCommon) { return SharedKey; }
+            if (item == ItemConvert) { return ConvertTreeKey; }
+            if (item == ItemExtractIcon) { return ExtractIconTreeKey; }
             if (item == ItemTerminal)
             {
                 return (loc.Placeholder == BackgroundPlaceholder) ? TerminalBgTreeKey : TerminalTreeKey;
@@ -311,9 +361,12 @@ namespace Mxx1Toolbox
             return "";
         }
 
-        /// <summary>子菜单里那两行（名字 + 命令 + 图标）—— 现在只剩**终端**一项。
-        /// 两行各把一个终端**钉死**（`--cmd` / `--ps`），不再走"wt → PowerShell → cmd"那个自动挑。
-        /// （「复制」那两条晚六改成平铺的一级项了，命令在 CommandOf 里，**不带 `--quote`**。）</summary>
+        /// <summary>子菜单里那几行（名字 + 命令 + 图标）。现在有四项是子菜单：
+        /// **终端** 2 行（cmd / PowerShell 各钉死一个）、**图片转换** 8 行（八种格式）、
+        /// **图标提取** 2 行（ICO / PNG），「常用功能」那棵是动态的（在 CommonRows 里）。
+        ///
+        /// 行标题与格式清单**只有一个出处**：`ImgConvert.RowTitle` / `IconExtract.RowTitle`
+        /// （别在这里再抄一份名字，不然菜单和 CLI 会各说各话）。</summary>
         private static List<RightMenuEntry> FixedChildren(string item, string placeholder)
         {
             List<RightMenuEntry> list = new List<RightMenuEntry>();
@@ -321,6 +374,23 @@ namespace Mxx1Toolbox
             {
                 list.Add(Child(TerminalCmdName, QuoteExe() + " terminal --cmd \"" + placeholder + "\"", TerminalIconId));
                 list.Add(Child(TerminalPsName, QuoteExe() + " terminal --ps \"" + placeholder + "\"", TerminalIconId));
+            }
+            else if (item == ItemConvert)
+            {
+                // ⚠️ 用 `AvailableTargets()` 而不是 `Targets`：JXR 要借 Windows 自带的 WIC 编码器，
+                // 本机没有就不写这一行（**不给用户摆一个点了必然失败的菜单项**，见 JxrWriter 的类说明）。
+                foreach (string target in ImgConvert.AvailableTargets())
+                {
+                    list.Add(Child(ImgConvert.RowTitle(target),
+                        QuoteExe() + " convert-image \"" + placeholder + "\" --to=" + target, ConvertIconId));
+                }
+            }
+            else if (item == ItemExtractIcon)
+            {
+                list.Add(Child(IconExtract.RowTitle(IconExtract.FormatIco),
+                    QuoteExe() + " extract-icon \"" + placeholder + "\" --as=" + IconExtract.FormatIco, ExtractIconIconId));
+                list.Add(Child(IconExtract.RowTitle(IconExtract.FormatPng),
+                    QuoteExe() + " extract-icon \"" + placeholder + "\" --as=" + IconExtract.FormatPng, ExtractIconIconId));
             }
             return list;
         }
@@ -747,6 +817,8 @@ namespace Mxx1Toolbox
                 List<string> trees = new List<string>();
                 if (item == ItemCommon) { trees.Add(SharedKey); }
                 else if (item == ItemTerminal) { trees.Add(TerminalTreeKey); trees.Add(TerminalBgTreeKey); }
+                else if (item == ItemConvert) { trees.Add(ConvertTreeKey); }
+                else if (item == ItemExtractIcon) { trees.Add(ExtractIconTreeKey); }
                 else if (item == ItemCopyName || item == ItemCopyPath) { trees.Add(SupersededCopyTreeKey); }
                 foreach (string tree in trees)
                 {
@@ -926,6 +998,14 @@ namespace Mxx1Toolbox
                     {
                         WriteTree(TerminalTreeKey, FixedChildren(ItemTerminal, SelectedPlaceholder), out error);
                         WriteTree(TerminalBgTreeKey, FixedChildren(ItemTerminal, BackgroundPlaceholder), out error);
+                    }
+                    else if (item == ItemConvert)
+                    {
+                        WriteTree(ConvertTreeKey, FixedChildren(ItemConvert, SelectedPlaceholder), out error);
+                    }
+                    else if (item == ItemExtractIcon)
+                    {
+                        WriteTree(ExtractIconTreeKey, FixedChildren(ItemExtractIcon, SelectedPlaceholder), out error);
                     }
                 }
                 // 换名（晚七）：上一版的键名不带序号，而**菜单顺序就是按键名排的** ——
@@ -1193,7 +1273,7 @@ namespace Mxx1Toolbox
             StringBuilder sb = new StringBuilder();
             sb.AppendLine("右键增强当前状态（只读，没改任何东西）");
             if (IsTestRoot) { sb.AppendLine("（测试根：" + RootLabel + "）"); }
-            sb.AppendLine("（下面六行的**先后就是右键菜单里的先后** —— 顺序是按注册表键名里的序号排的，见「右键增强说明」）");
+            sb.AppendLine("（下面八行的**先后就是右键菜单里的先后** —— 顺序是按注册表键名里的序号排的，见「右键增强说明」）");
             sb.AppendLine();
 
             foreach (string item in AllItems)
@@ -1228,6 +1308,19 @@ namespace Mxx1Toolbox
                 {
                     sb.Append("　子菜单（2 项）：").Append(TerminalCmdName).Append(" / ").Append(TerminalPsName)
                       .Append("，各开各的，不再替你挑").AppendLine();
+                }
+                else if (item == ItemConvert)
+                {
+                    sb.Append("　子菜单（").Append(ImgConvert.AvailableTargets().Length.ToString(CultureInfo.InvariantCulture))
+                      .Append(" 项）：只装在图片文件上，转出来的新文件放在源文件旁边").AppendLine();
+                    if (!JxrWriter.Available())
+                    {
+                        sb.Append("　　（这台机器少一种：").Append(JxrWriter.Reason()).Append("）").AppendLine();
+                    }
+                }
+                else if (item == ItemExtractIcon)
+                {
+                    sb.Append("　子菜单（2 项）：存成 ICO / PNG，只装在文件上（文件夹不装）").AppendLine();
                 }
                 else
                 {
@@ -1373,11 +1466,12 @@ namespace Mxx1Toolbox
             StringBuilder sb = new StringBuilder();
             sb.AppendLine("右键增强是什么");
             sb.AppendLine();
-            sb.AppendLine("  工具箱能往你的右键菜单里装六样东西，六样都只写当前用户（HKCU\\Software\\Classes），");
+            sb.AppendLine("  工具箱能往你的右键菜单里装八样东西，八样都只写当前用户（HKCU\\Software\\Classes），");
             sb.AppendLine("  不要管理员权限、不装 shell 扩展 DLL、不起服务、不加开机启动。");
-            sb.AppendLine("  六样在菜单里都是**一级项**，看到就能点；只有「" + CommonTitle + "」和「" + TerminalTitle + "」");
-            sb.AppendLine("  是**级联子菜单**：鼠标移上去会弹出几行让你选（Windows 那套 `ExtendedSubCommandsKey` 机制，");
-            sb.AppendLine("  子项写在 HKCU\\Software\\Classes\\Mxx1Toolbox.* 下，父项只存一个指针）：");
+            sb.AppendLine("  八样在菜单里都是**一级项**，看到就能点；其中「" + CommonTitle + "」「" + TerminalTitle + "」");
+            sb.AppendLine("  「" + ConvertTitle + "」「" + ExtractIconTitle + "」是**级联子菜单**：鼠标移上去会弹出几行让你选");
+            sb.AppendLine("  （Windows 那套 `ExtendedSubCommandsKey` 机制，子项写在 HKCU\\Software\\Classes\\Mxx1Toolbox.* 下，");
+            sb.AppendLine("  父项只存一个指针）：");
             sb.AppendLine();
             sb.AppendLine("  1. " + CopyNameTitle + "、2. " + CopyPathTitle + " —— 右键一个文件 / 文件夹，");
             sb.AppendLine("     把**名字**（文件名 / 文件夹名）或**完整路径**复制进剪贴板。一次选中好几个就一行一个。");
@@ -1415,12 +1509,39 @@ namespace Mxx1Toolbox
             sb.AppendLine("     那个目录里打开，省掉「开终端再 cd 半天」。两行各钉死一个终端：");
             sb.AppendLine("     要 cmd 就点 cmd，要 PowerShell 就点 PowerShell（不再替你挑）。");
             sb.AppendLine("     **不申请管理员权限** —— 就是一个普通用户的终端窗口。");
+            sb.AppendLine("  7. " + ConvertTitle + "（**子菜单** " + ImgConvert.AvailableTargets().Length.ToString(CultureInfo.InvariantCulture)
+                + " 行）—— **只装在图片文件上**，把这张图换一种格式存到**源文件旁边**。");
+            string[] convRows = ImgConvert.AvailableTargets();
+            for (int i = 0; i < convRows.Length; i++)
+            {
+                sb.AppendLine("     · 转成 " + ImgConvert.Label(convRows[i]) + " —— "
+                    + ImgConvert.Describe(convRows[i]));
+            }
+            if (!JxrWriter.Available())
+            {
+                sb.AppendLine("     （本来还有一种 JPEG XR，但**这台机器上没有它的编码器**："
+                    + JxrWriter.Reason() + " ——");
+                sb.AppendLine("      所以菜单里没有那一行。Windows 自带这个编码器，缺的多半是精简版系统。）");
+            }
+            sb.AppendLine("     源文件一个字节都不动；要写的名字已经存在就自动加 -2（**绝不覆盖**）；");
+            sb.AppendLine("     源文件夹写不进去（系统目录、Program Files 这种）就放到桌面，并在提示卡上说明。");
+            sb.AppendLine("  8. " + ExtractIconTitle + "（**子菜单** 2 行：「" + IconExtract.RowTitle(IconExtract.FormatIco)
+                + "」「" + IconExtract.RowTitle(IconExtract.FormatPng) + "」）");
+            sb.AppendLine("     —— 右键**任意文件**，把这个文件的图标存成 .ico 或 .png（也放在源文件旁边）。");
+            sb.AppendLine("     · 「" + IconExtract.RowTitle(IconExtract.FormatIco) + "」= "
+                + IconExtract.Describe(IconExtract.FormatIco) + "；");
+            sb.AppendLine("     · 「" + IconExtract.RowTitle(IconExtract.FormatPng) + "」= "
+                + IconExtract.Describe(IconExtract.FormatPng) + "。");
+            sb.AppendLine("     图标从哪儿来：.ico 文件读它自己那几档 → .exe / .dll 抽它自己的图标资源 →");
+            sb.AppendLine("     别的文件查这种文件登记的图标源 → 都没有就用资源管理器给的那种文件的图标。");
+            sb.AppendLine("     **是哪一条路来的会写在提示卡和日志里**（只有 32 / 16 两档时会直说）。");
+            sb.AppendLine("     文件夹不装这一项（文件夹图标这一版不做）。");
             sb.AppendLine();
             sb.AppendLine("菜单里的先后顺序是怎么定的");
             sb.AppendLine();
             sb.AppendLine("  资源管理器把同一个右键位置里的项**按注册表键名的字母序**排，不看我们想让它排第几");
             sb.AppendLine("  （微软的文档只给了一个 `Position=Top|Bottom`，只能把一项顶到最上或最下）。");
-            sb.AppendLine("  所以六项的键名前面都带一个序号，序号就是菜单里的位置：");
+            sb.AppendLine("  所以八项的键名前面都带一个序号，序号就是菜单里的位置：");
             foreach (string hmItem in AllItems)
             {
                 sb.Append("    ").Append(VerbOf(hmItem)).Append("  →  ").AppendLine(TitleOf(hmItem));
@@ -1433,11 +1554,15 @@ namespace Mxx1Toolbox
             sb.AppendLine("  其中「" + CopyNameTitle + "」「" + CopyPathTitle + "」只装在**有选中东西**的两个位置");
             sb.AppendLine("  （任意文件 / 文件夹）；");
             sb.AppendLine("  「" + TerminalTitle + "」只装在**能代表一个目录**的三个位置（文件夹 / 文件夹里的空白处 / 桌面空白处）。");
+            sb.AppendLine("  「" + ConvertTitle + "」只装在**图片文件**上（写的是 Windows 给所有图片类型留的那个公共位置");
+            sb.AppendLine("  `SystemFileAssociations\\image\\shell`，所以 TXT / EXE 上不会冒出这一项）；");
+            sb.AppendLine("  「" + ExtractIconTitle + "」只装在**文件**上（`*\\shell`，.exe / .lnk / .png 都是文件；文件夹上不出现）。");
             sb.AppendLine();
             sb.AppendLine("怎么卸干净");
             sb.AppendLine();
             sb.AppendLine("  点「撤掉…」那一排按钮即可（解除占用 / 一键解除占用 / 常用功能 / 复制文件名 / 复制文件路径 /");
-            sb.AppendLine("  在此处打开终端 —— 六项各一对按钮，撤哪一项就只删哪一项的键）");
+            sb.AppendLine("  在此处打开终端 / " + ConvertTitle + " / " + ExtractIconTitle
+                + " —— 八项各一对按钮，撤哪一项就只删哪一项的键）");
             sb.AppendLine("  —— 只删工具箱自己写的 Mxx1* 键（子菜单那一项连它指的那棵子项树一起删；");
             sb.AppendLine("  要是装过同一晚早一点的「四个独立项」那一稿，也会顺手清掉），");
             sb.AppendLine("  别的键（包括隔壁「永久删除」那套）一个都不碰。装之前会记现场，写在");
@@ -1737,15 +1862,18 @@ namespace Mxx1Toolbox
             list.Add(SupersededCopyTreeKey);
             list.Add(TerminalTreeKey);
             list.Add(TerminalBgTreeKey);
+            list.Add(ConvertTreeKey);
+            list.Add(ExtractIconTreeKey);
             return list;
         }
 
-        /// <summary>这一版六个 verb 名 + **上一版那六个旧键名**（晚七换了名，老用户那边可能还在）
+        /// <summary>这一版八个 verb 名 + **上一版那六个旧键名**（晚七换了名，老用户那边可能还在）
         /// + 晚六第一稿那四个独立项 —— 图标核对 / 残留检测 / 菜单管理器那几处都遍历它。
         /// 旧名字也要认：不认就查不到、也撤不干净。</summary>
         private static string[] AllVerbs()
         {
             return new string[] { UnlockVerb, AutoVerb, CommonVerb, CopyNameVerb, CopyPathVerb, TerminalVerb,
+                ConvertVerb, ExtractIconVerb,
                 LegacyUnlockVerb, LegacyAutoVerb, LegacyCommonVerb, LegacyCopyNameVerb, LegacyCopyPathVerb, LegacyTerminalVerb,
                 SupersededCopyRelVerb, SupersededCopyAbsVerb,
                 SupersededTerminalCmdVerb, SupersededTerminalPsVerb };
@@ -1759,6 +1887,8 @@ namespace Mxx1Toolbox
             if (verb == CopyNameVerb || verb == LegacyCopyNameVerb) { return CopyNameTitle; }
             if (verb == CopyPathVerb || verb == LegacyCopyPathVerb) { return CopyPathTitle; }
             if (verb == TerminalVerb || verb == LegacyTerminalVerb) { return TerminalTitle; }
+            if (verb == ConvertVerb) { return ConvertTitle; }
+            if (verb == ExtractIconVerb) { return ExtractIconTitle; }
             if (verb == SupersededCopyRelVerb) { return SupersededTitles[0]; }
             if (verb == SupersededCopyAbsVerb) { return SupersededTitles[1]; }
             if (verb == SupersededTerminalCmdVerb) { return SupersededTitles[2]; }

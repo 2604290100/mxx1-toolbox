@@ -479,13 +479,13 @@ foreach ($line in ($status.Out -split "`r?`n")) {
     }
 }
 
-Check ('A04 按钮总数 122 + 工具目录里自动加载的 {0} 个（测试期间用户层的按钮会暂停：常用 33 + 系统工具 27 + 隐私 29 + 应用 5 + 清理 8 + 右键 17 + 我的 3）' -f $autoBase) `
-    ((Get-Key $status.Out 'buttons') -eq [string](122 + $autoBase)) (Get-Key $status.Out 'buttons')
+Check ('A04 按钮总数 126 + 工具目录里自动加载的 {0} 个（测试期间用户层的按钮会暂停：常用 33 + 系统工具 27 + 隐私 29 + 应用 5 + 清理 8 + 右键 21 + 我的 3）' -f $autoBase) `
+    ((Get-Key $status.Out 'buttons') -eq [string](126 + $autoBase)) (Get-Key $status.Out 'buttons')
 Check 'A05 内置清单里没有灰色占位按钮了（两个「资源管理器」也接上了真功能；灰规则改由 B 组注入验证）' ((Get-Key $status.Out 'placeholders') -eq '0') (Get-Key $status.Out 'placeholders')
 Check 'A06 危险按钮 3 个' ((Get-Key $status.Out 'dangerous') -eq '3') (Get-Key $status.Out 'dangerous')
 
 # 「常用」页签是合成的（置顶 + 最近使用），清单里没有它的按钮，所以是 0
-$tabExpect = @{ 'recent' = 0; 'common' = 33; 'mine' = 3; 'system' = 27; 'cleanup' = 8; 'privacy' = 29; 'apps' = 5; 'rightmenu' = 17 }
+$tabExpect = @{ 'recent' = 0; 'common' = 33; 'mine' = 3; 'system' = 27; 'cleanup' = 8; 'privacy' = 29; 'apps' = 5; 'rightmenu' = 21 }
 $tabOk = $true
 $tabDetail = @()
 foreach ($k in $tabExpect.Keys) {
@@ -493,16 +493,16 @@ foreach ($k in $tabExpect.Keys) {
     $tabDetail += ($k + '=' + $v)
     if ($v -ne [string]([int]$tabExpect[$k] + [int]$autoByTab[$k])) { $tabOk = $false }
 }
-Check 'A07 八个页签的按钮数正确（0/33/3/27/8/29/5/17，加上自动按钮）' $tabOk ($tabDetail -join ' ')
+Check 'A07 八个页签的按钮数正确（0/33/3/27/8/29/5/21，加上自动按钮）' $tabOk ($tabDetail -join ' ')
 
 $list = Invoke-Exe 'list'
 Check 'A08 list 退出码 0' ($list.Code -eq 0) ('exit=' + $list.Code)
-Check 'A09 list 报的按钮数一致' ((Get-Key $list.Out 'buttons') -eq [string](122 + $autoBase)) (Get-Key $list.Out 'buttons')
+Check 'A09 list 报的按钮数一致' ((Get-Key $list.Out 'buttons') -eq [string](126 + $autoBase)) (Get-Key $list.Out 'buttons')
 $lines = @($list.Out -split "`r?`n" | Where-Object { $_ -match "`t" })
-Check ('A10 list 打出 {0} 行按钮' -f (122 + $autoBase)) ($lines.Count -eq (122 + $autoBase)) ('lines=' + $lines.Count)
+Check ('A10 list 打出 {0} 行按钮' -f (126 + $autoBase)) ($lines.Count -eq (126 + $autoBase)) ('lines=' + $lines.Count)
 
 $rmList = Invoke-Exe 'list --tab rightmenu'
-Check 'A11 右键增强 17 个按钮（16 个右键菜单功能 + 隔壁永久删除工具）' ((Get-Key $rmList.Out 'shown') -eq [string](17 + [int]$autoByTab['rightmenu'])) (Get-Key $rmList.Out 'shown')
+Check 'A11 右键增强 21 个按钮（20 个右键菜单功能 + 隔壁永久删除工具）' ((Get-Key $rmList.Out 'shown') -eq [string](21 + [int]$autoByTab['rightmenu'])) (Get-Key $rmList.Out 'shown')
 Check 'A12 右键增强里的按钮是"真功能"（不带 placeholder 标记）' (-not ($rmList.Out -match 'placeholder')) ''
 Check 'A13 右键增强那个按钮叫「永久删除工具」' ($rmList.Out -match '永久删除工具') (($rmList.Out -split "`r?`n" | Where-Object { $_ -match "`t" }) -join '')
 
@@ -998,7 +998,7 @@ Write-Host 'H 组 · 悬停说明（用户 2026-10-04 报过「鼠标悬停的�
 # tip 命令打印的就是界面塞给 ToolTip 的那个字符串，所以这里能直接断言，不用去动真鼠标。
 $tipsAll = Invoke-Exe 'tip'
 Check 'H01 tip 退出码 0' ($tipsAll.Code -eq 0) ('exit=' + $tipsAll.Code)
-Check ('H02 tip 覆盖了每个按钮（122 + 自动 {0} 个）' -f $autoBase) ((Get-Key $tipsAll.Out 'tips') -eq [string](122 + $autoBase)) (Get-Key $tipsAll.Out 'tips')
+Check ('H02 tip 覆盖了每个按钮（126 + 自动 {0} 个）' -f $autoBase) ((Get-Key $tipsAll.Out 'tips') -eq [string](126 + $autoBase)) (Get-Key $tipsAll.Out 'tips')
 
 $blocks = @{}
 $curId = ''
@@ -1334,20 +1334,39 @@ Write-Host 'M 组 · 右键增强（装 / 卸 / 状态 / 查占用；写注册�
 $rmItems = Invoke-Exe 'rightmenu items'
 Check 'M01 rightmenu items 退出码 0（只读）' ($rmItems.Code -eq 0) ('exit=' + $rmItems.Code)
 $rmLoc = @($rmItems.Out -split "`r?`n" | Where-Object { $_ -match "`t" })
-Check 'M02 装 4 个位置（任意文件 / 文件夹 / 文件夹里的空白处 / 桌面空白处）' ($rmLoc.Count -eq 4) ('数=' + $rmLoc.Count)
-Check 'M03 六项的名字对得上（解除文件占用 / 一键解除占用 / 常用功能 / 复制文件名 / 复制文件路径 / 在此处打开终端）' `
+Check 'M02 装 5 个位置（任意文件 / 文件夹 / 文件夹里的空白处 / 桌面空白处 / 图片文件）' ($rmLoc.Count -eq 5) ('数=' + $rmLoc.Count)
+Check 'M03 八项的名字对得上（解除文件占用 / 一键解除占用 / 常用功能 / 复制文件名 / 复制文件路径 / 在此处打开终端 / 图片转换 / 图标提取）' `
     (($rmItems.Out.IndexOf('解除文件占用') -ge 0) -and ($rmItems.Out.IndexOf('一键解除占用') -ge 0) -and ($rmItems.Out.IndexOf('常用功能') -ge 0) -and `
      ($rmItems.Out.IndexOf('复制文件名') -ge 0) -and ($rmItems.Out.IndexOf('复制文件路径') -ge 0) -and `
-     ($rmItems.Out.IndexOf('在此处打开终端') -ge 0) -and ($rmItems.Out.IndexOf('children=cmd / PowerShell') -ge 0)) ''
-Check 'M03b 子项树只剩三棵（常用功能 + 终端 %1 / %V 两棵）—— 复制那棵第一稿的树不再写了' `
-    ($rmItems.Out.IndexOf('trees=Mxx1Toolbox.Common / Mxx1Toolbox.Terminal / Mxx1Toolbox.Terminal.bg') -ge 0) ''
+     ($rmItems.Out.IndexOf('在此处打开终端') -ge 0) -and ($rmItems.Out.IndexOf('图片转换') -ge 0) -and `
+     ($rmItems.Out.IndexOf('图标提取') -ge 0) -and ($rmItems.Out.IndexOf('children=cmd / PowerShell') -ge 0)) ''
+Check 'M03b 子项树五棵（常用功能 + 终端 %1 / %V 两棵 + 图片转换 + 图标提取）—— 复制那棵第一稿的树不再写了' `
+    ($rmItems.Out.IndexOf('trees=Mxx1Toolbox.Common / Mxx1Toolbox.Terminal / Mxx1Toolbox.Terminal.bg / Mxx1Toolbox.ImageConvert / Mxx1Toolbox.ExtractIcon') -ge 0) ''
+# 2026-10-15 加的两项各自子菜单里的行：图片转换（**八种；本机有 JPEG XR 编码器时是九种**）+ 两行（ICO / PNG）。
+# 行标题的唯一出处是 ImgConvert.RowTitle / IconExtract.RowTitle，这里钉住"菜单里到底有哪几行"。
+# ⚠️ JXR 那一档要借 Windows 自带的 WIC 编码器（wmphoto.dll）—— 本机没有就**不写那一行**，
+# 所以期望值按 `jxr=` 那一行现算（"菜单里的行数必须等于本机真能用几种"，M62 也照这个核）。
+$jxrOk = Get-Key $rmItems.Out 'jxr'
+$wantConvCount = 8
+$wantConvTitles = '转成 JPG / 转成 PNG / 转成 GIF / 转成 BMP / 转成 TIFF / 转成 ICO / 转成 TGA / 转成 DDS'
+$wantConvRows = 'convertrows=' + $wantConvTitles
+if ($jxrOk -eq '1') {
+    $wantConvCount = 9
+    $wantConvTitles = $wantConvTitles + ' / 转成 JXR'
+    $wantConvRows = $wantConvRows + ' / 转成 JXR'
+}
+Check ('M03c 图片转换子菜单 {0} 行、图标提取两行（标题就是 CLI 报的这几行；jxr={1}）' -f $(if ($jxrOk -eq '1') { '九' } else { '八' }), $jxrOk) `
+    (($jxrOk -eq '0' -or $jxrOk -eq '1') -and ($rmItems.Out.IndexOf($wantConvRows) -ge 0) -and `
+     ($rmItems.Out.IndexOf('iconrows=保存为 ICO / 保存为 PNG') -ge 0)) `
+    ('jxr=' + $jxrOk + ' 期望=' + $wantConvRows)
 
 # ---- 菜单顺序（2026-10-06 晚七）：Windows 把同一个右键位置里的项**按注册表键名的字母序**排，
 #      不看我们想让它排第几（用户看过真实效果图之后要改顺序，见 DESIGN §12.64）。所以"顺序"
 #      这件事**唯一的机器可读出口就是键名**：下面这几条把用户定的那个顺序钉死 ——
 #      以后谁改了名字里的数字，就等于改了用户菜单里的顺序，这里必须当场红。
 $rmWantedVerbs = @('Mxx1Toolbox.1.CopyName', 'Mxx1Toolbox.2.CopyPath', 'Mxx1Toolbox.3.Unlock', `
-                   'Mxx1Toolbox.4.AutoUnlock', 'Mxx1Toolbox.5.Common', 'Mxx1Toolbox.6.Terminal')
+                   'Mxx1Toolbox.4.AutoUnlock', 'Mxx1Toolbox.5.Common', 'Mxx1Toolbox.6.Terminal', `
+                   'Mxx1Toolbox.7.ImageConvert', 'Mxx1Toolbox.8.ExtractIcon')
 $rmVerbs = @()
 $rmVerbLines = @($rmItems.Out -split "`r?`n" | Where-Object { $_ -like 'verbs=*' })
 if ($rmVerbLines.Count -eq 1) { $rmVerbs = @($rmVerbLines[0].Substring('verbs='.Length) -split ' / ') }
@@ -1355,16 +1374,16 @@ $rmSeqOk = ($rmVerbs.Count -eq $rmWantedVerbs.Count)
 if ($rmSeqOk) {
     for ($i = 0; $i -lt $rmVerbs.Count; $i++) {
         if ($rmVerbs[$i] -ne $rmWantedVerbs[$i]) { $rmSeqOk = $false }
-        # 键名里的序号 = 菜单里的位置：序号必须是 1..6 一个不落、按顺序来
+        # 键名里的序号 = 菜单里的位置：序号必须是 1..8 一个不落、按顺序来
         if ($rmVerbs[$i] -notmatch ('^Mxx1Toolbox\.' + ($i + 1) + '\.')) { $rmSeqOk = $false }
     }
 }
-Check 'M46 菜单顺序钉住：六个键名里的序号 1..6 就是用户定的顺序（复制文件名 → 复制文件路径 → 解除文件占用 → 一键解除占用 → 常用功能 → 在此处打开终端）' `
+Check 'M46 菜单顺序钉住：八个键名里的序号 1..8 就是用户定的顺序（复制文件名 → 复制文件路径 → 解除文件占用 → 一键解除占用 → 常用功能 → 在此处打开终端 → 图片转换 → 图标提取）' `
     $rmSeqOk ('verbs=' + ($rmVerbs -join ' / '))
 $rmTitles = @($rmItems.Out -split "`r?`n" | Where-Object { $_ -like 'titles=*' })
 Check 'M47 titles= 也按同一个顺序报（报告和菜单不会各说一套）' `
     (($rmTitles.Count -eq 1) -and `
-     ($rmTitles[0] -eq 'titles=复制文件名 / 复制文件路径 / 解除文件占用 / 一键解除占用 / 常用功能 / 在此处打开终端')) `
+     ($rmTitles[0] -eq 'titles=复制文件名 / 复制文件路径 / 解除文件占用 / 一键解除占用 / 常用功能 / 在此处打开终端 / 图片转换 / 图标提取')) `
     ($rmTitles -join ' | ')
 $rmLegacyLine = @($rmItems.Out -split "`r?`n" | Where-Object { $_ -like 'legacy=*' })
 Check 'M47b legacy= 报的是上一版那六个旧键名（换名迁移的名单：新名字和旧名字必须一一对得上）' `
@@ -1374,9 +1393,9 @@ Check 'M47b legacy= 报的是上一版那六个旧键名（换名迁移的名单
 
 $rmList = Invoke-Exe 'list --tab rightmenu'
 $rmBtns = @($rmList.Out -split "`r?`n" | Where-Object { $_ -match '^rightmenu\.' })
-Check 'M04 「右键增强」页签新增 16 个按钮（加上隔壁永久删除工具 = 17 个）' ($rmBtns.Count -eq 16) ('新按钮=' + $rmBtns.Count)
-$rmOnOff = @($rmBtns | Where-Object { $_ -match 'rightmenu/(unlock|auto|common|copyname|copy|terminal)\.(on|off)' })
-Check 'M05 装 / 撤是成对的（解除占用 + 一键解除 + 常用功能 + 复制文件名 + 复制文件路径 + 在此处打开终端 共 6 对）' ($rmOnOff.Count -eq 12) ('数=' + $rmOnOff.Count)
+Check 'M04 「右键增强」页签新增 20 个按钮（加上隔壁永久删除工具 = 21 个）' ($rmBtns.Count -eq 20) ('新按钮=' + $rmBtns.Count)
+$rmOnOff = @($rmBtns | Where-Object { $_ -match 'rightmenu/(unlock|auto|common|copyname|copy|terminal|convert|icon)\.(on|off)' })
+Check 'M05 装 / 撤是成对的（解除占用 + 一键解除 + 常用功能 + 复制文件名 + 复制文件路径 + 在此处打开终端 + 图片转换 + 图标提取 共 8 对）' ($rmOnOff.Count -eq 16) ('数=' + $rmOnOff.Count)
 # 用户 2026-10-06 晚六最后定的口径：「复制」两条**各一对**按钮（16 个按钮），不是一对按钮管两条 ——
 # 撤哪一条都不许动另一条。这条断言盯着"别把两对又合并回一对"。
 $rmCopyPairs = @($rmBtns | Where-Object { $_ -match 'rightmenu/(copyname|copy)\.(on|off)' })
@@ -1386,9 +1405,10 @@ $rmStatus = Invoke-Exe 'rightmenu status'
 Check 'M06 rightmenu status 退出码 0（只读）' ($rmStatus.Code -eq 0) ('exit=' + $rmStatus.Code)
 # 2026-10-06 晚六最后的口径：复制是两条**平铺的一级菜单项**（各带一句说明），终端是**子菜单一条**
 $rmNeed = @('解除文件占用', '一键解除占用', '常用功能 子菜单', '复制文件名', '复制文件路径', `
-            '在此处打开终端', '子菜单（2 项）：cmd / PowerShell', '菜单里的 exe', '最近使用最多留 30 个')
+            '在此处打开终端', '子菜单（2 项）：cmd / PowerShell', '菜单里的 exe', '最近使用最多留 30 个', `
+            '图片转换', ('子菜单（' + $wantConvCount + ' 项）：只装在图片文件上'), '图标提取', '子菜单（2 项）：存成 ICO / PNG')
 $rmMiss = @($rmNeed | Where-Object { $rmStatus.Out.IndexOf($_) -lt 0 })
-Check 'M07 状态里念了：六项装没装 / 子菜单几项 / 菜单里的 exe / 最近使用上限 30' ($rmMiss.Count -eq 0) ('缺=' + ($rmMiss -join ' '))
+Check 'M07 状态里念了：八项装没装 / 子菜单几项 / 菜单里的 exe / 最近使用上限 30' ($rmMiss.Count -eq 0) ('缺=' + ($rmMiss -join ' '))
 
 $rmHelp = Invoke-Exe 'rightmenu help'
 Check 'M08 说明里写清了怎么卸干净 + 底线（系统关键进程不能结束 / 一键解除没有确认框）' `
@@ -2059,6 +2079,253 @@ try {
         elseif (Test-Path -LiteralPath $rmPinFile) { Remove-Item -LiteralPath $rmPinFile -Force -ErrorAction SilentlyContinue }
     }
 
+    # ---- 第七 / 第八项（2026-10-15 加的）：「图片转换」+「图标提取」------------------------
+    # 用户原话：「图片转换支持的格式是不是有点少，你可以加一点？」→ 把范围与实测摆给他之后，
+    # 他答「这些都做」= ① 图标提取 + ② 图片转换六种 GDI+ 格式 + ③ **手写 TGA / DDS**；
+    # 图标提取的子菜单他挑「2 行」（保存为 ICO / 保存为 PNG）；结果反馈复用现成的提示卡
+    # （「批量只给汇总一句话 + 明细进日志」）；右键那条路**不加条款门、不加二次确认**。
+    #
+    # 装法上这两项**各自只装一个位置**（这是量出来的，不是挑的）：
+    #   · 「图片转换」→ `SystemFileAssociations\image\shell`（Window 给"所有图片类型"留的公共位置：
+    #     写在它下面的项在 PNG 上出现、在 TXT 上不出现；写 `.png\shell` 反而没用，因为 `.png`
+    #     解析到的是 pngfile 这个类，不是一个位置。量法与对照见 DESIGN §12.70）；
+    #   · 「图标提取」→ `*\shell`（任意文件；`*` 不覆盖文件夹，所以文件夹上不会出现这一项）。
+    # ⚠️ `RightMenu.Table` 里多一行之后，`LocationsOf` 的兜底分支（take = true）会把**老项**
+    # 也一起装到新位置上去 —— M62b 专门盯这一条（这是加位置时最容易踩的坑）。
+    $rmInsConv = Invoke-Exe 'run rightmenu.convert.on' 60 $Exe $rmEnv
+    # 本机能用几种（JXR 要借 Windows 自带的 WIC 编码器：8 或 9）—— 期望值在 M03c 那里按 `jxr=` 算好了
+    Check ('M61 装上「图片转换」：只装图片文件那一个位置 + 子菜单 {0} 项（jxr={1}）' -f $wantConvCount, $jxrOk) `
+        (($rmInsConv.Code -eq 0) -and ($rmInsConv.Out -match '√ 图片转换 · 图片文件') -and `
+         ($rmInsConv.Out -match ('图片转换 的子菜单：' + $wantConvCount + ' 项'))) ('exit=' + $rmInsConv.Code)
+    $rmConvProp = Get-ItemProperty -LiteralPath (Join-Path $rmTestRoot 'SystemFileAssociations\image\shell\Mxx1Toolbox.7.ImageConvert') -ErrorAction SilentlyContinue
+    $rmConvRows = @(Get-ChildItem -LiteralPath (Join-Path $rmTestRoot 'Mxx1Toolbox.ImageConvert\shell') -ErrorAction SilentlyContinue | Sort-Object PSChildName)
+    $rmConvTitles = @()
+    $rmConvCmds = @()
+    foreach ($k in $rmConvRows) {
+        $rmConvTitles += "$((Get-ItemProperty -LiteralPath $k.PSPath -ErrorAction SilentlyContinue).MUIVerb)"
+        $rmConvCmds += "$((Get-ItemProperty -LiteralPath (Join-Path $k.PSPath 'command') -ErrorAction SilentlyContinue).'(default)')"
+    }
+    $rmConvBadCmd = @($rmConvCmds | Where-Object { $_ -notmatch 'convert-image "%1" --to=' })
+    Check ('M62 图片转换：父项在 SystemFileAssociations\image\shell + {0} 行标题与命令一一对上（每种格式各一条 --to=）' -f $wantConvCount) `
+        (("$($rmConvProp.MUIVerb)" -eq '图片转换') -and ("$($rmConvProp.ExtendedSubCommandsKey)" -eq 'Mxx1Toolbox.ImageConvert') -and `
+         ($rmConvRows.Count -eq $wantConvCount) -and ($rmConvBadCmd.Count -eq 0) -and `
+         (($rmConvTitles -join ' / ') -eq $wantConvTitles)) `
+        ('父项=' + $rmConvProp.MUIVerb + ' 行数=' + $rmConvRows.Count + ' 标题=' + ($rmConvTitles -join ' / '))
+    # 菜单里的行数必须**正好等于本机真能用几种** —— 不许摆一个点了必然失败的行（JXR 探测为 0 时没有它），
+    # 也不许本机明明能用却不给（探测为 1 时必须有它）。这就是"菜单不说谎"那条判据。
+    $rmHasJxrRow = @($rmConvTitles | Where-Object { $_ -eq '转成 JXR' }).Count
+    Check 'M62c 菜单里的 JXR 那一行与本机编码器探测一致（有就写、没有就不写，不摆必失败的行）' `
+        ((($jxrOk -eq '1') -and ($rmHasJxrRow -eq 1)) -or (($jxrOk -eq '0') -and ($rmHasJxrRow -eq 0))) `
+        ('jxr=' + $jxrOk + ' 菜单里有 JXR 行=' + $rmHasJxrRow + ' jxrdll=' + (Get-Key $rmItems.Out 'jxrdll'))
+    $rmLeak = @()
+    foreach ($rmV in @('Mxx1Toolbox.1.CopyName', 'Mxx1Toolbox.2.CopyPath', 'Mxx1Toolbox.3.Unlock', `
+                       'Mxx1Toolbox.4.AutoUnlock', 'Mxx1Toolbox.5.Common', 'Mxx1Toolbox.6.Terminal')) {
+        if (Test-Path -Path (Join-Path $rmTestRoot ('SystemFileAssociations\image\shell\' + $rmV))) { $rmLeak += $rmV }
+    }
+    Check 'M62b 老项没有渗到「图片文件」这个新位置上（Table 多一行不许把老项一起带过去）' `
+        ($rmLeak.Count -eq 0) ('渗过去的=' + ($rmLeak -join ' '))
+
+    $rmInsIcon = Invoke-Exe 'run rightmenu.icon.on' 60 $Exe $rmEnv
+    Check 'M63 装上「图标提取」：只装任意文件那一个位置 + 子菜单 2 项' `
+        (($rmInsIcon.Code -eq 0) -and ($rmInsIcon.Out -match '√ 图标提取 · 任意文件') -and `
+         ($rmInsIcon.Out -match '图标提取 的子菜单：2 项')) ('exit=' + $rmInsIcon.Code)
+    $rmIconProp = Get-ItemProperty -LiteralPath (Join-Path $rmTestRoot '*\shell\Mxx1Toolbox.8.ExtractIcon') -ErrorAction SilentlyContinue
+    $rmIconRows = @(Get-ChildItem -LiteralPath (Join-Path $rmTestRoot 'Mxx1Toolbox.ExtractIcon\shell') -ErrorAction SilentlyContinue | Sort-Object PSChildName)
+    $rmIconTitles = @()
+    $rmIconCmds = @()
+    foreach ($k in $rmIconRows) {
+        $rmIconTitles += "$((Get-ItemProperty -LiteralPath $k.PSPath -ErrorAction SilentlyContinue).MUIVerb)"
+        $rmIconCmds += "$((Get-ItemProperty -LiteralPath (Join-Path $k.PSPath 'command') -ErrorAction SilentlyContinue).'(default)')"
+    }
+    $rmIconBadCmd = @($rmIconCmds | Where-Object { $_ -notmatch 'extract-icon "%1" --as=' })
+    Check 'M63b 图标提取：两行 = 保存为 ICO / 保存为 PNG（命令各带一个 --as=）' `
+        (("$($rmIconProp.MUIVerb)" -eq '图标提取') -and ("$($rmIconProp.ExtendedSubCommandsKey)" -eq 'Mxx1Toolbox.ExtractIcon') -and `
+         ($rmIconRows.Count -eq 2) -and ($rmIconBadCmd.Count -eq 0) -and `
+         (($rmIconTitles -join ' / ') -eq '保存为 ICO / 保存为 PNG')) `
+        ('行数=' + $rmIconRows.Count + ' 标题=' + ($rmIconTitles -join ' / '))
+    $rmIconElsewhere = @()
+    foreach ($rmR in @('Directory\shell', 'Directory\Background\shell', 'DesktopBackground\Shell', 'SystemFileAssociations\image\shell')) {
+        if (Test-Path -Path (Join-Path $rmTestRoot ($rmR + '\Mxx1Toolbox.8.ExtractIcon'))) { $rmIconElsewhere += $rmR }
+    }
+    Check 'M63c 图标提取不在文件夹 / 空白处 / 图片位置上出现（只装任意文件）' `
+        ($rmIconElsewhere.Count -eq 0) ('多出来的位置=' + ($rmIconElsewhere -join ' '))
+
+    # ---- 端到端：真的转一遍 / 真的抽一次图标（夹具在临时目录，源文件哈希前后必须一致）-------
+    $cvDir = Join-Path $tmpRoot ('mxx1-convert-' + [Guid]::NewGuid().ToString('N').Substring(0, 8))
+    New-Item -ItemType Directory -Path $cvDir -Force | Out-Null
+    $cvEnv = @{ MXX1_NO_NOTIFY = '1' }        # 回归测试不许在别人桌面上弹提示卡
+    $cvSrc = Join-Path $cvDir '原图.png'      # 中文文件名也一起验（右键那条路是中文路径）
+    $cvBmp = New-Object System.Drawing.Bitmap 64, 64
+    $cvG = [System.Drawing.Graphics]::FromImage($cvBmp)
+    $cvG.Clear([System.Drawing.Color]::Transparent)
+    $cvG.FillRectangle([System.Drawing.Brushes]::Red, 0, 0, 16, 16)   # 只有左上角是红的 —— 专治"上下翻了"
+    $cvG.Dispose()
+    $cvBmp.Save($cvSrc, [System.Drawing.Imaging.ImageFormat]::Png)
+    $cvBmp.Dispose()
+    $cvHashBefore = (Get-FileHash -LiteralPath $cvSrc -Algorithm SHA256).Hash
+
+    $cvExts = @{ 'jpg' = 'jpg'; 'png' = 'png'; 'gif' = 'gif'; 'bmp' = 'bmp'; 'tiff' = 'tif'; 'ico' = 'ico'; 'tga' = 'tga'; 'dds' = 'dds'; 'jxr' = 'jxr' }
+    $cvFormats = @('jpg', 'png', 'gif', 'bmp', 'tiff', 'ico', 'tga', 'dds')
+    # JXR 要借 Windows 自带的 WIC 编码器：本机有就一起转（第九种），没有就跳过那一条
+    if ($jxrOk -eq '1') { $cvFormats += 'jxr' }
+    $cvBad = @()
+    foreach ($cvF in $cvFormats) {
+        $cvR = Invoke-Exe ('convert-image "' + $cvSrc + '" --to=' + $cvF + ' --quiet') 120 $Exe $cvEnv
+        $cvOut = Join-Path $cvDir ('原图_转换.' + $cvExts[$cvF])
+        if (($cvR.Code -ne 0) -or ($cvR.Out -notmatch 'result=ok') -or (-not (Test-Path -LiteralPath $cvOut)) -or `
+            ((Get-Item -LiteralPath $cvOut).Length -le 0)) {
+            $cvBad += ($cvF + '(exit=' + $cvR.Code + ')')
+        }
+    }
+    Check ('M64 {0} 种格式各转一次都成功、输出文件都真生成了（{1}）' -f $cvFormats.Count, ($cvFormats -join ' / ')) `
+        ($cvBad.Count -eq 0) ('坏的=' + ($cvBad -join ' '))
+    # JXR 的签名核一眼（HD Photo / JPEG XR 都是 49 49 BC）—— 只看"文件在不在"是验不出
+    # "编码器在、但写出来是别的东西"的（ImageMagick 转 HEIC 就是这么骗过人的）
+    if ($jxrOk -eq '1') {
+        $jxrHead = Get-FirstBytes (Join-Path $cvDir '原图_转换.jxr') 3
+        Check 'M64b 转出来的 JXR 头 3 字节是 49 49 BC（真是 JPEG XR / HD Photo，不是改名的别的东西）' `
+            (($jxrHead.Length -eq 3) -and ($jxrHead[0] -eq 0x49) -and ($jxrHead[1] -eq 0x49) -and ($jxrHead[2] -eq 0xBC)) `
+            ('头=' + (($jxrHead | ForEach-Object { $_.ToString('x2') }) -join ' '))
+    } else {
+        Skip 'M64b 转出来的 JXR 头 3 字节是 49 49 BC' '这台机器没有 JPEG XR 编码器（不是失败）'
+    }
+    Check 'M65 转换只读源文件：源图哈希前后一字不差' `
+        ((Get-FileHash -LiteralPath $cvSrc -Algorithm SHA256).Hash -eq $cvHashBefore) ''
+
+    $cvR2 = Invoke-Exe ('convert-image "' + $cvSrc + '" --to=jpg --quiet') 120 $Exe $cvEnv
+    Check 'M66 绝不覆盖：同名再转一次出 -2，第一个文件原样还在' `
+        (($cvR2.Code -eq 0) -and (Test-Path -LiteralPath (Join-Path $cvDir '原图_转换.jpg')) -and `
+         (Test-Path -LiteralPath (Join-Path $cvDir '原图_转换-2.jpg')) -and `
+         ((Get-Key $cvR2.Out 'out') -match '原图_转换-2\.jpg$')) ('out=' + (Get-Key $cvR2.Out 'out'))
+
+    $cvJunk = Join-Path $cvDir '坏的.png'
+    [System.IO.File]::WriteAllBytes($cvJunk, (New-Object byte[] 512))     # 512 个 0 字节：GDI+ 一定解不开
+    $cvR3 = Invoke-Exe ('convert-image "' + $cvJunk + '" --to=jpg --quiet') 120 $Exe $cvEnv
+    Check 'M67 解不开的输入如实报「本机解不开这个格式」+ 退出码 1 + 不生成半成品' `
+        (($cvR3.Code -eq 1) -and ($cvR3.Out -match '本机解不开这个格式') -and `
+         (-not (Test-Path -LiteralPath (Join-Path $cvDir '坏的_转换.jpg')))) `
+        ('exit=' + $cvR3.Code + ' why=' + (Get-Key $cvR3.Out 'why'))
+    # WebP / HEIC / AVIF **故意不做**（量过：这台机器的 WIC 只有 WebP 的**解码器**、没有编码器；
+    # HEIC 那个编码器 WPF 那层存不下来）—— 所以给一个不支持的格式必须是用法错（退出码 2），
+    # 而不是生成一个"看着像成了"的文件（ImageMagick 那条路踩过：转 HEIC 退出码 0、文件也生了，
+    # 头 8 个字节还是 PNG 的 89 50 4E 47）。
+    $cvR4 = Invoke-Exe ('convert-image "' + $cvSrc + '" --to=webp --quiet') 120 $Exe $cvEnv
+    Check 'M68 不支持的格式（WebP）当场说清楚、退出码 2、不生成任何文件' `
+        (($cvR4.Code -eq 2) -and ($cvR4.Err -match '不支持的格式') -and `
+         (-not (Test-Path -LiteralPath (Join-Path $cvDir '原图_转换.webp')))) ('exit=' + $cvR4.Code)
+
+    # ---- 图标提取：四条路各验一次 ----------------------------------------------------------
+    $icDir = Join-Path $tmpRoot ('mxx1-icon-' + [Guid]::NewGuid().ToString('N').Substring(0, 8))
+    New-Item -ItemType Directory -Path $icDir -Force | Out-Null
+    # ① 资源载体：拿工具箱自己的 exe 的**副本**（它自己有 8 档图标资源；
+    #    ⚠️ 不能拿系统 exe 的副本当夹具 —— Win10 的 notepad.exe 图标在 MUI 资源重定向里，
+    #    复制走之后一个图标都抽不出来，那是真的没有，不是我们抽不到，见 DESIGN §12.70）
+    $icHost = Join-Path $icDir 'sample.exe'
+    Copy-Item -LiteralPath $Exe -Destination $icHost -Force
+    $icR1 = Invoke-Exe ('extract-icon "' + $icHost + '" --as=ico --quiet') 120 $Exe $cvEnv
+    $icIco = Join-Path $icDir 'sample_icon.ico'
+    $icHead = @()
+    if (Test-Path -LiteralPath $icIco) { $icHead = Get-FirstBytes $icIco 4 }
+    $icSizes = Get-Key $icR1.Out 'sizes'
+    Check 'M69 图标提取①资源载体：从 exe 自己的图标资源里抽出多档 ICO（有 256 也有 16）' `
+        (($icR1.Code -eq 0) -and ($icR1.Out -match '从这个文件自己的图标资源里抽的') -and `
+         ($icHead.Length -eq 4) -and ($icHead[0] -eq 0) -and ($icHead[1] -eq 0) -and ($icHead[2] -eq 1) -and ($icHead[3] -eq 0) -and `
+         ($icSizes -match '256') -and ($icSizes -match '16')) ('exit=' + $icR1.Code + ' sizes=' + $icSizes)
+    # ② .ico 自己：目录里登记了几档就取几档，存成 PNG 时取最大那一档
+    $icR2 = Invoke-Exe ('extract-icon "' + $icIco + '" --as=png --quiet') 120 $Exe $cvEnv
+    $icPng = Join-Path $icDir 'sample_icon_icon.png'
+    $icSize = ''
+    if (Test-Path -LiteralPath $icPng) {
+        $icImg = [System.Drawing.Image]::FromFile($icPng)
+        $icSize = "$($icImg.Width)x$($icImg.Height)"
+        $icImg.Dispose()
+    }
+    Check 'M69b 图标提取②.ico 自己：读出它登记的档位，存 PNG 时取最大那一档（256×256）' `
+        (($icR2.Code -eq 0) -and ($icR2.Out -match '从 \.ico 文件自己那几档读的') -and ($icSize -eq '256x256')) `
+        ('exit=' + $icR2.Code + ' png=' + $icSize)
+    # ③ 文件夹：如实说这一版不做（右键里也只装在文件上）
+    $icR3 = Invoke-Exe ('extract-icon "' + $icDir + '" --as=ico --quiet') 120 $Exe $cvEnv
+    Check 'M69c 图标提取③文件夹：如实说这一版不做（退出码 1，不谎报成功）' `
+        (($icR3.Code -eq 1) -and ($icR3.Out -match '文件夹的图标这一版不做')) ('exit=' + $icR3.Code)
+    # ④ 别的文件（.txt）：查登记的图标源、查不到就用资源管理器那张（32 / 16），**不报失败**
+    $icTxt = Join-Path $icDir '说明.txt'
+    Set-Content -LiteralPath $icTxt -Value 'x' -Encoding UTF8
+    $icR4 = Invoke-Exe ('extract-icon "' + $icTxt + '" --as=ico --quiet') 120 $Exe $cvEnv
+    Check 'M69d 图标提取④别的文件：照样抽得出图标（登记源或资源管理器那张），不报失败' `
+        (($icR4.Code -eq 0) -and ($icR4.Out -match 'result=ok') -and (Test-Path -LiteralPath (Join-Path $icDir '说明_icon.ico'))) `
+        ('exit=' + $icR4.Code + ' route=' + (Get-Key $icR4.Out 'route'))
+
+    # ---- 独立第三方校验：ImageMagick 认不认我们写出来的那八种（没装就 Skip，不是失败）-------
+    # ⚠️ 只是**测试**用它当独立的"别人也能读"的证据；工具箱自己零依赖，不带它一个字节。
+    $magick = ''
+    $magickCmd = Get-Command 'magick.exe' -ErrorAction SilentlyContinue
+    if ($magickCmd) { $magick = $magickCmd.Source }
+    if ($magick.Length -eq 0) {
+        $magickCand = @(Get-ChildItem (Join-Path $env:ProgramFiles 'ImageMagick*') -Directory -ErrorAction SilentlyContinue |
+            ForEach-Object { Join-Path $_.FullName 'magick.exe' } | Where-Object { Test-Path -LiteralPath $_ })
+        if ($magickCand.Count -gt 0) { $magick = $magickCand[0] }
+    }
+    if ($magick.Length -eq 0) {
+        Skip 'M70 ImageMagick 独立校验：八种输出第三方能不能读' '这台机器没装 ImageMagick（不是失败）'
+    } else {
+        $imBad = @()
+        foreach ($cvF in @('jpg', 'png', 'gif', 'bmp', 'tiff', 'ico', 'tga', 'dds')) {
+            $cvOut = Join-Path $cvDir ('原图_转换.' + $cvExts[$cvF])
+            if (-not (Test-Path -LiteralPath $cvOut)) { $imBad += ($cvF + ':没文件'); continue }
+            $imLine = (& $magick identify -format '%m %wx%h' $cvOut 2>&1) -join ' '
+            if ($imLine -notmatch '64x64') { $imBad += ($cvF + ':[' + $imLine + ']') }
+        }
+        Check 'M70 ImageMagick 认得出这八种输出、尺寸都是 64×64（第三方独立读数）' `
+            ($imBad.Count -eq 0) ('读不出的=' + ($imBad -join ' '))
+        # 透明去哪了（这两条是 DESIGN §12.70 里量过的行为，用第三方再钉一遍）：
+        #   JPG / GIF / BMP 存不了透明 → 透明的地方补成**白底**（不是黑的）；
+        #   PNG / TIFF / TGA / DDS / ICO → 透明原样保住（alpha = 0）。
+        $imWhite = @()
+        foreach ($cvF in @('jpg', 'gif', 'bmp')) {
+            $cvOut = Join-Path $cvDir ('原图_转换.' + $cvExts[$cvF])
+            $px = (& $magick $cvOut -format '%[pixel:p{56,56}]' info: 2>&1) -join ''
+            if ($px -notmatch '255,255,255') { $imWhite += ($cvF + '=' + $px) }
+        }
+        Check 'M70b 存不了透明的那三种（JPG / GIF / BMP）透明处补的是白底，不是黑块' `
+            ($imWhite.Count -eq 0) ('不是白的=' + ($imWhite -join ' '))
+        $imAlpha = @()
+        foreach ($cvF in @('png', 'tga', 'dds')) {
+            $cvOut = Join-Path $cvDir ('原图_转换.' + $cvExts[$cvF])
+            $px = (& $magick $cvOut -format '%[pixel:p{56,56}]' info: 2>&1) -join ''
+            if ($px -notmatch 'rgba\(0,0,0,0\)') { $imAlpha += ($cvF + '=' + $px) }
+        }
+        Check 'M70c 能存透明的那三种（PNG / TGA / DDS）透明原样保住（alpha=0）' `
+            ($imAlpha.Count -eq 0) ('透明丢了=' + ($imAlpha -join ' '))
+        # ICO 里确实是多档（identify 每一帧打一行）
+        $icoLines = @(& $magick identify (Join-Path $cvDir '原图_转换.ico') 2>&1 | Where-Object { $_ -match 'ICO' })
+        Check 'M70d 转出来的 ICO 里是多档（不是只有一张 256 的假图）' `
+            ($icoLines.Count -ge 3) ('帧数=' + $icoLines.Count)
+    }
+    # ---- JXR 的独立校验：**ImageMagick 这条路走不通**（这台机器上它调 JXRDecApp.exe 那个委派、
+    #      而且没有 IM_MOD_RL_JXR_.dll —— 实测报 "delegate failed"），所以换成 Windows 自己的
+    #      解码器（WIC）读回来核：尺寸对不对、透明还在不在。⚠️ 编解码同一套系统组件，
+    #      所以这条只算"解码那一半 + 签名核对"，不算"第三方独立实现"（DESIGN §12.70 ⑨ 写清了）。
+    if ($jxrOk -ne '1') {
+        Skip 'M71 JXR 用 Windows 自己的解码器读回来：尺寸 64×64、透明还在' '这台机器没有 JPEG XR 编码器（不是失败）'
+    } else {
+        $jxrPath = Join-Path $cvDir '原图_转换.jxr'
+        $jxrOkRead = $false
+        $jxrWhy = ''
+        try {
+            Add-Type -AssemblyName PresentationCore -ErrorAction Stop
+            Add-Type -AssemblyName WindowsBase -ErrorAction Stop
+            $dec = [System.Windows.Media.Imaging.BitmapDecoder]::Create([Uri]$jxrPath, 'None', 'OnLoad')
+            $frm = $dec.Frames[0]
+            $px = New-Object 'System.Byte[]' 4
+            $null = $frm.CopyPixels((New-Object System.Windows.Int32Rect 56, 56, 1, 1), $px, 4, 0)
+            $jxrOkRead = (($frm.PixelWidth -eq 64) -and ($frm.PixelHeight -eq 64) -and ($px[3] -eq 0))
+            $jxrWhy = ($frm.PixelWidth.ToString() + 'x' + $frm.PixelHeight + ' 透明处=' + ($px -join ','))
+        } catch { $jxrWhy = 'WIC 读 JXR 失败：' + $_.Exception.Message }
+        Check 'M71 JXR 用 Windows 自己的解码器读回来：尺寸 64×64、透明还在（alpha=0）' $jxrOkRead $jxrWhy
+    }
+    Remove-Item -LiteralPath $cvDir -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $icDir -Recurse -Force -ErrorAction SilentlyContinue
+
     # 撤之前先造几个"晚六第一稿"那套写法的残留键（M44 清掉的那两个已经没了）：撤掉复制 / 终端
     # 这几项时也该顺手清掉它们，连带复制那棵第一稿的子项树（`Mxx1Toolbox.CopyPath`）。
     foreach ($rmOld in @(@('Directory\shell\Mxx1CopyPathRel', '复制相对路径'), `
@@ -2080,19 +2347,24 @@ try {
         ('exit=' + $rmOff5.Code + ' 文件名键没了=' + $rmNameGone + ' 路径键还在=' + $rmPathKept)
     $rmOff4 = Invoke-Exe 'run rightmenu.copy.off' 60 $Exe $rmEnv
     $rmOff6 = Invoke-Exe 'run rightmenu.terminal.off' 60 $Exe $rmEnv
+    $rmOff7 = Invoke-Exe 'run rightmenu.convert.off' 60 $Exe $rmEnv
+    $rmOff8 = Invoke-Exe 'run rightmenu.icon.off' 60 $Exe $rmEnv
     $rmLeft = @()
     foreach ($rmK in @('*\shell\Mxx1Toolbox.3.Unlock', 'Directory\shell\Mxx1Toolbox.3.Unlock', 'Directory\Background\shell\Mxx1Toolbox.3.Unlock', 'DesktopBackground\Shell\Mxx1Toolbox.3.Unlock', `
                        '*\shell\Mxx1Toolbox.4.AutoUnlock', 'Directory\shell\Mxx1Toolbox.4.AutoUnlock', 'Directory\Background\shell\Mxx1Toolbox.4.AutoUnlock', 'DesktopBackground\Shell\Mxx1Toolbox.4.AutoUnlock', `
                        '*\shell\Mxx1Toolbox.5.Common', 'Directory\shell\Mxx1Toolbox.5.Common', 'Directory\Background\shell\Mxx1Toolbox.5.Common', 'DesktopBackground\Shell\Mxx1Toolbox.5.Common', `
                        '*\shell\Mxx1Toolbox.1.CopyName', 'Directory\shell\Mxx1Toolbox.1.CopyName', '*\shell\Mxx1Toolbox.2.CopyPath', 'Directory\shell\Mxx1Toolbox.2.CopyPath', `
                        'Directory\shell\Mxx1Toolbox.6.Terminal', 'Directory\Background\shell\Mxx1Toolbox.6.Terminal', 'DesktopBackground\Shell\Mxx1Toolbox.6.Terminal', `
+                       'SystemFileAssociations\image\shell\Mxx1Toolbox.7.ImageConvert', '*\shell\Mxx1Toolbox.8.ExtractIcon', `
                        'Directory\shell\Mxx1CopyPathRel', 'DesktopBackground\Shell\Mxx1TerminalPs', `
-                       'Mxx1Toolbox.Common', 'Mxx1Toolbox.Terminal', 'Mxx1Toolbox.Terminal.bg', 'Mxx1Toolbox.CopyPath')) {
+                       'Mxx1Toolbox.Common', 'Mxx1Toolbox.Terminal', 'Mxx1Toolbox.Terminal.bg', 'Mxx1Toolbox.CopyPath', `
+                       'Mxx1Toolbox.ImageConvert', 'Mxx1Toolbox.ExtractIcon')) {
         if (Test-Path -Path (Join-Path $rmTestRoot $rmK)) { $rmLeft += $rmK }
     }
-    Check 'M21 撤掉六对：自己写的六个 verb 全删了（含第一稿那套残留）+ 四棵子项树都清掉' `
+    Check 'M21 撤掉八对：自己写的八个 verb 全删了（含第一稿那套残留）+ 六棵子项树都清掉' `
         ($rmLeft.Count -eq 0) `
-        ('off=' + $rmOff.Code + '/' + $rmOff2.Code + '/' + $rmOff3.Code + '/' + $rmOff5.Code + '/' + $rmOff4.Code + '/' + $rmOff6.Code + ' 还留着=' + ($rmLeft -join ' '))
+        ('off=' + $rmOff.Code + '/' + $rmOff2.Code + '/' + $rmOff3.Code + '/' + $rmOff5.Code + '/' + $rmOff4.Code + '/' + $rmOff6.Code + `
+         '/' + $rmOff7.Code + '/' + $rmOff8.Code + ' 还留着=' + ($rmLeft -join ' '))
     $rmRealAfter = @(Get-ChildItem -LiteralPath $rmRealShell -ErrorAction SilentlyContinue | Select-Object -ExpandProperty PSChildName)
     $rmRealMine = @($rmRealAfter | Where-Object { $_ -match 'Mxx1' })
     # 判据是"这次测试一个字都没改用户的真实菜单"，**不是**"用户的菜单里不许有我们的键"：

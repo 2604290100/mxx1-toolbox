@@ -96,6 +96,42 @@ $cscArgs = @(
     '/reference:System.Windows.Forms.dll'
     '/reference:Microsoft.CSharp.dll'
 )
+
+# ---- JPEG XR 那一档要借 WPF 的 WmpBitmapEncoder（= WIC 里 Windows 自带的那个编码器）----
+# 为什么要找路径而不是写 '/reference:PresentationCore.dll'：这三个程序集在 **GAC** 里
+# （WindowsBase / System.Xaml 在 GAC_MSIL，PresentationCore 按位数分在 GAC_32 / GAC_64），
+# 那台机器没装"目标包（Reference Assemblies）"时那个目录是空的 —— 只写简单名 csc 找不到。
+# 找不到就 /define:MXX1_NO_JXR：编出来的 exe 里"转成 JXR"这条路会如实说"这一份没带"，
+# 而不是编不过（见 src\JxrWriter.cs 的类说明）。
+function Find-FrameworkAssembly {
+    param([string]$Name)
+    $cands = @()
+    foreach ($pf in @(${env:ProgramFiles(x86)}, $env:ProgramFiles)) {
+        if ($pf) { $cands += (Join-Path $pf ('Reference Assemblies\Microsoft\Framework\.NETFramework\v4.0\' + $Name + '.dll')) }
+    }
+    $asmRoot = Join-Path $env:SystemRoot 'Microsoft.NET\assembly'
+    foreach ($g in @('GAC_MSIL', 'GAC_64', 'GAC_32')) {
+        $base = Join-Path $asmRoot $g
+        if (-not (Test-Path $base)) { continue }
+        $dirs = @(Get-ChildItem $base -Directory -Filter $Name -ErrorAction SilentlyContinue)
+        foreach ($d in $dirs) {
+            $hit = @(Get-ChildItem $d.FullName -Recurse -Filter ($Name + '.dll') -ErrorAction SilentlyContinue | Select-Object -First 1)
+            if ($hit.Count -eq 1) { $cands += $hit[0].FullName }
+        }
+    }
+    foreach ($c in $cands) { if (Test-Path -LiteralPath $c) { return $c } }
+    return ''
+}
+$wpfRefs = @{}
+foreach ($n in @('PresentationCore', 'WindowsBase', 'System.Xaml')) { $wpfRefs[$n] = Find-FrameworkAssembly $n }
+if (($wpfRefs['PresentationCore'].Length -gt 0) -and ($wpfRefs['WindowsBase'].Length -gt 0) -and ($wpfRefs['System.Xaml'].Length -gt 0)) {
+    foreach ($n in @('PresentationCore', 'WindowsBase', 'System.Xaml')) { $cscArgs += ('/reference:' + $wpfRefs[$n]) }
+    Write-Host ('wpf refs : 三个都找到了 —— 这一份带 JPEG XR 输出（' + $wpfRefs['PresentationCore'] + '）')
+} else {
+    $cscArgs += '/define:MXX1_NO_JXR'
+    Write-Warning '找不到 WPF 的 PresentationCore / WindowsBase / System.Xaml —— 这一份 exe 不带 JPEG XR 输出（其余照旧）'
+}
+
 $icon = Join-Path $root 'assets\app.ico'
 if (Test-Path $icon) {
     $cscArgs += ('/win32icon:' + $icon)

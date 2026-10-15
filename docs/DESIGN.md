@@ -3006,6 +3006,249 @@ auto=locked  killed=0
 `--notify=0` 和 `--quiet` 都是**不要提示卡**（`MXX1_NO_NOTIFY=1` 也行）。
 回归测试一律带 `--quiet`；只有 N21 那一组故意不带，它用 `--notify=3000` 把等待时间压到 3 秒。
 
+### 12.70 「图片转换」+「图标提取」（2026-10-15）：**零依赖到底能加哪些格式，是量出来的**
+
+用户先看了一版方案（八种格式），随后问了一句「**图片转换支持的格式是不是有点少，你可以加一点？**」，
+把范围与实测摆给他之后，他答「**这些都做**」（= ① 图标提取 + ② 图片转换六种 GDI+ 格式 +
+③ 手写 TGA / DDS），并拍板：图标提取子菜单**两行**（保存为 ICO / 保存为 PNG）、
+两段插在「在此处打开终端」之后（**状态与修补仍最底**）、
+结果反馈**复用现成的提示卡**（「批量只给汇总一句话 + 明细进日志」）、
+右键那条路**不加条款门、也不加二次确认**（「直接生成新文件不用二次确认」）。
+系统默认动词那条旧护栏他说「**这个不管他**」（那颗雷还在，见 §12.69 ⑦）。
+
+#### ① 这台机器上"能写哪些格式"——三个层次的实测（2026-10-15）
+
+| 层次 | 实测结果 | 怎么量的 |
+| --- | --- | --- |
+| **GDI+**（`System.Drawing`） | **只能写 5 种**：BMP / JPEG / GIF / TIFF / PNG | `ImageCodecInfo.GetImageEncoders()` 逐条打出来；**没有 WebP、没有 ICO、没有 TGA / DDS** |
+| WPF（`PresentationCore`，薄薄一层 WIC 封装） | 多出 **JPEG XR**（`WmpBitmapEncoder` → `.jxr`，实测写出 `49 49 bc 01` 开头的文件、能用 `BitmapDecoder` 读回 64×64） | 真的编码一遍再解码回来（不是"看类存在"） |
+| WIC 编解码器清单（`Windows.Graphics.Imaging` 的 WinRT 枚举） | **编码器**：BMP / GIF / JPEG / PNG / TIFF / **WMPhoto(JXR)** / **DDS** / **Microsoft HEIF**；**解码器**：上面这些 + **WebP（只有解码器！）** + HEIC/AVIF(靠扩展) + DNG / RAW + ICO / CUR | `BitmapEncoder.GetEncoderInformationEnumerator()` / `Decoder…`，把每条的友好名 + 扩展名 + CodecId 打出来 |
+
+**三条把方案否掉的实测**（都是先量再说的）：
+
+1. **WebP 输出做不了**：这台机器装了 `Microsoft.WebpImageExtension 1.2.14.0`，
+   它给的是**解码器**（`Microsoft Webp Decoder`），**编码器清单里没有 WebP**。
+   要写 WebP 只能自己写 VP8/VP8L 编解码器 —— 不在"零依赖 + 手写小格式"这条线里，不做。
+2. **HEIC / DDS 也做不了（通过 WPF 这条路）**：清单里确实有 `Microsoft HEIF Encoder`
+   和 `DDS Encoder`，`BitmapEncoder.Create(guid)` 也能建出来，**但一 `Save` 就抛
+   `NotSupportedException: 未找到适用于完成此操作的图像处理组件`** —— WPF 那层只会存它自己
+   认识的那几个容器（我用 C# 小工具验了两遍，不是 PowerShell 的锅）。真要写它们得自己写
+   WIC COM 互操作（约 200 行），而且**别人机器上不一定装了那个扩展**（Win7 根本没有），
+   所以这一版不做。
+3. **JPEG XR 能做，但要动编译引用**：`WmpBitmapEncoder` 在 `PresentationCore` 里，
+   而 `build.ps1` 原来只引 `System*.dll`；引 WPF 要给 `csc` 加
+   `PresentationCore.dll` / `WindowsBase.dll` / `System.Xaml.dll`（都在 **GAC** 里，
+   不在 `Reference Assemblies` 那个目录：`GAC_32` / `GAC_64` / `GAC_MSIL` 各一份，实测编译通过）。
+   —— 当时**没做**，列着等用户点头；**用户随后就要了**（原话「JPEG XR（.jxr）这个格式也做一下然后，
+   你看下兼容性 win7-win11 的」）→ 落地见 **⑨**，所以最终交付的是**九种**。
+
+**所以最终交付的九种**（前八种是用户拍板的「这些都做」，第九种是他随后单独点名要的）：
+
+| 格式 | 谁写的 | 关键约定（都在回归里钉着） |
+| --- | --- | --- |
+| JPG | GDI+ | 质量 90；**透明的地方先压成白底**（实测：透明 PNG 直接存 JPG 会变**黑**，左上角量出来是 `R0 G0 B0`） |
+| PNG | GDI+ | 无损、保透明 |
+| GIF | GDI+ | 256 色、单帧；**存不了半透明** → 先压白底（实测：32bppArgb 直接存 GIF，透明区变成不透明黑） |
+| BMP | GDI+ | **24 位**（GDI+ 默认存 32 位但**不留 alpha**：实测存出来是 `Format32bppRgb`、透明区变黑） |
+| TIFF | GDI+ | **LZW 压缩**（`Encoder.Compression = CompressionLZW`，实测文件从 1122 → 1432 字节，说明参数真生效）；保透明 |
+| ICO | **自己写** | 一档一张：16 / 32 / 48 / 64 / 128 / 256，**只缩不放**；**≤128 用 BMP 写法、256 用 PNG 写法** |
+| TGA | **自己写** | 不压缩真彩色（type 2）、32 位 BGRA、左上角原点（`imageDescriptor = 0x28`） |
+| DDS | **自己写** | 不压缩（`DDPF_RGB|DDPF_ALPHAPIXELS` + BGRA8 掩码、无 FourCC）；**不做 DXT/BC 压缩** |
+| JXR | **借系统**（WPF 那层 WIC 编码器） | JPEG XR / HD Photo；质量 0.9、保透明；**本机没有那个编码器时这一行不出现**（见 ⑨，用户后来单独点名要的第九种） |
+
+#### ② 「只缩不放」是这个功能的底线之一
+
+实测过 ImageMagick 的做法：`-define icon:auto-resize=256,128,64,48,32,16` 会把**源里没有的档**
+用小的那张**放大**填进去（48×48 的源也给你一张 256 的"假大图"，文件 370,070 字节）。
+我们的做法是 **源的最大边比这一档还小就跳过这一档**（`RawImage.SquareAt` 返回 null）；
+源比 16 还小的时候就按它自己的大小写一档。非正方形的源走"等比缩小 + 居中留透明边"，
+**不裁切、不拉变形**。
+
+#### ③ 注册在哪个位置（这一步是量出来的，不是查文档猜的）
+
+用只读探针（`tools\Show-MenuOrder.ps1` + 临时文件类型夹具）量下来：
+
+| 写在哪 | 在 PNG 上的菜单里出现吗 | 在 TXT 上呢 |
+| --- | --- | --- |
+| `HKCU\Software\Classes\SystemFileAssociations\image\shell\<verb>` | **出现** | **不出现** |
+| `HKCU\Software\Classes\*\shell\<verb>` | 出现 | 出现（对照） |
+| `HKCU\Software\Classes\.png\shell\<verb>` | **不出现** | —— |
+
+最后一行是关键：`.png` 解析到的是 **`pngfile` 这个类**，不是一个"位置"，所以往 `.png\shell`
+下面写是**没用**的。于是：
+
+* 「**图片转换**」只装 `SystemFileAssociations\image\shell`（`RightMenu.Table` 里新加的一行
+  `images` / 「图片文件」）；
+* 「**图标提取**」只装 `*\shell`（= 老的 `files` 那个位置）—— `.exe` 是文件、`.lnk` 是文件、
+  `.png` 也是文件，所以子菜单收成**两行**（保存为 ICO / 保存为 PNG），来源由右键的对象决定；
+* **文件夹上不装**（`*` 本来也不覆盖文件夹）：文件夹图标的做法和文件不一样（要读 `desktop.ini`
+  和缩略图），第一版不做 —— 从命令行传文件夹进去会得到一句「文件夹的图标这一版不做」。
+
+⚠️ **加位置时最容易踩的坑**：`LocationsOf` 的兜底分支是 `take = true`，
+所以 `Table` 里多一行会让**所有老项**（解除占用 / 常用功能 / 复制…）跟着装到新位置上去。
+现在改成按 `loc.Id` 显式判断，回归 **M62b** 专门盯"老项没有渗到图片位置"。
+
+键名接着排：`Mxx1Toolbox.7.ImageConvert` / `Mxx1Toolbox.8.ExtractIcon` ——
+菜单里的顺序还是**按键名排**（§12.64），所以两项排在「在此处打开终端」后面。
+子项树：`Mxx1Toolbox.ImageConvert`（8 行）/ `Mxx1Toolbox.ExtractIcon`（2 行），
+父项各写一个 `ExtendedSubCommandsKey` 指过去（和「常用功能」「在此处打开终端」同一套机制）。
+
+#### ④ 图标是从哪儿来的（四条路，卡片上会写明是哪一条）
+
+| 顺序 | 适用 | 做法 |
+| --- | --- | --- |
+| ① | `.ico` / `.cur` | 自己读它的目录（`IcoFile.SizesIn`）拿到**真有**的档位，再用 `LoadImage` 按尺寸取（它认 Vista 起"256 那档用 PNG 压"的图标） |
+| ② | `.exe` / `.dll` / `.ocx` / `.cpl` … | 枚举它自己的 **`RT_GROUP_ICON`** 图标组（`LoadLibraryEx(AS_DATAFILE)` + `EnumResourceNames`），按组里登记的每一档 `CreateIconFromResourceEx` 取 —— **不放大** |
+| ③ | 别的文件（`.txt` / `.pdf` / `.zip`…） | 查这种文件登记的图标源：`HKCR\.pdf` → ProgId → `HKCR\<ProgId>\DefaultIcon`（像 `shell32.dll,-123`；负数 = 资源 id、正数 = 第几个图标组），照②抽那个源的**真实多档**图标 |
+| ④ | 兜底 | 资源管理器给这种文件配的那张（`SHGetFileInfo`，只有 32 / 16 两档）——**如实说只有这两档** |
+
+像素怎么取（不这么写就会出错）：`GetIconInfo` 拿颜色位图 → `GetDIBits` 取 32 位 BGRA；
+**颜色位图上一个透明像素都没有时，回头读掩码位图**（`hbmMask`，白色 = 透明），
+否则 16 色时代的老图标会变成一块黑方块。不能用 `Icon.ToBitmap()` ——
+它在 32 位带 alpha 的图标上会丢 alpha（老毛病）。
+
+#### ⑤ 输出放哪儿：写在源文件旁边、绝不覆盖、写不进去退桌面
+
+* 名字：`原名_转换.<新后缀>` / `原名_icon.ico|png`（`报告.png` → `报告_转换.jpg`）；
+* 同名已经存在 → **`-2` / `-3`**（`OutPaths.Numbered`），**绝不覆盖**；
+* 源文件夹**写不进去**（系统目录、Program Files 这种）→ 退到**桌面**，
+  并在提示卡上明说「源文件夹写不进去，放到桌面上了」；
+* **源文件一个字节都不动**（只读打开、只新增一个文件；回归 M65 比 SHA256）。
+
+#### ⑥ 结果怎么告诉用户：还是那张 5 秒的提示卡
+
+「图片转换」「图标提取」走的是右键那条路（**点了没有窗口**），所以结果只能靠
+`src\Balloon.cs` 那张卡（默认 5 秒自动关闭、点一下提前关、不抢焦点、贴在鼠标旁边）。
+口径是用户定的「**批量只给汇总一句话 + 明细进日志**」：
+
+* 单选成功：`已转好：报告_转换.jpg，和源文件放在一起。`（卡片正文上限 300 字，所以只给汇总）
+* 多选/多文件：`转好 3 张（JPG），都和源文件放在一起。`
+* 有失败：`转好 2 张，1 张没成功：本机解不开这个格式…（细节在工具箱日志里）`
+* 图标提取额外说清**是哪条路来的**：`已存好：notepad_icon.ico（256 / 48 / 32 / 24 / 16 这些档），和源文件放在一起。从这个文件自己的图标资源里抽的。`
+
+**卡片窗口标题没有改**：`NoticeForm.WindowTitle` 仍然是 `一键解除占用` 这个常量
+（它**看不见**，只用来"新卡起来前先把上一张关掉"）。改它要动界面回归里五处按名字找窗口的判据，
+收益是零，所以留着。想改再说。
+
+**命令行入口**（右键那几行用的就是它们，只读源文件、会写新文件）：
+
+```
+Mxx1Toolbox.exe convert-image <文件…> --to=jpg|png|gif|bmp|tiff|ico|tga|dds|jxr [--quiet]
+Mxx1Toolbox.exe extract-icon  <文件…> [--as=ico|png] [--quiet]
+```
+退出码：0 = 都成了；1 = 有没成的（`result=fail` + `why=`）；2 = 用法错 / 格式不认识。
+机器可读输出：`paths= / target= / file=…\tresult=ok\tout=…\tdetail=…\tnote=… / ok= / failed= / out= / summary=`。
+
+#### ⑦ 回归怎么盯（命令行 M61–M70 + 界面 C01e/C01f）
+
+* **M61–M63c**：在隔离根里真装上这两项 → 父项落在**对的位置**（图片位置 / 任意文件）、
+  八行与两行的标题与命令一一对上（`convert-image "%1" --to=…` / `extract-icon "%1" --as=…`）、
+  图标提取**不在**文件夹 / 空白处 / 图片位置出现、**老项没有渗到新位置**（M62b）；
+* **M64–M68**：端到端真转八种（每种都断言产物存在且非空）、源文件哈希不变、
+  **绝不覆盖**（转两次出 `-2`）、解不开的输入如实报「本机解不开这个格式」且**不留半成品**、
+  不支持的格式（WebP）退出码 2；
+* **M69–M69d**：图标提取四条路各验一次（资源载体抽多档且有 256 与 16 / `.ico` 自己 /
+  文件夹如实拒绝 / 别的文件照样抽得出）；
+* **M70–M70d**：**ImageMagick 独立校验**（只是测试用它当"别人也能读"的证据，产品零依赖）：
+  八种输出它都认得出且尺寸 64×64；JPG / GIF / BMP 的透明处是**白底**（不是黑块）；
+  PNG / TGA / DDS 的透明**原样保住**（`rgba(0,0,0,0)`）；ICO 里确实是多档（identify 每一帧一行）。
+  没装 ImageMagick 的机器上这几条走 `[SKIP]`（不是失败）。
+* **界面 C01e / C01f**：整页段序改成 **10 段**（新增「右键菜单 · 图片转换」「右键菜单 · 图标提取」，
+  「状态与修补」仍是最后一段）、按钮名单 17 → **21 个**（8 对装 / 撤 + 隔壁工具 1 + 状态与修补 4）。
+  测试装 / 撤那一步**只在命令行套件里做**：界面套件没有 `MXX1_RIGHTMENU_ROOT` 隔离根，
+  在界面里点「装上图片转换」会写**用户真实的右键菜单**（所以界面套件只验"按钮在不在、段序对不对"）。
+
+⚠️ **夹具不能拿系统 exe 的副本来当"有图标资源的文件"**：这台的 `notepad.exe` 图标是通过
+**MUI 资源重定向**给出的（`LoadLibraryEx` / `ExtractIconEx` 在原位置能取到 13 个图标，
+把同一个文件（SHA256 一致）复制到临时目录就**一个都取不到** —— 用 PE 解析器逐字节看过：
+exe 自己的资源目录里只有 `EDPENLIGHTENEDAPPINFOID` / `EDPPERMISSIVEAPPINFOID` / `MUI` / VERSION / MANIFEST，
+**没有 RT_ICON / RT_GROUP_ICON**）。所以 M69 拿**工具箱自己 exe 的副本**当夹具
+（它的图标实实在在在自己资源里：8 档 256/128/64/48/32/24/20/16）。
+
+#### ⑧ 这一版**没验到**的
+
+* **写不进去就退桌面**这条分支：没有做自动化断言（要造一个"管理员也写不进"的目录，
+  得改 ACL，收尾风险比收益大），只在真机上人工看过一次；
+* **HEIC / AVIF 这些"要系统扩展才认得"的输入**：这台装了 HEIF 扩展、WIC 里也有 HEIF 解码器，
+  但**没有 HEIC 样本文件**，所以"能不能读 HEIC"这一版没测（读不了就如实报"本机解不开"）；
+* **压缩 DDS（DXT / BC）与 WebP 输出**：见①，这一版不做（WebP 那台机器上只有解码器）；
+* **文件夹图标**：不做（右键不装、命令行传文件夹会如实拒绝）；
+* **卡片文案的像素级判据**：新功能沿用老卡片，所以没有为它们单独加"卡片上真有字"的像素检查
+  （N21 那一组验的是同一张卡的同一套行为）。
+
+#### ⑨ JPEG XR（第九种输出）：借 Windows 自己的编码器，以及 Win7–Win11 逐条兼容性
+
+用户在看完第一版之后又补了一句「**JPEG XR（.jxr）这个格式也做一下然后，你看下兼容性 win7-win11 的**」。
+
+**它的性质与 WebP / HEIC 完全不同**：JPEG XR 是**Windows 自带的 WIC 原生编解码器**
+（微软的 [WIC codecs from Microsoft](https://learn.microsoft.com/en-us/windows/win32/wic/native-wic-codecs) 那张表里
+它在"built into Windows"那一拨；WebP / HEIF / RAW 那几个写的是"extension codecs downloadable from the
+Microsoft Store"）。所以它不需要用户装任何扩展：
+
+| 组件 | 值（这台机器实测 / [JPEG XR codec 文档](https://learn.microsoft.com/en-us/windows/win32/wic/jpeg-xr-codec)） |
+| --- | --- |
+| 容器 GUID | `GUID_ContainerFormatWmp` = `57a37caa-367a-4540-916b-f183c5093a4b` |
+| 编码器 CLSID | `CLSID_WICWmpEncoder` = `{ac4ce3cb-e1c1-44cd-8215-5a1665509ec2}` → 这台机器上指向系统目录里的 `wmphoto.dll` |
+| 扩展名 | `.jxr` 与 `.wdp`（老名字 HD Photo / Windows Media Photo） |
+| 文件签名 | 头 4 字节 `49 49 BC 01`（version 1.0；`BC 00` 是更早的 pre-release） |
+| 默认质量 | `ImageQuality` 0.9；`Lossless` 默认 FALSE；`ImageQuality > 0.8` 时默认 4:4:4 不欠采样 |
+
+**怎么写的**（`src\JxrWriter.cs`）：走 .NET 的 WPF `WmpBitmapEncoder` —— 它就是 WIC 那层编码器的薄封装，
+比自己写 200 行 WIC COM 互操作省得多。三件事是实测才敢定的：
+
+1. **两个"质量"旋钮类型不一样，别搞混**：`ImageQualityLevel` 是 `Single`（0..1，默认 0.9，1.0 = 数学无损）——
+   我们要的是这个；`QualityLevel` 是 `Byte`（1..255，**而且 1 = 无损**）。第一版探针往 `QualityLevel`
+   上赋 `0.9`，被取整成 1 → "想要 0.9 的质量"实际拿到的是**无损**文件（64×64 只写了 401 字节就能看出来）。
+2. **透明保得住**：设 `InterleavedAlpha = false`（平面 alpha），实测透明 PNG → JXR 再读回来
+   透明处还是 `0,0,0,0`，不透明处 `87,139,46,255`（原始的 `SeaGreen`）。
+3. **写完要核签名**：只看"文件在不在"是验不出"编码器在、但写出来是别的东西"的
+   （ImageMagick 转 HEIC 就是这么骗过去的：退出码 0、文件也生成了，头 8 字节还是 PNG 的 `89 50 4E 47`）。
+   现在头 3 字节不是 `49 49 BC` 就当场报错（回归 **M64b**）。
+
+**"不给用户摆一个点了必然失败的菜单项"**：子菜单里那一行**按本机探测结果决定写不写**
+（`ImgConvert.AvailableTargets()`），探测三条**都不进 WPF**（便宜，实测整个 `rightmenu items` 77–82 ms）：
+① 这一份 exe 编译时带没带（`/define:MXX1_NO_JXR`）；
+② 注册表里那个编码器 CLSID 在不在（读它的 `InprocServer32` 指向哪个 dll）；
+③ 能不能 `Assembly.Load("PresentationCore, Version=4.0.0.0, …")` 找到 `WmpBitmapEncoder` 这个类。
+回归 **M62c** 钉的就是"菜单里的 JXR 行 ↔ 探测结果"必须一致。
+
+⚠️ **引 WPF 的两个坑（都是实测踩的）**：
+* `build.ps1` **不能**只写 `/reference:PresentationCore.dll` —— 这三个程序集在 **GAC** 里
+  （`WindowsBase` / `System.Xaml` 在 `GAC_MSIL`，`PresentationCore` 按位数分在 `GAC_32` / `GAC_64`），
+  那台机器没装"目标包（Reference Assemblies）"时那个目录是空的；现在按
+  Reference Assemblies → GAC 三级目录的顺序找，**找不到就 `/define:MXX1_NO_JXR`**，
+  编出来的 exe 里 JXR 那条路如实说"这一份没带"（实测：这样编出来的 exe 能跑、只少一种格式）。
+  顺带一个细节：只引 `PresentationCore` + `WindowsBase` 是**不够**的，`csc` 会报
+  `CS0012: 类型"System.Windows.Markup.IUriContext"未在未引用的程序集中定义` —— 还要引 **`System.Xaml`**。
+* **碰 WPF 的代码全放在 `JxrWriter.WriteCore` 这一个方法里**，`Write` 只做"先问能不能用、再调它"。
+  理由：万一某台机器上真没有 PresentationCore，JIT **只在调用 `WriteCore` 时才解析那些类型** ——
+  而那时候我们已经知道不能用、根本不会调；把 WPF 类型写在 `Write` 自己身上就会反过来
+  （JIT 编译它时就要解析 → 直接抛，连"如实说一句为什么"的机会都没有）。
+
+##### Win7 – Win11 逐条兼容性（这一轮完整过了一遍）
+
+> 口径：**这台机器只有 Win10 19045 能真跑**；下表的"依据"一栏写清是**实测**、**微软文档**还是**代码保证**。
+> 凡是 Win7 上没法在本机验的，都做了"最坏情况也体面"的设计（探测 → 不摆必失败的行 / 如实说一句），
+> 而不是靠"应该没问题"。
+
+| 能力 | Win7 SP1 | Win8 / 8.1 | Win10 / Win11 | 依据与兜底 |
+| --- | --- | --- | --- | --- |
+| **八种基础格式**（GDI+ 的 JPG/PNG/GIF/BMP/TIFF + 手写 ICO/TGA/DDS） | 能用 | 能用 | 能用（实测） | GDI+ 1.0 起就有这五种编码器（XP+）；手写的三种是我们自己拼字节，跟系统无关 |
+| **JPEG XR（第九种）** | **能用但码流是 HD Photo 那一代** | 能用 | 能用（**实测**：写出 `49 49 BC 01`、能读回） | 微软 [JPEG XR codec 文档](https://learn.microsoft.com/en-us/windows/win32/wic/jpeg-xr-codec)：「**In Windows 8, the HD Photo codec has been updated to support JPEG XR. The encoder now always outputs a JPEG XR–compliant bit stream**」→ Win7 带的是 HD Photo 时代的编码器，**解码器两代都认**（Win8+ 能读 Win7 写出来的）。**本机没法验 Win7** → 靠探测：CLSID 在就出那一行 |
+| JXR 那一行会不会"摆了个点不动的" | 不会 | 不会 | 不会（实测 M62c） | 探测不过就不写那一行（精简系统 / 没有 wmphoto.dll 的机器上就是八行） |
+| **`SystemFileAssociations\image\shell`（图片转换的位置）** | **需人眼确认一次** | 需人眼确认一次 | 能用（实测：PNG 上有、TXT 上没有） | `SystemFileAssociations` 是 Vista 起就有的公共位置；**Win7 上"图片类型认不认 image 这个类"没在本机验过** —— 这是这一轮唯一要真机看一眼的地方 |
+| **`*\shell`（图标提取的位置）** | 能用 | 能用 | 能用（实测） | 老机制（XP 起就是 `*` 类） |
+| **图标提取的四个 API** | 能用 | 能用 | 能用（实测） | `SHGetFileInfo`（2000+）、`LoadImage`（2000+）、`LoadLibraryEx`+`EnumResourceNames`（2000+）、`GetIconInfo`/`GetDIBits`/`GetObject`（远古 API） |
+| **ICO 里 256 那一档写成 PNG 条目** | 能读 | 能读 | 能读（实测：ImageMagick 数出 4–8 帧） | PNG-in-ICO 是 **Vista 起**的写法；Win7 的资源管理器读得动。我们只在**写**的时候用（≤128 用 BMP 写法，兼容老工具） |
+| 提示卡（5 秒那张） | 能用 | 能用 | 能用（实测 N21 系列） | 我们自己画的 WinForms 窗口，跟系统通知平台无关（这正是当初不用托盘气泡的原因） |
+| HKCU 静态 verb + `ExtendedSubCommandsKey` 级联子菜单 | 能用 | 能用 | 能用（实测） | 只写 HKCU、不要管理员；Win11 的折叠菜单要用户点「显示更多选项」 |
+| **WebP / HEIC / AVIF 输出** | **不做** | 不做 | 不做 | 就算在 Win10/11 上也缺编码器（WebP 只有解码器、HEIF 编码器 WPF 层存不下去）—— 不做与系统版本无关 |
+
+**结论**：两个新功能用到的东西**没有一处是 Win8+ 才有的 API**；唯一有代差的 JPEG XR 也已经
+用"探测 + 不摆必失败的行 + 如实报原因"包住了。**Win7 上需要人眼确认的只有一件**：
+右键图片时「图片转换」有没有出现（`SystemFileAssociations\image` 那一层），
+以及 Win7 下 `.jxr` 没有文件关联（缩略图 / 双击打开会没有程序）—— 那是系统的文件关联问题，不是我们写坏了文件。
+
 ## 15 测试怎么跑（2026-10-04 补：别用 pwsh 跑；2026-10-06 补：分层与挑组）
 
 ```

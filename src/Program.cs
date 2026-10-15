@@ -154,6 +154,8 @@ namespace Mxx1Toolbox
                     case "hash": return HashCommand(args);
                     case "copypath": return CopyPathCommand(args);
                     case "terminal": return TerminalCommand(args);
+                    case "convert-image": return ConvertImageCommand(args);
+                    case "extract-icon": return ExtractIconCommand(args);
                     case "privacy": return PrivacyCommand(args);
                     case "sysreg": return SysRegCommand(args);
                     case "rightmenu": return RightMenuCommand(args);
@@ -302,6 +304,14 @@ namespace Mxx1Toolbox
             Console.WriteLine("                                                        （默认挑 Windows Terminal → PowerShell → cmd；三个开关各钉死一个）");
             Console.WriteLine("                                                        （右键菜单里的「" + RightMenu.TerminalTitle + "」子菜单那两行用的就是它）");
             Console.WriteLine("                                                        （--dry 只打印会跑哪条命令，不起窗口）");
+            Console.WriteLine("  Mxx1Toolbox.exe convert-image <文件…> --to=<格式>   把图片换一种格式存到源文件旁边（源文件不动）");
+            Console.WriteLine("                                                        格式：" + string.Join(" / ", ImgConvert.Targets));
+            Console.WriteLine("                                                        同名已存在就自动加 -2（绝不覆盖）；源文件夹写不进去就放到桌面");
+            Console.WriteLine("                                                        （右键菜单里的「" + RightMenu.ConvertTitle + "」子菜单那八行用的就是它）");
+            Console.WriteLine("                                                        提示卡 5 秒自动关闭；--notify=0 / --quiet 连提示卡也不要");
+            Console.WriteLine("  Mxx1Toolbox.exe extract-icon <文件…> [--as=ico|png]  把这个文件的图标存到源文件旁边");
+            Console.WriteLine("                                                        ico = 有几档装几档（16/32/48/64/128/256，只缩不放）；png = 最大那一档");
+            Console.WriteLine("                                                        （右键菜单里的「" + RightMenu.ExtractIconTitle + "」子菜单那两行用的就是它）");
             Console.WriteLine("  Mxx1Toolbox.exe ui [log|settings]    打开界面并直接看日志 / 设置（右键子菜单的固定入口用它）");
             Console.WriteLine("  Mxx1Toolbox.exe pin <id> / unpin <id>  把按钮置顶 / 取消置顶（排在这一页最前面）");
             Console.WriteLine("  Mxx1Toolbox.exe export <文件>        把「我的工具」导出成一个文件");
@@ -458,6 +468,51 @@ namespace Mxx1Toolbox
             return Terminal.Run(dir, want, HasFlag(args, "--dry"), NotifyWanted(args), NotifyMs(args));
         }
 
+        /// <summary>`convert-image &lt;文件…&gt; --to=jpg|png|gif|bmp|tiff|ico|tga|dds` ——
+        /// 把图片换一种格式存到源文件旁边（同名已存在就 -2，**绝不覆盖**；源文件夹写不进去就退到桌面）。
+        /// 右键菜单里「图片转换」子菜单那八行用的就是它（八行各带一个 `--to=`）。
+        /// 实现与实测依据见 `src\ImgConvert.cs` 和 DESIGN §12.70。
+        ///
+        /// 退出码：0 = 全部转好了；1 = 有没转成的；2 = 用法错 / 格式不认识。
+        /// 只读源文件：不移动、不改名、不删除，只新增一个文件。</summary>
+        private static int ConvertImageCommand(string[] args)
+        {
+            List<string> paths = new List<string>();
+            string target = "";
+            for (int i = 1; i < args.Length; i++)
+            {
+                string a = args[i];
+                if (a == null) { continue; }
+                if (a.StartsWith("--to=", StringComparison.OrdinalIgnoreCase)) { target = a.Substring(5); continue; }
+                if (a.StartsWith("--format=", StringComparison.OrdinalIgnoreCase)) { target = a.Substring(9); continue; }
+                if (a.StartsWith("--")) { continue; }
+                paths.Add(a);
+            }
+            return ImgConvert.Run(paths.ToArray(), target, NotifyWanted(args), NotifyMs(args));
+        }
+
+        /// <summary>`extract-icon &lt;文件…&gt; [--as=ico|png]` —— 把一个文件的图标存到源文件旁边
+        /// （同样绝不覆盖、写不进去退桌面）。右键菜单里「图标提取」子菜单那两行用的就是它。
+        /// 实现见 `src\IconExtract.cs`。
+        ///
+        /// 退出码：0 = 都存好了；1 = 有没存成的；2 = 用法错 / 格式不认识。
+        /// 只读源文件。</summary>
+        private static int ExtractIconCommand(string[] args)
+        {
+            List<string> paths = new List<string>();
+            string format = IconExtract.FormatIco;
+            for (int i = 1; i < args.Length; i++)
+            {
+                string a = args[i];
+                if (a == null) { continue; }
+                if (a.StartsWith("--as=", StringComparison.OrdinalIgnoreCase)) { format = a.Substring(5); continue; }
+                if (a.StartsWith("--to=", StringComparison.OrdinalIgnoreCase)) { format = a.Substring(5); continue; }
+                if (a.StartsWith("--")) { continue; }
+                paths.Add(a);
+            }
+            return IconExtract.Run(paths.ToArray(), format, NotifyWanted(args), NotifyMs(args));
+        }
+
         private static string TipText(ToolItem t, Settings settings)
         {
             return MainForm.TipFor(t, settings);
@@ -559,7 +614,17 @@ namespace Mxx1Toolbox
                 Console.WriteLine("legacy=" + string.Join(" / ", RightMenu.LegacyVerbs));
                 Console.WriteLine("children=" + RightMenu.TerminalCmdName + " / " + RightMenu.TerminalPsName);
                 Console.WriteLine("shared=" + RightMenu.SharedKey);
-                Console.WriteLine("trees=" + RightMenu.SharedKey + " / " + RightMenu.TerminalTreeKey + " / " + RightMenu.TerminalBgTreeKey);
+                Console.WriteLine("trees=" + RightMenu.SharedKey + " / " + RightMenu.TerminalTreeKey + " / " + RightMenu.TerminalBgTreeKey
+                    + " / " + RightMenu.ConvertTreeKey + " / " + RightMenu.ExtractIconTreeKey);
+                // 2026-10-15 加的两项各自子菜单里的行（回归靠它钉住"几行"和每一行的标题 ——
+                // 标题的唯一出处是 ImgConvert.RowTitle / IconExtract.RowTitle，这里只是念出来）
+                Console.WriteLine("convertrows=" + ImgConvert.RowsText());
+                Console.WriteLine("iconrows=" + IconExtract.RowsText());
+                Console.WriteLine("targets=" + string.Join(" / ", ImgConvert.Targets));
+                // JXR 要借 Windows 自带的 WIC 编码器（wmphoto.dll）：本机有就 1、没有就 0 ——
+                // 菜单里那一行按它决定写不写，回归测试按它核对"菜单行数 == 本机真能用几种"。
+                Console.WriteLine("jxr=" + (JxrWriter.Available() ? "1" : "0"));
+                Console.WriteLine("jxrdll=" + JxrWriter.EncoderDll());
                 Console.WriteLine("root=" + RightMenu.RootLabel);
                 return 0;
             }

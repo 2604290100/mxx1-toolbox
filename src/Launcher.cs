@@ -363,6 +363,10 @@ namespace Mxx1Toolbox
                         if (a == "copy.off") { return "把「" + RightMenu.CopyPathTitle + "」从右键菜单里撤掉（只删工具箱自己写的那个键）"; }
                         if (a == "terminal.on") { return "把「" + RightMenu.TerminalTitle + "」子菜单装进右键菜单（右键文件夹 / 空白处 → 用 cmd 或 PowerShell 在那个目录里开终端）"; }
                         if (a == "terminal.off") { return "把「" + RightMenu.TerminalTitle + "」子菜单从右键菜单里撤掉（只删工具箱自己写的键）"; }
+                        if (a == "convert.on") { return "把「" + RightMenu.ConvertTitle + "」子菜单装进右键菜单（右键图片文件 → 转成 JPG / PNG / GIF / BMP / TIFF / ICO / TGA / DDS，新文件放在源文件旁边）"; }
+                        if (a == "convert.off") { return "把「" + RightMenu.ConvertTitle + "」子菜单从右键菜单里撤掉（只删工具箱自己写的键）"; }
+                        if (a == "icon.on") { return "把「" + RightMenu.ExtractIconTitle + "」子菜单装进右键菜单（右键任意文件 → 把它的图标存成 .ico 或 .png）"; }
+                        if (a == "icon.off") { return "把「" + RightMenu.ExtractIconTitle + "」子菜单从右键菜单里撤掉（只删工具箱自己写的键）"; }
                         if (a == "status") { return "只读：列出右键菜单里装了什么、子菜单现在几项"; }
                         if (a == "rebuild") { return "重写「" + RightMenu.CommonTitle + "」子菜单的内容（置顶 / 最近使用变了之后手动兜底）"; }
                         if (a == "help") { return "一页说明：装在哪、怎么卸干净、右键里看不到怎么办"; }
@@ -718,7 +722,7 @@ namespace Mxx1Toolbox
             else if (a == "auto.off") { report = RightMenu.Uninstall(Ones(RightMenu.ItemAuto), out ok); }
             else if (a == "common.on") { report = RightMenu.Install(Ones(RightMenu.ItemCommon), out ok); }
             else if (a == "common.off") { report = RightMenu.Uninstall(Ones(RightMenu.ItemCommon), out ok); }
-            // 六项**各一对**装 / 撤按钮（用户 2026-10-06 晚六：「记得加上安装和卸载按钮」）——
+            // 八项**各一对**装 / 撤按钮（用户 2026-10-06 晚六：「记得加上安装和卸载按钮」）——
             // 所以这里每一项只传它自己那一个 id，撤哪一项都不动别人。
             else if (a == "copyname.on") { report = RightMenu.Install(Ones(RightMenu.ItemCopyName), out ok); }
             else if (a == "copyname.off") { report = RightMenu.Uninstall(Ones(RightMenu.ItemCopyName), out ok); }
@@ -726,6 +730,10 @@ namespace Mxx1Toolbox
             else if (a == "copy.off") { report = RightMenu.Uninstall(Ones(RightMenu.ItemCopyPath), out ok); }
             else if (a == "terminal.on") { report = RightMenu.Install(Ones(RightMenu.ItemTerminal), out ok); }
             else if (a == "terminal.off") { report = RightMenu.Uninstall(Ones(RightMenu.ItemTerminal), out ok); }
+            else if (a == "convert.on") { report = RightMenu.Install(Ones(RightMenu.ItemConvert), out ok); }
+            else if (a == "convert.off") { report = RightMenu.Uninstall(Ones(RightMenu.ItemConvert), out ok); }
+            else if (a == "icon.on") { report = RightMenu.Install(Ones(RightMenu.ItemExtractIcon), out ok); }
+            else if (a == "icon.off") { report = RightMenu.Uninstall(Ones(RightMenu.ItemExtractIcon), out ok); }
             else if (a == "status") { report = RightMenu.Status(); ok = true; }
             else if (a == "rebuild") { report = RightMenu.Rebuild(out ok); }
             else if (a == "help") { report = RightMenu.Help(); ok = true; }

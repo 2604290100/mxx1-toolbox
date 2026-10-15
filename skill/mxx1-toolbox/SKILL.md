@@ -1,4 +1,4 @@
----
+﻿---
 name: mxx1-toolbox
 description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Windows button-wall launcher whose main window is a multi-row, multi-column grid of small buttons that each start another program, script, or feature. Covers its interface rules (four column compact buttons, top tabs, separator segments, light/dark theme, computed column width, grey "not wired up yet" buttons), the tools\*.json button registry, bin-tools\ auto-loaded tool buttons (tool.json), how buttons launch things (exe / script / open / builtin / macro), how the 26 系统工具 buttons open Windows components, how the 常用设置 registry switches record the original value so every change can be undone, how a run reports success or failure, the first-run consent gate (免责声明与服务条款 fingerprint), the read-only update check, Windows 7/10/11 compatibility, plus build.ps1, screenshot tool and the GUI/CLI test suites.
 ---
@@ -8,7 +8,7 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
 **主界面 = 多行多列的小按钮墙**，点一下按钮就启动一个已经做好的程序 / 脚本 / 功能。
 加按钮只是往 `tools\*.json` 丢配置，**不需要重新编译主程序**。
 
-- 程序名 **萌新工具箱**，标题栏 `萌新工具箱 v1.5.7`；署名 `mxx1` / `mxx1.cn`；GPL-3.0-or-later
+- 程序名 **萌新工具箱**，标题栏 `萌新工具箱 v1.5.8`；署名 `mxx1` / `mxx1.cn`；GPL-3.0-or-later
 - 工程目录 **`D:\萌新工具开发\toolbox\`**，与隔壁 `permanent-delete-menu` **互不修改**（只调它的 exe）
 - 支持范围 **Windows 7 SP1 / 10 / 11**（用户 2026-10-05 收窄的：**只考虑这三版**）；见「兼容性」一节
 - 外观参考：`C:\Users\Administrator\Pictures\Snipaste_2026-10-04_10-29-34.png`（那种紧凑按钮墙）
@@ -16,9 +16,9 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
 > **接手 / 新会话先做两件事**：读 `docs\DESIGN.md`（外观与行为的**唯一正本**）和本文件。
 > 设计一改先改 `DESIGN.md`，再同步本 skill —— 两份分叉就会出现"两套行为"。
 
-## 当前状态（2026-10-15，**新增两个右键项**：「图片转换」+「图标提取」—— 未提交、未发版）
+## 当前状态（2026-10-15，**v1.5.8 已发布**：新增两个右键项「图片转换」（九种格式含 JPEG XR）+「图标提取」）
 
-> **⚠️ 2026-10-15 这一轮加的（还没提交 / 没发版）**：用户先问
+> **⚠️ 2026-10-15 这一轮（**已随 v1.5.8 发布**）**：用户先问
 > 「**图片转换支持的格式是不是有点少，你可以加一点？**」→ 把"零依赖到底能写哪些格式"量清楚摆给他，
 > 他答「**这些都做**」（① 图标提取 + ② 图片转换六种 GDI+ 格式 + ③ **手写 TGA / DDS**），
 > 随后又补一句「**JPEG XR（.jxr）这个格式也做一下然后，你看下兼容性 win7-win11 的**」；
@@ -47,7 +47,7 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
 > 「取得所有权一直是灰的」+「最小两条删除记录失败」查清并修掉。
 > ⚠️ 那一版的**界面回归没跑**（用户明确要求），命令行 309 通过 / 0 失败跑了。
 
-> **⚠️ 一批改动还没提交 / 没发版**：2026-10-11 用户要的「**检测更新换一个方案**」——
+> **（历史）2026-10-11 的「检测更新换一个方案」——已随 v1.5.7 发布**（细节在 HISTORY.md）：
 > 原话：「检测更新换一个方案，我提供给你接口，你用于查询版本号，这是线上资源接口
 > http://mxx1.cn/apis/resources?id=2109 …… 有更新的话就在弹出的窗口上面显示一个前往更新的按钮或者标签，
 > 点击后自动打开这个链接 http://mxx1.cn/info?id=2109」。
@@ -67,7 +67,7 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
 > **所有人（包括用户自己）下次打开界面会被要求重新确认一次**（预期行为）。
 > **推送 / 发版照旧要用户点头。**
 >
-> **⚠️ 2026-10-11 晚补十二（同一天第三批，还没提交 / 没发版）：DLL 扩展项 + 一个真 bug。**
+> **（历史）2026-10-11 晚补十二：DLL 扩展项 + 一个真 bug —— 已随 v1.5.7 发布。**
 > 用户两句话：「**你给我看下为什么【取得所有权】按钮一直都是灰色的**」+「**还有 DLL 扩展怎么完善
 > 比较好？发我几个方案**」。给了三个方案（A 只读显示真实状态 / B 能停用能恢复 / C 只给去处），
 > 他要 **A + B + C 都做**。落地：
@@ -86,7 +86,7 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
 > ④ ⚠️ **条款正文第 2 节补了「右键菜单管理」整段**（能删键 / 改所有者 / 写黑名单 / 重启资源管理器 ——
 >    v1.5.6 加那个功能时就漏了）→ **指纹再变一次**。
 >
-> **⚠️ 2026-10-11 晚补十三（同一天第四批，还没提交 / 没发版）：那两条删除失败查清了 + 三条都做。**
+> **（历史）2026-10-11 晚补十三：那两条删除失败查清了 —— 已随 v1.5.7 发布。**
 > 用户一句「**你看下最小两条删除记录失败的原因**」→ 查完他说「**都做吧**」。
 > ① **真因**：那两条是 `磁盘` 的「在此处打开命令窗口 / Powershell」。它们**自己**10-10 抢过所有权
 >    （所以界面上不标"受保护"、按钮也不亮），但下面的 `command` **仍归 `NT SERVICE\TrustedInstaller`、
@@ -414,7 +414,7 @@ D:\萌新工具开发\toolbox\
                                    N21/N21d「提示卡就在鼠标旁边、卡片上有字」、**N21b 卡片不跟着鼠标跑**、
                                    N21c 给了 `--notify` 还是到点自己消失、
                                    **N21e/N21f/N21g「不给 --notify 时 1 秒还在、5 秒自己关掉 + 点一下立刻关 + 新卡顶掉上一张」**）、
-                                   I 组 27 项把条款确认窗口真开起来点一遍，含 I10b/I10c；C01e 钉右键增强页 8 段段序、C01f 钉那 17 个按钮的名单、C17–C19o 钉「右键菜单管理」窗口）
+                                   I 组 27 项把条款确认窗口真开起来点一遍，含 I10b/I10c；C01e 钉右键增强页 10 段段序、C01f 钉那 21 个按钮的名单、C17–C19o 钉「右键菜单管理」窗口）
   docs\DESIGN.md                   设计正本（含"踩过的坑"清单 + §13.7 自动按钮 + §16 兼容性 + §17 条款门）
   docs\DISCLAIMER.md               免责声明与服务条款正本（**编译时内嵌进 exe**，窗口显示的就是它）
   assets\app.manifest              清单：asInvoker + supportedOS（Win7/8/8.1/10）+ System DPI + longPathAware
@@ -666,7 +666,7 @@ powershell -File tools\Make-AppIcon.ps1       # 重生成 assets\app.ico（改�
 - 全是只读查看：**不加 `danger` / `runAsAdmin` / 二次确认**。
 - 想加一个系统工具：在 `SystemTargets` 数组里加一行 + `tools\system.json` 里加一条同 `action` 的按钮。
 
-## 「右键增强」怎么点（17 个按钮 = 16 个右键菜单按钮（6 对装 / 撤 + 状态 / 重建 / 说明 + 右键菜单管理）+ 隔壁工具）
+## 「右键增强」怎么点（21 个按钮 = 20 个右键菜单按钮（8 对装 / 撤 + 状态 / 重建 / 说明 + 右键菜单管理）+ 隔壁工具）
 
 **用户 2026-10-04 定的方案**（设计正本 `docs\DESIGN.md` §14，晚六最终口径见 **§12.63**）：
 工具箱自己往 Windows 右键菜单里装 **六样**东西 —— **只写 `HKCU\Software\Classes`**，不要管理员、
@@ -702,7 +702,7 @@ powershell -File tools\Make-AppIcon.ps1       # 重生成 assets\app.ico（改�
 `Mxx1CopyPath`（去掉 `--quote`）与 `Mxx1Terminal`（变成子菜单父项）是**同名就地改写**，
 启动时 `SyncIfInstalled` 会做（见 §12.63）；**晚七又把它们换成带序号的键名**（§12.64，自动换）。
 **段序**：六个功能段 → 隔壁工具 → **状态与修补放最底下**（共 8 段）；⚠️ 置顶的「永久删除工具」
-永远排在页面最前（C01e 盯着整页顺序、C01f 盯着 17 个按钮的名单）。**页面段序 ≠ 右键菜单里的先后**：
+永远排在页面最前（C01e 盯着整页顺序、C01f 盯着 21 个按钮的名单）。**页面段序 ≠ 右键菜单里的先后**：
 后者由键名里的序号决定，改段号不会动菜单。
 
 **第三项「一键解除占用」**（`src\AutoUnlock.cs`，用户 2026-10-05 点名要的"不弹窗版本"）：
@@ -1045,7 +1045,7 @@ powershell -File tools\Make-AppIcon.ps1       # 重生成 assets\app.ico（改�
    其余都在 DESIGN §12.70 ⑨ 的兼容表里逐条写了依据（实测 / 微软文档 / 代码保证）。
    顺带：Win7 上 `.jxr` **没有文件关联**（缩略图、双击不会自己打开）—— 那是系统的文件关联，不是文件坏了。
 4c. ⚠️ **发版前要同步的数字**（这一轮把按钮总数改了）：站点资源页（id=2109）标题/描述里的
-   **按钮数 124 → 128**、**内嵌图标 121 → 126**、体积「不到 1MB」仍然对（exe 971,776 字节 ≈ 949KB）；
+   **按钮数 124 → 128**、**内嵌图标 121 → 126**、体积「不到 1MB」仍然对（exe 975,872 字节 ≈ 953KB）；
    `README.md` 那行已经改过了。**站点怎么改看工作区 `AGENTS.md` §8（那份不进 git）**，
    而且**顺序是"先改站点、再让用户跑新版本"**。
 4. 条款正文（`docs\DISCLAIMER.md`）**改一个字就会让所有人下次打开重新确认一次**（记的是正文指纹）。

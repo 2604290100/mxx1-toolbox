@@ -1,6 +1,6 @@
 ---
 name: mxx1-toolbox
-description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Windows button-wall launcher whose main window is a multi-row, multi-column grid of small buttons that each start another program, script, or feature. Covers its interface rules (four column compact buttons, top tabs, separator segments, light/dark theme, computed column width, grey "not wired up yet" buttons), the tools\*.json button registry, bin-tools\ auto-loaded tool buttons (tool.json), how buttons launch things (exe / script / open / builtin / macro), how the 26 系统工具 buttons open Windows components, how the 常用设置 registry switches record the original value so every change can be undone, how a run reports success or failure, the first-run consent gate (免责声明与服务条款 fingerprint), the read-only update check, Windows 7/10/11 compatibility, plus build.ps1, screenshot tool and the GUI/CLI test suites.
+description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Windows button-wall launcher whose main window is a multi-row, multi-column grid of small buttons that each start another program, script, or feature. Covers its interface rules (four column compact buttons, top tabs, separator segments, light/dark theme, computed column width, grey "not wired up yet" buttons), the tools\*.json button registry, bin-tools\ auto-loaded tool buttons (tool.json), how buttons launch things (exe / script / open / builtin / macro), how the 29 系统工具 buttons open Windows components, how the 常用设置 registry switches record the original value so every change can be undone, how a run reports success or failure, the first-run consent gate (免责声明与服务条款 fingerprint), the read-only update check, Windows 7/10/11 compatibility, plus build.ps1, screenshot tool and the GUI/CLI test suites.
 ---
 
 # 萌新工具箱（mxx1 Toolbox）
@@ -16,7 +16,23 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
 > **接手 / 新会话先做两件事**：读 `docs\DESIGN.md`（外观与行为的**唯一正本**）和本文件。
 > 设计一改先改 `DESIGN.md`，再同步本 skill —— 两份分叉就会出现"两套行为"。
 
-## 当前状态（2026-10-19，**v1.5.9 已发布**：「电源与笔记本（合盖 · 电池 · 唤醒）」+ 一个按钮标签修复
+## 当前状态（2026-10-20，**六件新工具 H1–H6 验收完、已本地提交、未推送未发版**；上一版 v1.5.9 已发布）
+
+> **⚠️ 2026-10-19/20 这一轮（**代码 + 验收全做完，本地两笔提交，没推送没发版**）**：
+> 用户 2026-10-19 拍板「这些都做」的六件新工具全部落地：
+> **无效快捷方式清理**（`brokenlinks`，清理优化）、**空文件夹清理**（`emptyfolders`，清理优化）、
+> **屏幕取色器**（`pick`，系统工具）、**端口与进程**（`ports`，系统工具）、
+> **重复文件查找**（CLI `dup` / 按钮 `duplicates`，清理优化）、**批量重命名**（`rename`，清理优化）。
+> 后端 / 窗口 / CLI / 按钮 / 图标都写完了；**全套都跑过**：
+> 命令行 **459 通过 + 1 环境跳过（F03）/ 0 失败**、界面 **244 通过 / 0 失败 / 0 跳过**、
+> 编码体检 **247 个文件 PASS**。
+> 数字：内置图标 131 → **137**、内置按钮 131 → **137**（`status` 报的按钮数 133 → **139**，
+> 多出来的 2 颗是本机的用户按钮 / `bin-tools` 自动按钮）；清理优化 8 → **12**、系统工具 27 → **29**。
+> ⚠️ **没推送 / 没 tag / 没 Release / 站点还是 v1.5.9 的 133** —— 这些都要用户点头（见「待办」）。
+> 细节正本：`docs\DESIGN.md` **§12.74 / §12.75**、坑 **80–82**、
+> `docs\进度-六件新工具-20261019.md`、`docs\待做的新工具任务书.md`、`CHANGELOG.md` 的 `[未发布]`。
+
+> **（上一轮）2026-10-19，**v1.5.9 已发布**：「电源与笔记本（合盖 · 电池 · 唤醒）」+ 一个按钮标签修复
 + 那个"死窗口"bug）
 
 > **✅ 2026-10-19 这一轮（**已随 v1.5.9 发布**：提交 `cc89c7a`、CI success、tag `v1.5.9` + Release、
@@ -186,8 +202,11 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
   `[1.5.9]` 段（收尾提交）。
   再往前：`v1.5.8`（2026-10-15，图片转换 + 图标提取）、`v1.5.7`（2026-10-12）、
   `v1.5.6`（2026-10-11：exe 904,192 字节 + zip 1,472,161 字节）。
-- 测试 **588 项** = 命令行 **361**（360 通过 + 1 项环境跳过 F03）+ 界面 **227**（**两套全量都跑过**：0 失败 / 0 跳过）；
-  编码体检 **225** 个文件。
+- 测试 **704 项** = 命令行 **460**（**459 通过 + 1 项环境跳过 F03**）+ 界面 **244**（**2026-10-20 两套全量都跑过**：
+  0 失败 / 0 跳过）；编码体检 **247** 个文件（2026-10-20 的六件新工具那一轮）。
+  ⚠️ 2026-10-20 六件新工具把命令行从 361 顶到 **460**（新增 **X / Y / U / Z / W / N** 六组共 99 项）、
+  界面从 227 顶到 **244**（新增 **J 组 J00–J16**；同轮修掉三条 J 的假红与 O 组一条剪贴板偶发假红，
+  见 **PITFALLS 80–82** 与 `docs\DESIGN.md` §12.74 / §12.75）。
   ⚠️ 2026-10-19 的电源段把命令行从 333 顶到 **361**（新增 V01–V28）；界面新增 **H06/H07**
   与那个"死窗口"bug 的 **H08 / H08b / H08c / H09**（223 → **227**），
   另外 **B03/B04 改口径**（按段算行数，电源段让常用设置变 11 行）。
@@ -418,6 +437,35 @@ D:\萌新工具开发\toolbox\
                                    注册表 `DefaultIcon` → 资源管理器那张 32/16），卡片上写明是哪一条；
                                    像素走 `GetIconInfo` + `GetDIBits`，**alpha 全 0 时回头读掩码**。
                                    ⚠️ `GetObject` 在 **gdi32**（不在 kernel32，写错是运行时炸，见坑 65）
+   src\Shortcuts.cs                 **2026-10-19 新增**：「无效快捷方式清理」后端（CLI `brokenlinks`）——
+                                   四个扫描根（当前用户 / 所有用户桌面 + 开始菜单），**只有"目标不在"这一类
+                                   能勾能删**；网络位置 / 没插的盘 / 商店应用（`shell:`）只报不删；删进回收站。
+                                   隔离缝 `MXX1_LNK_ROOTS`（分号分隔）
+   src\BrokenLinksForm.cs           同上的窗口（列表勾选 + 扫描 / 删除选中的坏链；安全按钮默认为灰）
+   src\Recycle.cs                   **2026-10-19 新增**：删除进回收站的共用一步（SHFileOperation 包装）；
+                                   H1 / H2 / H5 三处共用
+   src\EmptyFolders.cs              **2026-10-19 新增**：「空文件夹清理」后端（CLI `emptyfolders <目录> [--depth=N] [--delete]`）——
+                                   一个文件都没有才算空（只有空子目录也算，会一起列出来）；系统目录只挡"根的下一层"；
+                                   junction / 符号链接不钻进去；**扫描根自己永远不进列表**
+   src\EmptyFoldersForm.cs          同上的窗口（选目录 → 扫描 → 勾选 → 删进回收站）
+   src\ColorPicker.cs               **2026-10-19 新增**：「屏幕取色器」的换算核心（CLI `pick --decode=<#RRGGBB / r,g,b>`）——
+                                   HEX / RGB / HSL 三种写法互转，界面复制和命令行报的是同一份代码
+   src\PickForm.cs                  同上的两块窗口：全屏半透明遮罩（收鼠标事件）+ **不透明**放大镜小窗
+                                   （放大镜变暗 = 把两块窗口合成一块写的，别改回去）；左键复制、滚轮换格式、
+                                   Esc / 右键退出
+   src\PortTable.cs                 **2026-10-19 新增**：「端口与进程」后端（CLI `ports`，**只读**）——
+                                   TCP 监听 + UDP 绑定 + 进程名 / 路径 / PID
+   src\PortsForm.cs                 同上的窗口（后台线程读表、搜索过滤、刷新；结束进程要过确认框，
+                                   系统关键进程不给结束）
+   src\DupFinder.cs                 **2026-10-19 新增**：「重复文件查找」后端（CLI `dup <目录或文件…> [--min-size=] [--full] [--keep=] [--delete]`）——
+                                   大小 → 前 4 KB → 整个文件三档比较；默认跳过 1 MB 以下；硬链接不当重复；
+                                   每组保留一个（可选最上层 / 最旧 / 最新）；删除进回收站
+   src\DupForm.cs                   同上的窗口
+   src\RenameRules.cs               **2026-10-19 新增**：「批量重命名」后端（CLI `rename <目录> [规则…] [--apply] [--json]` /
+                                   `rename --undo`）—— 查找替换（可正则）→ 序号 → 前缀 / 后缀 → 扩展名大小写；
+                                   **先预览、有冲突整批拒绝（一个都不改）、可撤销上一次**；
+                                   隔离缝 `MXX1_RENAME_DIR`（撤销记录目录）
+   src\RenameForm.cs                同上的窗口（规则表单 + 预览列表 + 执行 / 撤销）
   src\UnlockForm.cs                「解除文件占用」的结果窗口（`rightmenu unlock` 起来的独立进程，不开主界面；
                                    **高度按内容自适应**，见"界面硬规则"里那条）
   src\AppIcon.cs                   窗口图标（按 DPI 取 exe 资源里的那一档）+ `Mxx1Form` 基类（11 个窗口都从它派生）
@@ -452,9 +500,9 @@ D:\萌新工具开发\toolbox\
                                    「网址要点击后可以访问，主页改成官网」）
   src\LogForm.cs / OutputForm.cs   程序内日志窗口（最新在最上）/ 命令输出窗口
   src\SettingsForm.cs              设置窗口
-  tools\*.json                     **131** 个按钮的内置定义（编译时内嵌，资源名 tools.<文件名>）；7 个文件 =
+  tools\*.json                     **137** 个按钮的内置定义（编译时内嵌，资源名 tools.<文件名>）；7 个文件 =
                                  common / system / privacy / apps / cleanup / rightmenu / mine
-                                 （这台机器上 `status` 报 `buttons=133` = 131 + bin-tools 自动 1 + 用户自己 1）
+                                 （这台机器上 `status` 报 `buttons=139` = 137 + bin-tools 自动 1 + 用户自己 1）
   tools\Test-Encoding.ps1          编码红线体检（-Fix 修 BOM）
   tools\Test-Quick.ps1             **提交前闸门**：读 git 改动 → 查 tests\test-map.json → 跑
                                    L0（编码 + 内联）+ 编译 + `Test-Cli.ps1 -Only <受影响的组>`；
@@ -469,13 +517,16 @@ D:\萌新工具开发\toolbox\
   tools\Make-AppIcon.ps1           画 assets\app.ico（程序自己的图标，八尺寸；改完要重新 build）
   tools\Make-Package.ps1           打发布包 zip（build.ps1 -Package 调它；**回读 zip 逐个核对**，
                                    少一个文件就失败 —— 见"打包"那条坑）
-  assets\icons\*.png               **131** 个按钮图标（编译时内嵌成 icons.<id>.png）
+  assets\icons\*.png               **137** 个按钮图标（编译时内嵌成 icons.<id>.png）
   assets\app.ico                   程序图标（`/win32icon` 用的就是它）
   tests\Test-All.ps1               一条命令跑完全部（也支持 `-Only` / `-Skip` 透传给两个套件）
   tools\Test-InlineSyntax.ps1      内联脚本语法 + 清单 JSON + **每个 .ps1 的语法**体检（34 个内联 / 7 个清单）
                                    + 闸门"读 git 改动"那段的**真跑自检**（假 git 往 stderr 写一行 warning，
                                    必须仍读得出文件名；见 DESIGN §15.3）
-  tests\Test-Cli.ps1               命令行回归 **361 项**（A03b–A03d/D01 盯兼容、A14–A17 盯 exe 图标、
+  tests\Test-Cli.ps1               命令行回归 **460 项**（459 通过 + 1 环境跳过 F03；
+                                   **2026-10-20 新增 X / Y / U / Z / W / N 六组共 99 项**盯 H1–H6 六件新工具
+                                   —— 无效快捷方式 / 空文件夹 / 取色换算 / 端口 / 重复文件 / 批量重命名，
+                                   各带隔离根或独立夹具；A03b–A03d/D01 盯兼容、A14–A17 盯 exe 图标、
                                    L 组 12 项盯 sysreg、J09–J11 盯卸载窗口的列表、M 组盯右键增强（M40/M41 复制文件路径 / M41b/M41c 复制文件名 / M42–M43c 终端子菜单 / M44 升级清理 / M45+M45b 别人的键 + 补装 / M21b 各装各撤）、
                                    R 组 14 项盯 bin-tools 自动按钮、P 组 10 项盯发布包内容
                                    （⚠️ P08 的判据**只用 ASCII 记号**，中文原文只进细节 —— 见坑 77）、
@@ -484,7 +535,10 @@ D:\萌新工具开发\toolbox\
                                    用本机假站点按 **GBK** 发响应、GitHub 指死端口，全程不碰外网；
                                    S31 盯"中文没乱码"= GBK 解码的判据，S32 盯 `url=` 是站点资源页）；
                                    环境不满足的项走 Skip()，打印 [SKIP] 不算失败）
-  tests\Test-Gui.ps1               界面回归 **227 项**（要交互式桌面，无桌面返回 3 = 跳过；A04b 盯窗口图标、
+  tests\Test-Gui.ps1               界面回归 **244 项**（要交互式桌面，无桌面返回 3 = 跳过；
+                                   **2026-10-20 新增 J 组 16 条（J00–J16）**：六件新工具的窗口从主窗口按钮
+                                   真开一次、等加载完、安全按钮默认灰、能关；取色器另验 Esc 退出不留残影
+                                   （只认程序自己的 `WindowsForms10*` 窗口，`SysShadow` / tooltip 不算）；A04b 盯窗口图标、
                                    A03 盯"主窗口有最小化方框、没有最大化方框"、A03b/A03c 真发一次
                                    最小化再还原（位置尺寸一字不差）、
                                    B03/B04 改成**按段算行数**（电源段让常用设置变 11 行，老的 `ceil(总数/4)` 会假红）、
@@ -530,6 +584,13 @@ powershell -File tools\Make-AppIcon.ps1       # 重生成 assets\app.ico（改�
 & bin\Mxx1Toolbox.exe tip [id] --full         # 打印「功能说明」窗口里的整段正文（同一份 MainForm.HelpText）
 & bin\Mxx1Toolbox.exe hash <文件> [--expect=<校验值>]   # 算 MD5/SHA256（只读、不联网）；给 --expect 就顺便对一次：
                                               #   0 = 一致、1 = 不一致、2 = 用法错/读不了/校验值认不出
+& bin\Mxx1Toolbox.exe brokenlinks [--delete] [--json]   # 无效快捷方式清理（默认只报不删；--delete 进回收站）
+& bin\Mxx1Toolbox.exe emptyfolders <目录> [--depth=N] [--delete] [--json]   # 空文件夹清理
+& bin\Mxx1Toolbox.exe pick [--decode=<#RRGGBB / r,g,b>]   # 屏幕取色器：--decode 只换算不开窗
+& bin\Mxx1Toolbox.exe ports [--port=N] [--pid=N] [--filter=文本] [--json]   # 端口与进程（只读）
+& bin\Mxx1Toolbox.exe dup <目录或文件…> [--min-size=1MB] [--full] [--keep=oldest|shortest|first] [--delete] [--json]
+& bin\Mxx1Toolbox.exe rename <目录> [规则…] [--apply] [--json]    # 批量重命名（预览 → --apply）
+& bin\Mxx1Toolbox.exe rename --undo [--undo-file=<文件>]           # 撤销上一次
 & bin\Mxx1Toolbox.exe privacy status          # 只读列隐私开关状态；selftest 自检「原值→写入→还原」
 & bin\Mxx1Toolbox.exe sysreg  status          # 只读列 6 组系统设置开关的现状；items / selftest 同上
 & bin\Mxx1Toolbox.exe rightmenu status        # 只读列右键菜单里装了什么 / 子菜单几项（**写入口只在界面里点**）
@@ -746,7 +807,7 @@ powershell -File tools\Make-AppIcon.ps1       # 重生成 assets\app.ico（改�
 命令行回归靠它真跑这条（`J09`–`J11`）。
 **故意不做**批量卸载、卸载 Edge、卸载 Xbox/天气/邮件/地图 —— `J06`–`J08` 盯着这条底线。
 
-## 「系统工具」怎么点（26 个真功能，含 12 个 Windows 组件 + 13 个修复诊断 + 系统体检）
+## 「系统工具」怎么点（29 个真功能，含 12 个 Windows 组件 + 13 个修复诊断 + 文件哈希校验 + 系统体检 + 屏幕取色器 + 端口与进程）
 
 目标表在 `src\Launcher.cs` 的 `SystemTargets`，**只写占位符路径**（`%SystemRoot%\System32\devmgmt.msc`），
 运行时展开 —— 代码里不出现本机绝对路径（编码体检会拦）。三种目标：
@@ -762,6 +823,29 @@ powershell -File tools\Make-AppIcon.ps1       # 重生成 assets\app.ico（改�
   绝不静默失灵。`status` 里的 `systemTargets=` / `systemMissing=` 就是数这个。
 - 全是只读查看：**不加 `danger` / `runAsAdmin` / 二次确认**。
 - 想加一个系统工具：在 `SystemTargets` 数组里加一行 + `tools\system.json` 里加一条同 `action` 的按钮。
+
+## 六件新工具（H1–H6，2026-10-19/20）怎么点
+
+四颗在「清理优化」页第 3 段「文件清单」（无效快捷方式清理 / 空文件夹清理 / 重复文件查找 / 批量重命名），
+两颗在「系统工具」页（屏幕取色器 / 端口与进程）。**全部是程序自己的窗口**（`module=app`），
+命令行与窗口共用同一份后端；详细规则表在 `docs\DESIGN.md` **§12.74**。要点：
+
+- **删除一律进回收站**（`src\Recycle.cs` 一处实现）；删除类按钮默认灰、勾选后才亮。
+- **无效快捷方式清理**（`brokenlinks`）：只扫四个根（当前用户 / 所有用户桌面 + 开始菜单）；
+  只有"目标不在"这一类能删；网络位置 / 没插的盘 / 商店应用（`shell:`）只报不删。
+  测试隔离根 `MXX1_LNK_ROOTS`。
+- **空文件夹清理**（`emptyfolders`）：一个文件都没有才算空（只有空子目录也算）；junction / 符号链接
+  不钻进去；**扫描根自己永远不进列表**；系统目录只挡"根的下一层"。
+- **屏幕取色器**（`pick`）：两块窗口（半透明全屏遮罩 + **不透明**放大镜）；
+  `pick --decode=<#RRGGBB / r,g,b>` 只换算不开窗，界面复制与命令行报的是**同一份换算代码**。
+- **端口与进程**（`ports`）：纯只读（TCP 监听 + UDP 绑定）；结束进程要过确认框、
+  系统关键进程不给结束。
+- **重复文件查找**（CLI `dup` / 按钮 `duplicates`）：大小 → 前 4 KB → 整个文件三档比较；
+  默认跳过 1 MB 以下；硬链接不当重复；每组保留一个（可选最上层 / 最旧 / 最新）。
+- **批量重命名**（`rename`）：查找替换（可正则）→ 序号 → 前缀 / 后缀 → 扩展名大小写；
+  **先预览、有冲突整批拒绝（一个都不改）、可撤销上一次**；测试隔离缝 `MXX1_RENAME_DIR`。
+- 回归：命令行 **X / Y / U / Z / W / N** 六组共 99 项盯后端与只读底线；界面 **J 组**（J00–J16）
+  盯"每个窗口真开一次 + 安全按钮默认灰 + 能关 + 取色器 Esc 退出不留残影"。
 
 ## 「右键增强」怎么点（21 个按钮 = 20 个右键菜单按钮（8 对装 / 撤 + 状态 / 重建 / 说明 + 右键菜单管理）+ 隔壁工具）
 
@@ -1136,6 +1220,18 @@ powershell -File tools\Make-AppIcon.ps1       # 重生成 assets\app.ico（改�
     编码体检 225 个文件 PASS、提交前闸门 PASS（78.6 秒）。
     站点也已同步并回读（见 4c）；`checkupdate` 验收 → `source=site`、`latest=1.5.9`、
     `sitetitle=…133 个内置真功能按钮… | v1.5.9 | ★999`。
+3d. ⏳ **六件新工具（H1–H6）验收完、已本地提交，等用户决定发版**（2026-10-20 凌晨）：
+    内容 = 「无效快捷方式清理 / 空文件夹清理 / 屏幕取色器 / 端口与进程 / 重复文件查找 / 批量重命名」
+    （详情 `CHANGELOG.md` 的 `[未发布]`）。已做：**本地两笔提交**（`ba8e3e4` 功能 + `36971ce` 测试收尾），
+    命令行全量 **459 通过 + 1 环境跳过 / 0 失败**、界面全量 **244 通过 / 0 失败 / 0 跳过**、
+    编码体检 **247 文件 PASS**。❌ **没做**：push / tag / Release / 站点同步 —— 都要用户点头。
+    发版时要一起改的数字：版本号（`src\AssemblyInfo.cs` + `Test-Cli.ps1` 的 A03/S11）、
+    README 与站点上的按钮数（`status` 报 **139**；内置 **137**、内嵌图标 **137**）；
+    站点顺序照旧「**先改站点、再让用户跑新版本**」（见待办 10）。
+    ⚠️ 这一轮**故意没动**的已知小缺口（用户没点过头的别自己开工）：H5 列表还没有勾选框（文案里写着"勾选"）、
+    H4 行上没有右键菜单（复制这一行 / 打开文件所在位置）、H6 没有实时预览与后台执行、
+    H1 的 UWP 判定靠"目标为空 / `shell:`"、没有直接读 `AppUserModelID`
+    —— 都在 `docs\待做功能清单-20261019.md` 与 `docs\进度-六件新工具-20261019.md`。
 4. ✅ **「删除」护栏这件事用户 2026-10-15 说「这个不管他」** —— 于是这一轮**没做**：
    有人把 `HKLM\Software\Classes\Folder\shell\open`（文件夹的「打开」动词，列表里只显示成 `open`）
    删掉了 → **双击文件夹打不开**（已用备份 `.reg` 导回、验收过）。

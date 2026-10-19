@@ -438,7 +438,7 @@ Write-Host 'A 组 · status 与 list'
 $status = Invoke-Exe 'status'
 Check 'A01 status 退出码 0' ($status.Code -eq 0) ('exit=' + $status.Code)
 Check 'A02 中文输出没有乱码（UTF-8）' ($status.Out -match 'name=萌新工具箱') ('name=' + (Get-Key $status.Out 'name'))
-Check 'A03 版本号 1.5.8' ((Get-Key $status.Out 'version') -eq '1.5.8') (Get-Key $status.Out 'version')
+Check 'A03 版本号 1.5.9' ((Get-Key $status.Out 'version') -eq '1.5.9') (Get-Key $status.Out 'version')
 
 # 自我看门狗（2026-10-09 加，见文件开头 $tmpRoot 那段）：套件里**不许**直接拿 %TEMP% 拼夹具路径。
 # CI 的 %TEMP% 是 8.3 短名，程序报的是规范长名 → 拼出来的路径和程序报的对不上，四条断言假红。
@@ -479,13 +479,13 @@ foreach ($line in ($status.Out -split "`r?`n")) {
     }
 }
 
-Check ('A04 按钮总数 126 + 工具目录里自动加载的 {0} 个（测试期间用户层的按钮会暂停：常用 33 + 系统工具 27 + 隐私 29 + 应用 5 + 清理 8 + 右键 21 + 我的 3）' -f $autoBase) `
-    ((Get-Key $status.Out 'buttons') -eq [string](126 + $autoBase)) (Get-Key $status.Out 'buttons')
+Check ('A04 按钮总数 131 + 工具目录里自动加载的 {0} 个（测试期间用户层的按钮会暂停：常用 38 + 系统工具 27 + 隐私 29 + 应用 5 + 清理 8 + 右键 21 + 我的 3）' -f $autoBase) `
+    ((Get-Key $status.Out 'buttons') -eq [string](131 + $autoBase)) (Get-Key $status.Out 'buttons')
 Check 'A05 内置清单里没有灰色占位按钮了（两个「资源管理器」也接上了真功能；灰规则改由 B 组注入验证）' ((Get-Key $status.Out 'placeholders') -eq '0') (Get-Key $status.Out 'placeholders')
 Check 'A06 危险按钮 3 个' ((Get-Key $status.Out 'dangerous') -eq '3') (Get-Key $status.Out 'dangerous')
 
 # 「常用」页签是合成的（置顶 + 最近使用），清单里没有它的按钮，所以是 0
-$tabExpect = @{ 'recent' = 0; 'common' = 33; 'mine' = 3; 'system' = 27; 'cleanup' = 8; 'privacy' = 29; 'apps' = 5; 'rightmenu' = 21 }
+$tabExpect = @{ 'recent' = 0; 'common' = 38; 'mine' = 3; 'system' = 27; 'cleanup' = 8; 'privacy' = 29; 'apps' = 5; 'rightmenu' = 21 }
 $tabOk = $true
 $tabDetail = @()
 foreach ($k in $tabExpect.Keys) {
@@ -493,13 +493,13 @@ foreach ($k in $tabExpect.Keys) {
     $tabDetail += ($k + '=' + $v)
     if ($v -ne [string]([int]$tabExpect[$k] + [int]$autoByTab[$k])) { $tabOk = $false }
 }
-Check 'A07 八个页签的按钮数正确（0/33/3/27/8/29/5/21，加上自动按钮）' $tabOk ($tabDetail -join ' ')
+Check 'A07 八个页签的按钮数正确（0/38/3/27/8/29/5/21，加上自动按钮）' $tabOk ($tabDetail -join ' ')
 
 $list = Invoke-Exe 'list'
 Check 'A08 list 退出码 0' ($list.Code -eq 0) ('exit=' + $list.Code)
-Check 'A09 list 报的按钮数一致' ((Get-Key $list.Out 'buttons') -eq [string](126 + $autoBase)) (Get-Key $list.Out 'buttons')
+Check 'A09 list 报的按钮数一致' ((Get-Key $list.Out 'buttons') -eq [string](131 + $autoBase)) (Get-Key $list.Out 'buttons')
 $lines = @($list.Out -split "`r?`n" | Where-Object { $_ -match "`t" })
-Check ('A10 list 打出 {0} 行按钮' -f (126 + $autoBase)) ($lines.Count -eq (126 + $autoBase)) ('lines=' + $lines.Count)
+Check ('A10 list 打出 {0} 行按钮' -f (131 + $autoBase)) ($lines.Count -eq (131 + $autoBase)) ('lines=' + $lines.Count)
 
 $rmList = Invoke-Exe 'list --tab rightmenu'
 Check 'A11 右键增强 21 个按钮（20 个右键菜单功能 + 隔壁永久删除工具）' ((Get-Key $rmList.Out 'shown') -eq [string](21 + [int]$autoByTab['rightmenu'])) (Get-Key $rmList.Out 'shown')
@@ -998,7 +998,7 @@ Write-Host 'H 组 · 悬停说明（用户 2026-10-04 报过「鼠标悬停的�
 # tip 命令打印的就是界面塞给 ToolTip 的那个字符串，所以这里能直接断言，不用去动真鼠标。
 $tipsAll = Invoke-Exe 'tip'
 Check 'H01 tip 退出码 0' ($tipsAll.Code -eq 0) ('exit=' + $tipsAll.Code)
-Check ('H02 tip 覆盖了每个按钮（126 + 自动 {0} 个）' -f $autoBase) ((Get-Key $tipsAll.Out 'tips') -eq [string](126 + $autoBase)) (Get-Key $tipsAll.Out 'tips')
+Check ('H02 tip 覆盖了每个按钮（131 + 自动 {0} 个）' -f $autoBase) ((Get-Key $tipsAll.Out 'tips') -eq [string](131 + $autoBase)) (Get-Key $tipsAll.Out 'tips')
 
 $blocks = @{}
 $curId = ''
@@ -3071,7 +3071,7 @@ Check 'S09 help 里能查到 checkupdate / disclaimer / consent 三个命令' `
 $cuOff = Invoke-Exe 'checkupdate' 60 $Exe @{ MXX1_NO_UPDATE = '1' }
 Check 'S10 MXX1_NO_UPDATE=1 时一个字节都不发（update=disabled，退出码 1 = 这次没结论）' `
     (($cuOff.Code -eq 1) -and ($cuOff.Out -match '(?m)^update=disabled\r?$')) (Get-Key $cuOff.Out 'update')
-Check 'S11 关掉时也报版本号（脚本据此判断）' ((Get-Key $cuOff.Out 'version') -eq '1.5.8') (Get-Key $cuOff.Out 'version')
+Check 'S11 关掉时也报版本号（脚本据此判断）' ((Get-Key $cuOff.Out 'version') -eq '1.5.9') (Get-Key $cuOff.Out 'version')
 
 $cuBad = Invoke-Exe 'checkupdate' 60 $Exe @{
     MXX1_RESOURCE_URL = 'http://127.0.0.1:9/apis/resources'
@@ -3366,8 +3366,17 @@ try {
     $pFail = & $hostExe -NoProfile -ExecutionPolicy Bypass -File $pkgScript -Root $badRoot `
         -StageDir (Join-Path $pTmp 'stage2') -ZipPath (Join-Path $pTmp 'x.zip') 2>&1
     $pFailCode = $LASTEXITCODE
-    Check 'P08 没编译过时打包直接失败，并说清"先编译再打包"' `
-        (($pFailCode -ne 0) -and (($pFail | Out-String) -match '先编译再打包')) ('exit=' + $pFailCode)
+    # ⚠️ 这条断言"假红"过两次（整套跑时红、`-Only A,S,P` 单跑时绿）—— 不是打包脚本的问题，
+    # 是 `& $hostExe …` **在测试进程里**捕获子进程中文输出的老毛病：PowerShell 5.1 按控制台代码页
+    # 解码原生命令的输出，而且是**按数据块**解的，多字节汉字正好被切在块边界上就变成 �
+    # （实测满跑时收到的是 `先编译再打包：找不�?…（先�?build.ps1�?`，退出码那边照旧是对的）。
+    # 所以判据只用 **ASCII 记号**（`[FAIL]` 那一行 + `build.ps1` 这个词），中文原文打进细节里给人看、
+    # **不进 -match**；真要断言中文原文就换 `Invoke-Exe` 那条进程外捕获的路（它显式按 UTF-8 解）。
+    $pFailText = ($pFail | Out-String).Trim()
+    if ($pFailText.Length -gt 300) { $pFailText = $pFailText.Substring(0, 300) + '…' }
+    Check 'P08 没编译过时打包直接失败，并说清"先编译再打包"（判据用 ASCII 记号，见上面注释）' `
+        (($pFailCode -ne 0) -and ($pFailText -match '\[FAIL\]') -and ($pFailText -match 'build\.ps1')) `
+        ('exit=' + $pFailCode + ' 收到的输出=[' + $pFailText + ']')
 } finally {
     Remove-Item -LiteralPath $pTmp -Recurse -Force -ErrorAction SilentlyContinue
 }
@@ -3511,6 +3520,369 @@ finally {
     try { Remove-Item -LiteralPath $tDir -Recurse -Force -ErrorAction SilentlyContinue } catch { }
 }
 Check 'T27 哈希测试的临时目录收拾干净了' (-not (Test-Path -LiteralPath $tDir)) $tDir
+
+}
+
+# ---------------------------------------------------------------- V 组：电源与笔记本（合盖动作）
+# 2026-10-19 用户报「之前设置盒盖关机，可以正常实现，后面可能被改动了」—— 查出来不是 Windows 坏了：
+# 这台机器上有个第三方加速器自己建了一份电源方案（"竞技"）并切了过去，而那份方案的合盖动作是「睡眠」；
+# 用户当初设的「关机」写在自己的方案里，方案被换掉之后就不生效了（那天连睡眠都没发生，因为还有程序
+# 按着"不许睡"）。这一组盯的就是这件事的两半：
+#   ① 只读的「电源方案体检」必须把"哪个方案的合盖动作跟别人不一样、当前生效的是哪个"点出来
+#      —— 用户那次是被静默换掉的，界面上没有任何地方看得出来；
+#   ② 写动作必须**一次改所有方案**（只改当前那份会被第三方工具换方案换掉）、改之前先把原值记在实处
+#      （记不下来就一个字都不改）、写完逐个读回核对、失败如实报（绝不谎报"已完成"）。
+#
+# ⚠ 全程只用**假的 powercfg**（MXX1_POWERCFG）+ **隔离的注册表根**（MXX1_POWER_ROOT 指到 HKCU 下面）
+#   + 原值记录挪进临时目录（MXX1_POWER_TSV）：真机的电源方案、用户那份原值记录，一个字节都不碰。
+#   电池报告那份 HTML 会写到工具箱自己的目录（它正式跑也写那儿），收尾时按原样还回去。
+if (Test-GroupSelected 'V') {
+Write-Host 'V 组 · 电源与笔记本（合盖 / 电源按钮 / 睡眠按钮）'
+
+$vTag = [Guid]::NewGuid().ToString('N').Substring(0, 8)
+$vDir = Join-Path $tmpRoot ('mxx1-power-' + $vTag)
+[void][System.IO.Directory]::CreateDirectory($vDir)
+$vFake = Join-Path $vDir 'fakepowercfg.exe'
+$vLog = Join-Path $vDir 'calls.log'
+$vTsv = Join-Path $vDir 'power-original.tsv'
+$vSub = '4f971e89-eebd-4455-a8de-9e59040e7347'
+$vSetLid = '5ca83367-6e45-459f-a27b-476b1d01c936'
+$vSetPwr = '7648efa3-dd9c-4e3e-b566-50f929386280'
+$vSetSlp = '96996bc0-ad50-47ec-923b-6f41874dd9eb'
+$vKey = 'HKCU:\Software\mxx1-toolbox\tests\power-' + $vTag
+$vSpec = 'HKCU|Software\mxx1-toolbox\tests\power-' + $vTag
+$vEnv = @{
+    MXX1_POWERCFG = $vFake
+    MXX1_POWER_ROOT = $vSpec
+    MXX1_POWERCFG_LOG = $vLog
+    MXX1_POWER_TSV = $vTsv
+    MXX1_NO_OPEN = '1'
+}
+$vBalanced = '11111111-1111-1111-1111-111111111111'
+$vArena = '22222222-2222-2222-2222-222222222222'
+$vFresh = '33333333-3333-3333-3333-333333333333'
+$vHigh = '44444444-4444-4444-4444-444444444444'
+$vBatFile = Join-Path $env:LOCALAPPDATA 'mxx1-toolbox\battery-report.html'
+$vBatHad = Test-Path -LiteralPath $vBatFile
+$vBatOld = $null
+if ($vBatHad) { $vBatOld = [System.IO.File]::ReadAllBytes($vBatFile) }
+[void](New-Item -Path $vKey -Force)
+
+# 假的 powercfg。源码一律**英文**：Add-Type 的源码是当字符串交给编译器的，中文会被按 ANSI 解坏。
+# 认得 /list（四个方案，第二个是"当前生效"的第三方方案）、/setacvalueindex、/setdcvalueindex、
+# /setactive、-attributes、/batteryreport、/requests、/lastwake、/devicequery；每次调用都记一行日志
+# （断言"到底改了什么、改了几次"就靠它）。MXX1_POWERCFG_FAIL=<verb> 时那个动作故意失败（测"如实报"）。
+$vSrc = @'
+using System;
+using System.IO;
+using System.Text;
+using Microsoft.Win32;
+
+// A stand-in for powercfg.exe. Every call is appended to MXX1_POWERCFG_LOG; the value verbs write
+// into whatever hive+path MXX1_POWER_ROOT points at. It never touches a real power scheme.
+public static class FakePowerCfg
+{
+    private static readonly string[] Guids = new string[]
+    {
+        "11111111-1111-1111-1111-111111111111",
+        "22222222-2222-2222-2222-222222222222",
+        "33333333-3333-3333-3333-333333333333",
+        "44444444-4444-4444-4444-444444444444"
+    };
+    private static readonly string[] Names = new string[] { "Balanced", "Arena", "Fresh", "High performance" };
+
+    public static int Main(string[] args)
+    {
+        try
+        {
+            string log = Environment.GetEnvironmentVariable("MXX1_POWERCFG_LOG");
+            if (log != null && log.Length > 0)
+            {
+                File.AppendAllText(log, string.Join(" ", args) + Environment.NewLine, new UTF8Encoding(false));
+            }
+        }
+        catch { }
+
+        if (args.Length == 0) { return 0; }
+        string a0 = args[0].ToLowerInvariant();
+
+        string fail = Environment.GetEnvironmentVariable("MXX1_POWERCFG_FAIL");
+        if (fail != null && fail.Length > 0 && a0 == fail.ToLowerInvariant())
+        {
+            Console.Error.WriteLine("powercfg: the fake was told to fail " + a0);
+            return 1;
+        }
+
+        if (a0 == "/list")
+        {
+            Console.WriteLine("Existing Power Schemes (*)");
+            Console.WriteLine("-----------------------------------");
+            for (int i = 0; i < Guids.Length; i++)
+            {
+                Console.WriteLine("Power Scheme GUID: " + Guids[i] + "  (" + Names[i] + ")" + (i == 1 ? " *" : ""));
+            }
+            return 0;
+        }
+        if (a0 == "/setacvalueindex" || a0 == "/setdcvalueindex")
+        {
+            if (args.Length < 5) { Console.Error.WriteLine("usage"); return 1; }
+            string name = (a0 == "/setacvalueindex") ? "ACSettingIndex" : "DCSettingIndex";
+            using (RegistryKey k = Root().CreateSubKey(Sub() + "\\User\\PowerSchemes\\" + args[1] + "\\" + args[2] + "\\" + args[3]))
+            {
+                k.SetValue(name, int.Parse(args[4]), RegistryValueKind.DWord);
+            }
+            return 0;
+        }
+        if (a0 == "/setactive" || a0 == "/s") { return 0; }
+        if (a0 == "-attributes")
+        {
+            if (args.Length < 4) { return 1; }
+            using (RegistryKey k = Root().CreateSubKey(Sub() + "\\PowerSettings\\" + args[1] + "\\" + args[2]))
+            {
+                k.SetValue("Attributes", args[3].StartsWith("+") ? 1 : 0, RegistryValueKind.DWord);
+            }
+            return 0;
+        }
+        if (a0 == "/batteryreport")
+        {
+            string file = "";
+            for (int i = 1; i < args.Length - 1; i++)
+            {
+                if (args[i].ToLowerInvariant() == "/output") { file = args[i + 1].Trim('"'); }
+            }
+            if (file.Length == 0) { Console.Error.WriteLine("no /output"); return 1; }
+            string html = "<html><body><table>"
+                + "<tr><td>DESIGN CAPACITY</td><td>50,000 mWh</td></tr>"
+                + "<tr><td>FULL CHARGE CAPACITY</td><td>40,000 mWh</td></tr>"
+                + "<tr><td>CYCLE COUNT</td><td>123</td></tr>"
+                + "</table></body></html>";
+            File.WriteAllText(file, html, new UTF8Encoding(false));
+            Console.WriteLine("Battery report saved to " + file);
+            return 0;
+        }
+        if (a0 == "/requests")
+        {
+            Console.WriteLine("DISPLAY:");
+            Console.WriteLine("  [PROCESS] \\Device\\HarddiskVolume3\\games\\Arena.exe");
+            Console.WriteLine("SYSTEM:");
+            Console.WriteLine("  [DRIVER] \\FileSystem\\srvnet");
+            return 0;
+        }
+        if (a0 == "/lastwake")
+        {
+            Console.WriteLine("Wake History Count - 1");
+            return 0;
+        }
+        if (a0 == "/devicequery")
+        {
+            Console.WriteLine("Keyboard");
+            Console.WriteLine("Mouse");
+            return 0;
+        }
+        Console.Error.WriteLine("the fake does not know " + a0);
+        return 1;
+    }
+
+    private static string Sub()
+    {
+        string spec = Environment.GetEnvironmentVariable("MXX1_POWER_ROOT");
+        if (spec == null || spec.Length == 0) { return ""; }
+        int bar = spec.IndexOf('|');
+        return (bar > 0) ? spec.Substring(bar + 1).Trim() : spec;
+    }
+
+    private static RegistryKey Root()
+    {
+        string spec = Environment.GetEnvironmentVariable("MXX1_POWER_ROOT");
+        string hive = "HKLM";
+        int bar = (spec == null) ? -1 : spec.IndexOf('|');
+        if (bar > 0) { hive = spec.Substring(0, bar).Trim().ToUpperInvariant(); }
+        return (hive == "HKCU") ? Registry.CurrentUser : Registry.LocalMachine;
+    }
+}
+'@
+
+$vWhy = ''
+$vFakeOk = $false
+try {
+    if (Test-Path -LiteralPath $vFake) { Remove-Item -LiteralPath $vFake -Force }
+    Add-Type -TypeDefinition $vSrc -OutputAssembly $vFake -OutputType ConsoleApplication -ErrorAction Stop
+    $vFakeOk = Test-Path -LiteralPath $vFake
+} catch { $vFakeOk = $false; $vWhy = $_.Exception.Message }
+if (-not $vFakeOk) { Skip 'V 组（电源与笔记本）' ('这台机器编不出假的 powercfg.exe（Add-Type 失败）：' + $vWhy) }
+
+if ($vFakeOk) {
+
+    function New-VValue {
+        param([string]$Guid, [string]$Setting, [int]$Ac, [int]$Dc)
+        $p = ($script:vKey + '\User\PowerSchemes\' + $Guid + '\' + $script:vSub + '\' + $Setting)
+        [void](New-Item -Path $p -Force)
+        Set-ItemProperty -Path $p -Name 'ACSettingIndex' -Value $Ac -Type DWord
+        Set-ItemProperty -Path $p -Name 'DCSettingIndex' -Value $Dc -Type DWord
+    }
+    function Read-VValue {
+        param([string]$Guid, [string]$Setting, [string]$Name = 'ACSettingIndex')
+        $p = ($script:vKey + '\User\PowerSchemes\' + $Guid + '\' + $script:vSub + '\' + $Setting)
+        $it = Get-ItemProperty -Path $p -ErrorAction SilentlyContinue
+        if ($it -and ($it.PSObject.Properties.Name -contains $Name)) { return [int]$it.$Name }
+        return -999
+    }
+    function Get-VTsvRow {
+        param([string]$Guid)
+        if (-not (Test-Path -LiteralPath $script:vTsv)) { return $null }
+        foreach ($l in (Get-Content -LiteralPath $script:vTsv -Encoding UTF8)) {
+            if ($l -like ($Guid + "`t*")) { return @($l -split "`t") }
+        }
+        return $null
+    }
+    function Copy-Env { param([hashtable]$Base)
+        $c = @{}
+        foreach ($k in $Base.Keys) { $c[$k] = $Base[$k] }
+        return $c
+    }
+
+    # ---- 夹具：4 个方案 ----
+    #   Balanced 3/3 · Arena（当前生效，第三方）1/1 · Fresh 一个值都没有 · High performance 2/2
+    Remove-Item -Path $vKey -Recurse -Force -ErrorAction SilentlyContinue
+    [void](New-Item -Path $vKey -Force)
+    Set-ItemProperty -Path $vKey -Name 'HibernateEnabled' -Value 1 -Type DWord
+    New-VValue $vBalanced $vSetLid 3 3
+    New-VValue $vBalanced $vSetPwr 3 3
+    New-VValue $vBalanced $vSetSlp 1 1
+    New-VValue $vArena $vSetLid 1 1
+    New-VValue $vArena $vSetPwr 3 3
+    New-VValue $vArena $vSetSlp 1 1
+    New-VValue $vHigh $vSetLid 2 2
+    New-VValue $vHigh $vSetPwr 3 3
+    New-VValue $vHigh $vSetSlp 1 1
+    if (Test-Path -LiteralPath $vLog) { Remove-Item -LiteralPath $vLog -Force }
+
+    # ---- V01–V05：只读体检（用户那次就是"看不出是谁改的"，这一条就是给他看这个的）----
+    $vFit = Invoke-Exe 'run power-fit' -Env $vEnv
+    Check 'V01 电源方案体检退出码 0（只读）' ($vFit.Code -eq 0) ('exit=' + $vFit.Code + ' ' + $vFit.Err.Trim())
+    Check 'V02 四个方案都列出来了，当前生效的那个也标了' `
+        (($vFit.Out -match 'Balanced') -and ($vFit.Out -match 'Arena') -and ($vFit.Out -match 'Fresh') -and
+         ($vFit.Out -match 'High performance') -and ($vFit.Out -match '当前')) ''
+    $vArenaLine = @(($vFit.Out -split "`r?`n") | Where-Object { ($_ -match 'Arena') -and ($_ -match '[0-9-]+ / [0-9-]+') })[0]
+    Check 'V03 合盖动作跟多数不一样的那两行被点出来了（! 号 + 一句为什么）' `
+        (($vArenaLine -match '!') -and ($vFit.Out -match '跟多数不一样')) ('Arena 行=' + ('' + $vArenaLine).Trim())
+    Check 'V04 当前方案 Arena 的合盖动作如实念成 1/1（睡眠）—— 用户那次被换掉的就是这个' `
+        (($vArenaLine -match '^\s*!\s+Arena') -and ($vArenaLine -match '1 / 1')) ('Arena 行=' + ('' + $vArenaLine).Trim())
+    Check 'V05 一个值都没设过的方案写「没单独设」而不是 0（"看起来一样"的假象就是从这儿来的）' `
+        (($vFit.Out -match '没单独设') -and ($vFit.Out -match '不是读失败')) ''
+    $vCallsFit = @(Get-Content -LiteralPath $vLog -Encoding UTF8 -ErrorAction SilentlyContinue)
+    Check 'V06 体检只读：调的全是 /list，一次值都没写（连 /setactive 都没有）' `
+        ((@($vCallsFit | Where-Object { $_ -notmatch '^/list' }).Count -eq 0) -and ($vCallsFit.Count -ge 1)) `
+        ('调用=' + ($vCallsFit -join ' | '))
+
+    # ---- V07–V13：写动作 —— 改的是所有方案，先记原值、写完读回 ----
+    if (Test-Path -LiteralPath $vLog) { Remove-Item -LiteralPath $vLog -Force }
+    $vOn = Invoke-Exe 'run power-desk' -Env $vEnv
+    Check 'V07 桌面模式（合盖不睡）退出码 0' ($vOn.Code -eq 0) ('exit=' + $vOn.Code + ' ' + $vOn.Err.Trim())
+    $vLidNow = @()
+    $vAllZero = $true
+    foreach ($g in @($vBalanced, $vArena, $vFresh, $vHigh)) {
+        $ac = Read-VValue $g $vSetLid 'ACSettingIndex'
+        $dc = Read-VValue $g $vSetLid 'DCSettingIndex'
+        $vLidNow += ($g.Substring(0, 4) + '=' + $ac + '/' + $dc)
+        if (($ac -ne 0) -or ($dc -ne 0)) { $vAllZero = $false }
+    }
+    Check 'V08 四个方案的合盖动作（接电源 + 用电池）全改成「不采取任何操作」—— 不只改当前那个' $vAllZero ($vLidNow -join ' ')
+    $vCalls = @(Get-Content -LiteralPath $vLog -Encoding UTF8 -ErrorAction SilentlyContinue)
+    $vLidWrites = @($vCalls | Where-Object { ($_ -match '^/set(ac|dc)valueindex') -and ($_ -match $vSetLid) })
+    $vLidGuids = @()
+    foreach ($c in $vLidWrites) { $vLidGuids += (($c -split ' ')[1]) }
+    $vLidGuids = @($vLidGuids | Sort-Object -Unique)
+    Check 'V09 合盖那两个值真经 powercfg 写了 8 次（4 个方案 × 接电源/用电池）' `
+        (($vLidWrites.Count -eq 8) -and ($vLidGuids.Count -eq 4)) ('写=' + $vLidWrites.Count + ' 覆盖方案=' + $vLidGuids.Count)
+    Check 'V10 写完重新激活了当前方案（不然活动方案还用着旧策略，得等切一下才生效）' `
+        (@($vCalls | Where-Object { $_ -match ('^/setactive ' + $vArena) }).Count -eq 1) `
+        (@($vCalls | Where-Object { $_ -match '^/setactive' }) -join ' | ')
+    $vTsvLines = @()
+    if (Test-Path -LiteralPath $vTsv) { $vTsvLines = @(Get-Content -LiteralPath $vTsv -Encoding UTF8) }
+    Check 'V11 改之前先把原值记在实处（含"原本可见"那一行）—— 记不下来就一个字都不改' `
+        ((Test-Path -LiteralPath $vTsv) -and (@($vTsvLines | Where-Object { $_ -match '^# 原本可见=' }).Count -eq 1)) $vTsv
+    $vRowArena = Get-VTsvRow $vArena
+    Check 'V12 记的是**改前**的原值（Arena 的合盖 1/1），不是刚写进去的 0' `
+        (($vRowArena -ne $null) -and ($vRowArena[1] -eq '1') -and ($vRowArena[2] -eq '1')) (@($vRowArena) -join ' ')
+    $vRowFresh = Get-VTsvRow $vFresh
+    Check 'V13 改前"没单独设"的项记成 -1（还原时照原样跳过，不硬塞一个 0 回去）' `
+        (($vRowFresh -ne $null) -and ($vRowFresh[1] -eq '-1')) (@($vRowFresh) -join ' ')
+    Check 'V14 报告里说清"改的是所有 4 个方案"+ 4 个 √、一个 × 都没有、明说读过回核对过' `
+        (($vOn.Out -match '改的是所有 4 个电源方案') -and ($vOn.Out -match '全部读回核对过') -and
+         (@(($vOn.Out -split "`r?`n") | Where-Object { $_ -match '√' }).Count -eq 4) -and
+         (-not ($vOn.Out -match '×'))) ''
+
+    # ---- V15–V16：再点一次 = 改回关机；原值记录不许被第二次覆盖 ----
+    if (Test-Path -LiteralPath $vLog) { Remove-Item -LiteralPath $vLog -Force }
+    $vOff = Invoke-Exe 'run power-desk' -Env $vEnv
+    Check 'V15 再点一次 = 关掉桌面模式（合盖改回「关机」）' `
+        (($vOff.Code -eq 0) -and ($vOff.Out -match '桌面模式：关掉')) ('exit=' + $vOff.Code)
+    $vAllThree = $true
+    foreach ($g in @($vBalanced, $vArena, $vFresh, $vHigh)) {
+        if ((Read-VValue $g $vSetLid 'ACSettingIndex') -ne 3) { $vAllThree = $false }
+    }
+    Check 'V16 四个方案的合盖动作又都回到 3（关机）' $vAllThree ''
+    $vRowArena2 = Get-VTsvRow $vArena
+    Check 'V17 原值记录还是最早那一份（第二次改不许把已经改过的值当成原值）' `
+        (($vRowArena2 -ne $null) -and ($vRowArena2[1] -eq '1')) (@($vRowArena2) -join ' ')
+
+    # ---- V18–V19：写失败必须如实报（"有地方没成功"），而且报告里那句话要和实际一致 ----
+    if (Test-Path -LiteralPath $vLog) { Remove-Item -LiteralPath $vLog -Force }
+    $vBadEnv = Copy-Env $vEnv
+    $vBadEnv['MXX1_POWERCFG_FAIL'] = '/setacvalueindex'
+    $vBad = Invoke-Exe 'run power-desk' -Env $vBadEnv
+    Check 'V18 接电源那一半写失败时：退出码 1 + 报告里有 × 和「有地方没成功」，绝不写「全部读回核对过」' `
+        (($vBad.Code -eq 1) -and ($vBad.Out -match '×') -and ($vBad.Out -match '有地方没成功') -and
+         (-not ($vBad.Out -match '全部读回核对过'))) ('exit=' + $vBad.Code)
+    $vBadAc = Read-VValue $vArena $vSetLid 'ACSettingIndex'
+    $vBadDc = Read-VValue $vArena $vSetLid 'DCSettingIndex'
+    Check 'V19 失败的那一半真没落下去（接电源还是 3）、成功的那一半也没回滚（用电池成了 0）—— 和报告里那句一致' `
+        (($vBadAc -eq 3) -and ($vBadDc -eq 0)) ('Arena 合盖=' + $vBadAc + '/' + $vBadDc)
+
+    # ---- V20–V23：三条只读功能 + 叫不起 powercfg 时的老实交代 ----
+    $vBat = Invoke-Exe 'run power-battery' -Env $vEnv
+    Check 'V20 电池报告：退出码 0，把设计容量 / 现在满充 / 循环次数念出来了' `
+        (($vBat.Code -eq 0) -and ($vBat.Out -match '50,000') -and ($vBat.Out -match '40,000') -and ($vBat.Out -match '123')) `
+        ('exit=' + $vBat.Code)
+    Check 'V21 健康度是算出来的（40000 ÷ 50000 = 约 80%），不是只把数字贴一遍' ($vBat.Out -match '约 80%') ''
+    Check 'V22 MXX1_NO_OPEN=1 时不真去打开报告（测试不该在别人桌面上弹浏览器），但文件确实生成了' `
+        (($vBat.Out -match '没自动打开') -and (Test-Path -LiteralPath $vBatFile)) $vBatFile
+    $vWake = Invoke-Exe 'run power-wake' -Env $vEnv
+    Check 'V23 谁在阻止睡眠：三段系统原文都念了（/requests /lastwake /devicequery）+ 明说只读' `
+        (($vWake.Code -eq 0) -and ($vWake.Out -match 'Arena\.exe') -and ($vWake.Out -match 'Wake History') -and
+         ($vWake.Out -match 'Keyboard') -and ($vWake.Out -match '一个字都没改')) ('exit=' + $vWake.Code)
+    $vDeadEnv = Copy-Env $vEnv
+    $vDeadEnv['MXX1_POWERCFG'] = (Join-Path $vDir 'no-such-powercfg.exe')
+    $vDead = Invoke-Exe 'run power-fit' -Env $vDeadEnv
+    Check 'V24 powercfg 叫不起来时：不崩、不说"一切正常"，明说读不了（只读报告仍然退出码 0）' `
+        (($vDead.Code -eq 0) -and ($vDead.Out -match '读不了电源方案') -and (-not ($vDead.Out -match 'Exception'))) `
+        ('exit=' + $vDead.Code)
+
+    # ---- V25–V27：按钮清单与说明（命令行这边只解释，不偷偷改）----
+    $vListCommon = Invoke-Exe 'list --tab common'
+    $vIds = @(($vListCommon.Out -split "`r?`n") | Where-Object { $_ -match "`t" } | ForEach-Object { ($_ -split "`t")[0] })
+    $vSeq = $vIds -join ','
+    Check 'V25 常用设置页里五颗按钮按顺序连着（合盖与电源键动作 → 体检 → 电池 → 唤醒 → 桌面模式）' `
+        ($vSeq -match 'power-lid,power-fit,power-battery,power-wake,power-desk') $vSeq
+    $vDeskDry = Invoke-Exe 'run power-desk --dry'
+    Check 'V26 桌面模式 --dry 解析成"改注册表值"，而且说明里写明是**所有**方案' `
+        (((Get-Key $vDeskDry.Out 'kind') -eq 'registry') -and ($vDeskDry.Out -match '所有方案')) `
+        ('kind=' + (Get-Key $vDeskDry.Out 'kind'))
+    $vLidDry = Invoke-Exe 'run power-lid --dry'
+    Check 'V27 合盖那个按钮 --dry 说是"程序内的窗口"（命令行那条 power 只带管理员重开窗口，不代改）' `
+        (((Get-Key $vLidDry.Out 'kind') -eq 'window') -and ((Get-Key $vLidDry.Out 'target') -match '窗口')) `
+        ('kind=' + (Get-Key $vLidDry.Out 'kind'))
+
+}
+
+# 收尾：隔离根、夹具目录，以及那份写进工具箱自己目录的电池报告（按原样还回去）
+Remove-Item -Path $vKey -Recurse -Force -ErrorAction SilentlyContinue
+if ($vBatHad) { [System.IO.File]::WriteAllBytes($vBatFile, $vBatOld) }
+else { Remove-Item -LiteralPath $vBatFile -Force -ErrorAction SilentlyContinue }
+Remove-Item -LiteralPath $vDir -Recurse -Force -ErrorAction SilentlyContinue
+Check 'V28 电源测试的隔离根与夹具目录收拾干净了（用户真实的电源方案/原值记录一个字节没碰）' `
+    ((-not (Test-Path -LiteralPath $vKey)) -and (-not (Test-Path -LiteralPath $vDir))) $vDir
 
 }
 

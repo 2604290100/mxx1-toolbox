@@ -16,13 +16,20 @@ namespace Mxx1Toolbox
     {
         public readonly ToolItem Tool;
 
+        /// <summary>清单里的全名。窗口文字（Text）可能会为了塞进按钮而缩成「前几个字…」，
+        /// 全名永远留在这里：工具提示、AccessibleName 用的都是它（用户 2026-10-19 报的
+        /// 「桌面模式（合盖不睡）」被截成「桌面模式（合盖…」就是这一段在处理）。</summary>
+        public readonly string FullName;
+
         private Theme _theme;
         private bool _busy;
         private Timer _flash;
+        private int _fittedWidth = -1;
 
         public ToolButton(ToolItem tool)
         {
             Tool = tool;
+            FullName = tool.Name;
             FlatStyle = FlatStyle.Flat;
             FlatAppearance.BorderSize = 1;
             UseVisualStyleBackColor = false;
@@ -48,6 +55,43 @@ namespace Mxx1Toolbox
         }
 
         public bool Busy { get { return _busy; } }
+
+        // ------------------------------------------------------------ 名字塞不下的时候
+
+        /// <summary>按钮摆好（或窗口被拖动）之后量一次：名字塞得下就原样显示，塞不下就缩成
+        /// 「前几个字…」。
+        ///
+        /// 为什么非要自己缩（用户 2026-10-19 报的「桌面模式（合盖不睡）」）：WinForms 的按钮在
+        /// 「图标在文字左边」（ImageBeforeText）塞不下时，会**自己把图标翻到文字下面**、再把文字
+        /// 截断 —— 画出来是文字在上、图标缩在左下角，看着像界面坏了（截图上就是这个问题）。
+        /// 实测（144x30 按钮、8.25pt 微软雅黑）：117px 的「桌面模式（合盖不睡）」内容要 149px > 144，
+        /// 于是翻了；把文字缩到 149 以内（≤112px）就不翻。判据用 PreferredSize —— 它就是适配器
+        /// 算出来的"内容需要多宽"，比 Width 大就是塞不下；缩完再验一次，自己跟它对齐。
+        ///
+        /// 缩的只是画在按钮上的那串字；全名留在 FullName / 工具提示 / AccessibleName 里。</summary>
+        public void FitLabel()
+        {
+            if (Width <= 0) { return; }
+            if (_fittedWidth == Width) { return; }
+            _fittedWidth = Width;
+            Text = FullName;
+            if (PreferredSize.Width <= Width) { return; }   // 塞得下：一个字都不动
+            int lo = 0;
+            int hi = FullName.Length;
+            while (lo < hi)
+            {
+                int mid = (lo + hi + 1) / 2;
+                Text = FullName.Substring(0, mid) + "…";
+                if (PreferredSize.Width <= Width) { lo = mid; } else { hi = mid - 1; }
+            }
+            Text = FullName.Substring(0, lo) + "…";
+        }
+
+        protected override void OnResize(EventArgs e)
+        {
+            base.OnResize(e);
+            FitLabel();   // Dock=Fill 摆好之后、以及用户拖动窗口时都会走到这里
+        }
 
         public void ApplyTheme(Theme theme)
         {

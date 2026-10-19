@@ -126,6 +126,13 @@ function Get-Shape {
         @('bitlocker',      'key'),
         @('update',         'refresh'),
         @('metered',        'chart'),
+        # 2026-10-19 加的「电源与笔记本」段（合盖与电源键动作 / 体检 / 电池 / 唤醒 / 桌面模式）——
+        # ⚠ 必须排在下面那条 `@('power-','bolt')` **前面**，否则 power-* 全被它吃掉
+        @('power-lid',      'power'),
+        @('power-battery',  'battery'),
+        @('power-fit',      'check'),
+        @('power-wake',     'clock'),
+        @('power-desk',     'monitor'),
         @('hibernate',      'power'),
         @('power-',         'bolt'),
         @('dns',            'globe'),
@@ -228,6 +235,13 @@ function Draw-Shape {
         'power' {
             $G.DrawArc($Pen, 3.5, 4.5, 9, 8.5, 300, 300)
             $G.DrawLine($Pen, 8, 3, 8, 8)
+        }
+        'battery' {
+            # 「电池健康报告」：一节电池（外框 + 右边那个正极 + 里面两格电）
+            $G.DrawRectangle($Pen, 2.6, 5.0, 9.4, 6.4)
+            $G.DrawRectangle($Pen, 12.4, 6.9, 1.6, 2.6)
+            $G.DrawLine($Pen, 4.8, 6.9, 4.8, 9.5)
+            $G.DrawLine($Pen, 7.2, 6.9, 7.2, 9.5)
         }
         'bolt' {
             $G.FillPolygon($Brush, @(

@@ -858,7 +858,8 @@ namespace Mxx1Toolbox
             if (t.Kind != "builtin") { return false; }
             return t.Module == Launcher.ModulePrivacy
                 || t.Module == Launcher.ModuleSysreg
-                || t.Module == Launcher.ModuleRightMenu;
+                || t.Module == Launcher.ModuleRightMenu
+                || t.Module == Launcher.ModulePower;   // 合盖 / 电源按钮 / 睡眠按钮（写的是 HKLM 里的电源值）
         }
 
         /// <summary>`ui &lt;动作&gt;` 进来的：窗口已经显示出来了，再做那件事
@@ -1435,6 +1436,16 @@ namespace Mxx1Toolbox
                 Logger.Write(t.Name, "打开右键菜单管理窗口");
                 return;
             }
+            if (t.Kind == "builtin" && t.Module == Launcher.ModulePower && t.Action == "lid")
+            {
+                // 「合盖与电源键动作」：程序自己的窗口（三个动作 + 体检 + 还原）。
+                // 和「右键菜单管理」同一条口径：这里不弹确认框（点了它本身什么都不改），
+                // 窗口里每一次「应用 / 还原」才过条款门 + 确认框。
+                OpenPowerForm();
+                SetStatus(t.Name + " · 已打开「合盖与电源键动作」窗口");
+                Logger.Write(t.Name, "打开合盖与电源键动作窗口");
+                return;
+            }
             if (t.Kind == "builtin" && t.Module == Launcher.ModulePermdel && t.Action == "enginelog")
             {
                 OpenEngineLog();
@@ -1781,6 +1792,15 @@ namespace Mxx1Toolbox
         private void OpenCtxMenuManager(string focus)
         {
             CtxMenuForm f = new CtxMenuForm(focus);
+            WindowPlacement.ShowCentered(f, this);
+        }
+
+        /// <summary>「合盖与电源键动作」窗口（常用设置页那个按钮）。窗口自己就是后端 `src\Power.cs`
+        /// 的界面 —— 三个动作的下拉框 + 只读体检 + 应用 / 还原，每一步过确认框；
+        /// 会改动系统的动作只从界面里写（命令行那条 `power` 只开窗口）。</summary>
+        private void OpenPowerForm()
+        {
+            PowerForm f = new PowerForm(_theme);
             WindowPlacement.ShowCentered(f, this);
         }
 

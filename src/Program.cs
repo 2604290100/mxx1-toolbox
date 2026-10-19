@@ -35,6 +35,14 @@ namespace Mxx1Toolbox
                     Application.Run(new CtxMenuForm(FocusFrom(args)));
                     return 0;
                 }
+                // 「合盖与电源键动作」窗口。同样有两个来路：界面里那个按钮（直接 new），
+                // 以及**需要管理员时提权重开自己**（`power`）。
+                // ⚠️ 这条命令行**只开窗口**：不接受任何"要改什么"的参数 —— 电源值只能在窗口里点出来。
+                if (string.Equals(args[0], "power", StringComparison.OrdinalIgnoreCase))
+                {
+                    Application.Run(new PowerForm(Theme.Resolve(Settings.Load().Theme)));
+                    return 0;
+                }
                 // `ui log` / `ui settings`：右键「常用功能」子菜单里那几个固定入口。打开主界面，
                 // 然后替用户点一下那个界面动作（否则从资源管理器点出来会"什么都不发生"）。
                 if (string.Equals(args[0], "ui", StringComparison.OrdinalIgnoreCase))
@@ -292,6 +300,7 @@ namespace Mxx1Toolbox
             Console.WriteLine("                                                       选项：--zone=files|folder|folderbg|desktop|drive");
             Console.WriteLine("  Mxx1Toolbox.exe rightmenu manage     打开「右键菜单管理」窗口（禁用 / 恢复 / 删除都在界面里点）");
             Console.WriteLine("  Mxx1Toolbox.exe rightmenu help       右键增强的说明（怎么卸干净 / 菜单没出现怎么办）");
+            Console.WriteLine("  Mxx1Toolbox.exe power                打开「合盖与电源键动作」窗口（改的是所有电源方案；合盖设置只能在窗口里点）");
             Console.WriteLine("  Mxx1Toolbox.exe rightmenu unlock --query-only <路径>   只查谁占着这个文件，不弹窗不结束进程");
             Console.WriteLine("  Mxx1Toolbox.exe rightmenu unlock --auto <路径>         一键解除占用：不弹窗口，直接结束占用它的程序");
             Console.WriteLine("                                                        （右键菜单里的「" + RightMenu.AutoTitle + "」用的就是它）");
@@ -1103,6 +1112,37 @@ namespace Mxx1Toolbox
             {
                 kind = "window";
                 target = "（本程序内的窗口）";
+            }
+            else if (t.Kind == "builtin" && t.Module == Launcher.ModulePower)
+            {
+                // 电源与笔记本：一个窗口入口（lid）+ 一条会改所有电源方案的写动作（desktop）
+                // + 三条只读报告（fit / wake / battery）。
+                string pa = t.Action.ToLowerInvariant();
+                if (pa == "lid")
+                {
+                    kind = "window";
+                    target = "（本程序内的窗口）";
+                    hint = "窗口里点「应用」才会改；命令行那条 power 只负责带管理员重开这个窗口";
+                }
+                else if (pa == "desktop")
+                {
+                    kind = "registry";
+                    target = Launcher.DescribeCommand(t, settings, false);
+                    hint = "会改电源方案（接电源和用电池、所有方案一起改），改前先把原值记在 power-original.tsv";
+                }
+                else if (pa == "fit" || pa == "wake" || pa == "battery")
+                {
+                    kind = "readonly";
+                    target = "（只读报告）";
+                    hint = "只读，不改任何设置";
+                }
+                else
+                {
+                    kind = "unknown";
+                    target = "";
+                    exists = false;
+                    hint = "电源与笔记本里没有这个动作: " + t.Action;
+                }
             }
             else if (t.Kind == "exe" || t.Kind == "script")
             {

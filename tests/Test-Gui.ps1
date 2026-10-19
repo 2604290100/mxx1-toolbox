@@ -426,6 +426,29 @@ public class TBGui
     // that this class never mentions System.Drawing -- that keeps Add-Type working on both
     // Windows PowerShell 5.1 and PowerShell 7 (where referencing System.Drawing needs extra work).
     public static bool Paint(IntPtr hWnd, IntPtr hdc) { return PrintWindow(hWnd, hdc, 2); }
+
+    // H09：「合盖与电源键动作」窗口里是不是还挂着"转圈"光标（用户 2026-10-19 报的那件事本身）。
+    // 跨进程读不到控件的 Cursor 属性，而用户看见的就是**系统光标** —— 只能真把鼠标挪进去再读。
+    // 1 = IDC_ARROW / 2 = IDC_WAIT(转圈) / 3 = IDC_IBEAM / 9 = 别的 / 0 = 没有光标 / -1 = 读不到。
+    [StructLayout(LayoutKind.Sequential)]
+    private struct CURSORINFO { public int cbSize; public int flags; public IntPtr hCursor; public int ptX; public int ptY; }
+    [DllImport("user32.dll")] private static extern bool GetCursorInfo(ref CURSORINFO info);
+    [DllImport("user32.dll", EntryPoint = "LoadCursorW")] private static extern IntPtr LoadCursor(IntPtr inst, IntPtr name);
+
+    public static int CursorKind()
+    {
+        CURSORINFO ci = new CURSORINFO();
+        ci.cbSize = Marshal.SizeOf(typeof(CURSORINFO));
+        if (!GetCursorInfo(ref ci)) { return -1; }
+        if (ci.hCursor == LoadCursor(IntPtr.Zero, (IntPtr)32514)) { return 2; }   // IDC_WAIT
+        if (ci.hCursor == LoadCursor(IntPtr.Zero, (IntPtr)32512)) { return 1; }   // IDC_ARROW
+        if (ci.hCursor == LoadCursor(IntPtr.Zero, (IntPtr)32513)) { return 3; }   // IDC_IBEAM
+        if (ci.hCursor == IntPtr.Zero) { return 0; }
+        return 9;
+    }
+
+    // 下拉框选的是第几项（CB_GETCURSEL 0x0147）：-1 = 一项都没选 = 状态没填进去（H08c）。
+    public static int ComboIndex(IntPtr h) { return (int)SendMessageW(h, 0x0147, IntPtr.Zero, IntPtr.Zero); }
 }
 '@
 
@@ -1161,18 +1184,50 @@ Check ('B01 常用设置页签上 {0} 个按钮全在' -f $commonNames.Count) $c
 $buttons = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*BUTTON*' })
 $toolButtons = @($buttons | Where-Object { $commonNames -contains $_.Text })
 $cols = @($toolButtons | ForEach-Object { $_.Left } | Sort-Object -Unique)
-$rows = @($toolButtons | ForEach-Object { $_.Top } | Sort-Object -Unique)
-$expectRows = [Math]::Ceiling($toolButtons.Count / 4.0)
-Check ('B02 排成 4 列') ($cols.Count -eq 4) ('列数=' + $cols.Count)
-Check ('B03 排成多行（{0} 个按钮 = {1} 行）' -f $toolButtons.Count, $expectRows) ($rows.Count -eq $expectRows) ('行数=' + $rows.Count)
+Check 'B02 排成 4 列' ($cols.Count -eq 4) ('列数=' + $cols.Count)
 
-# 除最后一行外每行必须满 4 个；最后一行 1..4 个（正好是 4 的倍数时最后一行也是满的）
-$rowCounts = @($toolButtons | Group-Object Top | Sort-Object Name | ForEach-Object { $_.Count })
-$fullRows = @($rowCounts | Where-Object { $_ -eq 4 })
-$lastCount = 0
-if ($rowCounts.Count -gt 0) { $lastCount = $rowCounts[$rowCounts.Count - 1] }
-Check 'B04 除最后一行外每行都是 4 个按钮（最后一行 1..4 个）' `
-    (($fullRows.Count -ge ($rows.Count - 1)) -and ($lastCount -ge 1) -and ($lastCount -le 4)) ($rowCounts -join ',')
+$all = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Visible -and $_.Width -gt 0 -and $_.Height -gt 0 })
+
+# 分段标题（Label，STATIC 类）就是"每段另起一行"的那条线：正确的行数**不是** ceil(总数/4)，
+# 而是各段 ceil(段内数/4) 之和。2026-10-19 加「电源与笔记本」（5 个按钮 = 2 行）时，
+# 老写法 ceil(39/4)=10 当场假红（实测 11 行）—— 现在按段算，以后再加按钮也不会错。
+$wantCaps = @('任务栏 · 开始菜单 · 资源管理器（每一列是一对开关）', '安全入口 · 电源 · 系统维护', '电源与笔记本（合盖 · 电池 · 唤醒）', '改动的记录与还原')
+$capTops = @()
+foreach ($cap in $wantCaps) {
+    $hit = @($all | Where-Object { $_.Class -like '*STATIC*' -and $_.Text -eq $cap } | Sort-Object Top)
+    if ($hit.Count -gt 0) { $capTops += [int]$hit[0].Top }
+}
+$capTops = @($capTops | Sort-Object)
+
+$rows = @($toolButtons | ForEach-Object { $_.Top } | Sort-Object -Unique)
+$segRows = @()   # 每段一项：这一段每一行的按钮数（从上到下）
+for ($si = 0; $si -lt $capTops.Count; $si++) {
+    $lo = $capTops[$si]
+    $hi = [int]::MaxValue
+    if (($si + 1) -lt $capTops.Count) { $hi = $capTops[$si + 1] }
+    $seg = @($toolButtons | Where-Object { ([int]$_.Top) -gt $lo -and ([int]$_.Top) -lt $hi })
+    $segRows += ,@($seg | Group-Object Top | Sort-Object { [int]$_.Name } | ForEach-Object { $_.Count })
+}
+$uncovered = @($toolButtons | Where-Object { $capTops.Count -gt 0 -and ([int]$_.Top) -lt $capTops[0] })
+$expectRows = 0
+foreach ($r in $segRows) { $expectRows += $r.Count }
+Check ('B03 排成多行（{0} 个按钮 = 4 段共 {1} 行：{2}）' -f $toolButtons.Count, $expectRows, `
+        (($segRows | ForEach-Object { ($_ -join '+') }) -join ' / ')) `
+    (($capTops.Count -eq $wantCaps.Count) -and ($uncovered.Count -eq 0) -and ($rows.Count -eq $expectRows)) `
+    ('段标题=' + $capTops.Count + ' 段外按钮=' + $uncovered.Count + ' 行数=' + $rows.Count + `
+        ' 每段行数=' + (($segRows | ForEach-Object { ($_ -join '+') }) -join ' / '))
+
+# 每一段内部：除最后一行外必须排满 4 个，最后一行 1..4 个（段内不出现半满的行）
+$badSegs = @()
+for ($ri = 0; $ri -lt $segRows.Count; $ri++) {
+    $rc = @($segRows[$ri])
+    if ($rc.Count -eq 0) { $badSegs += ('第 {0} 段一个按钮都没有' -f ($ri + 1)); continue }
+    for ($k = 0; $k -lt ($rc.Count - 1); $k++) {
+        if ($rc[$k] -ne 4) { $badSegs += ('第 {0} 段第 {1} 行只有 {2} 个' -f ($ri + 1), ($k + 1), $rc[$k]) }
+    }
+    if ($rc[$rc.Count - 1] -lt 1 -or $rc[$rc.Count - 1] -gt 4) { $badSegs += ('第 {0} 段最后一行 {1} 个' -f ($ri + 1), $rc[$rc.Count - 1]) }
+}
+Check 'B04 每一段里除最后一行外都排满 4 个（段末那一行 1..4 个）' ($badSegs.Count -eq 0) (($badSegs | Select-Object -First 4) -join ' | ')
 
 $sizes = @($toolButtons | ForEach-Object { '{0}x{1}' -f $_.Width, $_.Height } | Sort-Object -Unique)
 Check 'B05 所有按钮尺寸完全一致' ($sizes.Count -eq 1) ($sizes -join ' ')
@@ -1180,7 +1235,6 @@ $first = $toolButtons[0]
 Check 'B05b 按钮尺寸合理（宽 100~170, 高 24~40）' ($first.Width -ge 100 -and $first.Width -le 170 -and $first.Height -ge 24 -and $first.Height -le 40) ('{0}x{1}' -f $first.Width, $first.Height)
 
 # 重叠检查：容器天然"包住"子控件，所以先排除"完整包住别人"的窗口
-$all = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Visible -and $_.Width -gt 0 -and $_.Height -gt 0 })
 $containers = @()
 foreach ($c in $all) {
     $inner = @($all | Where-Object { $_.H -ne $c.H -and (Test-ContainsRect -Outer $c -Inner $_) })
@@ -1209,9 +1263,8 @@ $separators = @($all | Where-Object { $_.Height -le 2 -and $_.Width -gt 200 })
 Check 'B07 段与段之间有分隔线' ($separators.Count -ge 1) ('分隔线=' + $separators.Count)
 
 # 分段标题：光有一条灰线看不出这堆按钮是干什么的（「系统工具」26 个按钮分成 6 段）。
-# 标题是 Label（STATIC 类），文字来自清单里的 segmentName。
+# 标题是 Label（STATIC 类），文字来自清单里的 segmentName。（$wantCaps 在 B03 那段已经定义）
 $capTexts = @($all | Where-Object { $_.Class -like '*STATIC*' } | ForEach-Object { $_.Text })
-$wantCaps = @('任务栏 · 开始菜单 · 资源管理器（每一列是一对开关）', '安全入口 · 电源 · 系统维护', '改动的记录与还原')
 $lackCaps = @($wantCaps | Where-Object { $capTexts -notcontains $_ })
 Check ('B07b 每个分段都有标题（{0} 段）' -f $wantCaps.Count) ($lackCaps.Count -eq 0) `
     ('缺=' + ($lackCaps -join ' | ') + '  现有标题=' + (($capTexts | Where-Object { $_ -match '·' }) -join ' | '))
@@ -3141,11 +3194,100 @@ try {
         } else {
             Check 'H03 换到只有 1 个按钮的页签，窗口尺寸一动不动' $false '切不到「右键增强」'
         }
-        # 往用户层塞一个名字很长的按钮（32 个汉字）然后重启界面 → 窗口宽度不许变宽。
+
+        # ---- H08/H08b/H08c/H09：「合盖与电源键动作」窗口（这一页那颗按钮）------------------
+        # 用户 2026-10-19 报的第二个真 bug：「我看这个按钮打开的窗口没有做好。鼠标移上去一直转圈圈。」
+        # 根因：窗口构造函数先 SetBusyUi(true)（把 _busy 打开），而 Load 里那句 RefreshState() 开头
+        # 就是 `if (_busy) { return; }` —— 第一次读状态被自己挡掉，于是光标永远停在 WaitCursor、
+        # 下拉框 / 按钮全是灰的、报告区一片空白。**那一版整套界面回归仍是绿的**：没人开过这个窗口。
+        # 判据：① 报告区真填上了（正文写死在 Power.Fit 里）；② 应用 / 刷新是可点的（灰着 = 还"忙"）；
+        #      ③ 六个下拉框都选上了值；④ 真把鼠标挪进去，系统光标不是 WAIT（用户看到的就是这一条）。
+        $pwrBtn = @(Get-ChildControls -RootHandle $fixedHandle | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -like '合盖与电源*' })
+        Check 'H08 常用设置页上有「合盖与电源键动作」按钮（是可点的真按钮）' ($pwrBtn.Count -eq 1 -and $pwrBtn[0].Enabled) ('找到=' + $pwrBtn.Count)
+        $pwrWin = $null
+        if ($pwrBtn.Count -eq 1) {
+            [void][TBGui]::Click($pwrBtn[0].H)
+            for ($pw = 0; $pw -lt 40; $pw++) {
+                Start-Sleep -Milliseconds 200
+                $pwrWin = Find-TopWindow -ProcessId $procFixed.Id -TextPrefix '合盖与电源键动作'
+                if ($pwrWin) { break }
+            }
+        }
+        if ($null -eq $pwrWin) {
+            Check 'H08b 点开之后窗口里真的读完了（报告区有体检正文、按钮可点）' $false '窗口没开出来'
+            Check 'H08c 六个下拉框都填上了当前值（不是空白）' $false '窗口没开出来'
+            Check 'H09 窗口里没有"转圈"光标（真把鼠标挪进去读系统光标）' $false '窗口没开出来'
+        } else {
+            $pwH = $pwrWin.H
+            # 读一遍状态要跑一次 powercfg /list，给它几秒
+            $pwReport = ''
+            for ($rw = 0; $rw -lt 40; $rw++) {
+                foreach ($c in (Get-ChildControls -RootHandle $pwH)) {
+                    if (($c.Class -like '*EDIT*') -and ($c.Text.Length -gt $pwReport.Length)) { $pwReport = $c.Text }
+                }
+                if ($pwReport.Length -gt 40) { break }
+                Start-Sleep -Milliseconds 250
+            }
+            $pwBtns = @(Get-ChildControls -RootHandle $pwH | Where-Object { $_.Class -like '*BUTTON*' })
+            $pwApply = @($pwBtns | Where-Object { $_.Text -eq '应用（改所有方案）' })
+            $pwRefresh = @($pwBtns | Where-Object { $_.Text -eq '刷新' })
+            $pwOk = (($pwApply.Count -eq 1) -and $pwApply[0].Enabled -and ($pwRefresh.Count -eq 1) -and $pwRefresh[0].Enabled)
+            Check 'H08b 点开之后窗口里真的读完了（报告区有体检正文、按钮可点）' `
+                (($pwReport.Length -gt 40) -and $pwReport.StartsWith('电源方案体检') -and $pwOk) `
+                ('报告长度=' + $pwReport.Length + ' 头一行=' + (($pwReport -split "`r?`n")[0]) +
+                 ' 应用=' + $(if ($pwApply.Count -eq 1) { $pwApply[0].Enabled } else { '没找到' }) +
+                 ' 刷新=' + $(if ($pwRefresh.Count -eq 1) { $pwRefresh[0].Enabled } else { '没找到' }))
+
+            $pwCombos = @(Get-ChildControls -RootHandle $pwH | Where-Object { $_.Class -like '*COMBOBOX*' })
+            $pwPicks = @($pwCombos | ForEach-Object { [TBGui]::ComboIndex($_.H) })
+            Check 'H08c 六个下拉框都填上了当前值（不是空白）' `
+                (($pwCombos.Count -eq 6) -and (@($pwPicks | Where-Object { $_ -lt 0 }).Count -eq 0)) `
+                ('下拉框=' + $pwCombos.Count + ' 选中项=' + ($pwPicks -join ','))
+
+            $pwIntro = @(Get-ChildControls -RootHandle $pwH | Where-Object { $_.Class -like '*STATIC*' -and $_.Text -like '这一页管三个动作*' })
+            if ($pwIntro.Count -eq 0) {
+                Check 'H09 窗口里没有"转圈"光标（真把鼠标挪进去读系统光标）' $false '窗口里没找到那段说明（拿不准该把鼠标停哪）'
+            } else {
+                $mouse0 = [TBGui]::CursorAt()          # 跑完放回去（B10/B11 一个规矩）
+                $hpX = [int](($pwIntro[0].Left + $pwIntro[0].Right) / 2)
+                $hpY = [int](($pwIntro[0].Top + $pwIntro[0].Bottom) / 2)
+                [void][TBGui]::Focus($pwH)
+                Start-Sleep -Milliseconds 300
+                $hpMoved = $false
+                $hpAt = @(0, 0)
+                for ($hp = 0; $hp -lt 3; $hp++) {
+                    [void][TBGui]::MoveCursor($hpX, $hpY)
+                    Start-Sleep -Milliseconds 250
+                    $hpAt = [TBGui]::CursorAt()
+                    if (($hpAt[0] -eq $hpX) -and ($hpAt[1] -eq $hpY)) { $hpMoved = $true; break }
+                }
+                $hpUnder = [TBGui]::WindowAt($hpX, $hpY)
+                if (-not $hpMoved) {
+                    Skip 'H09 窗口里没有"转圈"光标（真把鼠标挪进去读系统光标）' `
+                        ('鼠标挪不动（SetCursorPos 没生效，试了 3 次）：想到 (' + $hpX + ',' + $hpY + ')，实际停在 (' + ($hpAt -join ',') + ')；这一条要真悬停才测得出来（同 N21b 口径）')
+                } elseif ($hpUnder.IndexOf('合盖与电源键动作') -lt 0) {
+                    Skip 'H09 窗口里没有"转圈"光标（真把鼠标挪进去读系统光标）' `
+                        ('鼠标底下不是这个窗口（是：' + $hpUnder + '）—— 多半有别的窗口压在上面，这一条这会儿测不了')
+                } else {
+                    $hpKind = [TBGui]::CursorKind()
+                    $hpName = @{ 1 = 'ARROW(正常箭头)'; 2 = 'WAIT(转圈)'; 3 = 'IBEAM(文本)'; 0 = '没有'; -1 = '读不到'; 9 = '别的' }[$hpKind]
+                    if ($null -eq $hpName) { $hpName = '别的(' + $hpKind + ')' }
+                    Check 'H09 窗口里没有"转圈"光标（真把鼠标挪进去读系统光标）' ($hpKind -ne 2) `
+                        ('光标=' + $hpName + ' 悬停点=(' + $hpX + ',' + $hpY + ') 底下=' + $hpUnder)
+                }
+                [void][TBGui]::MoveCursor($mouse0[0], $mouse0[1])
+            }
+
+            $pwClose = @(Get-ChildControls -RootHandle $pwH | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '关闭' })
+            if ($pwClose.Count -eq 1) { [void][TBGui]::Click($pwClose[0].H) } else { [void][TBGui]::CloseWindow($pwH) }
+            Start-Sleep -Milliseconds 700
+        }
+        # 往用户层塞一个名字很长的按钮（23 个汉字）然后重启界面 → 窗口宽度不许变宽。
         # 用户 2026-10-04 原话："主界面宽度固定一下，反正按钮不会跟随变化而自适应"。
         # 注入的这个文件里**同时留着那个占位按钮**：$commonNames 是带着占位按钮读出来的，
         # 换掉它的话 H05 数按钮数会少一个而假红（占位按钮本身不在这条检查的意图里）。
-        $longJson = '{ "tools": [ { "id": "test.placeholder", "tab": "common", "segment": 2, "order": 999, "name": "占位自检", "kind": "builtin", "module": "todo", "action": "todo", "placeholder": true, "hint": "测试用的占位按钮" }, { "id": "test.longname", "tab": "common", "segment": 2, "order": 998, "name": "这个名字很长很长很长很长很长很长很长很长的按钮", "kind": "exe", "path": "C:\\Windows\\notepad.exe" } ] }'
+        $longName = '这个名字很长很长很长很长很长很长很长很长的按钮'
+        $longJson = '{ "tools": [ { "id": "test.placeholder", "tab": "common", "segment": 2, "order": 999, "name": "占位自检", "kind": "builtin", "module": "todo", "action": "todo", "placeholder": true, "hint": "测试用的占位按钮" }, { "id": "test.longname", "tab": "common", "segment": 2, "order": 998, "name": "' + $longName + '", "kind": "exe", "path": "C:\\Windows\\notepad.exe" } ] }'
         [System.IO.File]::WriteAllText($UserToolsJson, $longJson, (New-Object System.Text.UTF8Encoding($false)))
         $script:InjectedPh = $true
         try { $procFixed.Kill() } catch { }
@@ -3153,20 +3295,76 @@ try {
         $procFixed2 = Start-Gui
         if ($procFixed2 -ne $null -and -not $procFixed2.HasExited -and $procFixed2.MainWindowHandle -ne [IntPtr]::Zero) {
             $h2 = $procFixed2.MainWindowHandle
-            [void](Wait-Buttons -Handle $h2 -Names @('这个名字很长很长很长很长很长很长很长很长的按钮'))
+            [void](Wait-Buttons -Handle $h2 -Names $commonNames)
+            # ⚠ 长名按钮的**窗口文字**现在是我们自己缩过的「前几个字…」（见 ToolButton.FitLabel，
+            # 用户 2026-10-19 报的那个样子），全名只在工具提示里 —— 所以按**前缀**等它出现，
+            # 别再按全名等（按全名等会白等到超时）。
+            $longBtn = @()
+            for ($lt = 0; $lt -lt 40; $lt++) {
+                $longBtn = @(Get-ChildControls -RootHandle $h2 | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text.StartsWith('这个名字很长') })
+                if ($longBtn.Count -gt 0) { break }
+                Start-Sleep -Milliseconds 150
+            }
             Start-Sleep -Milliseconds 500
             $r3 = [TBGui]::Rect($h2)
             Check 'H04 新增一个名字超长的按钮，窗口宽度不变（宽度固定，不跟着内容长）' `
                 (($r3[2] - $r3[0]) -eq $w1) ('原宽=' + $w1 + ' 现在=' + ($r3[2] - $r3[0]))
-            $longBtn = @(Get-ChildControls -RootHandle $h2 | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -like '这个名字很长*' })
+            # 名单逐个对：**缺了谁要报出来** —— 名字太长的内建按钮会被缩成「…」，这条就是抓它的
+            # （只数个数的话红了也不知道是谁的标签太长）。
+            $btnTexts = @(Get-ChildControls -RootHandle $h2 | Where-Object { $_.Class -like '*BUTTON*' } | ForEach-Object { $_.Text })
+            $missNames = @($commonNames | Where-Object { $btnTexts -notcontains $_ })
             Check 'H05 名字太长的按钮不会把别人挤出去（这一页按钮数还对）' `
-                ((@(Get-ChildControls -RootHandle $h2 | Where-Object { $_.Class -like '*BUTTON*' -and $commonNames -contains $_.Text }).Count) -eq $commonNames.Count) `
-                ('长名按钮=' + $longBtn.Count)
+                ($missNames.Count -eq 0) ('缺=' + $(if ($missNames.Count -gt 0) { $missNames -join ' | ' } else { '无' }) + '  长名按钮=' + $longBtn.Count)
+
+            # H06：塞不下的名字缩成「前几个字…」——**不许**再让 WinForms 自己把图标翻到文字下面。
+            # （窗口文字变了，但全名照旧在工具提示 / AccessibleName 里；这条只验"缩得对"：
+            #   是个真前缀 + 结尾是省略号 + 确实比全名短。）
+            if ($longBtn.Count -eq 0) {
+                Check 'H06 名字塞不下的按钮缩成「前几个字…」（全名留给工具提示）' $false '没等到那个长名按钮'
+            } else {
+                $shown = [string]$longBtn[0].Text
+                $head = $shown.Substring(0, [Math]::Max(0, $shown.Length - 1))
+                Check 'H06 名字塞不下的按钮缩成「前几个字…」（全名留给工具提示）' `
+                    (($shown.Length -lt $longName.Length) -and ($shown.EndsWith('…')) -and ($longName.StartsWith($head))) `
+                    ('显示=[' + $shown + '] 全名长度=' + $longName.Length)
+            }
+
+            # H07：**渲染结果**才是用户看到的东西（用户 2026-10-19 报的就是这个）。
+            # 他报的那颗按钮（桌面模式）当时的真机像素：文字在上(8..18)、图标被翻到下面(14..28)，
+            # 图标中心偏了 6.5px —— 而**窗口文字一直是全名**，所以 H04/H05 那两天全绿、
+            # 界面上却是坏的。判据（拿修之前留下的真机截图 desk-broken-back1x.png 校验过）：
+            #   ① 图标上下居中（中心误差 <= 3px：正常 0.5，坏的样子 6.5）；
+            #   ② 文字行的上下都落在图标行之内（同一行上并排，正常 10..20 ⊂ 8..22；坏的样子 8..18 ⊄ 14..28）。
+            $deskBtn = @(Get-ChildControls -RootHandle $h2 | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '桌面模式·合盖不睡' })
+            $shotH = Get-WindowShot -Handle $h2
+            if ($deskBtn.Count -eq 0 -or $shotH -eq $null) {
+                Check 'H07 桌面模式那颗按钮的图标还在文字左边、上下居中（渲染结果）' $false `
+                    ('没找到按钮（' + $deskBtn.Count + ' 个）或窗口截图失败')
+            } else {
+                $db = @{ X = $deskBtn[0].Left - $shotH.Left; Y = $deskBtn[0].Top - $shotH.Top
+                         W = $deskBtn[0].Width; H = $deskBtn[0].Height }
+                $inkH = Get-InkRows -Shot $shotH -Icon -X $db.X -Y $db.Y -W $db.W -H $db.H
+                if ($inkH.IconTop -lt 0 -or $inkH.LabelTop -lt 0) {
+                    Skip 'H07 桌面模式那颗按钮的图标还在文字左边、上下居中（渲染结果）' `
+                        '这颗按钮没在该页可视区里（被滚出去了），抓不到它的像素'
+                } else {
+                    $iconCY = ($inkH.IconTop + $inkH.IconBottom) / 2.0
+                    $btnCY = ($db.H - 1) / 2.0
+                    $dyIcon = [Math]::Abs($iconCY - $btnCY)
+                    $textInside = ($inkH.LabelTop -gt $inkH.IconTop) -and ($inkH.LabelBottom -lt $inkH.IconBottom)
+                    Check 'H07 桌面模式那颗按钮的图标还在文字左边、上下居中（渲染结果）' `
+                        ($textInside -and ($dyIcon -le 3.0)) `
+                        ('图标行=' + $inkH.IconTop + '..' + $inkH.IconBottom + ' 文字行=' + $inkH.LabelTop + '..' + $inkH.LabelBottom +
+                         ' 上下误差=' + $dyIcon.ToString('0.0') + 'px 文字在图标行内=' + $textInside + ' 按钮=' + $db.W + 'x' + $db.H)
+                }
+            }
             try { [void][TBGui]::CloseWindow($h2) } catch { }
             Start-Sleep -Milliseconds 600
         } else {
             Check 'H04 新增一个名字超长的按钮，窗口宽度不变（宽度固定，不跟着内容长）' $false '重启后界面没起来'
             Check 'H05 名字太长的按钮不会把别人挤出去（这一页按钮数还对）' $false 'skipped'
+            Check 'H06 名字塞不下的按钮缩成「前几个字…」（全名留给工具提示）' $false 'skipped'
+            Check 'H07 桌面模式那颗按钮的图标还在文字左边、上下居中（渲染结果）' $false 'skipped'
         }
         Remove-Item -LiteralPath $UserToolsJson -Force -ErrorAction SilentlyContinue
         $script:InjectedPh = $false
@@ -3175,6 +3373,8 @@ try {
         Check 'H03 换到只有 1 个按钮的页签，窗口尺寸一动不动' $false 'skipped'
         Check 'H04 新增一个名字超长的按钮，窗口宽度不变（宽度固定，不跟着内容长）' $false 'skipped'
         Check 'H05 名字太长的按钮不会把别人挤出去（这一页按钮数还对）' $false 'skipped'
+        Check 'H06 名字塞不下的按钮缩成「前几个字…」（全名留给工具提示）' $false 'skipped'
+        Check 'H07 桌面模式那颗按钮的图标还在文字左边、上下居中（渲染结果）' $false 'skipped'
     }
 } catch {
     Write-Host ('  H 组出错: ' + $_.Exception.Message)

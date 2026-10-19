@@ -123,6 +123,11 @@ namespace Mxx1Toolbox
         /// （只写 HKCU\Software\Classes，见 src\RightMenu.cs 和 docs\DESIGN.md §14）。</summary>
         public const string ModuleRightMenu = "rightmenu";
 
+        /// <summary>「电源与笔记本」：合盖 / 电源按钮 / 睡眠按钮 三个动作（改的是**所有**电源方案）、
+        /// 电池健康报告、谁在阻止睡眠。写走 powercfg，原值记在自己的那份文件里
+        /// （`power-original.tsv`，见 src\Power.cs 与 docs\DESIGN.md §12.71）。</summary>
+        public const string ModulePower = "power";
+
         /// <summary>The「系统工具」page. Every entry is a read-only viewer or a Windows settings
         /// page: nothing here changes the system, so none of them needs elevation.</summary>
         private static readonly SystemTarget[] SystemTargets = new SystemTarget[]
@@ -373,6 +378,17 @@ namespace Mxx1Toolbox
                         if (a == "manage") { return "在本程序里打开「右键菜单管理」窗口（按位置列出右键菜单里真实存在的项，能禁用 / 恢复 / 删除）"; }
                         return "内置动作: " + t.Module + "/" + t.Action;
                     }
+                    if (t.Module == ModulePower)
+                    {
+                        // 同样写成一句人话：悬停说明里附的就是这一行
+                        string pa = t.Action.ToLowerInvariant();
+                        if (pa == "lid") { return "在本程序里打开「合盖与电源键动作」窗口（三个动作各怎么反应；改的是所有电源方案，改前会记原值）"; }
+                        if (pa == "fit") { return "只读：列出每个电源方案的合盖 / 电源按钮 / 睡眠按钮动作，标出跟多数方案不一样的那个"; }
+                        if (pa == "battery") { return "生成电池健康报告（powercfg /batteryreport，只读）并打开它"; }
+                        if (pa == "wake") { return "只读：谁按着不让电脑睡、上次是谁把它唤醒的、哪些设备允许唤醒"; }
+                        if (pa == "desktop") { return "一键把合盖动作改成「不采取任何操作」（接电源和用电池都改，所有方案；再点一次改回「关机」）"; }
+                        return "内置动作: " + t.Module + "/" + t.Action;
+                    }
                     if (t.Module == ModuleApp)
                     {
                         // 程序**自己**的窗口（不是启动别的程序）：说明里必须写成一句人话。
@@ -525,6 +541,8 @@ namespace Mxx1Toolbox
             if (t.Module == ModuleSysreg) { return RunSysreg(t, asAdmin, showResult); }
 
             if (t.Module == ModuleRightMenu) { return RunRightMenu(t); }
+
+            if (t.Module == ModulePower) { return RunPower(t, asAdmin, showResult); }
 
             if (t.Module != ModulePermdel)
             {
@@ -707,8 +725,63 @@ namespace Mxx1Toolbox
             return r;
         }
 
-        /// <summary>「右键增强」：把三件事装进 / 撤出 Windows 右键菜单，外加状态、重建、说明。
-        /// 只写 HKCU（**不需要管理员**，所以没有 runas 那条路），写之前记原值、写完读回核对，
+        /// <summary>「电源与笔记本」那一页：一条窗口入口 + 三条只读 + 一条一键动作。
+        /// 真正的"改"只有两处 —— 窗口里的「应用 / 还原」和「桌面模式」这颗按钮；
+        /// 命令行那条 `power` 只负责"带管理员重开窗口"，它不接受任何要改什么的参数
+        /// （同「右键菜单管理」：写动作只能由用户在窗口里点出来）。</summary>
+        private static LaunchResult RunPower(ToolItem t, bool asAdmin, bool showResult)
+        {
+            LaunchResult r = new LaunchResult();
+            string a = t.Action.ToLowerInvariant();
+            if (a == "lid")
+            {
+                // 界面里点 = MainForm 直接开窗；`run <id>` 走到这里只报一句（不改任何东西）
+                r.UiAction = true;
+                r.UiActionName = "power";
+                return r;
+            }
+            if (a == "fit")
+            {
+                r.Ok = true;
+                r.Output = Power.Fit();
+                r.Message = "电源方案体检（只读）";
+                Logger.Write(t.Name, r.Output);
+                return r;
+            }
+            if (a == "wake")
+            {
+                r.Ok = true;
+                r.Output = Power.WakeReport();
+                r.Message = "谁在阻止睡眠 / 谁唤醒了它（只读）";
+                Logger.Write(t.Name, r.Output);
+                return r;
+            }
+            if (a == "battery")
+            {
+                bool bok;
+                r.Output = Power.BatteryReport(out bok);
+                r.Ok = bok;
+                r.Message = bok ? "电池健康报告已生成（已经打开）" : "报告没生成出来（细节见报告）";
+                Logger.Write(t.Name, r.Output);
+                return r;
+            }
+            if (a == "desktop")
+            {
+                // 改 HKLM 里的电源值要管理员：不是就 `run <id> --admin` 把自己再起一遍
+                if (asAdmin && !IsAdmin()) { return LaunchElevatedCopy(t, showResult); }
+                bool ok;
+                r.Output = Power.DesktopToggle(out ok);
+                r.Ok = ok;
+                r.Message = ok ? "桌面模式：合盖动作已改好" : "有地方没成功（细节见报告）";
+                Logger.Write(t.Name, r.Output);
+                return r;
+            }
+            r.Ok = false;
+            r.Message = "不认识的动作：" + t.Action;
+            return r;
+        }
+
+        /// <summary>「右键增强」：把三件事装进 / 撤出 Windows 右键菜单，外加状态、重建、说明。        /// 只写 HKCU（**不需要管理员**，所以没有 runas 那条路），写之前记原值、写完读回核对，
         /// 撤掉按记录只删自己那几个键。三条底线见 src\RightMenu.cs 的注释和 docs\DESIGN.md §14.7。</summary>
         private static LaunchResult RunRightMenu(ToolItem t)
         {

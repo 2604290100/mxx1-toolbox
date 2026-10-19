@@ -1614,6 +1614,24 @@ namespace Mxx1Toolbox
                 case "hash":
                     OpenHashTool();
                     break;
+                case "brokenlinks":
+                    OpenBrokenLinks();
+                    break;
+                case "emptyfolders":
+                    OpenEmptyFolders();
+                    break;
+                case "colorpicker":
+                    OpenColorPicker();
+                    break;
+                case "ports":
+                    OpenPorts();
+                    break;
+                case "duplicates":
+                    OpenDupFinder();
+                    break;
+                case "rename":
+                    OpenRename();
+                    break;
                 default:
                     SetStatus("未实现的界面动作：" + t.Action);
                     Logger.Write(t.Name, "未实现的界面动作：" + t.Action);
@@ -1818,6 +1836,62 @@ namespace Mxx1Toolbox
             WindowPlacement.ShowCentered(f, this);
             SetStatus("文件哈希校验 · 选一个文件（也可以直接拖进来）就能算出 MD5 / SHA256");
             Logger.Write("文件哈希校验", "打开窗口");
+        }
+
+        /// <summary>「无效快捷方式清理」窗口（清理页）。</summary>
+        private void OpenBrokenLinks()
+        {
+            BrokenLinksForm f = new BrokenLinksForm(_theme);
+            WindowPlacement.ShowCentered(f, this);
+            SetStatus("无效快捷方式清理 · 只统计目标已经不在了的（网络位置 / 没插的盘只报不删）");
+            Logger.Write("无效快捷方式清理", "打开窗口");
+        }
+
+        /// <summary>「空文件夹清理」窗口（清理页）。</summary>
+        private void OpenEmptyFolders()
+        {
+            EmptyFoldersForm f = new EmptyFoldersForm(_theme);
+            WindowPlacement.ShowCentered(f, this);
+            SetStatus("空文件夹清理 · 有一个文件就不算空；删到回收站");
+            Logger.Write("空文件夹清理", "打开窗口");
+        }
+
+        /// <summary>「屏幕取色器」。它和别的窗口不一样：**全屏、不进任务栏、按 Esc 才退出**，
+        /// 所以不能走 `WindowPlacement.ShowCentered`（那会把全屏窗口挪成 600×400 的居中块）。</summary>
+        private void OpenColorPicker()
+        {
+            PickForm f = new PickForm(_theme);
+            f.Show(this);
+            f.Activate();
+            SetStatus("屏幕取色器 · 左键复制颜色，滚轮切换复制格式，Esc / 右键退出");
+            Logger.Write("屏幕取色器", "打开取色器");
+        }
+
+        /// <summary>「端口与进程」窗口（系统工具页）。</summary>
+        private void OpenPorts()
+        {
+            PortsForm f = new PortsForm(_theme);
+            WindowPlacement.ShowCentered(f, this);
+            SetStatus("端口与进程 · 只读列出监听的 TCP / 绑着的 UDP；结束进程要过确认框");
+            Logger.Write("端口与进程", "打开窗口");
+        }
+
+        /// <summary>「重复文件查找」窗口（清理页）。</summary>
+        private void OpenDupFinder()
+        {
+            DupForm f = new DupForm(_theme);
+            WindowPlacement.ShowCentered(f, this);
+            SetStatus("重复文件查找 · 大小 → 前 4 KB → 整个文件；每组留一个，其余进回收站");
+            Logger.Write("重复文件查找", "打开窗口");
+        }
+
+        /// <summary>「批量重命名」窗口（清理页）。</summary>
+        private void OpenRename()
+        {
+            RenameForm f = new RenameForm(_theme);
+            WindowPlacement.ShowCentered(f, this);
+            SetStatus("批量重命名 · 先预览再执行；有冲突整批拒绝；改前留撤销记录");
+            Logger.Write("批量重命名", "打开窗口");
         }
 
         private void OpenToolboxLog()

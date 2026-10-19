@@ -399,6 +399,12 @@ namespace Mxx1Toolbox
                         if (ua == "exporttools") { return "把「我的工具」导出到一个文件（不启动别的程序）"; }
                         if (ua == "importtools") { return "从导出文件里把按钮并进来（不启动别的程序）"; }
                         if (ua == "hash") { return "在本程序里打开「文件哈希校验」窗口（只读算校验码，不上传、不启动别的程序）"; }
+                        if (ua == "brokenlinks") { return "在本程序里打开「无效快捷方式清理」窗口（扫桌面 + 开始菜单，只有坏链能删，删到回收站）"; }
+                        if (ua == "emptyfolders") { return "在本程序里打开「空文件夹清理」窗口（有一个文件就不算空；删到回收站）"; }
+                        if (ua == "colorpicker") { return "在本程序里打开「屏幕取色器」（全屏放大镜，左键复制颜色，滚轮换格式）"; }
+                        if (ua == "ports") { return "在本程序里打开「端口与进程」窗口（只读列出监听的 TCP / 绑着的 UDP；结束进程要过确认框）"; }
+                        if (ua == "duplicates") { return "在本程序里打开「重复文件查找」窗口（大小 → 前 4 KB → 整个文件；删到回收站）"; }
+                        if (ua == "rename") { return "在本程序里打开「批量重命名」窗口（先预览再执行，有冲突整批拒绝，可撤销）"; }
                         return "在本程序里打开的窗口: " + t.Action;
                     }
                     return "内置动作: " + t.Module + "/" + t.Action;

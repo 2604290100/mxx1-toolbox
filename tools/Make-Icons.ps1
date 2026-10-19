@@ -64,6 +64,15 @@ function Get-Shape {
         @('rightmenu.icon.off',    'minus'),
         @('rightmenu.rebuild',    'refresh'),
         @('rightmenu.help',       'doc'),
+        # 2026-10-19 加的六个窗口按钮（清理页「文件清单」段 + 系统页「进程 · 信息 · 链接」段）：
+        # 无效快捷方式 = 断开的链子、空文件夹 = 空文件夹轮廓、重复文件 = 两张纸、
+        # 批量重命名 = 铅笔、取色器 = 水滴、端口与进程 = 插头
+        @('broken-links',   'linkbreak'),
+        @('empty-folders',  'folder-empty'),
+        @('dup-files',      'copy'),
+        @('batch-rename',   'pencil'),
+        @('color-picker',   'droplet'),
+        @('port-view',      'plug'),
         @('update-cache',   'trash'),
         # 文件哈希校验（未发布这轮加的）：一个 "#" 号 —— 文件"指纹"最直观的写法
         @('hash',           'hash'),
@@ -366,6 +375,59 @@ function Draw-Shape {
             $G.DrawLine($Pen, 10.2, 3.4, 9.0, 12.6)
             $G.DrawLine($Pen, 4.0, 6.2, 12.0, 6.2)
             $G.DrawLine($Pen, 3.6, 9.8, 11.6, 9.8)
+        }
+        'linkbreak' {
+            # 无效快捷方式：一段链子（两个椭圆 + 中间连着）在右边断开
+            $G.DrawEllipse($Pen, 2.4, 6.0, 5.0, 4.0)
+            $G.DrawEllipse($Pen, 8.6, 6.0, 5.0, 4.0)
+            $G.DrawLine($Pen, 6.4, 8, 7.4, 8)
+            # 断口：一道斜杠 + 两个小断点
+            $G.DrawLine($Pen, 7.8, 3.2, 10.6, 5.4)
+            $G.DrawLine($Pen, 11.6, 7.4, 13.2, 9.6)
+        }
+        'folder-empty' {
+            # 空文件夹：只画文件夹轮廓（不填实），里面什么都没有
+            $G.DrawLines($Pen, @(
+                (New-Object System.Drawing.PointF(3.0, 5.4)),
+                (New-Object System.Drawing.PointF(6.8, 5.4)),
+                (New-Object System.Drawing.PointF(8.0, 6.8)),
+                (New-Object System.Drawing.PointF(13.0, 6.8)),
+                (New-Object System.Drawing.PointF(13.0, 11.8)),
+                (New-Object System.Drawing.PointF(3.0, 11.8)),
+                (New-Object System.Drawing.PointF(3.0, 5.4))
+            ))
+        }
+        'pencil' {
+            # 批量重命名：一支斜着写的铅笔 + 底下的笔画线
+            $G.DrawLine($Pen, 4.2, 11.8, 11.2, 4.8)
+            $G.DrawLine($Pen, 5.6, 13.2, 12.6, 6.2)
+            $G.DrawLine($Pen, 4.2, 11.8, 5.6, 13.2)
+            $G.FillPolygon($Brush, @(
+                (New-Object System.Drawing.PointF(11.8, 4.2)),
+                (New-Object System.Drawing.PointF(13.2, 2.8)),
+                (New-Object System.Drawing.PointF(13.8, 4.4)),
+                (New-Object System.Drawing.PointF(12.4, 5.8))
+            ))
+            $G.DrawLine($Pen, 2.6, 13.6, 8.0, 13.6)
+        }
+        'droplet' {
+            # 屏幕取色器：一滴颜料
+            $G.FillPolygon($Brush, @(
+                (New-Object System.Drawing.PointF(8.0, 2.6)),
+                (New-Object System.Drawing.PointF(10.6, 6.8)),
+                (New-Object System.Drawing.PointF(12.2, 9.4)),
+                (New-Object System.Drawing.PointF(8.0, 13.2)),
+                (New-Object System.Drawing.PointF(3.8, 9.4)),
+                (New-Object System.Drawing.PointF(5.4, 6.8))
+            ))
+        }
+        'plug' {
+            # 端口与进程：一个插头（两根针 + 插头体 + 一段线）
+            $G.DrawLine($Pen, 5.2, 3.0, 5.2, 5.6)
+            $G.DrawLine($Pen, 10.8, 3.0, 10.8, 5.6)
+            $G.DrawRectangle($Pen, 4.2, 5.6, 7.6, 4.2)
+            $G.DrawLine($Pen, 8.0, 9.8, 8.0, 12.2)
+            $G.DrawArc($Pen, 5.6, 11.0, 4.8, 3.0, 0, 180)
         }
         default {
             $G.FillEllipse($Brush, 5.6, 5.6, 4.8, 4.8)

@@ -164,6 +164,12 @@ namespace Mxx1Toolbox
                     case "terminal": return TerminalCommand(args);
                     case "convert-image": return ConvertImageCommand(args);
                     case "extract-icon": return ExtractIconCommand(args);
+                    case "brokenlinks": return BrokenLinksCommand(args);
+                    case "emptyfolders": return EmptyFoldersCommand(args);
+                    case "pick": return PickCommand(args);
+                    case "ports": return PortsCommand(args);
+                    case "dup": return DupCommand(args);
+                    case "rename": return RenameCommand(args);
                     case "privacy": return PrivacyCommand(args);
                     case "sysreg": return SysRegCommand(args);
                     case "rightmenu": return RightMenuCommand(args);
@@ -321,6 +327,16 @@ namespace Mxx1Toolbox
             Console.WriteLine("  Mxx1Toolbox.exe extract-icon <文件…> [--as=ico|png]  把这个文件的图标存到源文件旁边");
             Console.WriteLine("                                                        ico = 有几档装几档（16/32/48/64/128/256，只缩不放）；png = 最大那一档");
             Console.WriteLine("                                                        （右键菜单里的「" + RightMenu.ExtractIconTitle + "」子菜单那两行用的就是它）");
+            Console.WriteLine("  Mxx1Toolbox.exe brokenlinks [--delete] [--json]    扫桌面 + 开始菜单的快捷方式，列出目标已经不在的（坏链）");
+            Console.WriteLine("                                                        默认只读；--delete 才删（进回收站）。网络位置 / 可移动盘 / 商店应用只报不删");
+            Console.WriteLine("  Mxx1Toolbox.exe emptyfolders <目录> [--depth=32] [--delete] [--json]   找出真正空的文件夹（有一个文件就不算空）");
+            Console.WriteLine("                                                        默认只读；--delete 才删（进回收站，由深到浅删）；系统目录 / junction 只报不动");
+            Console.WriteLine("  Mxx1Toolbox.exe pick --decode=<颜色>   把一种颜色写法换成三种（#RRGGBB / 26,43,60 / rgb(26,43,60) 都认）");
+            Console.WriteLine("  Mxx1Toolbox.exe ports [--port=N] [--pid=N] [--filter=文本] [--json]   只读列出正在监听的 TCP / 绑着的 UDP 端口和进程");
+            Console.WriteLine("  Mxx1Toolbox.exe dup <目录…> [--min-size=1MB] [--full] [--keep=oldest|shortest|first]   找内容完全相同的文件");
+            Console.WriteLine("                                                        默认只读；--delete 才删（进回收站，每组留 --keep 指定的那一个；硬链接不删）");
+            Console.WriteLine("  Mxx1Toolbox.exe rename <目录> [--prefix=] [--suffix=] [--find=] [--replace=] [--index-start=N] [--index-digits=N] [--ext=lower|upper]");
+            Console.WriteLine("                                                        默认只预览（一个都不改）；--apply 才改；--undo 撤销上一次（记录在 %LOCALAPPDATA%\\mxx1-toolbox）");
             Console.WriteLine("  Mxx1Toolbox.exe ui [log|settings]    打开界面并直接看日志 / 设置（右键子菜单的固定入口用它）");
             Console.WriteLine("  Mxx1Toolbox.exe pin <id> / unpin <id>  把按钮置顶 / 取消置顶（排在这一页最前面）");
             Console.WriteLine("  Mxx1Toolbox.exe export <文件>        把「我的工具」导出成一个文件");
@@ -834,6 +850,671 @@ namespace Mxx1Toolbox
             if (report.Note.Length > 0) { Console.WriteLine("note=" + report.Note); }
             if (report.Error.Length > 0) { Console.WriteLine("error=" + report.Error); }
             return 0;
+        }
+
+        // ---------------------------------------------------------------- 新六件（H1–H6，2026-10-19）
+
+        /// <summary>`brokenlinks [--delete] [--json]` —— 只读地扫桌面 + 开始菜单里的快捷方式，
+        /// 把**目标已经不在了的**挑出来；`--delete` 才真的删（进回收站）。
+        /// 不给 `--delete` 时**一个字节都不改**（这是默认姿态，脚本里先看清再删）。
+        ///
+        /// 输出是机器可读的 `key=value` + 制表符分隔的行。四类（broken / network / removable / skip）
+        /// 都会列出来，**但只有 broken 会被删** —— 另外三类是"看着像坏链、其实不能删"的：
+        /// 网络位置删了就真没了（回收站管不到），可移动盘可能只是没插，商店应用根本没有文件目标。
+        /// 实现与判定口径见 `src\Shortcuts.cs`。
+        ///
+        /// 退出码：0 = 扫完了（有没有坏链都是 0）；1 = `--delete` 时有没删成的；2 = 用法错。</summary>
+        private static int BrokenLinksCommand(string[] args)
+        {
+            string[] roots = Shortcuts.ScanRoots();
+            List<string> errors;
+            List<Shortcuts.LinkInfo> links = Shortcuts.Scan(roots, out errors);
+            links.Sort(delegate(Shortcuts.LinkInfo a, Shortcuts.LinkInfo b)
+            {
+                int ka = LinkKindOrder(a.Kind);
+                int kb = LinkKindOrder(b.Kind);
+                if (ka != kb) { return ka.CompareTo(kb); }
+                return string.Compare(a.Path, b.Path, StringComparison.OrdinalIgnoreCase);
+            });
+
+            int broken = Shortcuts.CountKind(links, "broken");
+            int network = Shortcuts.CountKind(links, "network");
+            int removable = Shortcuts.CountKind(links, "removable");
+            int skip = Shortcuts.CountKind(links, "skip");
+            int ok = Shortcuts.CountKind(links, "ok");
+
+            Recycle.DeleteResult dr = null;
+            if (HasFlag(args, "--delete"))
+            {
+                dr = Shortcuts.DeleteBroken(links);
+            }
+
+            if (HasFlag(args, "--json"))
+            {
+                StringBuilder sb = new StringBuilder();
+                sb.Append("{\"roots\":[");
+                for (int i = 0; i < roots.Length; i++)
+                {
+                    if (i > 0) { sb.Append(","); }
+                    sb.Append(JsonEscape(roots[i]));
+                }
+                sb.Append("],\"scanned\":").Append(links.Count.ToString(CultureInfo.InvariantCulture));
+                sb.Append(",\"broken\":").Append(broken.ToString(CultureInfo.InvariantCulture));
+                sb.Append(",\"network\":").Append(network.ToString(CultureInfo.InvariantCulture));
+                sb.Append(",\"removable\":").Append(removable.ToString(CultureInfo.InvariantCulture));
+                sb.Append(",\"skip\":").Append(skip.ToString(CultureInfo.InvariantCulture));
+                sb.Append(",\"ok\":").Append(ok.ToString(CultureInfo.InvariantCulture));
+                sb.Append(",\"deleted\":").Append((dr == null ? 0 : dr.Deleted).ToString(CultureInfo.InvariantCulture));
+                sb.Append(",\"links\":[");
+                bool first = true;
+                foreach (Shortcuts.LinkInfo li in links)
+                {
+                    if (!first) { sb.Append(","); }
+                    first = false;
+                    sb.Append("{\"path\":").Append(JsonEscape(li.Path));
+                    sb.Append(",\"kind\":").Append(JsonEscape(li.Kind));
+                    sb.Append(",\"target\":").Append(JsonEscape(li.Target));
+                    sb.Append(",\"note\":").Append(JsonEscape(li.Note)).Append("}");
+                }
+                sb.Append("],\"errors\":[");
+                for (int i = 0; i < errors.Count; i++)
+                {
+                    if (i > 0) { sb.Append(","); }
+                    sb.Append(JsonEscape(errors[i]));
+                }
+                sb.Append("]}");
+                Console.WriteLine(sb.ToString());
+                return (dr != null && dr.Failed.Count > 0) ? 1 : 0;
+            }
+
+            Console.WriteLine("roots=" + roots.Length.ToString(CultureInfo.InvariantCulture));
+            foreach (string root in roots) { Console.WriteLine("root=" + root); }
+            Console.WriteLine("scanned=" + links.Count.ToString(CultureInfo.InvariantCulture));
+            Console.WriteLine("broken=" + broken.ToString(CultureInfo.InvariantCulture));
+            Console.WriteLine("network=" + network.ToString(CultureInfo.InvariantCulture));
+            Console.WriteLine("removable=" + removable.ToString(CultureInfo.InvariantCulture));
+            Console.WriteLine("skip=" + skip.ToString(CultureInfo.InvariantCulture));
+            Console.WriteLine("ok=" + ok.ToString(CultureInfo.InvariantCulture));
+            foreach (Shortcuts.LinkInfo li in links)
+            {
+                if (li.Kind == "ok") { continue; }
+                Console.WriteLine(li.Kind + "\t" + li.Path + "\t" + OneLine(li.Target) + "\t" + OneLine(li.Note));
+            }
+            foreach (string e in errors) { Console.WriteLine("error\t" + OneLine(e)); }
+            if (dr != null)
+            {
+                Console.WriteLine("deleted=" + dr.Deleted.ToString(CultureInfo.InvariantCulture));
+                Console.WriteLine("failed=" + dr.Failed.Count.ToString(CultureInfo.InvariantCulture));
+                for (int i = 0; i < dr.Failed.Count; i++)
+                {
+                    Console.WriteLine("fail\t" + dr.Failed[i] + "\t" + OneLine(dr.ReasonOf(i)));
+                }
+            }
+            return (dr != null && dr.Failed.Count > 0) ? 1 : 0;
+        }
+
+        private static int LinkKindOrder(string kind)
+        {
+            if (kind == "broken") { return 0; }
+            if (kind == "network") { return 1; }
+            if (kind == "removable") { return 2; }
+            if (kind == "skip") { return 3; }
+            return 4;
+        }
+
+        /// <summary>`emptyfolders &lt;目录&gt; [--depth=N] [--delete] [--json]` —— 找**真正空的**
+        /// 文件夹（有一个文件就不算空）；`--delete` 才真的删（进回收站，由深到浅删）。
+        /// 系统目录 / junction / 没权限的目录都单独列在 `skip` 里，说清为什么没动它。
+        /// 实现与判定口径见 `src\EmptyFolders.cs`。
+        ///
+        /// 退出码：0 = 扫完了；1 = `--delete` 时有没删成的；2 = 用法错 / 目录不存在。</summary>
+        private static int EmptyFoldersCommand(string[] args)
+        {
+            string dir = "";
+            int depth = 32;
+            for (int i = 1; i < args.Length; i++)
+            {
+                string a = args[i];
+                if (a == null) { continue; }
+                if (a.StartsWith("--depth=", StringComparison.OrdinalIgnoreCase))
+                {
+                    int d;
+                    if (int.TryParse(a.Substring(8).Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out d) && d > 0)
+                    {
+                        depth = d;
+                    }
+                    continue;
+                }
+                if (a.StartsWith("--")) { continue; }
+                if (dir.Length == 0) { dir = a; }
+            }
+            if (dir.Trim().Length == 0)
+            {
+                Console.Error.WriteLine("用法: Mxx1Toolbox.exe emptyfolders <目录> [--depth=32] [--delete] [--json]");
+                return 2;
+            }
+            if (!Directory.Exists(dir))
+            {
+                Console.Error.WriteLine("错误: 这个目录不存在：" + dir);
+                return 2;
+            }
+
+            EmptyFolders.ScanResult res = EmptyFolders.Scan(dir, depth);
+            Recycle.DeleteResult dr = null;
+            if (HasFlag(args, "--delete")) { dr = EmptyFolders.Delete(res.Empty); }
+
+            if (HasFlag(args, "--json"))
+            {
+                StringBuilder sb = new StringBuilder();
+                sb.Append("{\"dir\":").Append(JsonEscape(res.Root));
+                sb.Append(",\"scanned\":").Append(res.Dirs.ToString(CultureInfo.InvariantCulture));
+                sb.Append(",\"empty\":").Append(res.Empty.Count.ToString(CultureInfo.InvariantCulture));
+                sb.Append(",\"emptyDirs\":[");
+                for (int i = 0; i < res.Empty.Count; i++)
+                {
+                    if (i > 0) { sb.Append(","); }
+                    sb.Append(JsonEscape(res.Empty[i]));
+                }
+                sb.Append("],\"skipped\":[");
+                for (int i = 0; i < res.Skipped.Count; i++)
+                {
+                    if (i > 0) { sb.Append(","); }
+                    sb.Append("{\"path\":").Append(JsonEscape(res.Skipped[i]));
+                    sb.Append(",\"why\":").Append(JsonEscape(res.SkippedWhy[i])).Append("}");
+                }
+                sb.Append("],\"deleted\":").Append((dr == null ? 0 : dr.Deleted).ToString(CultureInfo.InvariantCulture));
+                sb.Append("}");
+                Console.WriteLine(sb.ToString());
+                return (dr != null && dr.Failed.Count > 0) ? 1 : 0;
+            }
+
+            Console.WriteLine("dir=" + res.Root);
+            Console.WriteLine("scanned=" + res.Dirs.ToString(CultureInfo.InvariantCulture));
+            Console.WriteLine("empty=" + res.Empty.Count.ToString(CultureInfo.InvariantCulture));
+            foreach (string p in res.Empty) { Console.WriteLine("empty\t" + p); }
+            Console.WriteLine("skipped=" + res.Skipped.Count.ToString(CultureInfo.InvariantCulture));
+            for (int i = 0; i < res.Skipped.Count; i++)
+            {
+                Console.WriteLine("skip\t" + res.Skipped[i] + "\t" + OneLine(res.SkippedWhy[i]));
+            }
+            if (dr != null)
+            {
+                Console.WriteLine("deleted=" + dr.Deleted.ToString(CultureInfo.InvariantCulture));
+                Console.WriteLine("failed=" + dr.Failed.Count.ToString(CultureInfo.InvariantCulture));
+                for (int i = 0; i < dr.Failed.Count; i++)
+                {
+                    Console.WriteLine("fail\t" + dr.Failed[i] + "\t" + OneLine(dr.ReasonOf(i)));
+                }
+            }
+            return (dr != null && dr.Failed.Count > 0) ? 1 : 0;
+        }
+
+        /// <summary>`pick --decode=&lt;颜色&gt;` —— 把一种写法换成三种（HEX / RGB / HSL）。
+        /// 窗口（`src\PickForm.cs`）里复制出去的那几个字符串和这里**是同一份实现**
+        /// （`src\ColorPicker.cs`），所以"命令行算出来的"和"界面上复制到的"永远一致。
+        ///
+        /// 退出码：0 = 认出来了；2 = 写法不认识（原因写清楚）。</summary>
+        private static int PickCommand(string[] args)
+        {
+            string decode = "";
+            for (int i = 1; i < args.Length; i++)
+            {
+                string a = args[i];
+                if (a == null) { continue; }
+                if (a.StartsWith("--decode=", StringComparison.OrdinalIgnoreCase))
+                {
+                    decode = a.Substring("--decode=".Length).Trim();
+                    continue;
+                }
+                if (a.StartsWith("--")) { continue; }
+                if (decode.Length == 0) { decode = a.Trim(); }
+            }
+            if (decode.Length == 0)
+            {
+                Console.Error.WriteLine("用法: Mxx1Toolbox.exe pick --decode=<#RRGGBB 或 26,43,60>");
+                return 2;
+            }
+
+            int r; int g; int b;
+            string error;
+            if (!ColorPicker.TryParse(decode, out r, out g, out b, out error))
+            {
+                Console.Error.WriteLine("错误: " + error);
+                return 2;
+            }
+            Console.WriteLine("input=" + decode);
+            Console.WriteLine("hex=" + ColorPicker.ToHex(r, g, b));
+            Console.WriteLine("rgb=" + ColorPicker.ToRgb(r, g, b));
+            Console.WriteLine("hsl=" + ColorPicker.ToHsl(r, g, b));
+            Console.WriteLine("hsl-text=" + ColorPicker.ToHslText(r, g, b));
+            return 0;
+        }
+
+        /// <summary>`ports [--port=N] [--pid=N] [--filter=文本] [--json]` —— 列出**正在监听的
+        /// TCP 端口**和**绑着的 UDP 端口**，以及每个端口属于哪个进程（PID / 名字 / 路径 / 签名）。
+        /// **只读**：没有"结束进程"的命令行入口（那个只能从窗口点，还要过确认框）。
+        /// 实现与三条口径（UDP 不叫监听 / 路径读不到就说读不到 / 签名只本地校验）见 `src\PortTable.cs`。
+        ///
+        /// 退出码：0 = 列出来了（一个都没有也是 0）；2 = 用法错。</summary>
+        private static int PortsCommand(string[] args)
+        {
+            int wantPort = -1;
+            int wantPid = -1;
+            string filter = "";
+            for (int i = 1; i < args.Length; i++)
+            {
+                string a = args[i];
+                if (a == null) { continue; }
+                if (a.StartsWith("--port=", StringComparison.OrdinalIgnoreCase))
+                {
+                    int.TryParse(a.Substring(7).Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out wantPort);
+                    continue;
+                }
+                if (a.StartsWith("--pid=", StringComparison.OrdinalIgnoreCase))
+                {
+                    int.TryParse(a.Substring(6).Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out wantPid);
+                    continue;
+                }
+                if (a.StartsWith("--filter=", StringComparison.OrdinalIgnoreCase))
+                {
+                    filter = a.Substring("--filter=".Length).Trim();
+                    continue;
+                }
+            }
+
+            string error;
+            List<PortTable.Endpoint> all = PortTable.List(out error);
+            List<PortTable.Endpoint> shown = new List<PortTable.Endpoint>();
+            foreach (PortTable.Endpoint ep in all)
+            {
+                if (wantPort >= 0 && ep.Port != wantPort) { continue; }
+                if (wantPid >= 0 && ep.Pid != wantPid) { continue; }
+                if (filter.Length > 0)
+                {
+                    string hay = ep.ProcName + " " + ep.ProcPath + " " + ep.LocalAddr + " "
+                        + ep.Port.ToString(CultureInfo.InvariantCulture);
+                    if (hay.IndexOf(filter, StringComparison.OrdinalIgnoreCase) < 0) { continue; }
+                }
+                shown.Add(ep);
+            }
+
+            if (HasFlag(args, "--json"))
+            {
+                StringBuilder sb = new StringBuilder();
+                sb.Append("{\"count\":").Append(shown.Count.ToString(CultureInfo.InvariantCulture));
+                sb.Append(",\"endpoints\":[");
+                for (int i = 0; i < shown.Count; i++)
+                {
+                    PortTable.Endpoint ep = shown[i];
+                    if (i > 0) { sb.Append(","); }
+                    sb.Append("{\"proto\":").Append(JsonEscape(ep.Proto.ToLowerInvariant()));
+                    sb.Append(",\"port\":").Append(ep.Port.ToString(CultureInfo.InvariantCulture));
+                    sb.Append(",\"address\":").Append(JsonEscape(ep.LocalAddr));
+                    sb.Append(",\"pid\":").Append(ep.Pid.ToString(CultureInfo.InvariantCulture));
+                    sb.Append(",\"name\":").Append(JsonEscape(ep.ProcName));
+                    sb.Append(",\"path\":").Append(JsonEscape(ep.ProcPath));
+                    sb.Append(",\"signature\":").Append(JsonEscape(ep.Signature));
+                    sb.Append(",\"protected\":").Append(ep.Protected ? "true" : "false").Append("}");
+                }
+                sb.Append("]}");
+                Console.WriteLine(sb.ToString());
+                return 0;
+            }
+
+            int tcp = 0;
+            int udp = 0;
+            foreach (PortTable.Endpoint ep in shown)
+            {
+                if (ep.Proto == "TCP") { tcp++; } else { udp++; }
+            }
+            Console.WriteLine("count=" + shown.Count.ToString(CultureInfo.InvariantCulture));
+            Console.WriteLine("tcp=" + tcp.ToString(CultureInfo.InvariantCulture));
+            Console.WriteLine("udp=" + udp.ToString(CultureInfo.InvariantCulture));
+            foreach (PortTable.Endpoint ep in shown)
+            {
+                Console.WriteLine(ep.Proto.ToLowerInvariant() + "\t" + ep.Port.ToString(CultureInfo.InvariantCulture)
+                    + "\t" + ep.LocalAddr + "\t" + ep.Pid.ToString(CultureInfo.InvariantCulture)
+                    + "\t" + OneLine(ep.ProcName) + "\t" + (ep.Signature.Length == 0 ? "-" : ep.Signature)
+                    + "\t" + (ep.Protected ? "protected" : "-") + "\t" + OneLine(ep.ProcPath));
+            }
+            if (error.Length > 0) { Console.WriteLine("error\t" + OneLine(error)); }
+            return 0;
+        }
+
+        /// <summary>`dup &lt;目录或文件…&gt; [--min-size=1MB] [--full] [--keep=oldest|shortest|first] [--delete] [--json]`
+        /// —— 三档比较（大小 → 前 4 KB → 整个文件）找出内容完全相同的文件；
+        /// `--keep` 决定每组留哪一个（默认 oldest = 最早修改的那个），`--delete` 才把其余的删到回收站。
+        /// **硬链接一个都不删**（删了不省空间）。实现与三条口径见 `src\DupFinder.cs`。
+        ///
+        /// 退出码：0 = 扫完了（有没有重复都是 0）；1 = `--delete` 时有没删成的；2 = 用法错。</summary>
+        private static int DupCommand(string[] args)
+        {
+            List<string> roots = new List<string>();
+            DupFinder.Options opt = new DupFinder.Options();
+            string keep = "oldest";
+            for (int i = 1; i < args.Length; i++)
+            {
+                string a = args[i];
+                if (a == null) { continue; }
+                if (a.StartsWith("--min-size=", StringComparison.OrdinalIgnoreCase))
+                {
+                    long n = DupFinder.ParseSize(a.Substring("--min-size=".Length));
+                    if (n < 0)
+                    {
+                        Console.Error.WriteLine("错误: --min-size 认不出来（写 1MB / 500KB / 1048576 这种）：" + a);
+                        return 2;
+                    }
+                    opt.MinSize = n;
+                    continue;
+                }
+                if (a.StartsWith("--keep=", StringComparison.OrdinalIgnoreCase))
+                {
+                    keep = a.Substring("--keep=".Length).Trim().ToLowerInvariant();
+                    if (keep != "oldest" && keep != "shortest" && keep != "first")
+                    {
+                        Console.Error.WriteLine("错误: --keep 只有 oldest / shortest / first 三种：" + keep);
+                        return 2;
+                    }
+                    continue;
+                }
+                if (string.Equals(a, "--full", StringComparison.OrdinalIgnoreCase)) { opt.Full = true; continue; }
+                if (a.StartsWith("--")) { continue; }
+                roots.Add(a);
+            }
+            if (roots.Count == 0)
+            {
+                Console.Error.WriteLine("用法: Mxx1Toolbox.exe dup <目录或文件…> [--min-size=1MB] [--full] [--keep=oldest|shortest|first] [--delete] [--json]");
+                return 2;
+            }
+
+            DupFinder.Result res = DupFinder.Find(roots.ToArray(), opt, null, null);
+            long freeable = DupFinder.FreeableBytes(res.Groups, keep);
+
+            Recycle.DeleteResult dr = null;
+            if (HasFlag(args, "--delete"))
+            {
+                List<string> doomed = DupFinder.DeletablePaths(res.Groups, keep);
+                dr = Recycle.DeleteToRecycleBin(doomed);
+            }
+
+            if (HasFlag(args, "--json"))
+            {
+                StringBuilder sb = new StringBuilder();
+                sb.Append("{\"roots\":[");
+                for (int i = 0; i < roots.Count; i++)
+                {
+                    if (i > 0) { sb.Append(","); }
+                    sb.Append(JsonEscape(roots[i]));
+                }
+                sb.Append("],\"scanned\":").Append(res.Scanned.ToString(CultureInfo.InvariantCulture));
+                sb.Append(",\"candidates\":").Append(res.Candidates.ToString(CultureInfo.InvariantCulture));
+                sb.Append(",\"groups\":").Append(res.Groups.Count.ToString(CultureInfo.InvariantCulture));
+                sb.Append(",\"freeable\":").Append(freeable.ToString(CultureInfo.InvariantCulture));
+                sb.Append(",\"keep\":").Append(JsonEscape(keep));
+                sb.Append(",\"groupsDetail\":[");
+                for (int i = 0; i < res.Groups.Count; i++)
+                {
+                    DupFinder.Group g = res.Groups[i];
+                    if (i > 0) { sb.Append(","); }
+                    sb.Append("{\"size\":").Append(g.Size.ToString(CultureInfo.InvariantCulture));
+                    sb.Append(",\"hash\":").Append(JsonEscape(g.Hash));
+                    sb.Append(",\"files\":[");
+                    for (int j = 0; j < g.Files.Count; j++)
+                    {
+                        if (j > 0) { sb.Append(","); }
+                        DupFinder.Entry e = g.Files[j];
+                        sb.Append("{\"path\":").Append(JsonEscape(e.Path));
+                        sb.Append(",\"hardlink\":").Append(e.Hardlink ? "true" : "false").Append("}");
+                    }
+                    sb.Append("]}");
+                }
+                sb.Append("],\"deleted\":").Append((dr == null ? 0 : dr.Deleted).ToString(CultureInfo.InvariantCulture));
+                sb.Append("}");
+                Console.WriteLine(sb.ToString());
+                return (dr != null && dr.Failed.Count > 0) ? 1 : 0;
+            }
+
+            int dupFiles = 0;
+            foreach (DupFinder.Group g in res.Groups) { dupFiles += g.Files.Count; }
+            Console.WriteLine("roots=" + roots.Count.ToString(CultureInfo.InvariantCulture));
+            Console.WriteLine("scanned=" + res.Scanned.ToString(CultureInfo.InvariantCulture));
+            Console.WriteLine("candidates=" + res.Candidates.ToString(CultureInfo.InvariantCulture));
+            Console.WriteLine("groups=" + res.Groups.Count.ToString(CultureInfo.InvariantCulture));
+            Console.WriteLine("dupfiles=" + dupFiles.ToString(CultureInfo.InvariantCulture));
+            Console.WriteLine("freeable=" + freeable.ToString(CultureInfo.InvariantCulture));
+            Console.WriteLine("keep=" + keep + (opt.Full ? " full=yes" : ""));
+            for (int i = 0; i < res.Groups.Count; i++)
+            {
+                DupFinder.Group g = res.Groups[i];
+                DupFinder.Entry keepEntry = DupFinder.Suggest(g, keep);
+                Console.WriteLine("group\t" + (i + 1).ToString(CultureInfo.InvariantCulture) + "\t"
+                    + g.Size.ToString(CultureInfo.InvariantCulture) + "\t" + g.Hash);
+                foreach (DupFinder.Entry e in g.Files)
+                {
+                    Console.WriteLine("member\t" + (i + 1).ToString(CultureInfo.InvariantCulture)
+                        + "\t" + (e == keepEntry ? "keep" : "dup")
+                        + "\t" + (e.Hardlink ? "hardlink" : "-")
+                        + "\t" + e.Path);
+                }
+            }
+            foreach (string e in res.Errors) { Console.WriteLine("error\t" + OneLine(e)); }
+            if (dr != null)
+            {
+                Console.WriteLine("deleted=" + dr.Deleted.ToString(CultureInfo.InvariantCulture));
+                Console.WriteLine("failed=" + dr.Failed.Count.ToString(CultureInfo.InvariantCulture));
+                for (int i = 0; i < dr.Failed.Count; i++)
+                {
+                    Console.WriteLine("fail\t" + dr.Failed[i] + "\t" + OneLine(dr.ReasonOf(i)));
+                }
+            }
+            return (dr != null && dr.Failed.Count > 0) ? 1 : 0;
+        }
+
+        /// <summary>`rename &lt;目录&gt; [规则…] [--filter=*.txt] [--apply] [--json]`
+        /// · `rename --undo [--undo-file=&lt;记录&gt;]` —— 批量重命名 / 撤销上一次。
+        /// 不给 `--apply` 时**只预览、一个字节都不改**；有冲突就整批拒绝（绝不覆盖）。
+        /// 实现与规则顺序见 `src\RenameRules.cs`。
+        ///
+        /// 退出码：0 = 预览没冲突 / 真改完了；1 = 有冲突或有没改成的；2 = 用法错。</summary>
+        private static int RenameCommand(string[] args)
+        {
+            RenameRules.Rule rule = new RenameRules.Rule();
+            string dir = "";
+            string filter = "*";
+            string undoFile = "";
+            bool apply = false;
+            bool undo = false;
+            for (int i = 1; i < args.Length; i++)
+            {
+                string a = args[i];
+                if (a == null) { continue; }
+                if (a.StartsWith("--prefix=", StringComparison.OrdinalIgnoreCase)) { rule.Prefix = a.Substring(9); continue; }
+                if (a.StartsWith("--suffix=", StringComparison.OrdinalIgnoreCase)) { rule.Suffix = a.Substring(9); continue; }
+                if (a.StartsWith("--find=", StringComparison.OrdinalIgnoreCase)) { rule.Find = a.Substring(7); continue; }
+                if (a.StartsWith("--replace=", StringComparison.OrdinalIgnoreCase)) { rule.Replace = a.Substring(10); continue; }
+                if (a.StartsWith("--index-start=", StringComparison.OrdinalIgnoreCase)
+                    || a.StartsWith("--index=", StringComparison.OrdinalIgnoreCase))
+                {
+                    int cut = a.StartsWith("--index-start=", StringComparison.OrdinalIgnoreCase) ? 14 : 8;
+                    int got;
+                    if (int.TryParse(a.Substring(cut).Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out got))
+                    {
+                        rule.IndexStart = got;
+                    }
+                    continue;
+                }
+                if (a.StartsWith("--index-digits=", StringComparison.OrdinalIgnoreCase)
+                    || a.StartsWith("--digits=", StringComparison.OrdinalIgnoreCase))
+                {
+                    int cut = a.StartsWith("--index-digits=", StringComparison.OrdinalIgnoreCase) ? 15 : 9;
+                    int got;
+                    if (int.TryParse(a.Substring(cut).Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out got))
+                    {
+                        rule.IndexDigits = got;
+                    }
+                    continue;
+                }
+                if (a.StartsWith("--ext=", StringComparison.OrdinalIgnoreCase))
+                {
+                    string v = a.Substring(6).Trim();
+                    string lower = v.ToLowerInvariant();
+                    if (lower == "lower" || lower == "upper") { rule.ExtCase = lower; }
+                    else if (v.Length > 0)
+                    {
+                        // `--ext=jpg`（任务书里的写法）= 只处理 .jpg；`--ext=*.jpg` 也行。
+                        filter = (v.IndexOf('*') >= 0) ? v : ("*." + v.TrimStart('.'));
+                    }
+                    continue;
+                }
+                if (a.StartsWith("--filter=", StringComparison.OrdinalIgnoreCase)) { filter = a.Substring(9); continue; }
+                if (a.StartsWith("--undo-file=", StringComparison.OrdinalIgnoreCase)) { undoFile = a.Substring(12); continue; }
+                if (a.StartsWith("--regex=", StringComparison.OrdinalIgnoreCase))
+                {
+                    rule.UseRegex = true;
+                    rule.Find = a.Substring("--regex=".Length);
+                    continue;
+                }
+                if (string.Equals(a, "--regex", StringComparison.OrdinalIgnoreCase)) { rule.UseRegex = true; continue; }
+                if (string.Equals(a, "--index-before", StringComparison.OrdinalIgnoreCase)) { rule.IndexAfter = false; continue; }
+                if (string.Equals(a, "--apply", StringComparison.OrdinalIgnoreCase)) { apply = true; continue; }
+                if (string.Equals(a, "--undo", StringComparison.OrdinalIgnoreCase)) { undo = true; continue; }
+                if (a.StartsWith("--")) { continue; }
+                if (dir.Length == 0) { dir = a; }
+            }
+
+            if (undo)
+            {
+                RenameRules.UndoResult ur = RenameRules.Undo(undoFile);
+                if (HasFlag(args, "--json"))
+                {
+                    StringBuilder sb = new StringBuilder();
+                    sb.Append("{\"undo\":true,\"error\":").Append(JsonEscape(ur.Error));
+                    sb.Append(",\"done\":").Append(ur.Done.ToString(CultureInfo.InvariantCulture));
+                    sb.Append(",\"failed\":").Append(ur.Failed.ToString(CultureInfo.InvariantCulture));
+                    sb.Append(",\"failures\":[");
+                    for (int i = 0; i < ur.FailedWhy.Count; i++)
+                    {
+                        if (i > 0) { sb.Append(","); }
+                        sb.Append(JsonEscape(ur.FailedWhy[i]));
+                    }
+                    sb.Append("]}");
+                    Console.WriteLine(sb.ToString());
+                }
+                else
+                {
+                    if (ur.Error.Length > 0)
+                    {
+                        Console.Error.WriteLine("错误: " + ur.Error);
+                        return 2;
+                    }
+                    Console.WriteLine("undo=ok");
+                    Console.WriteLine("done=" + ur.Done.ToString(CultureInfo.InvariantCulture));
+                    Console.WriteLine("failed=" + ur.Failed.ToString(CultureInfo.InvariantCulture));
+                    foreach (string why in ur.FailedWhy) { Console.WriteLine("fail\t" + OneLine(why)); }
+                }
+                return (ur.Error.Length > 0 || ur.Failed > 0) ? 1 : 0;
+            }
+
+            if (dir.Trim().Length == 0)
+            {
+                Console.Error.WriteLine("用法: Mxx1Toolbox.exe rename <目录> [--prefix=] [--suffix=] [--find=] [--replace=] [--index-start=N] [--index-digits=N] [--ext=lower|upper] [--apply] [--undo]");
+                return 2;
+            }
+
+            RenameRules.PlanResult plan = RenameRules.Plan(dir, filter, rule, null);
+            if (plan.Error.Length > 0)
+            {
+                Console.Error.WriteLine("错误: " + plan.Error);
+                return 2;
+            }
+
+            RenameRules.ApplyResult applied = null;
+            if (apply)
+            {
+                applied = RenameRules.Apply(plan);
+            }
+
+            if (HasFlag(args, "--json"))
+            {
+                StringBuilder sb = new StringBuilder();
+                sb.Append("{\"dir\":").Append(JsonEscape(plan.Dir));
+                sb.Append(",\"files\":").Append(plan.Items.Count.ToString(CultureInfo.InvariantCulture));
+                sb.Append(",\"changed\":").Append(plan.Changed.ToString(CultureInfo.InvariantCulture));
+                sb.Append(",\"conflicts\":").Append(plan.Conflicts.ToString(CultureInfo.InvariantCulture));
+                sb.Append(",\"applied\":").Append(applied != null ? "true" : "false");
+                sb.Append(",\"done\":").Append(applied == null ? "0" : applied.Done.ToString(CultureInfo.InvariantCulture));
+                sb.Append(",\"failed\":").Append(applied == null ? "0" : applied.Failed.ToString(CultureInfo.InvariantCulture));
+                sb.Append(",\"undo\":").Append(JsonEscape(applied == null ? "" : applied.UndoFile));
+                sb.Append(",\"error\":").Append(JsonEscape(applied == null ? "" : applied.Error));
+                sb.Append(",\"items\":[");
+                for (int i = 0; i < plan.Items.Count; i++)
+                {
+                    if (i > 0) { sb.Append(","); }
+                    RenameRules.PlanItem it = plan.Items[i];
+                    sb.Append("{\"old\":").Append(JsonEscape(it.OldName));
+                    sb.Append(",\"new\":").Append(JsonEscape(it.NewName));
+                    sb.Append(",\"conflict\":").Append(JsonEscape(it.Conflict)).Append("}");
+                }
+                sb.Append("]}");
+                Console.WriteLine(sb.ToString());
+            }
+            else
+            {
+                Console.WriteLine("dir=" + plan.Dir);
+                Console.WriteLine("files=" + plan.Items.Count.ToString(CultureInfo.InvariantCulture));
+                Console.WriteLine("changed=" + plan.Changed.ToString(CultureInfo.InvariantCulture));
+                Console.WriteLine("conflicts=" + plan.Conflicts.ToString(CultureInfo.InvariantCulture));
+                foreach (RenameRules.PlanItem it in plan.Items)
+                {
+                    if (it.Conflict.Length > 0) { Console.WriteLine("conflict\t" + it.OldName + "\t" + OneLine(it.Conflict)); }
+                    else { Console.WriteLine("plan\t" + it.OldName + "\t" + it.NewName); }
+                }
+                Console.WriteLine("applied=" + (apply ? "yes" : "no"));
+                if (applied != null)
+                {
+                    Console.WriteLine("done=" + applied.Done.ToString(CultureInfo.InvariantCulture));
+                    Console.WriteLine("failed=" + applied.Failed.ToString(CultureInfo.InvariantCulture));
+                    if (applied.UndoFile.Length > 0) { Console.WriteLine("undo=" + applied.UndoFile); }
+                    foreach (string why in applied.FailedWhy) { Console.WriteLine("fail\t" + OneLine(why)); }
+                    if (applied.Error.Length > 0) { Console.Error.WriteLine("错误: " + applied.Error); }
+                }
+            }
+
+            if (plan.Conflicts > 0) { return 1; }
+            if (applied != null && (applied.Failed > 0 || applied.Error.Length > 0)) { return 1; }
+            return 0;
+        }
+
+        /// <summary>JSON 字符串转义（只做 JSON 必需的那几个字符；中文原样输出 —— 输出本身是 UTF-8）。</summary>
+        private static string JsonEscape(string s)
+        {
+            if (s == null) { return "\"\""; }
+            StringBuilder sb = new StringBuilder(s.Length + 8);
+            sb.Append('"');
+            foreach (char c in s)
+            {
+                switch (c)
+                {
+                    case '\\': sb.Append("\\\\"); break;
+                    case '"': sb.Append("\\\""); break;
+                    case '\r': sb.Append("\\r"); break;
+                    case '\n': sb.Append("\\n"); break;
+                    case '\t': sb.Append("\\t"); break;
+                    default:
+                        if (c < 32) { sb.Append("\\u").Append(((int)c).ToString("x4", CultureInfo.InvariantCulture)); }
+                        else { sb.Append(c); }
+                        break;
+                }
+            }
+            sb.Append('"');
+            return sb.ToString();
+        }
+
+        /// <summary>把一段可能有换行的文字压成一行（CLI 的一行一条记录不能被换行切断）。</summary>
+        private static string OneLine(string text)
+        {
+            if (text == null) { return ""; }
+            return text.Replace("\r", " ").Replace("\n", " ").Replace("\t", " ").Trim();
         }
 
         private static List<ToolItem> Load()

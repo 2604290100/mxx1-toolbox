@@ -290,6 +290,12 @@ function Get-Key {
     return ''
 }
 
+# 命令行参数里带空格 / 中文的路径要自己加引号（ProcessStartInfo.Arguments 是整条字符串）
+function Quote-Arg {
+    param([string]$Text)
+    return ('"' + $Text + '"')
+}
+
 # ---- 站点资源接口（更新检查的**首选**来源）的假服务器 ----
 # 为什么不能直接用 Invoke-Exe：这条路径要求"程序请求的那一刻服务端在场"，而程序是当场起来当场请求的
 # —— 只能一边等它退出、一边响应请求（S13 那套写法）。这里抽成函数，让 S30–S36 各场景共用。
@@ -479,13 +485,13 @@ foreach ($line in ($status.Out -split "`r?`n")) {
     }
 }
 
-Check ('A04 按钮总数 131 + 工具目录里自动加载的 {0} 个（测试期间用户层的按钮会暂停：常用 38 + 系统工具 27 + 隐私 29 + 应用 5 + 清理 8 + 右键 21 + 我的 3）' -f $autoBase) `
-    ((Get-Key $status.Out 'buttons') -eq [string](131 + $autoBase)) (Get-Key $status.Out 'buttons')
+Check ('A04 按钮总数 137 + 工具目录里自动加载的 {0} 个（测试期间用户层的按钮会暂停：常用 38 + 系统工具 29 + 隐私 29 + 应用 5 + 清理 12 + 右键 21 + 我的 3）' -f $autoBase) `
+    ((Get-Key $status.Out 'buttons') -eq [string](137 + $autoBase)) (Get-Key $status.Out 'buttons')
 Check 'A05 内置清单里没有灰色占位按钮了（两个「资源管理器」也接上了真功能；灰规则改由 B 组注入验证）' ((Get-Key $status.Out 'placeholders') -eq '0') (Get-Key $status.Out 'placeholders')
 Check 'A06 危险按钮 3 个' ((Get-Key $status.Out 'dangerous') -eq '3') (Get-Key $status.Out 'dangerous')
 
 # 「常用」页签是合成的（置顶 + 最近使用），清单里没有它的按钮，所以是 0
-$tabExpect = @{ 'recent' = 0; 'common' = 38; 'mine' = 3; 'system' = 27; 'cleanup' = 8; 'privacy' = 29; 'apps' = 5; 'rightmenu' = 21 }
+$tabExpect = @{ 'recent' = 0; 'common' = 38; 'mine' = 3; 'system' = 29; 'cleanup' = 12; 'privacy' = 29; 'apps' = 5; 'rightmenu' = 21 }
 $tabOk = $true
 $tabDetail = @()
 foreach ($k in $tabExpect.Keys) {
@@ -493,13 +499,13 @@ foreach ($k in $tabExpect.Keys) {
     $tabDetail += ($k + '=' + $v)
     if ($v -ne [string]([int]$tabExpect[$k] + [int]$autoByTab[$k])) { $tabOk = $false }
 }
-Check 'A07 八个页签的按钮数正确（0/38/3/27/8/29/5/21，加上自动按钮）' $tabOk ($tabDetail -join ' ')
+Check 'A07 八个页签的按钮数正确（0/38/3/29/12/29/5/21，加上自动按钮）' $tabOk ($tabDetail -join ' ')
 
 $list = Invoke-Exe 'list'
 Check 'A08 list 退出码 0' ($list.Code -eq 0) ('exit=' + $list.Code)
-Check 'A09 list 报的按钮数一致' ((Get-Key $list.Out 'buttons') -eq [string](131 + $autoBase)) (Get-Key $list.Out 'buttons')
+Check 'A09 list 报的按钮数一致' ((Get-Key $list.Out 'buttons') -eq [string](137 + $autoBase)) (Get-Key $list.Out 'buttons')
 $lines = @($list.Out -split "`r?`n" | Where-Object { $_ -match "`t" })
-Check ('A10 list 打出 {0} 行按钮' -f (131 + $autoBase)) ($lines.Count -eq (131 + $autoBase)) ('lines=' + $lines.Count)
+Check ('A10 list 打出 {0} 行按钮' -f (137 + $autoBase)) ($lines.Count -eq (137 + $autoBase)) ('lines=' + $lines.Count)
 
 $rmList = Invoke-Exe 'list --tab rightmenu'
 Check 'A11 右键增强 21 个按钮（20 个右键菜单功能 + 隔壁永久删除工具）' ((Get-Key $rmList.Out 'shown') -eq [string](21 + [int]$autoByTab['rightmenu'])) (Get-Key $rmList.Out 'shown')
@@ -647,7 +653,7 @@ if ($permdel -eq '(未找到)' -or $permdel.Length -eq 0) {
 # ---------------------------------------------------------------- D 组：系统工具
 if (Test-GroupSelected 'D') {
 Write-Host ''
-Write-Host 'D 组 · 「系统工具」27 个按钮（Windows 自带组件 + 修复/诊断 + 文件哈希校验，--dry 只解析不启动）'
+Write-Host 'D 组 · 「系统工具」29 个按钮（Windows 自带组件 + 修复/诊断 + 文件哈希校验 / 屏幕取色器 / 端口与进程，--dry 只解析不启动）'
 
 # 缺组件的口径按系统版本分叉：Win7 上那 7 个 ms-settings: 按钮天生打不开（算"没有"），
 # Win10/11 上一个都不该缺。这样才能在两种机器上跑同一套测试。
@@ -657,14 +663,14 @@ Check 'D01 status 报 20 个系统工具动作（12 组件 + 2 诊断 + 4 权限
     (((Get-Key $status.Out 'systemTargets') -eq '20') -and $missOk) $d01detail
 
 $sysList = Invoke-Exe 'list --tab system'
-Check 'D02 系统工具页签 27 个按钮（25 + 文件哈希校验 + 系统体检）、没有 placeholder' `
-    (((Get-Key $sysList.Out 'shown') -eq '27') -and (-not ($sysList.Out -match 'placeholder'))) ''
+Check 'D02 系统工具页签 29 个按钮（25 + 文件哈希校验 + 屏幕取色器 + 端口与进程 + 系统体检）、没有 placeholder' `
+    (((Get-Key $sysList.Out 'shown') -eq '29') -and (-not ($sysList.Out -match 'placeholder'))) ''
 
 $sysIds = @()
 foreach ($line in ($sysList.Out -split "`r?`n")) {
     if ($line -match "`t") { $sysIds += ($line -split "`t")[0] }
 }
-Check 'D03 读到 27 个系统工具 id' ($sysIds.Count -eq 27) ($sysIds -join ' ')
+Check 'D03 读到 29 个系统工具 id' ($sysIds.Count -eq 29) ($sysIds -join ' ')
 
 $bad = @()
 $detail = @()
@@ -677,7 +683,7 @@ foreach ($id in $sysIds) {    $d = Invoke-Exe ('run ' + $id + ' --dry')
     if ($exists -ne 'yes' -and $hint.Length -eq 0) { $bad += ($id + ':没有解释'); continue }
     $detail += ($id + '=' + (Get-Key $d.Out 'kind'))
 }
-Check 'D04 27 个系统工具都有目标、且缺了就说明了原因' ($bad.Count -eq 0) (($bad -join ' ') + ' ' + ($detail -join ' '))
+Check 'D04 29 个系统工具都有目标、且缺了就说明了原因' ($bad.Count -eq 0) (($bad -join ' ') + ' ' + ($detail -join ' '))
 
 $dryMissing = Invoke-Exe 'run no.such.button --dry'
 Check 'D05 不存在的按钮 --dry 也是退出码 2' ($dryMissing.Code -eq 2) ('exit=' + $dryMissing.Code)
@@ -998,7 +1004,7 @@ Write-Host 'H 组 · 悬停说明（用户 2026-10-04 报过「鼠标悬停的�
 # tip 命令打印的就是界面塞给 ToolTip 的那个字符串，所以这里能直接断言，不用去动真鼠标。
 $tipsAll = Invoke-Exe 'tip'
 Check 'H01 tip 退出码 0' ($tipsAll.Code -eq 0) ('exit=' + $tipsAll.Code)
-Check ('H02 tip 覆盖了每个按钮（131 + 自动 {0} 个）' -f $autoBase) ((Get-Key $tipsAll.Out 'tips') -eq [string](131 + $autoBase)) (Get-Key $tipsAll.Out 'tips')
+Check ('H02 tip 覆盖了每个按钮（137 + 自动 {0} 个）' -f $autoBase) ((Get-Key $tipsAll.Out 'tips') -eq [string](137 + $autoBase)) (Get-Key $tipsAll.Out 'tips')
 
 $blocks = @{}
 $curId = ''
@@ -3883,6 +3889,744 @@ else { Remove-Item -LiteralPath $vBatFile -Force -ErrorAction SilentlyContinue }
 Remove-Item -LiteralPath $vDir -Recurse -Force -ErrorAction SilentlyContinue
 Check 'V28 电源测试的隔离根与夹具目录收拾干净了（用户真实的电源方案/原值记录一个字节没碰）' `
     ((-not (Test-Path -LiteralPath $vKey)) -and (-not (Test-Path -LiteralPath $vDir))) $vDir
+
+}
+
+# ---------------------------------------------------------------- X 组：无效快捷方式清理
+# 2026-10-19 用户说「先把这些做完我看看」之后做的六件工具之一。这一组盯四件事：
+#   ① 只把**目标真不在了**的算坏链（网络位置 / 没插的盘 / 商店应用只报不删）；
+#   ② 默认只列不删；`--delete` 只删 broken，而且进回收站；
+#   ③ 扫描是递归的（开始菜单本来就是一层层目录），路径里有中文 / 空格也要认；
+#   ④ 个别目录读不了只记一条 error，不影响其余地方照扫。
+# ⚠ 全程用 MXX1_LNK_ROOTS 把扫描根指到夹具目录 —— 绝不去碰用户真实的桌面 / 开始菜单。
+if (Test-GroupSelected 'X') {
+Write-Host 'X 组 · 无效快捷方式清理（只删 broken；网络 / 没插的盘 / 商店应用只报不删）'
+
+$xTag = [Guid]::NewGuid().ToString('N').Substring(0, 8)
+$xDir = Join-Path $tmpRoot ('mxx1-lnk-' + $xTag)
+$xDesk = Join-Path $xDir 'desk'
+$xT = Join-Path $xDir 'targets'
+$xSub = Join-Path $xDesk 'sub dir'
+[void][System.IO.Directory]::CreateDirectory($xDesk)
+[void][System.IO.Directory]::CreateDirectory($xT)
+[void][System.IO.Directory]::CreateDirectory($xSub)
+$goodExe = Join-Path $xT 'good.exe'
+[System.IO.File]::WriteAllBytes($goodExe, [byte[]](1, 2, 3, 4))
+$goodHash = (Get-FileHash -LiteralPath $goodExe -Algorithm SHA256).Hash
+$goodDir = Join-Path $xT 'gooddir'
+[void][System.IO.Directory]::CreateDirectory($goodDir)
+$missingExe = Join-Path $xT 'gone.exe'
+
+$ws = $null
+try { $ws = New-Object -ComObject WScript.Shell } catch { $ws = $null }
+if ($ws -eq $null) {
+    Skip 'X01–X13 这台机器叫不起 WScript.Shell，快捷方式解析测不了' ''
+} else {
+    function New-XLink {
+        param([string]$Path, [string]$Target)
+        $s = $ws.CreateShortcut($Path)
+        $s.TargetPath = $Target
+        $s.Save()
+    }
+
+    $links = @()
+    New-XLink (Join-Path $xDesk 'ok-file.lnk') $goodExe
+    New-XLink (Join-Path $xDesk 'ok-dir.lnk') $goodDir
+    New-XLink (Join-Path $xDesk 'broken.lnk') $missingExe
+    New-XLink (Join-Path $xSub '中文 坏链.lnk') $missingExe
+    New-XLink (Join-Path $xDesk 'network.lnk') '\\mxx1-no-such-host\share\nope.exe'
+    New-XLink (Join-Path $xDesk 'store.lnk') 'shell:AppsFolder\Microsoft.WindowsCalculator_8wekyb3d8bbwe!App'
+    $removableName = ''
+    $usedDrives = @([System.IO.DriveInfo]::GetDrives() | ForEach-Object { $_.Name.Substring(0, 1).ToUpperInvariant() })
+    $freeDrive = @('Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z') | Where-Object { $usedDrives -notcontains $_ } | Select-Object -First 1
+    if ($freeDrive) {
+        New-XLink (Join-Path $xDesk 'removable.lnk') ($freeDrive + ':\mxx1-no-such\gone.exe')
+        $removableName = 'removable.lnk'
+    }
+    $links = @(Get-ChildItem -LiteralPath $xDesk -Recurse -Filter '*.lnk')
+    $wantScanned = 6
+    $wantRemovable = 0
+    if ($freeDrive) { $wantScanned = 7; $wantRemovable = 1 }
+
+    $xEnv = @{ MXX1_LNK_ROOTS = $xDesk }
+    $x1 = Invoke-Exe 'brokenlinks' -Env $xEnv
+    Check 'X01 退出码 0、七个快捷方式都扫到了' (($x1.Code -eq 0) -and ((Get-Key $x1.Out 'scanned') -eq [string]$wantScanned) -and ((Get-Key $x1.Out 'roots') -eq '1')) `
+        ('exit=' + $x1.Code + ' scanned=' + (Get-Key $x1.Out 'scanned'))
+    Check ('X02 分得清：broken=2 / ok=2 / network=1 / removable={0} / skip=1' -f $wantRemovable) `
+        (((Get-Key $x1.Out 'broken') -eq '2') -and ((Get-Key $x1.Out 'ok') -eq '2') -and
+         ((Get-Key $x1.Out 'network') -eq '1') -and ((Get-Key $x1.Out 'removable') -eq [string]$wantRemovable) -and
+         ((Get-Key $x1.Out 'skip') -eq '1')) `
+        ('broken=' + (Get-Key $x1.Out 'broken') + ' ok=' + (Get-Key $x1.Out 'ok') + ' skip=' + (Get-Key $x1.Out 'skip'))
+    $xBrokenLines = @(($x1.Out -split "`r?`n") | Where-Object { $_ -like "broken`t*" })
+    Check 'X03 坏链里包含中文+空格子目录里那一条（递归到了、Unicode 路径没坏）' `
+        (($xBrokenLines.Count -eq 2) -and (($xBrokenLines -join '|') -match '中文 坏链\.lnk')) ($xBrokenLines -join ' | ')
+    Check 'X04 默认只列不删：七个 .lnk 一个都没少' `
+        (@(Get-ChildItem -LiteralPath $xDesk -Recurse -Filter '*.lnk').Count -eq $wantScanned) `
+        ('剩=' + @(Get-ChildItem -LiteralPath $xDesk -Recurse -Filter '*.lnk').Count)
+
+    $x1j = Invoke-Exe 'brokenlinks --json' -Env $xEnv
+    $xj = $null
+    try { $xj = $x1j.Out | ConvertFrom-Json } catch { $xj = $null }
+    Check 'X05 --json 是合法 JSON，字段齐（roots / scanned / broken / links / errors）' `
+        (($x1j.Code -eq 0) -and ($xj -ne $null) -and ($xj.roots.Count -eq 1) -and ($xj.scanned -eq $wantScanned) -and
+         (@($xj.links).Count -eq $wantScanned) -and ($xj.broken -eq 2)) `
+        ('exit=' + $x1j.Code)
+    $xBroken = @()
+    if ($xj -ne $null) { $xBroken = @($xj.links | Where-Object { $_.kind -eq 'broken' }) }
+    Check 'X06 JSON 里 broken 的 target 指向真不存在的那个文件、note 说得明白' `
+        (($xBroken.Count -eq 2) -and ((($xBroken | ForEach-Object { $_.target }) -join '|') -match 'gone\.exe') -and
+         ((($xBroken | ForEach-Object { $_.note }) -join '|') -match '目标不在了')) ''
+    $xSkip = @()
+    if ($xj -ne $null) { $xSkip = @($xj.links | Where-Object { $_.kind -eq 'skip' }) }
+    Check 'X07 商店应用 / 系统位置进 skip，而且 note 明说"不碰它"' `
+        (($xSkip.Count -eq 1) -and (($xSkip[0].note -match '商店应用|系统位置')) -and ($xSkip[0].note -match '不碰')) $xSkip[0].note
+    $xNet = @()
+    if ($xj -ne $null) { $xNet = @($xj.links | Where-Object { $_.kind -eq 'network' }) }
+    Check 'X08 网络位置单独归一类（回收站管不到网络，所以只报不删）' `
+        (($xNet.Count -eq 1) -and ($xNet[0].note -match '网络')) $xNet[0].note
+
+    $xDel = Invoke-Exe 'brokenlinks --delete' -Env $xEnv
+    Check 'X09 --delete 只删掉两条 broken，报告 deleted=2 / failed=0' `
+        (($xDel.Code -eq 0) -and ((Get-Key $xDel.Out 'deleted') -eq '2') -and ((Get-Key $xDel.Out 'failed') -eq '0')) `
+        ('exit=' + $xDel.Code + ' deleted=' + (Get-Key $xDel.Out 'deleted'))
+    Check 'X10 两条坏链真的不在了（进回收站，不是永久删除）' `
+        ((-not (Test-Path -LiteralPath (Join-Path $xDesk 'broken.lnk'))) -and
+         (-not (Test-Path -LiteralPath (Join-Path $xSub '中文 坏链.lnk')))) ''
+    Check 'X11 好链 / 网络 / 商店 / 移动盘那几条一条都没动' `
+        ((Test-Path -LiteralPath (Join-Path $xDesk 'ok-file.lnk')) -and
+         (Test-Path -LiteralPath (Join-Path $xDesk 'ok-dir.lnk')) -and
+         (Test-Path -LiteralPath (Join-Path $xDesk 'network.lnk')) -and
+         (Test-Path -LiteralPath (Join-Path $xDesk 'store.lnk')) -and
+         (($removableName -eq '') -or (Test-Path -LiteralPath (Join-Path $xDesk 'removable.lnk')))) ''
+    Check 'X12 快捷方式指向的目标文件 / 目录一个字节没碰（只删 .lnk 本身）' `
+        (((Get-FileHash -LiteralPath $goodExe -Algorithm SHA256).Hash -eq $goodHash) -and (Test-Path -LiteralPath $goodDir)) ''
+    $xDel2 = Invoke-Exe 'brokenlinks --delete' -Env $xEnv
+    Check 'X13 再删一次：deleted=0（没有坏链了也不报错）' `
+        (($xDel2.Code -eq 0) -and ((Get-Key $xDel2.Out 'deleted') -eq '0')) ('exit=' + $xDel2.Code)
+
+    $xBadEnv = @{ MXX1_LNK_ROOTS = ($xDesk + ';' + (Join-Path $xDir 'no-such-root')) }
+    $xBad = Invoke-Exe 'brokenlinks' -Env $xBadEnv
+    Check 'X14 有一个扫描根不存在：照扫其余的，只多一条 error（不静默、也不整体失败）' `
+        (($xBad.Code -eq 0) -and ((Get-Key $xBad.Out 'roots') -eq '2') -and ($xBad.Out -match '(?m)^error\t')) `
+        (($xBad.Out -split "`r?`n" | Where-Object { $_ -like 'error*' }) -join ' | ')
+
+    if ($ws -ne $null) { try { [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($ws) } catch { } }
+}
+Remove-Item -LiteralPath $xDir -Recurse -Force -ErrorAction SilentlyContinue
+Check 'X15 快捷方式清理的夹具目录收拾干净了' (-not (Test-Path -LiteralPath $xDir)) $xDir
+
+}
+
+# ---------------------------------------------------------------- Y 组：空文件夹清理
+# 判定口径是这一组的主戏：**有一个文件（含隐藏文件）就不算空**；junction 不钻；
+# 扫描根自己永远不进列表（用户选 C:\ 也不会把 C:\ 删了）；`--depth` 挡住误判。
+# 删除走回收站，由深到浅删（父目录先删的话，子目录那一条会变成"路径不存在"）。
+if (Test-GroupSelected 'Y') {
+Write-Host 'Y 组 · 空文件夹清理（隐藏文件算有东西 / 根目录不删 / 由深到浅 / --depth）'
+
+$yTag = [Guid]::NewGuid().ToString('N').Substring(0, 8)
+$yDir = Join-Path $tmpRoot ('mxx1-empty-' + $yTag)
+$yRoot = Join-Path $yDir 'tree'
+$yEmptyA = Join-Path $yRoot 'emptyA'
+$yNested = Join-Path $yRoot 'nested'
+$yNestedBC = Join-Path $yRoot 'nested\b\c'
+$yWithFile = Join-Path $yRoot 'withfile'
+$yWithHidden = Join-Path $yRoot 'withhidden'
+$yOnlySub = Join-Path $yRoot 'onlysub'
+$yOnlySubChild = Join-Path $yRoot 'onlysub\child'
+$yChinese = Join-Path $yRoot '中文 空目录'
+foreach ($d in @($yEmptyA, $yNestedBC, $yWithFile, $yWithHidden, $yOnlySubChild, $yChinese)) {
+    [void][System.IO.Directory]::CreateDirectory($d)
+}
+$yFile = Join-Path $yWithFile 'x.txt'
+[System.IO.File]::WriteAllText($yFile, 'x')
+$yHidden = Join-Path $yWithHidden 'desktop.ini'
+[System.IO.File]::WriteAllText($yHidden, "[.ShellClassInfo]`r`n")
+[System.IO.File]::SetAttributes($yHidden, ([System.IO.FileAttributes]::Hidden -bor [System.IO.FileAttributes]::System))
+
+$y1 = Invoke-Exe ('emptyfolders ' + (Quote-Arg $yRoot))
+Check 'Y01 扫了 10 个目录（含根），判出 7 个空（由深到浅列）' `
+    (($y1.Code -eq 0) -and ((Get-Key $y1.Out 'scanned') -eq '10') -and ((Get-Key $y1.Out 'empty') -eq '7')) `
+    ('exit=' + $y1.Code + ' scanned=' + (Get-Key $y1.Out 'scanned') + ' empty=' + (Get-Key $y1.Out 'empty'))
+$yLines = @(($y1.Out -split "`r?`n") | Where-Object { $_ -like "empty`t*" } | ForEach-Object { ($_ -split "`t")[1] })
+Check 'Y02 列表里有空目录 / 嵌套的空目录 / 中文空目录，而且是由深到浅（nested\b\c 在 nested\b 前面）' `
+    (($yLines -contains $yEmptyA) -and ($yLines -contains $yNestedBC) -and ($yLines -contains $yChinese) -and
+     ([array]::IndexOf($yLines, $yNestedBC) -lt [array]::IndexOf($yLines, (Join-Path $yRoot 'nested\b')))) `
+    ($yLines -join ' | ')
+Check 'Y03 有一个文件（哪怕只有一个字节）就不算空：withfile / withhidden 都不在列表里' `
+    (($yLines -notcontains $yWithFile) -and ($yLines -notcontains $yWithHidden)) ''
+Check 'Y04 隐藏 + 系统属性的 desktop.ini 也算"有东西"（不会误删藏了自定义图标的目录）' `
+    (Test-Path -LiteralPath $yHidden) ''
+
+$yJson = Invoke-Exe ('emptyfolders ' + (Quote-Arg $yRoot) + ' --json')
+$yj = $null
+try { $yj = $yJson.Out | ConvertFrom-Json } catch { $yj = $null }
+Check 'Y05 --json 合法、emptyDirs 七条、skipped 空' `
+    (($yJson.Code -eq 0) -and ($yj -ne $null) -and (@($yj.emptyDirs).Count -eq 7) -and (@($yj.skipped).Count -eq 0)) `
+    ('exit=' + $yJson.Code)
+
+$yDepth = Invoke-Exe ('emptyfolders ' + (Quote-Arg $yRoot) + ' --depth=1')
+Check 'Y06 --depth=1 只看第一层：只剩 emptyA 和「中文 空目录」两个（更深的子目录挡住父目录）' `
+    (($yDepth.Code -eq 0) -and ((Get-Key $yDepth.Out 'empty') -eq '2')) ('empty=' + (Get-Key $yDepth.Out 'empty'))
+
+# 根目录自己永远不进列表：选一个整体是空的根，列表里只该有它的子目录
+$yEmptyRoot = Join-Path $yDir 'all-empty'
+$yInner = Join-Path $yEmptyRoot 'inner'
+[void][System.IO.Directory]::CreateDirectory($yInner)
+$yRootScan = Invoke-Exe ('emptyfolders ' + (Quote-Arg $yEmptyRoot) + ' --json')
+$yr = $null
+try { $yr = $yRootScan.Out | ConvertFrom-Json } catch { $yr = $null }
+Check 'Y07 根目录自己永远不进列表（就算它整体是空的）：只列出 inner' `
+    (($yr -ne $null) -and (@($yr.emptyDirs).Count -eq 1) -and ($yr.emptyDirs[0] -eq $yInner)) `
+    ('emptyDirs=' + $(if ($yr -ne $null) { @($yr.emptyDirs) -join ' | ' } else { 'JSON坏了' }))
+
+$yDel = Invoke-Exe ('emptyfolders ' + (Quote-Arg $yRoot) + ' --delete')
+Check 'Y08 --delete：七条空目录进回收站，deleted=7 / failed=0' `
+    (($yDel.Code -eq 0) -and ((Get-Key $yDel.Out 'deleted') -eq '7') -and ((Get-Key $yDel.Out 'failed') -eq '0')) `
+    ('exit=' + $yDel.Code + ' deleted=' + (Get-Key $yDel.Out 'deleted'))
+Check 'Y09 空目录真没了（emptyA / nested 整条链 / onlysub 整条链 / 中文目录）' `
+    ((-not (Test-Path -LiteralPath $yEmptyA)) -and (-not (Test-Path -LiteralPath $yNested)) -and
+     (-not (Test-Path -LiteralPath $yOnlySub)) -and (-not (Test-Path -LiteralPath $yChinese))) ''
+Check 'Y10 有文件的目录还在（withfile / withhidden），根也还在' `
+    ((Test-Path -LiteralPath $yWithFile) -and (Test-Path -LiteralPath $yWithHidden) -and (Test-Path -LiteralPath $yRoot)) ''
+Check 'Y11 隐藏文件内容原样（删的是空目录，不是里面藏了文件的目录）' `
+    ((Test-Path -LiteralPath $yHidden) -and ([System.IO.File]::ReadAllText($yHidden) -match 'ShellClassInfo')) ''
+
+# junction 不钻、也不当成空的
+$yJRoot = Join-Path $yDir 'junc'
+$yReal = Join-Path $yJRoot 'real'
+$yHolder = Join-Path $yJRoot 'holder'
+[void][System.IO.Directory]::CreateDirectory($yReal)
+[void][System.IO.Directory]::CreateDirectory($yHolder)
+[System.IO.File]::WriteAllText((Join-Path $yReal 'keep.txt'), 'keep')
+$yLink = Join-Path $yHolder 'link'
+$yMk = Start-Process -FilePath 'cmd.exe' -ArgumentList ('/c mklink /J "' + $yLink + '" "' + $yReal + '"') -Wait -PassThru -WindowStyle Hidden
+if (($yMk.ExitCode -eq 0) -and (Test-Path -LiteralPath $yLink)) {
+    $yJ = Invoke-Exe ('emptyfolders ' + (Quote-Arg $yJRoot) + ' --json')
+    $yjj = $null
+    try { $yjj = $yJ.Out | ConvertFrom-Json } catch { $yjj = $null }
+    Check 'Y12 junction 目录不算空、也不钻进去（holder 不进列表，被标进 skipped 并说明）' `
+        (($yjj -ne $null) -and (@($yjj.emptyDirs).Count -eq 0) -and (@($yjj.skipped).Count -ge 1) -and
+         ((@($yjj.skipped) | ForEach-Object { $_.why }) -join '|' -match 'junction|符号链接')) `
+        ('empty=' + $(if ($yjj -ne $null) { @($yjj.emptyDirs).Count } else { '?' }))
+    try { [System.IO.Directory]::Delete($yLink) } catch { }
+} else {
+    Skip 'Y12 junction 目录不算空、也不钻进去' '这台机器建不了 junction（mklink /J 失败）'
+}
+Remove-Item -LiteralPath $yJRoot -Recurse -Force -ErrorAction SilentlyContinue
+
+$yMissing = Invoke-Exe ('emptyfolders ' + (Quote-Arg (Join-Path $yDir 'no-such-dir')))
+Check 'Y13 目录不存在：退出码 2 + 说清楚哪个目录不存在' `
+    (($yMissing.Code -eq 2) -and ($yMissing.Err -match '不存在')) ('exit=' + $yMissing.Code + ' err=' + $yMissing.Err.Trim())
+$yUsage = Invoke-Exe 'emptyfolders'
+Check 'Y14 不给目录 = 用法错误（退出码 2）' (($yUsage.Code -eq 2) -and ($yUsage.Err -match '用法')) ('exit=' + $yUsage.Code)
+
+Remove-Item -LiteralPath $yDir -Recurse -Force -ErrorAction SilentlyContinue
+Check 'Y15 空文件夹清理的夹具目录收拾干净了' (-not (Test-Path -LiteralPath $yDir)) $yDir
+
+}
+
+# ---------------------------------------------------------------- U 组：屏幕取色器（换算）
+# 窗口是给人点的，命令行能验的是**换算**那半边；而窗口复制出去的颜色和这里用的是同一份
+# `src\ColorPicker.cs`，所以这组把三种写法的互相换算、取整、灰度、错误输入全钉住。
+if (Test-GroupSelected 'U') {
+Write-Host 'U 组 · 屏幕取色器（HEX / RGB / HSL 换算；窗口与命令行共用一份实现）'
+
+$u1 = Invoke-Exe 'pick --decode=#1A2B3C'
+Check 'U01 #1A2B3C → hex 原样、rgb 26,43,60、hsl 210,40,17' `
+    (($u1.Code -eq 0) -and ((Get-Key $u1.Out 'hex') -eq '#1A2B3C') -and
+     ((Get-Key $u1.Out 'rgb') -eq '26,43,60') -and ((Get-Key $u1.Out 'hsl') -eq '210,40,17')) `
+    ('hex=' + (Get-Key $u1.Out 'hex') + ' hsl=' + (Get-Key $u1.Out 'hsl'))
+Check 'U02 给人看的 HSL 是 HSL(210, 40%, 17%)' ((Get-Key $u1.Out 'hsl-text') -eq 'HSL(210, 40%, 17%)') (Get-Key $u1.Out 'hsl-text')
+
+$u2 = Invoke-Exe 'pick --decode=rgb(255,0,0)'
+Check 'U03 rgb(255,0,0) → #FF0000、0,100,50' `
+    (($u2.Code -eq 0) -and ((Get-Key $u2.Out 'hex') -eq '#FF0000') -and ((Get-Key $u2.Out 'hsl') -eq '0,100,50')) `
+    (Get-Key $u2.Out 'hsl')
+
+$u3 = Invoke-Exe 'pick --decode=#abc'
+Check 'U04 三位简写 #abc → #AABBCC（每一位重复一次）' `
+    (($u3.Code -eq 0) -and ((Get-Key $u3.Out 'hex') -eq '#AABBCC') -and ((Get-Key $u3.Out 'rgb') -eq '170,187,204')) `
+    (Get-Key $u3.Out 'hex')
+
+$u4 = Invoke-Exe 'pick --decode=0x0a0b0c'
+Check 'U05 0x 前缀、小写 → #0A0B0C（大小写不挑）' `
+    (($u4.Code -eq 0) -and ((Get-Key $u4.Out 'hex') -eq '#0A0B0C')) (Get-Key $u4.Out 'hex')
+
+$u5 = Invoke-Exe 'pick --decode="26, 43, 60"'
+Check 'U06 逗号 + 空格写法也认（26, 43, 60）' `
+    (($u5.Code -eq 0) -and ((Get-Key $u5.Out 'rgb') -eq '26,43,60')) ('rgb=' + (Get-Key $u5.Out 'rgb'))
+
+$u6 = Invoke-Exe 'pick --decode=#808080'
+$u7 = Invoke-Exe 'pick --decode=#FFFFFF'
+$u8 = Invoke-Exe 'pick --decode=#000000'
+Check 'U07 灰度 / 纯白 / 纯黑的 HSL 边界对（0,0,50 / 0,0,100 / 0,0,0）' `
+    (((Get-Key $u6.Out 'hsl') -eq '0,0,50') -and ((Get-Key $u7.Out 'hsl') -eq '0,0,100') -and
+     ((Get-Key $u8.Out 'hsl') -eq '0,0,0')) `
+    ((Get-Key $u6.Out 'hsl') + ' / ' + (Get-Key $u7.Out 'hsl') + ' / ' + (Get-Key $u8.Out 'hsl'))
+
+$uBad1 = Invoke-Exe 'pick --decode=#12345'
+Check 'U08 位数不对：#12345 → 退出码 2 + 说清是 3 位或 6 位' `
+    (($uBad1.Code -eq 2) -and ($uBad1.Err -match '3 位或者 6 位')) ('exit=' + $uBad1.Code + ' err=' + $uBad1.Err.Trim())
+$uBad2 = Invoke-Exe 'pick --decode=300,0,0'
+Check 'U09 超出 0～255：退出码 2 + 指出每个数字的范围' `
+    (($uBad2.Code -eq 2) -and ($uBad2.Err -match '0～255')) ('exit=' + $uBad2.Code)
+$uBad3 = Invoke-Exe 'pick --decode=xyz'
+Check 'U10 完全认不出的写法：退出码 2（不崩、不瞎猜一个颜色）' ($uBad3.Code -eq 2) ('exit=' + $uBad3.Code)
+$uUsage = Invoke-Exe 'pick'
+Check 'U11 不给颜色 = 用法错误（退出码 2）' (($uUsage.Code -eq 2) -and ($uUsage.Err -match '用法')) ('exit=' + $uUsage.Code)
+
+}
+
+# ---------------------------------------------------------------- Z 组：端口与进程（只读）
+# 数据来自 iphlpapi 的两张表（TCP LISTEN + UDP 绑定），这组不依赖"临时起一个监听"——
+# 沙箱里父子进程可能不在同一个网络隔离区里，那样建出来的监听对子进程不可见（本机实测过）。
+# 所以判据用**表自己的一致性**：结构、排序、--port/--pid/--filter 三种筛选的往返、
+# 以及"只读、不联网"的源码看门狗。
+if (Test-GroupSelected 'Z') {
+Write-Host 'Z 组 · 端口与进程（只读列出 / 三种筛选 / 保护名单 / 不联网）'
+
+$z1 = Invoke-Exe 'ports --json'
+$zj = $null
+try { $zj = ($z1.Out.Trim() | ConvertFrom-Json) } catch { $zj = $null }
+$zEps = @()
+if ($zj -ne $null) { $zEps = @($zj.endpoints) }
+Check 'Z01 --json 合法，count 与 endpoints 条数一致' `
+    (($z1.Code -eq 0) -and ($zj -ne $null) -and ($zj.count -eq $zEps.Count)) `
+    ('exit=' + $z1.Code + ' count=' + $(if ($zj -ne $null) { $zj.count } else { '?' }))
+
+$zShapeBad = @()
+foreach ($e in $zEps) {
+    if (($e.proto -ne 'tcp' -and $e.proto -ne 'udp') -or ($e.port -lt 1) -or ($e.port -gt 65535) -or
+        ($e.pid -lt 0) -or ($e.address.Length -eq 0)) { $zShapeBad += ($e.proto + '/' + $e.port + '/' + $e.pid) }
+    if (($e.signature -ne 'signed' -and $e.signature -ne 'unsigned' -and $e.signature -ne 'unknown' -and $e.signature -ne '') -or
+        ($e.PSObject.Properties.Name -notcontains 'protected')) { $zShapeBad += ('字段:' + $e.port) }
+}
+Check 'Z02 每条都有 proto / port / address / pid / name / path / signature / protected，取值合法' `
+    ($zShapeBad.Count -eq 0) (($zShapeBad | Select-Object -First 5) -join ' | ')
+
+$zSorted = $true
+for ($i = 1; $i -lt $zEps.Count; $i++) {
+    if ($zEps[$i].port -lt $zEps[$i - 1].port) { $zSorted = $false; break }
+}
+Check 'Z03 输出按端口号升序（人看表格时不会乱跳）' $zSorted ''
+
+if ($zEps.Count -gt 0) {
+    $zPick = $zEps[0]
+    $zByPort = Invoke-Exe ('ports --json --port=' + $zPick.port)
+    $zjP = $null
+    try { $zjP = ($zByPort.Out.Trim() | ConvertFrom-Json) } catch { $zjP = $null }
+    $zPortRows = @()
+    if ($zjP -ne $null) { $zPortRows = @($zjP.endpoints) }
+    Check ('Z04 --port={0} 只回这个端口，而且包含刚才看到的那条（{1}/pid {2}）' -f $zPick.port, $zPick.proto, $zPick.pid) `
+        (($zByPort.Code -eq 0) -and ($zPortRows.Count -ge 1) -and
+         (@($zPortRows | Where-Object { $_.port -ne $zPick.port }).Count -eq 0) -and
+         (@($zPortRows | Where-Object { $_.proto -eq $zPick.proto -and $_.pid -eq $zPick.pid }).Count -ge 1)) `
+        ('rows=' + $zPortRows.Count)
+
+    $zByPid = Invoke-Exe ('ports --json --pid=' + $zPick.pid)
+    $zjD = $null
+    try { $zjD = ($zByPid.Out.Trim() | ConvertFrom-Json) } catch { $zjD = $null }
+    $zPidRows = @()
+    if ($zjD -ne $null) { $zPidRows = @($zjD.endpoints) }
+    Check ('Z05 --pid={0} 只回这个进程的端点' -f $zPick.pid) `
+        (($zByPid.Code -eq 0) -and ($zPidRows.Count -ge 1) -and
+         (@($zPidRows | Where-Object { $_.pid -ne $zPick.pid }).Count -eq 0)) ('rows=' + $zPidRows.Count)
+
+    if ($zPick.name.Length -ge 2) {
+        $zFrag = $zPick.name.Substring(0, 2)
+        $zByText = Invoke-Exe ('ports --json --filter=' + $zFrag)
+        $zjF = $null
+        try { $zjF = ($zByText.Out.Trim() | ConvertFrom-Json) } catch { $zjF = $null }
+        $zFiltRows = @()
+        if ($zjF -ne $null) { $zFiltRows = @($zjF.endpoints) }
+        $zFiltBad = @($zFiltRows | Where-Object {
+            (($_.name + ' ' + $_.path + ' ' + $_.address + ' ' + $_.port) -notmatch [regex]::Escape($zFrag))
+        })
+        Check ('Z06 --filter={0}（进程名前两个字符）能筛出来，且筛出来的都真的含这段字' -f $zFrag) `
+            (($zByText.Code -eq 0) -and ($zFiltRows.Count -ge 1) -and ($zFiltBad.Count -eq 0)) `
+            ('rows=' + $zFiltRows.Count)
+    } else {
+        Skip 'Z06 --filter 往返' '第一条端点的进程名太短'
+    }
+} else {
+    Skip 'Z04–Z06 --port / --pid / --filter 往返' '这台机器上一条监听/绑定都没有'
+}
+
+$zPresent = @{}
+foreach ($e in $zEps) { $zPresent[[int]$e.port] = $true }
+$zMissingPort = 0
+for ($p = 1; $p -le 65535; $p++) { if (-not $zPresent.ContainsKey($p)) { $zMissingPort = $p; break } }
+$zNone = Invoke-Exe ('ports --json --port=' + $zMissingPort)
+$zjn = $null
+try { $zjn = ($zNone.Out.Trim() | ConvertFrom-Json) } catch { $zjn = $null }
+Check ('Z07 --port={0}（确认没人用）→ count=0，不是报错' -f $zMissingPort) `
+    (($zNone.Code -eq 0) -and ($zjn -ne $null) -and ($zjn.count -eq 0)) ('exit=' + $zNone.Code)
+
+$zPlain = Invoke-Exe 'ports'
+$zTcp = [int](Get-Key $zPlain.Out 'tcp')
+$zUdp = [int](Get-Key $zPlain.Out 'udp')
+Check 'Z08 纯文本：count = tcp + udp，每行 8 列（proto/端口/地址/PID/名字/签名/保护/路径）' `
+    (($zPlain.Code -eq 0) -and ([int](Get-Key $zPlain.Out 'count') -eq ($zTcp + $zUdp))) `
+    ('count=' + (Get-Key $zPlain.Out 'count') + ' tcp=' + $zTcp + ' udp=' + $zUdp)
+$zRows = @(($zPlain.Out -split "`r?`n") | Where-Object { $_ -match '^(tcp|udp)\t' })
+$zColsBad = @($zRows | Where-Object { ($_ -split "`t").Count -ne 8 })
+Check 'Z09 每个纯文本行都是 8 个制表符分隔的字段' (($zRows.Count -ge 1) -and ($zColsBad.Count -eq 0)) `
+    ('rows=' + $zRows.Count + ' bad=' + $zColsBad.Count)
+
+$zSys = @($zEps | Where-Object { $_.pid -eq 4 })
+if ($zSys.Count -gt 0) {
+    Check 'Z10 System（pid 4）在保护名单里：只显示、不给结束，而且写明了原因' `
+        (($zSys[0].protected -eq $true) -and ($zSys[0].signature -match '^(signed|unsigned|unknown|)$')) ''
+} else {
+    Skip 'Z10 System（pid 4）保护' '这张表里没有 pid 4'
+}
+$zWithPath = @($zEps | Where-Object { $_.path.Length -gt 0 })
+if ($zWithPath.Count -gt 0) {
+    Check 'Z11 有路径的端点给出三态签名（signed / unsigned / unknown），不瞎写' `
+        ($zWithPath[0].signature -match '^(signed|unsigned|unknown)$') ($zWithPath[0].signature)
+} else {
+    Skip 'Z11 签名三态' '所有进程路径都读不到（不是管理员时可能这样）'
+}
+$zKillInJson = @($zEps | Where-Object { $_.PSObject.Properties.Name -contains 'kill' })
+Check 'Z12 输出里没有"结束进程"这种字段/入口（命令行只读）' ($zKillInJson.Count -eq 0) ''
+
+$zHelp = Invoke-Exe 'help'
+Check 'Z13 help 里 ports 只承诺列出，不承诺杀进程' `
+    (($zHelp.Out -match 'ports') -and (-not ($zHelp.Out -match '(?m)^\s*Mxx1Toolbox\.exe\s+kill'))) ''
+
+# 源码看门狗：这个工具任何时候都不许联网（签名只查本机缓存）
+$zSrc = [System.IO.File]::ReadAllText((Join-Path $root 'src\PortTable.cs'))
+Check 'Z14 签名校验是本地缓存校验，不联网（WTD_CACHE_ONLY_URL_RETRIEVAL；没有 HttpClient / WebRequest）' `
+    (($zSrc -match 'WTD_CACHE_ONLY_URL_RETRIEVAL') -and ($zSrc -match 'dwProvFlags\s*=\s*0x10') -and
+     (-not ($zSrc -match 'HttpClient|WebRequest|DownloadString|WebClient'))) ''
+
+}
+
+# ---------------------------------------------------------------- W 组：重复文件查找
+# 三档比较（大小 → 前 4 KB → 整个文件）+ 两条硬口径：
+#   · 硬链接（同一份数据的两个名字）**不删**（删了不省空间）；
+#   · `--full` 与默认的前 4 KB 预筛，结果必须完全一致（不然"预筛"就会漏掉真重复）。
+# 删除全部进回收站；夹具里每一份内容都不同，误删一眼能看出来。
+if (Test-GroupSelected 'W') {
+Write-Host 'W 组 · 重复文件查找（三档比较 / 硬链接不删 / 前缀预筛与全文件一致）'
+
+$wTag = [Guid]::NewGuid().ToString('N').Substring(0, 8)
+$wDir = Join-Path $tmpRoot ('mxx1-dup-' + $wTag)
+[void][System.IO.Directory]::CreateDirectory($wDir)
+$wBig = 1572864
+$wRnd = New-Object System.Random 20261019
+$a = New-Object byte[] $wBig
+$wRnd.NextBytes($a)
+$b = New-Object byte[] $wBig
+[Array]::Copy($a, $b, $wBig)
+$b[0] = [byte](($a[0] + 1) % 256)
+$c = New-Object byte[] 100
+$wRnd.NextBytes($c)
+$d = New-Object byte[] (2 * 1024 * 1024)
+$wRnd.NextBytes($d)
+$wKeep = Join-Path $wDir 's3.bin'
+$wSameLong = Join-Path $wDir 'copy-of-same1-with-a-long-name.bin'
+$wSame1 = Join-Path $wDir 'same1.bin'
+$wSamesize = Join-Path $wDir 'same-size-different.bin'
+$wSmall1 = Join-Path $wDir 'small1.txt'
+$wSmall2 = Join-Path $wDir 'small2.txt'
+$wHard1 = Join-Path $wDir 'hard1.bin'
+$wHard2 = Join-Path $wDir 'hard2.bin'
+[System.IO.File]::WriteAllBytes($wKeep, $a)
+[System.IO.File]::WriteAllBytes($wSameLong, $a)
+[System.IO.File]::WriteAllBytes($wSame1, $a)
+[System.IO.File]::WriteAllBytes($wSamesize, $b)
+[System.IO.File]::WriteAllBytes($wSmall1, $c)
+[System.IO.File]::WriteAllBytes($wSmall2, $c)
+[System.IO.File]::WriteAllBytes($wHard1, $d)
+(Get-Item -LiteralPath $wKeep).LastWriteTime = [DateTime]'2020-01-01 00:00:00'
+(Get-Item -LiteralPath $wSameLong).LastWriteTime = [DateTime]'2020-01-02 00:00:00'
+(Get-Item -LiteralPath $wSame1).LastWriteTime = [DateTime]'2020-01-03 00:00:00'
+(Get-Item -LiteralPath $wSmall1).LastWriteTime = [DateTime]'2020-02-01 00:00:00'
+(Get-Item -LiteralPath $wSmall2).LastWriteTime = [DateTime]'2020-02-02 00:00:00'
+
+$wMk = Start-Process -FilePath 'cmd.exe' -ArgumentList ('/c mklink /H "' + $wHard2 + '" "' + $wHard1 + '"') -Wait -PassThru -WindowStyle Hidden
+$wHardOk = (($wMk.ExitCode -eq 0) -and (Test-Path -LiteralPath $wHard2))
+if (-not $wHardOk) { Skip 'W12–W14 硬链接' '这台机器建不了硬链接（mklink /H 失败）' }
+
+$wEnv = @{}
+$w1 = Invoke-Exe ('dup ' + (Quote-Arg $wDir) + ' --min-size=0 --json') -Env $wEnv
+$wj = $null
+try { $wj = ($w1.Out.Trim() | ConvertFrom-Json) } catch { $wj = $null }
+$wGroups = @()
+if ($wj -ne $null) { $wGroups = @($wj.groupsDetail) }
+Check 'W01 八份文件都参与比较，分成三组（1.5MB 三份 / 100 字节两份 / 2MB 硬链接两份）' `
+    (($w1.Code -eq 0) -and ($wj -ne $null) -and ($wj.candidates -eq 8) -and ($wj.scanned -eq 8) -and ($wj.groups -eq 3)) `
+    ('exit=' + $w1.Code + ' candidates=' + $(if ($wj -ne $null) { $wj.candidates } else { '?' }) + ' groups=' + $(if ($wj -ne $null) { $wj.groups } else { '?' }))
+$wMemberCount = 0
+foreach ($g in $wGroups) { $wMemberCount += @($g.files).Count }
+Check 'W02 三组一共 7 个成员（八份文件里有一份内容独一无二，不进任何组）' ($wMemberCount -eq 7) ('members=' + $wMemberCount)
+Check 'W03 内容不同、大小一样的文件没被认成重复（same-size-different 不在任何组里）' `
+    (-not ((@($wGroups | ForEach-Object { @($_.files) | ForEach-Object { $_.path } }) -join '|') -match 'same-size-different')) ''
+Check 'W04 能省的空间 = 2×1.5MB + 100 字节（硬链接那组不算）' `
+    (($wj -ne $null) -and ($wj.freeable -eq (2 * $wBig + 100))) ('freeable=' + $(if ($wj -ne $null) { $wj.freeable } else { '?' }))
+
+$wFull = Invoke-Exe ('dup ' + (Quote-Arg $wDir) + ' --min-size=0 --full --json')
+$wjf = $null
+try { $wjf = ($wFull.Out.Trim() | ConvertFrom-Json) } catch { $wjf = $null }
+$wH1 = @()
+$wH2 = @()
+$wM1 = @()
+$wM2 = @()
+if ($wj -ne $null) {
+    $wH1 = @($wj.groupsDetail | ForEach-Object { $_.hash } | Sort-Object)
+    foreach ($g in $wj.groupsDetail) { $wM1 += (@($g.files | ForEach-Object { $_.path }) | Sort-Object) -join '|' }
+    $wM1 = @($wM1 | Sort-Object)
+}
+if ($wjf -ne $null) {
+    $wH2 = @($wjf.groupsDetail | ForEach-Object { $_.hash } | Sort-Object)
+    foreach ($g in $wjf.groupsDetail) { $wM2 += (@($g.files | ForEach-Object { $_.path }) | Sort-Object) -join '|' }
+    $wM2 = @($wM2 | Sort-Object)
+}
+Check 'W05 --full（跳过前 4 KB 预筛）与默认模式的分组、哈希完全一致' `
+    (($wFull.Code -eq 0) -and (($wH1 -join ',') -eq ($wH2 -join ',')) -and (($wM1 -join ';') -eq ($wM2 -join ';'))) `
+    ('prefix=' + $wH1.Count + ' full=' + $wH2.Count)
+
+$wMin = Invoke-Exe ('dup ' + (Quote-Arg $wDir) + ' --min-size=64KB --json')
+$wjm = $null
+try { $wjm = ($wMin.Out.Trim() | ConvertFrom-Json) } catch { $wjm = $null }
+Check 'W06 --min-size=64KB 把 100 字节那组挡掉：两组、5 个成员、能省 3MB' `
+    (($wMin.Code -eq 0) -and ($wjm -ne $null) -and ($wjm.groups -eq 2) -and
+     ($wjm.freeable -eq (2 * $wBig))) ('groups=' + $(if ($wjm -ne $null) { $wjm.groups } else { '?' }))
+
+$wShort = Invoke-Exe ('dup ' + (Quote-Arg $wDir) + ' --min-size=0 --keep=shortest')
+$wKeepLine = @(($wShort.Out -split "`r?`n") | Where-Object { $_ -like 'member*keep*' -and $_ -match 's3\.bin$' })
+Check 'W07 --keep=shortest：1.5MB 那组留路径最短的 s3.bin' `
+    (($wShort.Code -eq 0) -and ($wKeepLine.Count -eq 1)) (($wShort.Out -split "`r?`n" | Where-Object { $_ -like 'member*' }) -join ' | ')
+
+if ($wHardOk) {
+    $wHardMembers = @(($wShort.Out -split "`r?`n") | Where-Object { $_ -like 'member*hardlink*' })
+    Check 'W08 硬链接那一对两个成员都被标成 hardlink（不会被当成"能省一份"）' `
+        (($wHardMembers.Count -eq 2) -and (($wHardMembers -join '|') -match 'hard1\.bin') -and (($wHardMembers -join '|') -match 'hard2\.bin')) `
+        ($wHardMembers -join ' | ')
+}
+
+$wDel = Invoke-Exe ('dup ' + (Quote-Arg $wDir) + ' --min-size=0 --delete --json')
+$wjd = $null
+try { $wjd = ($wDel.Out.Trim() | ConvertFrom-Json) } catch { $wjd = $null }
+Check 'W09 --delete 删掉三份（1.5MB 两份 + 100 字节一份），deleted=3 / failed=0' `
+    (($wDel.Code -eq 0) -and ($wjd -ne $null) -and ($wjd.deleted -eq 3)) `
+    ('exit=' + $wDel.Code + ' deleted=' + $(if ($wjd -ne $null) { $wjd.deleted } else { '?' }))
+Check 'W10 保留的是最早修改的那一份（s3.bin），其余两份同内容的不在了' `
+    ((Test-Path -LiteralPath $wKeep) -and (-not (Test-Path -LiteralPath $wSame1)) -and (-not (Test-Path -LiteralPath $wSameLong))) ''
+Check 'W11 内容独一无二的那份原样在（same-size-different 一个字节没动）' `
+    ((Test-Path -LiteralPath $wSamesize) -and ((Get-Item -LiteralPath $wSamesize).Length -eq $wBig)) ''
+if ($wHardOk) {
+    Check 'W12 硬链接两个名字都还在（删了不省空间，所以一个都不删）' `
+        ((Test-Path -LiteralPath $wHard1) -and (Test-Path -LiteralPath $wHard2)) ''
+    $wAfter = Invoke-Exe ('dup ' + (Quote-Arg $wDir) + ' --min-size=0 --json')
+    $wja = $null
+    try { $wja = ($wAfter.Out.Trim() | ConvertFrom-Json) } catch { $wja = $null }
+    Check 'W13 再扫一遍：只剩硬链接那一组，能省 0 字节（不会反复劝你删）' `
+        (($wAfter.Code -eq 0) -and ($wja -ne $null) -and ($wja.groups -eq 1) -and ($wja.freeable -eq 0)) `
+        ('groups=' + $(if ($wja -ne $null) { $wja.groups } else { '?' }) + ' freeable=' + $(if ($wja -ne $null) { $wja.freeable } else { '?' }))
+}
+
+$wSmall = Invoke-Exe ('dup ' + (Quote-Arg $wSmall1) + ' --min-size=0 --json')
+$wjs = $null
+try { $wjs = ($wSmall.Out.Trim() | ConvertFrom-Json) } catch { $wjs = $null }
+Check 'W14 也可以直接给一个文件：扫 1 个、没有重复、退出码 0' `
+    (($wSmall.Code -eq 0) -and ($wjs -ne $null) -and ($wjs.candidates -eq 1) -and ($wjs.groups -eq 0)) `
+    ('exit=' + $wSmall.Code)
+
+$wBadSize = Invoke-Exe ('dup ' + (Quote-Arg $wDir) + ' --min-size=abc')
+Check 'W15 --min-size 认不出来 → 退出码 2（不猜一个默认值）' ($wBadSize.Code -eq 2) ('exit=' + $wBadSize.Code)
+$wBadKeep = Invoke-Exe ('dup ' + (Quote-Arg $wDir) + ' --keep=newest')
+Check 'W16 --keep 只有三种 → 乱写退出码 2' ($wBadKeep.Code -eq 2) ('exit=' + $wBadKeep.Code)
+$wUsage = Invoke-Exe 'dup'
+Check 'W17 不给目录 = 用法错误（退出码 2）' ($wUsage.Code -eq 2) ('exit=' + $wUsage.Code)
+$wNoSuch = Invoke-Exe ('dup ' + (Quote-Arg (Join-Path $wDir 'no-such')) + ' --json')
+$wjn = $null
+try { $wjn = ($wNoSuch.Out.Trim() | ConvertFrom-Json) } catch { $wjn = $null }
+Check 'W18 路径不存在：照常返回结果，里面记一条错误（不崩）' `
+    (($wNoSuch.Code -eq 0) -and ($wjn -ne $null) -and ($wjn.scanned -eq 0)) ('exit=' + $wNoSuch.Code)
+Check 'W19 扫描前后，保留下来的文件大小 / 内容哈希没变（只读那一步真的只读）' `
+    ((Test-Path -LiteralPath $wSamesize) -and ((Get-Item -LiteralPath $wSamesize).Length -eq $wBig)) ''
+
+Remove-Item -LiteralPath $wDir -Recurse -Force -ErrorAction SilentlyContinue
+Check 'W20 重复文件查找的夹具目录收拾干净了' (-not (Test-Path -LiteralPath $wDir)) $wDir
+
+}
+
+# ---------------------------------------------------------------- N 组：批量重命名
+# 这一组盯的是"承诺与结果一致"：预览看到的 = 真改出来的；有冲突整批拒绝（绝不覆盖）；
+# 改之前先写撤销记录（写不下就一个都不改）；撤销能把名字改回来（含只改大小写那种）。
+if (Test-GroupSelected 'N') {
+Write-Host 'N 组 · 批量重命名（预览 = 结果 / 冲突整批拒绝 / 撤销记录 / 撤销）'
+
+$nTag = [Guid]::NewGuid().ToString('N').Substring(0, 8)
+$nDir = Join-Path $tmpRoot ('mxx1-rename-' + $nTag)
+$nUndo = Join-Path $nDir 'undo'
+[void][System.IO.Directory]::CreateDirectory($nDir)
+foreach ($f in @('a.txt', 'b.txt', 'c.txt', 'photo 1.JPG', 'photo 2.JPG', 'note.md', 'noext', 'report.TXT', 'IMG_001.jpg', 'IMG_002.jpg', 'Case.TXT')) {
+    [System.IO.File]::WriteAllText((Join-Path $nDir $f), ('content:' + $f))
+}
+$nEnv = @{ MXX1_RENAME_DIR = $nUndo }
+
+$nPreview = Invoke-Exe ('rename ' + (Quote-Arg $nDir) + ' --prefix=P_ --json') -Env $nEnv
+$np = $null
+try { $np = ($nPreview.Out.Trim() | ConvertFrom-Json) } catch { $np = $null }
+Check 'N01 预览：11 个文件、11 个会改名、没有冲突；applied=false' `
+    (($nPreview.Code -eq 0) -and ($np -ne $null) -and ($np.files -eq 11) -and ($np.changed -eq 11) -and
+     ($np.conflicts -eq 0) -and ($np.applied -eq $false)) `
+    ('exit=' + $nPreview.Code + ' files=' + $(if ($np -ne $null) { $np.files } else { '?' }))
+Check 'N02 预览一个字节都不改：11 个文件还在原名上' `
+    ((Test-Path -LiteralPath (Join-Path $nDir 'a.txt')) -and (Test-Path -LiteralPath (Join-Path $nDir 'IMG_001.jpg'))) ''
+
+$nApply = Invoke-Exe ('rename ' + (Quote-Arg $nDir) + ' --prefix=P_ --filter=*.txt --apply --json') -Env $nEnv
+$na = $null
+try { $na = ($nApply.Out.Trim() | ConvertFrom-Json) } catch { $na = $null }
+Check 'N03 --apply + --filter=*.txt：改五个 txt（Windows 过滤不区分大小写），done=5 / failed=0，并给出撤销记录' `
+    (($nApply.Code -eq 0) -and ($na -ne $null) -and ($na.files -eq 5) -and ($na.done -eq 5) -and
+     ($na.failed -eq 0) -and ($na.undo.Length -gt 0) -and (Test-Path -LiteralPath $na.undo)) `
+    ('exit=' + $nApply.Code + ' done=' + $(if ($na -ne $null) { $na.done } else { '?' }))
+Check 'N04 真的改成了 P_a.txt / P_b.txt / P_c.txt / P_Case.TXT / P_report.TXT（预览里的名字和磁盘上一字不差）' `
+    ((Test-Path -LiteralPath (Join-Path $nDir 'P_a.txt')) -and (Test-Path -LiteralPath (Join-Path $nDir 'P_b.txt')) -and
+     (Test-Path -LiteralPath (Join-Path $nDir 'P_c.txt')) -and
+     (Test-Path -LiteralPath (Join-Path $nDir 'P_Case.TXT')) -and
+     (Test-Path -LiteralPath (Join-Path $nDir 'P_report.TXT'))) ''
+$nRecord = $null
+if ($na -ne $null) {
+    try { $nRecord = ([System.IO.File]::ReadAllText($na.undo, [System.Text.Encoding]::UTF8) | ConvertFrom-Json) } catch { $nRecord = $null }
+}
+Check 'N05 撤销记录是合法 JSON：11 条之外只记这次改的五条，ok=true，from/to 都是绝对路径' `
+    (($nRecord -ne $null) -and (@($nRecord.items).Count -eq 5) -and
+     (@($nRecord.items | Where-Object { $_.ok -ne $true }).Count -eq 0) -and
+     ($nRecord.items[0].from -match '^[A-Za-z]:\\') -and ($nRecord.items[0].to -match '^[A-Za-z]:\\')) ''
+$nUndo1 = Invoke-Exe ('rename --undo --undo-file=' + (Quote-Arg $na.undo) + ' --json') -Env $nEnv
+$nu = $null
+try { $nu = ($nUndo1.Out.Trim() | ConvertFrom-Json) } catch { $nu = $null }
+Check 'N06 撤销：done=5 / failed=0，五个名字都还原（含 Case.TXT / report.TXT）' `
+    (($nUndo1.Code -eq 0) -and ($nu -ne $null) -and ($nu.done -eq 5) -and ($nu.failed -eq 0) -and
+     (Test-Path -LiteralPath (Join-Path $nDir 'a.txt')) -and (Test-Path -LiteralPath (Join-Path $nDir 'b.txt')) -and
+     (Test-Path -LiteralPath (Join-Path $nDir 'c.txt')) -and
+     (Test-Path -LiteralPath (Join-Path $nDir 'Case.TXT')) -and
+     (Test-Path -LiteralPath (Join-Path $nDir 'report.TXT'))) ('exit=' + $nUndo1.Code)
+
+# 序号：--index=1 --digits=2 = a01 / b02 / c03（放在原名字后面；--index-before 放在前面）
+$nIdx = Invoke-Exe ('rename ' + (Quote-Arg $nDir) + ' --index=1 --digits=2 --filter=*.txt --json') -Env $nEnv
+$ni = $null
+try { $ni = ($nIdx.Out.Trim() | ConvertFrom-Json) } catch { $ni = $null }
+$nIdxNames = @()
+if ($ni -ne $null) { $nIdxNames = @($ni.items | ForEach-Object { $_.new } | Sort-Object) }
+Check 'N07 序号（--index=1 --digits=2）算出 a01.txt / b02.txt / c03.txt / Case04.TXT / report05.TXT' `
+    (($ni -ne $null) -and (($nIdxNames -join ',') -eq 'a01.txt,b02.txt,c03.txt,Case04.TXT,report05.TXT')) ($nIdxNames -join ' | ')
+$nBefore = Invoke-Exe ('rename ' + (Quote-Arg $nDir) + ' --index=1 --digits=2 --index-before --filter=*.txt --json') -Env $nEnv
+$nb = $null
+try { $nb = ($nBefore.Out.Trim() | ConvertFrom-Json) } catch { $nb = $null }
+$nBeforeNames = @()
+if ($nb -ne $null) { $nBeforeNames = @($nb.items | ForEach-Object { $_.new } | Sort-Object) }
+Check 'N08 --index-before 把序号放到名字前面（01a.txt / 02b.txt / 03c.txt / 04Case.TXT / 05report.TXT）' `
+    (($nb -ne $null) -and (($nBeforeNames -join ',') -eq '01a.txt,02b.txt,03c.txt,04Case.TXT,05report.TXT')) ($nBeforeNames -join ' | ')
+
+# 扩展名大小写（只改扩展名本身，不动点）
+$nLower = Invoke-Exe ('rename ' + (Quote-Arg $nDir) + ' --ext=lower --filter=*.JPG --apply --json') -Env $nEnv
+$nl = $null
+try { $nl = ($nLower.Out.Trim() | ConvertFrom-Json) } catch { $nl = $null }
+Check 'N09 --ext=lower + --filter=*.JPG：只把两个 .JPG 改成 .jpg，done=2' `
+    (($nLower.Code -eq 0) -and ($nl -ne $null) -and ($nl.done -eq 2) -and
+     (Test-Path -LiteralPath (Join-Path $nDir 'photo 1.jpg')) -and (Test-Path -LiteralPath (Join-Path $nDir 'photo 2.jpg'))) `
+    ('exit=' + $nLower.Code + ' done=' + $(if ($nl -ne $null) { $nl.done } else { '?' }))
+$nLowerUndo = $null
+if ($nl -ne $null) { $nLowerUndo = $nl.undo }
+if ($nLowerUndo) { [void](Invoke-Exe ('rename --undo --undo-file=' + (Quote-Arg $nLowerUndo)) -Env $nEnv) }
+
+# 正则替换（$1 捕获组）
+$nRegex = Invoke-Exe ('rename ' + (Quote-Arg $nDir) + ' --regex=^IMG_(\d+)$ --replace=pic_$1 --filter=*.jpg --json') -Env $nEnv
+$nr = $null
+try { $nr = ($nRegex.Out.Trim() | ConvertFrom-Json) } catch { $nr = $null }
+$nRegexNames = @()
+if ($nr -ne $null) { $nRegexNames = @($nr.items | Where-Object { $_.old -ne $_.new } | ForEach-Object { $_.new } | Sort-Object) }
+Check 'N10 正则替换 + $1 捕获组：IMG_001/002.jpg → pic_001/002.jpg' `
+    (($nr -ne $null) -and (($nRegexNames -join ',') -eq 'pic_001.jpg,pic_002.jpg')) ($nRegexNames -join ' | ')
+$nRegexBad = Invoke-Exe ('rename ' + (Quote-Arg $nDir) + ' --regex=[ --json') -Env $nEnv
+Check 'N11 正则写错了 → 退出码 2，并说清是正则的问题' `
+    (($nRegexBad.Code -eq 2) -and ($nRegexBad.Err -match '正则')) ('exit=' + $nRegexBad.Code)
+
+# 冲突：目标名字已经存在 → 整批拒绝，一个都不改
+$nBContent = [System.IO.File]::ReadAllText((Join-Path $nDir 'b.txt'))
+$nConflict = Invoke-Exe ('rename ' + (Quote-Arg $nDir) + ' --find=a --replace=b --filter=a.txt --apply --json') -Env $nEnv
+$nc = $null
+try { $nc = ($nConflict.Out.Trim() | ConvertFrom-Json) } catch { $nc = $null }
+Check 'N12 目标名已被占用（a.txt → b.txt）：conflicts=1、退出码 1、done=0' `
+    (($nConflict.Code -eq 1) -and ($nc -ne $null) -and ($nc.conflicts -eq 1) -and ($nc.done -eq 0)) `
+    ('exit=' + $nConflict.Code + ' conflicts=' + $(if ($nc -ne $null) { $nc.conflicts } else { '?' }))
+Check 'N13 冲突时一个都没改、b.txt 的内容也没被覆盖' `
+    ((Test-Path -LiteralPath (Join-Path $nDir 'a.txt')) -and
+     ([System.IO.File]::ReadAllText((Join-Path $nDir 'b.txt')) -eq $nBContent)) ''
+
+# 两个文件算出同一个新名字 → 也算冲突
+$nDup = Invoke-Exe ('rename ' + (Quote-Arg $nDir) + ' --regex=^[abc]$ --replace=z --filter=*.txt --apply --json') -Env $nEnv
+$nd = $null
+try { $nd = ($nDup.Out.Trim() | ConvertFrom-Json) } catch { $nd = $null }
+Check 'N14 两个文件算出来同一个新名字：整批拒绝、退出码 1' `
+    (($nDup.Code -eq 1) -and ($nd -ne $null) -and ($nd.conflicts -ge 1) -and ($nd.done -eq 0)) `
+    ('exit=' + $nDup.Code)
+
+# Windows 不允许的字符、保留设备名、结尾的点
+$nBadChar = Invoke-Exe ('rename ' + (Quote-Arg $nDir) + ' --prefix=a:b --filter=a.txt --json') -Env $nEnv
+$nBadCharJ = $null
+try { $nBadCharJ = ($nBadChar.Out.Trim() | ConvertFrom-Json) } catch { $nBadCharJ = $null }
+Check 'N15 名字里带 Windows 不允许的字符（a:b）：conflicts=1' `
+    (($nBadChar.Code -eq 1) -and ($nBadCharJ -ne $null) -and ($nBadCharJ.conflicts -eq 1)) ('exit=' + $nBadChar.Code)
+$nReserved = Invoke-Exe ('rename ' + (Quote-Arg $nDir) + ' --find=note --replace=CON --filter=note.md --json') -Env $nEnv
+$nReservedJ = $null
+try { $nReservedJ = ($nReserved.Out.Trim() | ConvertFrom-Json) } catch { $nReservedJ = $null }
+Check 'N16 保留设备名（CON.md）：conflicts=1，不硬改' `
+    (($nReserved.Code -eq 1) -and ($nReservedJ -ne $null) -and ($nReservedJ.conflicts -eq 1)) ('exit=' + $nReserved.Code)
+$nDot = Invoke-Exe ('rename ' + (Quote-Arg $nDir) + ' --suffix=. --filter=noext --json') -Env $nEnv
+$nDotJ = $null
+try { $nDotJ = ($nDot.Out.Trim() | ConvertFrom-Json) } catch { $nDotJ = $null }
+Check 'N17 名字结尾是点（noext → noext.）：conflicts=1' `
+    (($nDot.Code -eq 1) -and ($nDotJ -ne $null) -and ($nDotJ.conflicts -eq 1)) ('exit=' + $nDot.Code)
+
+# 只改大小写（report.TXT → report.txt）要能改、也能撤销
+$nCase = Invoke-Exe ('rename ' + (Quote-Arg $nDir) + ' --ext=lower --filter=report.TXT --apply --json') -Env $nEnv
+$ncj = $null
+try { $ncj = ($nCase.Out.Trim() | ConvertFrom-Json) } catch { $ncj = $null }
+$nCaseName = @(Get-ChildItem -LiteralPath $nDir -File | Where-Object { $_.Name -ceq 'report.txt' })
+Check 'N18 只改大小写算合法改名：report.TXT → report.txt（done=1）' `
+    (($nCase.Code -eq 0) -and ($ncj -ne $null) -and ($ncj.done -eq 1) -and ($nCaseName.Count -eq 1)) `
+    ('exit=' + $nCase.Code + ' done=' + $(if ($ncj -ne $null) { $ncj.done } else { '?' }))
+if (($ncj -ne $null) -and ($ncj.undo.Length -gt 0)) {
+    $nCaseUndo = Invoke-Exe ('rename --undo --undo-file=' + (Quote-Arg $ncj.undo) + ' --json') -Env $nEnv
+    $ncu = $null
+    try { $ncu = ($nCaseUndo.Out.Trim() | ConvertFrom-Json) } catch { $ncu = $null }
+    $nBack = @(Get-ChildItem -LiteralPath $nDir -File | Where-Object { $_.Name -ceq 'report.TXT' })
+    Check 'N19 只改大小写的撤销也能work：report.txt 改回 report.TXT（以前会被"同名占用"挡住）' `
+        (($nCaseUndo.Code -eq 0) -and ($ncu -ne $null) -and ($ncu.done -eq 1) -and ($nBack.Count -eq 1)) `
+        ('exit=' + $nCaseUndo.Code + ' done=' + $(if ($ncu -ne $null) { $ncu.done } else { '?' }))
+} else {
+    Skip 'N19 只改大小写的撤销' '没拿到撤销记录'
+}
+
+# 撤销记录写不进去 → 一个文件都不许动（这是"能反悔"的唯一保证）
+$nBlocker = Join-Path $nDir 'blocker'
+[System.IO.File]::WriteAllText($nBlocker, 'x')
+$nBadEnv = @{ MXX1_RENAME_DIR = (Join-Path $nBlocker 'sub') }
+$nNoRecord = Invoke-Exe ('rename ' + (Quote-Arg $nDir) + ' --prefix=R_ --filter=*.md --apply --json') -Env $nBadEnv
+$nnr = $null
+try { $nnr = ($nNoRecord.Out.Trim() | ConvertFrom-Json) } catch { $nnr = $null }
+Check 'N20 撤销记录写不进去：退出码 1、done=0、error 说清原因，而且文件没改' `
+    (($nNoRecord.Code -eq 1) -and ($nnr -ne $null) -and ($nnr.done -eq 0) -and ($nnr.error.Length -gt 0) -and
+     (Test-Path -LiteralPath (Join-Path $nDir 'note.md'))) ('exit=' + $nNoRecord.Code)
+
+$nUndoNone = Invoke-Exe ('rename --undo --undo-file=' + (Quote-Arg (Join-Path $nDir 'no-such.json'))) -Env $nEnv
+Check 'N21 撤销记录不存在：退出码 2 + 说清没找到' `
+    (($nUndoNone.Code -eq 2) -and ($nUndoNone.Err -match '没有找到撤销记录')) ('exit=' + $nUndoNone.Code)
+$nUsage = Invoke-Exe 'rename'
+Check 'N22 不给目录也不说 --undo = 用法错误（退出码 2）' (($nUsage.Code -eq 2) -and ($nUsage.Err -match '用法')) ('exit=' + $nUsage.Code)
+$nNoDir = Invoke-Exe ('rename ' + (Quote-Arg (Join-Path $nDir 'no-such-dir')) + ' --prefix=X_')
+Check 'N23 目录不存在 → 退出码 2 + 说清楚' (($nNoDir.Code -eq 2) -and ($nNoDir.Err -match '不存在')) ('exit=' + $nNoDir.Code)
+
+Remove-Item -LiteralPath $nDir -Recurse -Force -ErrorAction SilentlyContinue
+Check 'N24 批量重命名的夹具目录与撤销记录收拾干净了' (-not (Test-Path -LiteralPath $nDir)) $nDir
 
 }
 

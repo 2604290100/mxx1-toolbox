@@ -3386,6 +3386,242 @@ try {
 
 }
 
+# ---------------------------------------------------------------- J 组：六件新工具窗口
+# 这一组补 2026-10-19 的教训（PITFALLS 78/79）：**后端有命令行测试 ≠ 这个按钮的路有测试**。
+# 「合盖与电源键动作」那个"死窗口"在整套界面回归全绿的情况下活了几天，因为没有人**真开过**它。
+# 所以这六件工具（H1–H6）每一个都从主窗口按钮点开一次，等它加载完，检查关键控件可点 / 安全按钮默认灰，
+# 再关掉。取色器是全屏遮罩 + 放大镜，单独验「Esc 真能退出、退出后不留残影」。
+if (Test-GroupSelected 'J') {
+Write-Host ''
+Write-Host 'J 组 · 六件新工具窗口（按钮点开 → 加载完 → 关键按钮可点 / 安全按钮默认灰 → 能关）'
+
+# ⚠ **必须自己起一个界面实例**：G 组（深色主题）在它结尾就把最开始的 `$main` 关掉了
+# （Test-Gui.ps1 里那句 CloseWindow($main)），H 组用的是自己的 `$procFixed`。
+# 2026-10-20 夜间全量跑时 J 全红就是这个原因（J 单独跑是绿的）—— 修法：这里 Start-Gui 一个，
+# 同时把 `$proc` / `$main` 更新成它（后面 N / I 两组各起各的进程，不用这两个变量）。
+$proc = Start-Gui
+$main = [IntPtr]::Zero
+if (($proc -ne $null) -and (-not $proc.HasExited) -and ($proc.MainWindowHandle -ne [IntPtr]::Zero)) {
+    $main = $proc.MainWindowHandle
+}
+Check 'J00 这一组的界面实例能起来（G 组会关掉原来的主窗口，J 要自己起一个）' ($main -ne [IntPtr]::Zero) ''
+
+function Open-JWindow {
+    param([string]$BtnName, [string]$TitlePrefix)
+    $b = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq $BtnName })
+    if ($b.Count -ne 1) { return $null }
+    [void][TBGui]::Click($b[0].H)
+    for ($i = 0; $i -lt 60; $i++) {
+        Start-Sleep -Milliseconds 200
+        $w = Find-TopWindow -ProcessId $proc.Id -TextPrefix $TitlePrefix
+        if ($w -ne $null) { return $w }
+    }
+    return $null
+}
+
+function Close-JWindow {
+    param($W)
+    if ($null -eq $W) { return }
+    $cb = @(Get-ChildControls -RootHandle $W.H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '关闭' })
+    if ($cb.Count -ge 1) { [void][TBGui]::Click($cb[0].H) } else { [void][TBGui]::CloseWindow($W.H) }
+    [void](Wait-WindowGone -Hwnd $W.H -Tries 30)
+}
+
+# 在窗口里找一条文字匹配（正则）的静态标签，返回它的文字；没有就返回空串。
+function Find-JStatus {
+    param([IntPtr]$H, [string]$Pattern)
+    foreach ($c in @(Get-ChildControls -RootHandle $H)) {
+        if (($c.Class -like '*STATIC*') -and ($c.Text -match $Pattern)) { return $c.Text }
+    }
+    return ''
+}
+
+# ---- 清理优化页：H1 / H2 / H5 / H6 ----------------------------------------------------------
+$cleanTabJ = Switch-Tab -Handle $main -TabName '清理优化' -ExpectNames $cleanNames
+$cleanJ = Get-ChildControls -RootHandle $main
+$cleanBtnJ = @()
+foreach ($nm in @('无效快捷方式清理', '空文件夹清理', '重复文件查找', '批量重命名')) {
+    $hit = @($cleanJ | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq $nm })
+    if (($hit.Count -ne 1) -or (-not $hit[0].Enabled)) { $cleanBtnJ += $nm }
+}
+Check 'J01 清理优化页四颗新按钮都在、都可点' ($cleanTabJ -and ($cleanBtnJ.Count -eq 0)) ('缺/灰=' + ($cleanBtnJ -join ' | '))
+
+# ---- H1 无效快捷方式清理 ------------------------------------------------------------------
+$w1 = Open-JWindow '无效快捷方式清理' '无效快捷方式清理'
+Check 'J02 点「无效快捷方式清理」能开窗口' ($w1 -ne $null) ''
+if ($w1 -eq $null) {
+    Check 'J03 扫描完成、窗口不卡（状态行报出坏链条数）' $false '窗口没开出来'
+    Check 'J04 没勾选时「删除选中的坏链」是灰的（安全默认），「重新扫描」可点' $false '窗口没开出来'
+} else {
+    $resp1 = [TBGui]::Responds($w1.H, 3000)
+    $st1 = ''
+    for ($i = 0; $i -lt 80; $i++) {
+        $st1 = Find-JStatus $w1.H '^坏链 \d+ 个'
+        if ($st1.Length -gt 0) { break }
+        Start-Sleep -Milliseconds 250
+    }
+    Check 'J03 扫描完成、窗口不卡（状态行报出坏链条数）' ($resp1 -and ($st1.Length -gt 0)) `
+        ('响应=' + $resp1 + ' 状态="' + $st1 + '"')
+    $b1 = Get-ChildControls -RootHandle $w1.H
+    $r1 = @($b1 | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '重新扫描' })
+    $d1 = @($b1 | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '删除选中的坏链（回收站）' })
+    $l1 = @($b1 | Where-Object { $_.Class -like '*SysListView*' })
+    Check 'J04 没勾选时「删除选中的坏链」是灰的（安全默认），「重新扫描」可点' `
+        (($r1.Count -eq 1) -and $r1[0].Enabled -and ($d1.Count -eq 1) -and (-not $d1[0].Enabled) -and ($l1.Count -ge 1)) `
+        ('重扫=' + $r1.Count + ' 删除=' + $(if ($d1.Count -eq 1) { $d1[0].Enabled } else { '没找到' }) + ' 列表=' + $l1.Count)
+    Close-JWindow $w1
+    Start-Sleep -Milliseconds 400
+}
+
+# ---- H2 空文件夹清理 ----------------------------------------------------------------------
+$w2 = Open-JWindow '空文件夹清理' '空文件夹清理'
+Check 'J05 点「空文件夹清理」能开窗口' ($w2 -ne $null) ''
+if ($w2 -eq $null) {
+    Check 'J06 还没扫时「删除选中的空文件夹」是灰的、「扫描」可点（状态是提示先选文件夹）' $false '窗口没开出来'
+} else {
+    $b2 = Get-ChildControls -RootHandle $w2.H
+    $resp2 = [TBGui]::Responds($w2.H, 3000)
+    $st2 = Find-JStatus $w2.H '^先选一个文件夹'
+    $s2 = @($b2 | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '扫描' })
+    $d2 = @($b2 | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '删除选中的空文件夹（回收站）' })
+    $l2 = @($b2 | Where-Object { $_.Class -like '*SysListView*' })
+    Check 'J06 还没扫时「删除选中的空文件夹」是灰的、「扫描」可点（状态是提示先选文件夹）' `
+        ($resp2 -and ($st2.Length -gt 0) -and ($s2.Count -eq 1) -and $s2[0].Enabled -and ($d2.Count -eq 1) -and (-not $d2[0].Enabled) -and ($l2.Count -ge 1)) `
+        ('状态="' + $st2 + '" 扫描=' + $s2.Count + ' 删除=' + $(if ($d2.Count -eq 1) { $d2[0].Enabled } else { '没找到' }) + ' 列表=' + $l2.Count)
+    Close-JWindow $w2
+    Start-Sleep -Milliseconds 400
+}
+
+# ---- H5 重复文件查找 ----------------------------------------------------------------------
+$w5 = Open-JWindow '重复文件查找' '重复文件查找'
+Check 'J07 点「重复文件查找」能开窗口' ($w5 -ne $null) ''
+if ($w5 -eq $null) {
+    Check 'J08 还没扫时「删除重复文件」是灰的、「开始扫描」可点（状态是提示先选文件夹）' $false '窗口没开出来'
+} else {
+    $b5 = Get-ChildControls -RootHandle $w5.H
+    $resp5 = [TBGui]::Responds($w5.H, 3000)
+    $st5 = Find-JStatus $w5.H '^选一个文件夹'
+    $s5 = @($b5 | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '开始扫描' })
+    $d5 = @($b5 | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '删除重复文件（保留每组一个，进回收站）' })
+    Check 'J08 还没扫时「删除重复文件」是灰的、「开始扫描」可点（状态是提示先选文件夹）' `
+        ($resp5 -and ($st5.Length -gt 0) -and ($s5.Count -eq 1) -and $s5[0].Enabled -and ($d5.Count -eq 1) -and (-not $d5[0].Enabled)) `
+        ('状态="' + $st5 + '" 扫描=' + $s5.Count + ' 删除=' + $(if ($d5.Count -eq 1) { $d5[0].Enabled } else { '没找到' }))
+    Close-JWindow $w5
+    Start-Sleep -Milliseconds 400
+}
+
+# ---- H6 批量重命名 ------------------------------------------------------------------------
+$w6 = Open-JWindow '批量重命名' '批量重命名'
+Check 'J09 点「批量重命名」能开窗口' ($w6 -ne $null) ''
+if ($w6 -eq $null) {
+    Check 'J10 「预览」可点、「执行改名」在没预览前是灰的（不会误改）' $false '窗口没开出来'
+} else {
+    $b6 = Get-ChildControls -RootHandle $w6.H
+    $resp6 = [TBGui]::Responds($w6.H, 3000)
+    $st6 = Find-JStatus $w6.H '^先选文件夹'
+    $p6 = @($b6 | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '预览' })
+    $a6 = @($b6 | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '执行改名' })
+    $u6 = @($b6 | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '撤销上一次' })
+    Check 'J10 「预览」可点、「执行改名」在没预览前是灰的（不会误改）、有「撤销上一次」' `
+        ($resp6 -and ($st6.Length -gt 0) -and ($p6.Count -eq 1) -and $p6[0].Enabled -and ($a6.Count -eq 1) -and (-not $a6[0].Enabled) -and ($u6.Count -eq 1)) `
+        ('状态="' + $st6 + '" 预览=' + $p6.Count + ' 执行=' + $(if ($a6.Count -eq 1) { $a6[0].Enabled } else { '没找到' }) + ' 撤销=' + $u6.Count)
+    Close-JWindow $w6
+    Start-Sleep -Milliseconds 400
+}
+
+# ---- 系统工具页：H4 / H3 ------------------------------------------------------------------
+$sysTabJ = Switch-Tab -Handle $main -TabName '系统工具' -ExpectNames $sysNames
+$sysJ = Get-ChildControls -RootHandle $main
+$sysBtnJ = @()
+foreach ($nm in @('端口与进程', '屏幕取色器')) {
+    $hit = @($sysJ | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq $nm })
+    if (($hit.Count -ne 1) -or (-not $hit[0].Enabled)) { $sysBtnJ += $nm }
+}
+Check 'J11 系统工具页两颗新按钮都在、都可点' ($sysTabJ -and ($sysBtnJ.Count -eq 0)) ('缺/灰=' + ($sysBtnJ -join ' | '))
+
+# ---- H4 端口与进程（只读列出）-------------------------------------------------------------
+$w4 = Open-JWindow '端口与进程' '端口与进程'
+Check 'J12 点「端口与进程」能开窗口' ($w4 -ne $null) ''
+if ($w4 -eq $null) {
+    Check 'J13 端口表读完了（状态行报出端点总数、窗口不卡，「刷新」可点）' $false '窗口没开出来'
+} else {
+    $resp4 = [TBGui]::Responds($w4.H, 3000)
+    $st4 = ''
+    for ($i = 0; $i -lt 120; $i++) {
+        $st4 = Find-JStatus $w4.H '^共 \d+ 个端点'
+        if ($st4.Length -gt 0) { break }
+        Start-Sleep -Milliseconds 250
+    }
+    $b4 = Get-ChildControls -RootHandle $w4.H
+    $r4 = @($b4 | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '刷新' })
+    $k4 = @($b4 | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -like '结束这个进程*' })
+    $l4 = @($b4 | Where-Object { $_.Class -like '*SysListView*' })
+    Check 'J13 端口表读完了（状态行报出端点总数、窗口不卡，「刷新」可点）' `
+        ($resp4 -and ($st4.Length -gt 0) -and ($r4.Count -eq 1) -and $r4[0].Enabled -and ($k4.Count -ge 1) -and ($l4.Count -ge 1)) `
+        ('响应=' + $resp4 + ' 状态="' + $st4 + '" 刷新=' + $r4.Count + ' 结束=' + $k4.Count + ' 列表=' + $l4.Count)
+    Close-JWindow $w4
+    Start-Sleep -Milliseconds 400
+}
+
+# ---- H3 屏幕取色器（全屏遮罩 + Esc 退出）---------------------------------------------------
+# 它没有标题（FormBorderStyle.None），所以按"有没有一个盖住虚拟屏幕的顶层窗口"找。
+$pickBtn = @((Get-ChildControls -RootHandle $main) | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '屏幕取色器' })
+$pick = $null
+if ($pickBtn.Count -eq 1) {
+    [void][TBGui]::Click($pickBtn[0].H)
+    $vs = [System.Windows.Forms.SystemInformation]::VirtualScreen
+    for ($i = 0; $i -lt 60; $i++) {
+        Start-Sleep -Milliseconds 200
+        foreach ($w in @(Get-TopWindows -ProcessId $proc.Id)) {
+            if ((-not $w.Visible) -or ($w.H -eq $main)) { continue }
+            $pr = [TBGui]::Rect($w.H)
+            if (((($pr[2] - $pr[0]) -ge ($vs.Width - 8))) -and ((($pr[3] - $pr[1]) -ge ($vs.Height - 8)))) { $pick = $w; break }
+        }
+        if ($pick -ne $null) { break }
+    }
+}
+Check 'J14 点「屏幕取色器」能打开（全屏遮罩出现）' ($pick -ne $null) ('按钮=' + $pickBtn.Count + ' 虚拟屏=' + $vs.Width + 'x' + $vs.Height)
+if ($pick -eq $null) {
+    Check 'J15 Esc 真能退出取色器（窗口不卡）' $false '遮罩没开出来'
+    Check 'J16 退出后不留残影（全屏遮罩 / 放大镜都关了）' $false '遮罩没开出来'
+} else {
+    $respP = [TBGui]::Responds($pick.H, 3000)
+    $prP = [TBGui]::Rect($pick.H)
+    $allP = @(Get-TopWindows -ProcessId $proc.Id | Where-Object { $_.H -ne $main -and $_.Visible } | ForEach-Object {
+        $rr = [TBGui]::Rect($_.H)
+        $_.Class + ' ' + ($rr[2] - $rr[0]) + 'x' + ($rr[3] - $rr[1]) + ' [' + $_.Text + ']' })
+    [void][TBGui]::Focus($pick.H)
+    Start-Sleep -Milliseconds 300
+    [TBGui]::Key($pick.H, 0x1B)
+    $gone = Wait-WindowGone -Hwnd $pick.H -Tries 30
+    Check 'J15 Esc 真能退出取色器（窗口不卡）' ($respP -and $gone) `
+        ('响应=' + $respP + ' 退出=' + $gone + ' 遮罩=' + ($prP -join ',') + ' 顶窗: ' + ($allP -join ' / '))
+    if (-not $gone) {
+        [void][TBGui]::CloseWindow($pick.H)
+        [void](Wait-WindowGone -Hwnd $pick.H -Tries 20)
+        Start-Sleep -Milliseconds 400
+        $allP2 = @(Get-TopWindows -ProcessId $proc.Id | Where-Object { $_.H -ne $main -and $_.Visible } | ForEach-Object {
+            $rr2 = [TBGui]::Rect($_.H)
+            $_.Class + ' ' + ($rr2[2] - $rr2[0]) + 'x' + ($rr2[3] - $rr2[1]) + ' [' + $_.Text + ']' })
+        Write-Host ('    （取色器诊断：Esc 没关掉、WM_CLOSE 之后剩下的顶层窗口 = ' + ($allP2 -join ' / ') + '）')
+    }
+    Start-Sleep -Milliseconds 500
+    # 只认**程序自己的窗口**（WinForms 类名）—— SysShadow（遮罩的投影）/ tooltips_class32
+    # 这类系统窗口不是"残影"，而且常常比我们的窗口多活几百毫秒（2026-10-20 全量跑时假红过三次；
+    # 那个 tooltip 是悬停「文件哈希校验」之类的按钮时弹出来的，鼠标不动它就一直在）。
+    $leftJ = @((Get-TopWindows -ProcessId $proc.Id) | Where-Object {
+        $_.H -ne $main -and $_.Visible -and ($_.Class -like '*WindowsForms10*') -and ($_.Class -notlike '*tooltips_class32*') })
+    foreach ($w in $leftJ) { [void][TBGui]::CloseWindow($w.H) }
+    Check 'J16 退出后不留残影（全屏遮罩 / 放大镜都关了）' ($leftJ.Count -eq 0) `
+        ('还剩=' + (@($leftJ | ForEach-Object {
+            $rr3 = [TBGui]::Rect($_.H)
+            $_.Class + ' ' + ($rr3[2] - $rr3[0]) + 'x' + ($rr3[3] - $rr3[1]) + ' [' + $_.Text + ']' }) -join ' / '))
+}
+[void][TBGui]::CloseWindow($main)
+Start-Sleep -Milliseconds 600
+
+}
+
 # ---------------------------------------------------------------- N 组：右键「解除文件占用」的小窗口
 if (Test-GroupSelected 'N') {
 # 资源管理器右键点「解除文件占用」时，工具箱是以 `rightmenu unlock "<路径>"` 起来的：**只开一个小窗口、

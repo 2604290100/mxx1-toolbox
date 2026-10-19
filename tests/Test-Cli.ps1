@@ -2727,6 +2727,20 @@ if (Test-GroupSelected 'O') {
 Write-Host ''
 Write-Host 'O 组 · 复制文件名 / 复制文件路径（copypath：多选合批 / 引号 / 文件名模式 / 相对路径 / 剪贴板 / 只读）'
 
+# 剪贴板读回：另一个进程（用户自己开着的工具箱 / 剪贴板工具）有时正占着它，GetText 会返回空。
+# 2026-10-20 夜间全量跑时 O05 假红过一次（程序自己报 clipboard=ok，紧接着的 O07 又是好的）——
+# 给它一点耐心（最多等 1.5 秒），**判据一个字不改**：读回来还得是一模一样的内容。
+function Get-ClipTextRetry {
+    param([int]$Tries = 15)
+    for ($i = 0; $i -lt $Tries; $i++) {
+        $t = ''
+        try { $t = [System.Windows.Forms.Clipboard]::GetText() } catch { }
+        if ($t.Length -gt 0) { return $t }
+        Start-Sleep -Milliseconds 100
+    }
+    return ''
+}
+
 $cpDir = Join-Path $tmpRoot 'mxx1-copypath'
 if (Test-Path -LiteralPath $cpDir) { Remove-Item -LiteralPath $cpDir -Recurse -Force }
 New-Item -ItemType Directory -Path $cpDir | Out-Null
@@ -2768,8 +2782,7 @@ try {
 
     # ---- ③ 真写剪贴板（一个文件那一档走"合批"）：写完读回来必须一模一样
     $cp5 = Invoke-Exe ('copypath --quote --quiet "' + $cpSpace + '"')
-    $cpClip5 = ''
-    try { $cpClip5 = [System.Windows.Forms.Clipboard]::GetText() } catch { }
+    $cpClip5 = Get-ClipTextRetry
     Check 'O05 真写剪贴板：clipboard=ok，剪贴板里的内容就是那行带引号的路径' `
         (($cp5.Code -eq 0) -and ((Get-Key $cp5.Out 'clipboard') -eq 'ok') -and ($cpClip5 -eq ('"' + $cpSpace + '"'))) `
         ('clipboard=' + (Get-Key $cp5.Out 'clipboard') + ' 剪贴板=[' + $cpClip5 + ']')
@@ -2805,8 +2818,7 @@ try {
     Check 'O06 三个进程并发（模拟多选）：最后只有一个收尾，它手里是完整的 3 条' `
         (($cpClosers.Count -eq 1) -and ($cpMerged -eq 3)) ('收尾的=' + $cpClosers.Count + ' 条数=' + $cpMerged)
 
-    $cpClip6 = ''
-    try { $cpClip6 = [System.Windows.Forms.Clipboard]::GetText() } catch { }
+    $cpClip6 = Get-ClipTextRetry
     $cpLines = @($cpClip6 -split "`r?`n" | Where-Object { $_.Trim().Length -gt 0 })
     Check 'O07 剪贴板里真有三行，一行一个路径（多选没被丢掉）' `
         (($cpLines.Count -eq 3) -and (($cpLines -join ' ') -match [regex]::Escape($cpSpace)) -and `
@@ -2868,8 +2880,7 @@ try {
         (($cp14.Code -eq 2) -and ($cp14.Out -match '没有这个基准目录')) ('exit=' + $cp14.Code + ' err=' + (Get-Key $cp14.Out 'error'))
 
     $cp15 = Invoke-Exe ('copypath --quiet --no-wait --relative --base="' + $cpDir + '" "' + $cpRelFile + '"')
-    $cpClip15 = ''
-    try { $cpClip15 = [System.Windows.Forms.Clipboard]::GetText() } catch { }
+    $cpClip15 = Get-ClipTextRetry
     Check 'O15 相对路径真进剪贴板：内容是子目录形式，两边**没有引号**' `
         (($cp15.Code -eq 0) -and ((Get-Key $cp15.Out 'clipboard') -eq 'ok') -and ($cpClip15 -eq 'sub\rel.txt')) `
         ('clipboard=' + (Get-Key $cp15.Out 'clipboard') + ' 剪贴板=[' + $cpClip15 + ']')
@@ -2897,8 +2908,7 @@ try {
         ('行=' + ($cp18Lines -join ' | '))
 
     $cp19 = Invoke-Exe ('copypath --quiet --no-wait --name "' + $cpSpace + '"')
-    $cpClip19 = ''
-    try { $cpClip19 = [System.Windows.Forms.Clipboard]::GetText() } catch { }
+    $cpClip19 = Get-ClipTextRetry
     Check 'O19 文件名真进剪贴板：就是那一个名字，两边没有引号' `
         (($cp19.Code -eq 0) -and ((Get-Key $cp19.Out 'clipboard') -eq 'ok') -and ($cpClip19 -eq '报告 final.txt')) `
         ('clipboard=' + (Get-Key $cp19.Out 'clipboard') + ' 剪贴板=[' + $cpClip19 + ']')
@@ -2920,8 +2930,7 @@ try {
     # ---- ⑦ 不给路径：退出码 2，而且**不要动剪贴板**（哨兵值必须还在）
     try { [System.Windows.Forms.Clipboard]::SetText('MXX1-SENTINEL-2') } catch { }
     $cp9 = Invoke-Exe 'copypath --quiet'
-    $cpClip9 = ''
-    try { $cpClip9 = [System.Windows.Forms.Clipboard]::GetText() } catch { }
+    $cpClip9 = Get-ClipTextRetry
     Check 'O09 不给路径：退出码 2，而且没碰剪贴板（哨兵值还在）' `
         (($cp9.Code -eq 2) -and ($cpClip9 -eq 'MXX1-SENTINEL-2')) ('exit=' + $cp9.Code + ' 剪贴板=[' + $cpClip9 + ']')
 

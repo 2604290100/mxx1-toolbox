@@ -1,6 +1,6 @@
 {
   "_comment": "改哪块 → 该跑哪些测试组。给 tools\\Test-Quick.ps1 用；设计说明见 docs\\DESIGN.md §15。改这个文件的 paths/groups 时，顺手核对一句：那条规则真的覆盖得住吗（宁可多带一个组）。",
-  "_groups": "cli = tests\\Test-Cli.ps1 的组标记（A/A14/B/C/D/E/F/G/H/I/J/K/L/M/O/P/Q/R/S/T）；gui = tests\\Test-Gui.ps1 的组标记（B/B10/C/D/E/F/G/H/I/N）。挑组的写法：-Only M,N。",
+  "_groups": "cli = tests\\Test-Cli.ps1 的组标记（A/A14/B/C/D/E/F/G/H/I/J/K/L/M/N/O/P/Q/R/S/T/U/V/W/X/Y/Z）；gui = tests\\Test-Gui.ps1 的组标记（B/B10/C/D/E/F/G/H/I/J/N）。挑组的写法：-Only M,N。",
   "_prereq": "cli 里任何挑组都会自动带上 A 组：B/C/F/H/I/K/M/P/S 都读 A 组跑出来的 $status / $script:WinName 这些公共量。gui 的前置夹具都在「准备」段里，那时还没分组，所以不需要前置组。",
   "_fallback": "没有命中任何规则的改动 = 跑全套（宁多勿少）；纯文档清单里的例外不跑组。默认口径（2026-10-06 用户拍板）：**功能做完先跑这个功能自己的组**（例：改哈希校验 = 命令行 T + 界面 C，22 秒）；**全套 / 完整界面回归只在发版前或用户明确要求时跑一次**。",
   "prereq": {
@@ -77,20 +77,59 @@
       ],
       "cli": [
         "D",
-        "T"
+        "T",
+        "U",
+        "Z"
       ],
-      "gui": [],
-      "note": "系统工具页签：--dry 解析每个目标（D）+ 文件哈希校验那个按钮（T）"
+      "gui": [
+        "J"
+      ],
+      "note": "系统工具页签：--dry 解析每个目标（D）+ 文件哈希校验那个按钮（T）+ 屏幕取色器（U）+ 端口与进程（Z）；界面 J 组会真从按钮把取色器 / 端口窗口各开一次"
+    },
+    {
+      "paths": [
+        "src/Shortcuts.cs",
+        "src/BrokenLinksForm.cs",
+        "src/EmptyFolders.cs",
+        "src/EmptyFoldersForm.cs",
+        "src/ColorPicker.cs",
+        "src/PickForm.cs",
+        "src/PortTable.cs",
+        "src/PortsForm.cs",
+        "src/Recycle.cs",
+        "src/DupFinder.cs",
+        "src/DupForm.cs",
+        "src/RenameRules.cs",
+        "src/RenameForm.cs"
+      ],
+      "cli": [
+        "X",
+        "Y",
+        "U",
+        "Z",
+        "W",
+        "N"
+      ],
+      "gui": [
+        "J"
+      ],
+      "note": "2026-10-19 六件新工具（H1–H6）的后端与窗口：X 无效快捷方式 / Y 空文件夹 / U 取色器 / Z 端口 / W 重复文件 / N 批量重命名；界面 J 组真把这些窗口从按钮开出来、等加载完、认安全按钮默认灰、能关，取色器另验 Esc 退出不留残影（PITFALLS 78/79：后端有测试 ≠ 按钮这条路有测试）"
     },
     {
       "paths": [
         "tools/cleanup.json"
       ],
       "cli": [
-        "A"
+        "A",
+        "X",
+        "Y",
+        "W",
+        "N"
       ],
-      "gui": [],
-      "note": "清理优化页签没有专门的组，只被 A 组的数量断言盯着（想加组就照着 M 组的写法加）"
+      "gui": [
+        "J"
+      ],
+      "note": "清理优化页签：数量断言（A）+ 四件文件工具（X 无效快捷方式 / Y 空文件夹 / W 重复文件 / N 批量重命名）；界面 J 组真把这四个窗口从按钮开出来"
     },
     {
       "paths": [
@@ -580,9 +619,19 @@
         "K",
         "L",
         "M",
+        "N",
+        "O",
         "P",
+        "Q",
         "R",
-        "S"
+        "S",
+        "T",
+        "U",
+        "V",
+        "W",
+        "X",
+        "Y",
+        "Z"
       ],
       "gui": [],
       "note": "改了命令行套件**自己**：闸门会先用 git diff -U0 把改动精确到组（改动落在哪个 `# ---- X 组` 块里就只跑哪一组）；**只有动了公共区（文件头 / 探针辅助 / 挑组逻辑 / 夹具准备）或读不出改了哪一块**才用这一条 = 整套。界面那半一行都没动，所以不跟着跑"
@@ -602,6 +651,7 @@
         "G",
         "H",
         "I",
+        "J",
         "N"
       ],
       "note": "改了界面套件**自己**：同命令行那条 —— 先按 diff 行号精确到组，动公共区才整套。命令行那半不受影响"
@@ -638,6 +688,7 @@
         "G",
         "H",
         "I",
+        "J",
         "N"
       ],
       "note": "聚合入口（它自己就是「跑全套」那条命令的入口，而且负责把 -Only/-Skip 透传给两个套件）"

@@ -139,6 +139,15 @@ namespace Mxx1Toolbox
             ShellTarget("printers", "设备和打印机", "shell:PrintersFolder"),
             FileTarget("taskschd", "任务计划程序", "%SystemRoot%\\System32\\taskschd.msc",
                 "这台电脑上找不到任务计划程序（taskschd.msc）"),
+            // 2026-10-20 加的一批（A 组「系统工具页入口」）：全是 Windows 自带的控制台 / 设置页，
+            // 打开它们本身不改任何东西（改不改由用户在那些窗口里自己决定），所以和其它系统工具一样
+            // 不加 danger / 不加二次确认。找不到组件的精简系统会得到一句说明。
+            FileTarget("diskmgmt", "磁盘管理", "%SystemRoot%\\System32\\diskmgmt.msc",
+                "这台电脑上找不到磁盘管理（diskmgmt.msc）"),
+            FileTarget("dfrgui", "优化驱动器", "%SystemRoot%\\System32\\dfrgui.exe",
+                "这台电脑上找不到优化驱动器（dfrgui.exe）"),
+            FileTarget("ncpa", "网络连接", "%SystemRoot%\\System32\\ncpa.cpl",
+                "这台电脑上找不到网络连接（ncpa.cpl）"),
 
             FileTarget("regedit", "注册表编辑器", "%SystemRoot%\\regedit.exe",
                 "这台电脑上找不到注册表编辑器（regedit.exe）"),
@@ -148,6 +157,14 @@ namespace Mxx1Toolbox
                 "这台电脑是 Windows 家庭版，没有「本地组策略编辑器」（gpedit.msc）"),
             FileTarget("appwiz", "程序和功能", "%SystemRoot%\\System32\\appwiz.cpl",
                 "这台电脑上找不到「程序和功能」（appwiz.cpl）"),
+            FileTarget("compmgmt", "计算机管理", "%SystemRoot%\\System32\\compmgmt.msc",
+                "这台电脑上找不到计算机管理（compmgmt.msc）"),
+            FileTarget("msconfig", "系统配置", "%SystemRoot%\\System32\\msconfig.exe",
+                "这台电脑上找不到系统配置（msconfig.exe）"),
+            FileTarget("optionalfeatures", "Windows 功能", "%SystemRoot%\\System32\\optionalfeatures.exe",
+                "这台电脑上找不到「Windows 功能」（optionalfeatures.exe）"),
+            FileTarget("netplwiz", "用户账户", "%SystemRoot%\\System32\\netplwiz.exe",
+                "这台电脑上找不到「用户账户」（netplwiz.exe）"),
 
             FileTarget("taskmgr", "任务管理器", "%SystemRoot%\\System32\\taskmgr.exe",
                 "这台电脑上找不到任务管理器（taskmgr.exe）"),
@@ -155,6 +172,9 @@ namespace Mxx1Toolbox
                 "这台电脑上找不到系统信息（msinfo32.exe）"),
             WindowTarget("links", "常用链接"),
             ShellTarget("controlpanel", "控制面板", "shell:ControlPanelFolder"),
+            // 字体文件夹（shell:Fonts）：看 / 预览 / 装 / 删字体都在这个系统窗口里，
+            // 工具箱自己不碰字体文件。
+            ShellTarget("fonts", "字体", "shell:Fonts"),
 
             // 诊断类：同样是「先探测再打开」，组件被精简掉的系统会得到一句说明而不是静默失败。
             FileTarget("eventvwr", "事件查看器", "%SystemRoot%\\System32\\eventvwr.msc",

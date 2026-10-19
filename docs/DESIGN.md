@@ -95,27 +95,27 @@
 深色不需要自绘控件：`FlatStyle=Flat` + `FlatAppearance` 逐主题赋值即可；
 标题栏用 `DwmSetWindowAttribute(hwnd, 20→19, dark)`，滚动条用 `SetWindowTheme(hwnd, "DarkMode_Explorer")`。
 
-## 4 页签与按钮清单（131 个清单内置 + `bin-tools\` 自动 + 用户自己建的，**全部真功能**）
+## 4 页签与按钮清单（145 个清单内置 + `bin-tools\` 自动 + 用户自己建的，**全部真功能**）
 
 | 页签 | 按钮数 | 说明 |
 | --- | --- | --- |
 | 常用 | 0（自己长出来） | 置顶 + 最近使用的 12 个（§4.0） |
 | 常用设置 | 38 | 任务栏 / 开始菜单 / 右键菜单 / 电源 / 安全类入口（只打开官方界面）/ hosts / 12 个可还原的系统设置开关 / **电源与笔记本（合盖 · 电池 · 唤醒，5 个，§12.71）** / 查看与还原改动（§4.1） |
-| 系统工具 | 27 | 12 个 Windows 自带组件 + 第 1 批 13 个修复诊断 + 系统体检 |
+| 系统工具 | 37 | 20 个 Windows 自带组件 + 13 个修复诊断 + 文件哈希校验 / 屏幕取色器 / 端口与进程 / 系统体检（§4.4 / §12.74 / §12.76） |
 | 隐私设置 | 29 | 11 组成对开关 + 4 个权限入口 + 状态 / 一键优化 / 一键还原（§4.5） |
 | 应用管理 | 5 | 查看已安装应用 / 查看启动项 / 默认应用 / 应用和功能 / 卸载单个应用（§4.6） |
-| 清理优化 | 8 | 垃圾清理 / 临时文件 / 回收站 / 浏览器缓存 / 磁盘清理 / 存储感知 / 启动项 / 大文件 |
+| 清理优化 | 12 | 前 8 个（垃圾清理 / 临时文件 / 回收站 / 浏览器缓存 / 磁盘清理 / 存储感知 / 启动项 / 大文件）+ 第 3 段「文件清单」的 4 个新窗口（无效快捷方式 / 空文件夹 / 重复文件 / 批量重命名，§12.74） |
 | 右键增强 | 21 | 10 段：6 对装 / 撤 + 图片转换 + 图标提取 + 隔壁工具 + 状态与修补（§4.2 / §14） |
 | 我的工具 | 3 + 用户自己的 | `+ 新建按钮` / 导出我的按钮 / 导入按钮（§4.7）；`bin-tools\` 里放工具会自动多一颗（§13） |
 
-（按钮数直接读 `Mxx1Toolbox.exe status` 的 `buttons=` / `tab.*=` 那几行 —— 这里是 2026-10-19 的值：
-131 个清单自带；这台机器上 `bin-tools\` 里还放着 1 个（memreduct）、用户自己建了 1 个 → `buttons=133`。）
+（按钮数直接读 `Mxx1Toolbox.exe status` 的 `buttons=` / `tab.*=` 那几行 —— 这里是 2026-10-20 的值：
+145 个清单自带；这台机器上 `bin-tools\` 里还放着 1 个（memreduct）、用户自己建了 1 个 → `buttons=147`。）
 
 `[i]` = 16×16 图标；**粗体** = 危险按钮（深红文字 + 二次确认）；灰色 = `placeholder`（禁用，点不动）。
 
-### 4.0 「常用」（置顶 + 最近使用，133 个按钮里最常用的那几个）
+### 4.0 「常用」（置顶 + 最近使用，147 个按钮里最常用的那几个）
 
-用户 2026-10-04 的反馈之一是"找按钮费劲"：133 个按钮分成 8 个页签，最常用的三五个每次都要翻页。
+用户 2026-10-04 的反馈之一是"找按钮费劲"：147 个按钮分成 8 个页签，最常用的三五个每次都要翻页。
 这一页就是为此加的，**放第 1 个**：
 
 - **置顶**：右键任意按钮 → 「置顶 / 取消置顶」（`pinned.txt`），也可以命令行 `pin` / `unpin <id>`。
@@ -241,7 +241,10 @@ v1.5.0 起这一页不只放隔壁工具的入口了：前面 16 个（**8 对**
 
 > 删除类动作都写清了"删的是什么"：临时文件、回收站、浏览器缓存目录 —— 不碰用户文档、不碰注册表。
 
-### 4.4 系统工具（12 个，三段，**全是真功能**）
+### 4.4 系统工具页：Windows 自带组件（20 个，**全是真功能**）
+
+> 这一页一共 **37 个按钮**（组件 20 + 修复诊断 13 + 文件哈希校验 + 屏幕取色器 + 端口与进程 + 系统体检），
+> 完整清单在 `tools\system.json`；下表只列走 `SystemTargets` 表的那批"打开 Windows 自己界面"的。
 
 | 段 | 按钮 | id | 目标 | 说明 |
 | --- | --- | --- | --- | --- |
@@ -249,21 +252,33 @@ v1.5.0 起这一页不只放隔壁工具的入口了：前面 16 个（**8 对**
 | 1 | 打开声音设置 | `sound-settings` | `ms-settings:sound` | 交给 Windows 设置 |
 | 1 | 设备和打印机 | `devices-printers` | `shell:PrintersFolder` | 走 `explorer.exe` |
 | 1 | 计划任务 | `task-scheduler` | `%SystemRoot%\System32\taskschd.msc` | |
+| 1 | 磁盘管理 | `diskmgmt` | `%SystemRoot%\System32\diskmgmt.msc` | 2026-10-20 加（A 组系统工具页入口） |
+| 1 | 优化驱动器 | `dfrgui` | `%SystemRoot%\System32\dfrgui.exe` | 同上（碎片整理 / SSD 的 TRIM） |
+| 1 | 网络连接 | `ncpa` | `%SystemRoot%\System32\ncpa.cpl` | 同上（网卡禁用 / 启用、看 IP） |
 | 2 | 打开注册表 | `regedit` | `%SystemRoot%\regedit.exe` | |
 | 2 | 打开服务 | `services` | `%SystemRoot%\System32\services.msc` | |
 | 2 | 打开组策略 | `gpedit` | `%SystemRoot%\System32\gpedit.msc` | 家庭版没有 → 提示"这台电脑是 Windows 家庭版，没有「本地组策略编辑器」" |
 | 2 | 程序和功能 | `appwiz` | `%SystemRoot%\System32\appwiz.cpl` | |
+| 2 | 计算机管理 | `compmgmt` | `%SystemRoot%\System32\compmgmt.msc` | 2026-10-20 加 |
+| 2 | 系统配置 | `msconfig` | `%SystemRoot%\System32\msconfig.exe` | 同上（启动项 / 引导选项） |
+| 2 | Windows 功能 | `windows-features` | `%SystemRoot%\System32\optionalfeatures.exe` | 同上（.NET 3.5 / Hyper-V 那些开关） |
+| 2 | 用户账户 | `netplwiz` | `%SystemRoot%\System32\netplwiz.exe` | 同上（改密码 / 自动登录） |
 | 3 | 任务管理器 | `taskmgr` | `%SystemRoot%\System32\taskmgr.exe` | |
 | 3 | 系统信息 | `sysinfo` | `%SystemRoot%\System32\msinfo32.exe` | |
 | 3 | 常用链接 | `useful-links` | 本程序内的窗口 | `LinksForm`：项目主页 / 工具箱仓库 / 永久删除仓库 / Windows 更新 / 应用和功能 / 关于本机 |
 | 3 | 控制面板 | `control-panel` | `shell:ControlPanelFolder` | 走 `explorer.exe` |
+| 3 | 字体 | `fonts` | `shell:Fonts` | 2026-10-20 加（字体文件夹：看 / 装 / 删） |
+
+> ⚠️ 原计划里还有一个「Internet 选项 `inetcpl.cpl`」——**量出来这台的精简版 Windows 连
+> `System32\inetcpl.cpl` 都没有**（SysWOW64 也没有），而 D 组的口径是"Win10/11 上一个都不许缺"
+> （`systemMissing` 必须为 0），所以宁可不做那个入口，也不放一个点下去只说"找不到"的假按钮。
 
 - 目标表在 `src\Launcher.cs` 的 `SystemTargets`：`%SystemRoot%` 这类占位符**运行时展开**，
   所以同一个 exe 在任何 Windows / 任何盘符上都对。
 - 全是**只读查看**：不改系统、不需要管理员，因此没有 `danger` / `runAsAdmin` / 二次确认。
 - 「常用链接」窗口自己**不联网**：只有点「打开」才把链接交给系统（网页 → 默认浏览器，
   `ms-settings:` → Windows 设置），链接字符串从 `AboutForm` 的常量取（署名/仓库只有一个来源）。
-- `run <id> --dry` 可以把这 12 个目标解析一遍看对不对（不启动任何东西）。
+- `run <id> --dry` 可以把这些目标解析一遍看对不对（不启动任何东西）。
 
 ### 4.5 隐私设置（29 个 = 11 组成对开关 + 4 个权限入口 + 状态 / 优化 / 还原）
 
@@ -383,7 +398,7 @@ v1.5.0 起这一页不只放隔壁工具的入口了：前面 16 个（**8 对**
 | `macro` | 多步串联 | `steps[]`（P1） |
 
 `builtin` 的三个模块：`permdel`（隔壁安装器：`gui` / `install` / `uninstall` / `status` / `verify` /
-`disclaimer` / `enginelog` / `checkupdate`）、`system`（12 个 Windows 组件，见 §4.4）、
+`disclaimer` / `enginelog` / `checkupdate`）、`system`（20 个 Windows 组件，见 §4.4）、
 `app`（本程序界面动作：`about` / `log` / `settings` / `checkupdate` / `newtool`）。
 
 统一行为：默认隐藏黑窗口，输出异步读取（`ReadToEndAsync`，先等退出再读会在输出 >4KB 时父子互等），
@@ -3454,6 +3469,40 @@ J 组把六个窗口从**主窗口的按钮**一个个真开出来：等它加�
 同一天还修掉两条**老的偶发假红**：O 组剪贴板读回加 `Get-ClipTextRetry`（别的进程占着剪贴板时
 `GetText` 返回空 → 最多等 1.5 秒再读，**判据一个字不改**；2026-10-20 全量跑 O05 假红过一次）。
 
+### 12.76 A 组「系统工具页入口」（2026-10-20 凌晨，八个新组件按钮）
+
+用户白天交代的口径：「**8 点前做完就重新审查工具箱、优先做系统工具页入口这种简单又好用的**」。
+`docs\待做功能清单-20261019.md` 的 A 组是一行清单 + 一张图标就能加一个的便宜货，这轮做掉八个：
+
+| 按钮 | id | 段 | 段内序 | 目标 |
+| --- | --- | --- | --- | --- |
+| 磁盘管理 | `diskmgmt` | 1 设备与硬件 | 50 | `diskmgmt.msc` |
+| 优化驱动器 | `dfrgui` | 1 | 60 | `dfrgui.exe` |
+| 网络连接 | `ncpa` | 1 | 70 | `ncpa.cpl` |
+| 计算机管理 | `compmgmt` | 2 注册表 · 服务 · 策略 | 50 | `compmgmt.msc` |
+| 系统配置 | `msconfig` | 2 | 60 | `msconfig.exe` |
+| Windows 功能 | `windows-features` | 2 | 70 | `optionalfeatures.exe` |
+| 用户账户 | `netplwiz` | 2 | 80 | `netplwiz.exe` |
+| 字体 | `fonts` | 3 进程 · 信息 · 链接 | 45 | `shell:Fonts` |
+
+1. **只加"打开 Windows 自己的界面"的入口**，和这批老按钮同一条底线：工具箱本身不改任何东西 ——
+   改不改由用户在那些窗口里自己决定，所以**不加 `danger`、不加二次确认、不要管理员**
+   （`diskmgmt` / `compmgmt` 这些控制台自己会弹 UAC，那是 Windows 的行为）。
+2. 数字连锁：内置按钮 137 → **145**、内嵌图标 137 → **145**（`status` 报 `buttons` 139 → 147 =
+   145 + 本机那 2 个自建 / 自动按钮）、系统工具页 29 → **37**、`systemTargets` 20 → **28**。
+   写死这些数的断言一次改齐：`A04` / `A07` / `A09` / `A10` / `H02` / `D01`–`D04`，另加
+   **`D08`**（按 id 点名八个新按钮，免得清单哪天被改坏一条没人发现）。
+3. ⚠️ **原计划的第 9 个「Internet 选项 `inetcpl.cpl`」没做，别当成漏做**：量出来这台的精简版
+   Windows **连 `System32\inetcpl.cpl` 都没有**（SysWOW64、MUI 都查了），而 D 组 / A03d 的口径是
+   "Win10/11 上 `systemMissing` 必须为 0" —— 做一个点下去只说"找不到"的入口等于自己给自己挖坑。
+   宁可少一个按钮；哪天用户在标准 Windows 上要，再补一行就行。
+4. 图标形状挂在 `tools\Make-Icons.ps1` 的映射表（顺序匹配、先到先得）：磁盘 / 优化驱动器 = 硬盘、
+   计算机管理 / 系统配置 = 齿轮、网络连接 = 地球、Windows 功能 = 加号、用户账户 = 钥匙、字体 = 文档。
+   ⚠️ `windows-features` 里含 `features`，映射必须排在老那条 `@('features','window')` **前面**，
+   否则会长成应用页那张"窗口"图（这一条的教训进 `PITFALLS.md` 83）。
+5. 验证：命令行 **A + D 两组 29 项全绿**（含 D08），随后全套跑一遍；README / §4.4 的表 / CHANGELOG
+   同步。**站点上的数字（133 按钮 / 131 图标）这轮不动** —— 发版或用户点名时才改（§8 的四步）。
+
 ## 15 测试怎么跑（2026-10-04 补：别用 pwsh 跑；2026-10-06 补：分层与挑组）
 
 ```
@@ -3641,7 +3690,7 @@ At D:\…\toolbox\tools\Test-Quick.ps1:387 char:13
 
 **用户原话**：「**一个功能你都做了一个小时而且为什么要跑全套测试回答我！你加一个功能不就是应该只测试
 一个功能的就行了？**」。他说得对，而且那一次的全套**连一点独有收益都没有** —— 那次唯一抓到的真漏改
-（D 组写死了"系统工具页 26 个按钮"）本来就落在被选中的 D 组里（改了 `tools\system.json` 必跑 D+T）。
+（D 组写死了"系统工具页 37 个按钮"）本来就落在被选中的 D 组里（改了 `tools\system.json` 必跑 D+T）。
 也就是说：**那 95 秒里，新功能之外的部分一分钱价值都没产生。**
 
 **根因是我上一轮定的那条规则**：「改 `tests\Test-Cli.ps1` = 命令行全套」（理由是"挑组机制本身可能被改坏"）。

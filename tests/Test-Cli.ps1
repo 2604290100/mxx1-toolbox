@@ -8,7 +8,7 @@
       * list / status 的机器可读输出（按钮数、页签分布、灰色占位按钮数、系统版本、条款状态）
       * 占位按钮点击路径（run 一个 placeholder 必须有反应、写日志、退出码 0）
       * 「右键增强」那一个按钮：解析出隔壁 permanent-delete-menu 的 PermanentDeleteSetup.exe
-      * 「系统工具」12 个按钮：--dry 必须解析出目标，缺组件必须说明原因（不静默失灵）
+      * 「系统工具」页按钮：--dry 必须解析出目标，缺组件必须说明原因（不静默失灵）
       * 「工具目录自动长按钮」（R 组）：tool.json / 光一个 exe / 多个 exe 说不清 / id 撞车 / 坏 JSON
       * 条款确认门与更新检查（S 组）：disclaimer / consent / checkupdate，用本机假接口不碰外网
       * 文件哈希校验（T 组）：算出来的校验码与 PowerShell 的 Get-FileHash 交叉验证 +
@@ -485,13 +485,13 @@ foreach ($line in ($status.Out -split "`r?`n")) {
     }
 }
 
-Check ('A04 按钮总数 137 + 工具目录里自动加载的 {0} 个（测试期间用户层的按钮会暂停：常用 38 + 系统工具 29 + 隐私 29 + 应用 5 + 清理 12 + 右键 21 + 我的 3）' -f $autoBase) `
-    ((Get-Key $status.Out 'buttons') -eq [string](137 + $autoBase)) (Get-Key $status.Out 'buttons')
+Check ('A04 按钮总数 145 + 工具目录里自动加载的 {0} 个（测试期间用户层的按钮会暂停：常用 38 + 系统工具 37 + 隐私 29 + 应用 5 + 清理 12 + 右键 21 + 我的 3）' -f $autoBase) `
+    ((Get-Key $status.Out 'buttons') -eq [string](145 + $autoBase)) (Get-Key $status.Out 'buttons')
 Check 'A05 内置清单里没有灰色占位按钮了（两个「资源管理器」也接上了真功能；灰规则改由 B 组注入验证）' ((Get-Key $status.Out 'placeholders') -eq '0') (Get-Key $status.Out 'placeholders')
 Check 'A06 危险按钮 3 个' ((Get-Key $status.Out 'dangerous') -eq '3') (Get-Key $status.Out 'dangerous')
 
 # 「常用」页签是合成的（置顶 + 最近使用），清单里没有它的按钮，所以是 0
-$tabExpect = @{ 'recent' = 0; 'common' = 38; 'mine' = 3; 'system' = 29; 'cleanup' = 12; 'privacy' = 29; 'apps' = 5; 'rightmenu' = 21 }
+$tabExpect = @{ 'recent' = 0; 'common' = 38; 'mine' = 3; 'system' = 37; 'cleanup' = 12; 'privacy' = 29; 'apps' = 5; 'rightmenu' = 21 }
 $tabOk = $true
 $tabDetail = @()
 foreach ($k in $tabExpect.Keys) {
@@ -499,13 +499,13 @@ foreach ($k in $tabExpect.Keys) {
     $tabDetail += ($k + '=' + $v)
     if ($v -ne [string]([int]$tabExpect[$k] + [int]$autoByTab[$k])) { $tabOk = $false }
 }
-Check 'A07 八个页签的按钮数正确（0/38/3/29/12/29/5/21，加上自动按钮）' $tabOk ($tabDetail -join ' ')
+Check 'A07 八个页签的按钮数正确（0/38/3/37/12/29/5/21，加上自动按钮）' $tabOk ($tabDetail -join ' ')
 
 $list = Invoke-Exe 'list'
 Check 'A08 list 退出码 0' ($list.Code -eq 0) ('exit=' + $list.Code)
-Check 'A09 list 报的按钮数一致' ((Get-Key $list.Out 'buttons') -eq [string](137 + $autoBase)) (Get-Key $list.Out 'buttons')
+Check 'A09 list 报的按钮数一致' ((Get-Key $list.Out 'buttons') -eq [string](145 + $autoBase)) (Get-Key $list.Out 'buttons')
 $lines = @($list.Out -split "`r?`n" | Where-Object { $_ -match "`t" })
-Check ('A10 list 打出 {0} 行按钮' -f (137 + $autoBase)) ($lines.Count -eq (137 + $autoBase)) ('lines=' + $lines.Count)
+Check ('A10 list 打出 {0} 行按钮' -f (145 + $autoBase)) ($lines.Count -eq (145 + $autoBase)) ('lines=' + $lines.Count)
 
 $rmList = Invoke-Exe 'list --tab rightmenu'
 Check 'A11 右键增强 21 个按钮（20 个右键菜单功能 + 隔壁永久删除工具）' ((Get-Key $rmList.Out 'shown') -eq [string](21 + [int]$autoByTab['rightmenu'])) (Get-Key $rmList.Out 'shown')
@@ -653,24 +653,24 @@ if ($permdel -eq '(未找到)' -or $permdel.Length -eq 0) {
 # ---------------------------------------------------------------- D 组：系统工具
 if (Test-GroupSelected 'D') {
 Write-Host ''
-Write-Host 'D 组 · 「系统工具」29 个按钮（Windows 自带组件 + 修复/诊断 + 文件哈希校验 / 屏幕取色器 / 端口与进程，--dry 只解析不启动）'
+Write-Host 'D 组 · 「系统工具」37 个按钮（Windows 自带组件 + 修复/诊断 + 文件哈希校验 / 屏幕取色器 / 端口与进程，--dry 只解析不启动）'
 
 # 缺组件的口径按系统版本分叉：Win7 上那 7 个 ms-settings: 按钮天生打不开（算"没有"），
 # Win10/11 上一个都不该缺。这样才能在两种机器上跑同一套测试。
 $missOk = if ($winName -eq 'Windows 7') { $sysMissing -ge 7 } else { $sysMissing -eq 0 }
 $d01detail = 'targets=' + (Get-Key $status.Out 'systemTargets') + ' missing=' + (Get-Key $status.Out 'systemMissing') + ' windows=' + $winName
-Check 'D01 status 报 20 个系统工具动作（12 组件 + 2 诊断 + 4 权限页 + 2 应用页）、该有的都在' `
-    (((Get-Key $status.Out 'systemTargets') -eq '20') -and $missOk) $d01detail
+Check 'D01 status 报 28 个系统工具动作（20 组件 + 2 诊断 + 4 权限页 + 2 应用页）、该有的都在' `
+    (((Get-Key $status.Out 'systemTargets') -eq '28') -and $missOk) $d01detail
 
 $sysList = Invoke-Exe 'list --tab system'
-Check 'D02 系统工具页签 29 个按钮（25 + 文件哈希校验 + 屏幕取色器 + 端口与进程 + 系统体检）、没有 placeholder' `
-    (((Get-Key $sysList.Out 'shown') -eq '29') -and (-not ($sysList.Out -match 'placeholder'))) ''
+Check 'D02 系统工具页签 37 个按钮（33 + 文件哈希校验 + 屏幕取色器 + 端口与进程 + 系统体检）、没有 placeholder' `
+    (((Get-Key $sysList.Out 'shown') -eq '37') -and (-not ($sysList.Out -match 'placeholder'))) ''
 
 $sysIds = @()
 foreach ($line in ($sysList.Out -split "`r?`n")) {
     if ($line -match "`t") { $sysIds += ($line -split "`t")[0] }
 }
-Check 'D03 读到 29 个系统工具 id' ($sysIds.Count -eq 29) ($sysIds -join ' ')
+Check 'D03 读到 37 个系统工具 id' ($sysIds.Count -eq 37) ($sysIds -join ' ')
 
 $bad = @()
 $detail = @()
@@ -683,7 +683,15 @@ foreach ($id in $sysIds) {    $d = Invoke-Exe ('run ' + $id + ' --dry')
     if ($exists -ne 'yes' -and $hint.Length -eq 0) { $bad += ($id + ':没有解释'); continue }
     $detail += ($id + '=' + (Get-Key $d.Out 'kind'))
 }
-Check 'D04 29 个系统工具都有目标、且缺了就说明了原因' ($bad.Count -eq 0) (($bad -join ' ') + ' ' + ($detail -join ' '))
+Check 'D04 37 个系统工具都有目标、且缺了就说明了原因' ($bad.Count -eq 0) (($bad -join ' ') + ' ' + ($detail -join ' '))
+
+# 2026-10-20 加的 8 个「系统工具页入口」（A 组）—— 按 id 点名，免得哪天清单被改坏一条也没人发现。
+# （原计划里还有「Internet 选项 inetcpl.cpl」，量出来这台机器的精简版 Windows 里根本没这个文件，
+#   而下面 D01 的口径是"Win10/11 一个都不许缺"，所以宁可不做那个入口 —— 别把它当漏做。）
+$newSysIds = @('diskmgmt', 'dfrgui', 'ncpa', 'compmgmt', 'msconfig', 'windows-features', 'netplwiz', 'fonts')
+$lackNew = @($newSysIds | Where-Object { $sysIds -notcontains $_ })
+Check 'D08 新加的 8 个系统组件按钮都在（磁盘管理 / 优化驱动器 / 网络连接 / 计算机管理 / 系统配置 / Windows 功能 / 用户账户 / 字体）' `
+    ($lackNew.Count -eq 0) ('缺=' + ($lackNew -join ' '))
 
 $dryMissing = Invoke-Exe 'run no.such.button --dry'
 Check 'D05 不存在的按钮 --dry 也是退出码 2' ($dryMissing.Code -eq 2) ('exit=' + $dryMissing.Code)
@@ -1004,7 +1012,7 @@ Write-Host 'H 组 · 悬停说明（用户 2026-10-04 报过「鼠标悬停的�
 # tip 命令打印的就是界面塞给 ToolTip 的那个字符串，所以这里能直接断言，不用去动真鼠标。
 $tipsAll = Invoke-Exe 'tip'
 Check 'H01 tip 退出码 0' ($tipsAll.Code -eq 0) ('exit=' + $tipsAll.Code)
-Check ('H02 tip 覆盖了每个按钮（137 + 自动 {0} 个）' -f $autoBase) ((Get-Key $tipsAll.Out 'tips') -eq [string](137 + $autoBase)) (Get-Key $tipsAll.Out 'tips')
+Check ('H02 tip 覆盖了每个按钮（145 + 自动 {0} 个）' -f $autoBase) ((Get-Key $tipsAll.Out 'tips') -eq [string](145 + $autoBase)) (Get-Key $tipsAll.Out 'tips')
 
 $blocks = @{}
 $curId = ''

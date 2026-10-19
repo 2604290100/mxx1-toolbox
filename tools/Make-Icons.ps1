@@ -74,6 +74,21 @@ function Get-Shape {
         @('color-picker',   'droplet'),
         @('port-view',      'plug'),
         @('update-cache',   'trash'),
+        # 2026-10-20 加的八个「系统工具页入口」（A 组）：磁盘管理 / 优化驱动器 = 硬盘、
+        # 计算机管理 / 系统配置 = 齿轮、网络连接 = 地球、Windows 功能 = 加号、
+        # 用户账户 = 钥匙、字体 = 文档。
+        # ⚠ 这几条必须排在下面那些泛匹配之前：`windows-features` 里含 "features"，
+        # 撞上老那条 @('features','window') 就会长成应用页那张图（这个表是顺序匹配、先到先得）。
+        # （原计划里的「Internet 选项 inetcpl.cpl」没做：这台机器的精简版 Windows 里
+        #   连这个文件都没有，而"Win10/11 一个都不许缺"的看门狗会当场红 —— 宁可不做也不放个假入口。）
+        @('windows-features', 'plus'),
+        @('diskmgmt', 'disk'),
+        @('dfrgui',   'disk'),
+        @('compmgmt', 'gear'),
+        @('msconfig', 'gear'),
+        @('ncpa',     'globe'),
+        @('netplwiz', 'key'),
+        @('fonts',    'doc'),
         # 文件哈希校验（未发布这轮加的）：一个 "#" 号 —— 文件"指纹"最直观的写法
         @('hash',           'hash'),
         @('sfc',            'wrench'),

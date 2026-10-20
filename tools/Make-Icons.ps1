@@ -38,6 +38,11 @@ function Get-Shape {
     $key = ($Id + ' ' + $Name).ToLowerInvariant()
     # 顺序有意义：先匹配更具体的词
     $map = @(
+        # 夜巡（2026-10-21）补的三个"修一修"按钮：打印机卡住 = 一张纸（卡住的是文档）、
+        # 没声音 = 喇叭、网络体检 = 地球（和下面泛匹配的 globe 一致，这里写明免得以后被别的词抢走）
+        @('print-queue-fix', 'doc'),
+        @('sound-check',     'speaker'),
+        @('net-check',       'globe'),
         # 「右键增强」页签那 7 个按钮（v1.5.0）：装上 = 加号、撤掉 = 减号、
         # 解除占用 = 钥匙（解锁）、常用功能 = 清单、重建 = 刷新、说明 = 文档
         @('rightmenu.unlock.on',  'key'),

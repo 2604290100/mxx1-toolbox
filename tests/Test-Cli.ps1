@@ -485,13 +485,13 @@ foreach ($line in ($status.Out -split "`r?`n")) {
     }
 }
 
-Check ('A04 按钮总数 164 + 工具目录里自动加载的 {0} 个（测试期间用户层的按钮会暂停：常用 56 + 系统工具 37 + 隐私 29 + 应用 5 + 清理 13 + 右键 21 + 我的 3）' -f $autoBase) `
-    ((Get-Key $status.Out 'buttons') -eq [string](164 + $autoBase)) (Get-Key $status.Out 'buttons')
+Check ('A04 按钮总数 165 + 工具目录里自动加载的 {0} 个（测试期间用户层的按钮会暂停：常用 57 + 系统工具 37 + 隐私 29 + 应用 5 + 清理 13 + 右键 21 + 我的 3）' -f $autoBase) `
+    ((Get-Key $status.Out 'buttons') -eq [string](165 + $autoBase)) (Get-Key $status.Out 'buttons')
 Check 'A05 内置清单里没有灰色占位按钮了（两个「资源管理器」也接上了真功能；灰规则改由 B 组注入验证）' ((Get-Key $status.Out 'placeholders') -eq '0') (Get-Key $status.Out 'placeholders')
 Check 'A06 危险按钮 3 个' ((Get-Key $status.Out 'dangerous') -eq '3') (Get-Key $status.Out 'dangerous')
 
 # 「常用」页签是合成的（置顶 + 最近使用），清单里没有它的按钮，所以是 0
-$tabExpect = @{ 'recent' = 0; 'common' = 56; 'mine' = 3; 'system' = 37; 'cleanup' = 13; 'privacy' = 29; 'apps' = 5; 'rightmenu' = 21 }
+$tabExpect = @{ 'recent' = 0; 'common' = 57; 'mine' = 3; 'system' = 37; 'cleanup' = 13; 'privacy' = 29; 'apps' = 5; 'rightmenu' = 21 }
 $tabOk = $true
 $tabDetail = @()
 foreach ($k in $tabExpect.Keys) {
@@ -499,13 +499,13 @@ foreach ($k in $tabExpect.Keys) {
     $tabDetail += ($k + '=' + $v)
     if ($v -ne [string]([int]$tabExpect[$k] + [int]$autoByTab[$k])) { $tabOk = $false }
 }
-Check 'A07 八个页签的按钮数正确（0/56/3/37/13/29/5/21，加上自动按钮）' $tabOk ($tabDetail -join ' ')
+Check 'A07 八个页签的按钮数正确（0/57/3/37/13/29/5/21，加上自动按钮）' $tabOk ($tabDetail -join ' ')
 
 $list = Invoke-Exe 'list'
 Check 'A08 list 退出码 0' ($list.Code -eq 0) ('exit=' + $list.Code)
-Check 'A09 list 报的按钮数一致' ((Get-Key $list.Out 'buttons') -eq [string](164 + $autoBase)) (Get-Key $list.Out 'buttons')
+Check 'A09 list 报的按钮数一致' ((Get-Key $list.Out 'buttons') -eq [string](165 + $autoBase)) (Get-Key $list.Out 'buttons')
 $lines = @($list.Out -split "`r?`n" | Where-Object { $_ -match "`t" })
-Check ('A10 list 打出 {0} 行按钮' -f (164 + $autoBase)) ($lines.Count -eq (164 + $autoBase)) ('lines=' + $lines.Count)
+Check ('A10 list 打出 {0} 行按钮' -f (165 + $autoBase)) ($lines.Count -eq (165 + $autoBase)) ('lines=' + $lines.Count)
 
 $rmList = Invoke-Exe 'list --tab rightmenu'
 Check 'A11 右键增强 21 个按钮（20 个右键菜单功能 + 隔壁永久删除工具）' ((Get-Key $rmList.Out 'shown') -eq [string](21 + [int]$autoByTab['rightmenu'])) (Get-Key $rmList.Out 'shown')
@@ -1080,7 +1080,7 @@ Write-Host 'H 组 · 悬停说明（用户 2026-10-04 报过「鼠标悬停的�
 # tip 命令打印的就是界面塞给 ToolTip 的那个字符串，所以这里能直接断言，不用去动真鼠标。
 $tipsAll = Invoke-Exe 'tip'
 Check 'H01 tip 退出码 0' ($tipsAll.Code -eq 0) ('exit=' + $tipsAll.Code)
-Check ('H02 tip 覆盖了每个按钮（164 + 自动 {0} 个）' -f $autoBase) ((Get-Key $tipsAll.Out 'tips') -eq [string](164 + $autoBase)) (Get-Key $tipsAll.Out 'tips')
+Check ('H02 tip 覆盖了每个按钮（165 + 自动 {0} 个）' -f $autoBase) ((Get-Key $tipsAll.Out 'tips') -eq [string](165 + $autoBase)) (Get-Key $tipsAll.Out 'tips')
 
 $blocks = @{}
 $curId = ''
@@ -4020,13 +4020,125 @@ if ($vFakeOk) {
 
 }
 
+# ---- 定时关机 / 重启 / 睡眠（V28–V38，2026-10-20 的 F4）--------------------------------
+# ⚠️ 这一段的注释头**别写成 `# ---- V28…`**：套件与闸门都是拿 `^# ---- <字母><数字>` 认"组"的，
+#    写成那样会凭空多出一个叫 V28 的组 → 汇总里冒出"本次没跑的组: …,V28"这种**假欠账**
+#    （2026-10-20 实测踩到；坑 88 是同一类，见 PITFALLS）。
+# 用户原话：「再加『今天 HH:mm』」——所以两种时间模式都要能算；除此之外这一组盯四件事：
+#   ① 命令行**没有**"开始计时"的入口（开始只能在窗口里点，要过条款门 + 确认框）；
+#   ② 关机 / 重启交给 Windows 自己的 shutdown.exe（工具箱退出也照样执行），睡眠交给工具箱
+#      自己的后台小进程（不借 PowerShell —— 火绒对"隐藏窗口的 PowerShell"很敏感）；
+#   ③ 过了点却没执行的老记录要如实说"已经过了时间"，**绝不能**说成还在计时；
+#   ④ 后台进程：等够时间 → 到点执行 → 清记录；记录被别人换掉就立刻安静退出、不动新那条。
+#
+# ⚠ 两条隔离，缺一不可：MXX1_TIMER_DRYRUN=1 → 一个字节都不发（不调 shutdown.exe、不真的睡）；
+#   MXX1_TIMER_STATE → 记录写进测试自己的临时目录，用户真实那条定时任务一个字节都不碰。
+Write-Host ''
+Write-Host 'V 组补 · 定时关机 / 重启 / 睡眠'
+$vTimerDir = Join-Path $tmpRoot ('mxx1-timer-' + $vTag)
+[void][System.IO.Directory]::CreateDirectory($vTimerDir)
+$vTimerState = Join-Path $vTimerDir 'timer.txt'
+$vTEnv = @{ MXX1_TIMER_DRYRUN = '1'; MXX1_TIMER_STATE = $vTimerState }
+$vNow = [long][Math]::Floor(([DateTime]::UtcNow - (New-Object DateTime(1970,1,1,0,0,0,[DateTimeKind]::Utc))).TotalSeconds)
+
+function Write-VTimer {
+    # ⚠ 参数名不能叫 Pid / Args 这种 PowerShell 的**自动变量**（$PID 只读 → "无法覆盖变量 Pid"，
+    # 而且报错点看起来像是在别处）。坑 93。
+    param([string]$Action, [long]$At, [string]$Token = 'testtoken', [int]$ProcId = 0, [string]$Mode = 'system')
+    $body = 'action=' + $Action + "`r`nat=" + $At + "`r`nstarted=" + $vNow
+    $body += "`r`npid=" + $ProcId + "`r`ntoken=" + $Token + "`r`nmode=" + $Mode + "`r`n"
+    [System.IO.File]::WriteAllText($vTimerState, $body, (New-Object System.Text.UTF8Encoding($false)))
+}
+
+$vTNone = Invoke-Exe 'timer status' -Env $vTEnv
+Check 'V28 没有定时任务时 present=0 / active=0，如实说「现在没有定时任务」，记录文件路径就是隔离的那份' `
+    (((Get-Key $vTNone.Out 'present') -eq '0') -and ((Get-Key $vTNone.Out 'active') -eq '0') -and
+     ($vTNone.Out -match '现在没有定时任务') -and ((Get-Key $vTNone.Out 'state') -eq $vTimerState)) `
+    ('present=' + (Get-Key $vTNone.Out 'present') + ' state=' + (Get-Key $vTNone.Out 'state'))
+
+# 命令行只读的那条底线：这条要是破了，别的程序（或者手滑的脚本）就能悄悄定时关机。
+if (Test-Path -LiteralPath $vTimerState) { Remove-Item -LiteralPath $vTimerState -Force }
+$vTStart = Invoke-Exe 'timer start --action=shutdown --after=60' -Env $vTEnv
+Check 'V29 命令行没有"开始计时"的入口：timer start 退出码 2，一个记录都不写（只能在窗口里点）' `
+    (($vTStart.Code -eq 2) -and (-not (Test-Path -LiteralPath $vTimerState))) `
+    ('exit=' + $vTStart.Code + ' 记录=' + (Test-Path -LiteralPath $vTimerState))
+
+$vPlanS = Invoke-Exe 'timer plan --action=shutdown --after=600' -Env $vTEnv
+Check 'V30 关机交给 Windows 自己的 shutdown.exe：/s /t 600 + 一句给人看的说明（只解析，不执行）' `
+    (($vPlanS.Code -eq 0) -and ((Get-Key $vPlanS.Out 'handler') -eq 'shutdown.exe') -and
+     ($vPlanS.Out -match '/s /t 600') -and ((Get-Key $vPlanS.Out 'seconds') -eq '600')) `
+    ('handler=' + (Get-Key $vPlanS.Out 'handler') + ' seconds=' + (Get-Key $vPlanS.Out 'seconds'))
+$vPlanR = Invoke-Exe 'timer plan --action=restart --after=90' -Env $vTEnv
+Check 'V31 重启用 /r（不是 /s），秒数跟着走' `
+    (((Get-Key $vPlanR.Out 'handler') -eq 'shutdown.exe') -and ($vPlanR.Out -match '/r /t 90') -and
+     ((Get-Key $vPlanR.Out 'seconds') -eq '90')) ('cmd=' + (Get-Key $vPlanR.Out 'cmd'))
+$vPlanZ = Invoke-Exe 'timer plan --action=sleep --after=600' -Env $vTEnv
+Check 'V32 睡眠不走 shutdown.exe，走工具箱自己的后台进程（SetSuspendState，不借 PowerShell）' `
+    (((Get-Key $vPlanZ.Out 'handler') -eq 'worker') -and ($vPlanZ.Out -match 'SetSuspendState') -and
+     (-not ($vPlanZ.Out -match 'shutdown\.exe'))) ('handler=' + (Get-Key $vPlanZ.Out 'handler'))
+
+Write-VTimer -Action 'shutdown' -At ($vNow + 600)
+$vTAct = Invoke-Exe 'timer status' -Env $vTEnv
+Check 'V33 有任务时：present=1 / active=1 / stale=0，动作和"还剩多久"都念得出来' `
+    (((Get-Key $vTAct.Out 'present') -eq '1') -and ((Get-Key $vTAct.Out 'active') -eq '1') -and
+     ((Get-Key $vTAct.Out 'stale') -eq '0') -and ((Get-Key $vTAct.Out 'action') -eq 'shutdown') -and
+     ([int](Get-Key $vTAct.Out 'remaining') -gt 500) -and ($vTAct.Out -match '还剩')) `
+    ('remaining=' + (Get-Key $vTAct.Out 'remaining'))
+
+# 用户可能中途关机 / 强制结束进程 / 记录被别的东西改坏 —— 那种老记录绝不能显示成"还在计时"。
+Write-VTimer -Action 'restart' -At ($vNow - 300)
+$vTStale = Invoke-Exe 'timer status' -Env $vTEnv
+Check 'V34 过了点却没执行的老记录：报 stale=1、active=0，明说"已经过了时间"，绝不说成还在计时' `
+    (((Get-Key $vTStale.Out 'present') -eq '1') -and ((Get-Key $vTStale.Out 'active') -eq '0') -and
+     ((Get-Key $vTStale.Out 'stale') -eq '1') -and ($vTStale.Out -match '已经过了时间') -and
+     (-not ($vTStale.Out -match '还剩'))) ('active=' + (Get-Key $vTStale.Out 'active'))
+$vTCancel = Invoke-Exe 'timer cancel' -Env $vTEnv
+$vTCancel2 = Invoke-Exe 'timer cancel' -Env $vTEnv
+Check 'V35 取消：老记录真的从磁盘上删掉了；再取消一次也不报错（没有任务时说"什么都没改"）' `
+    ((($vTCancel.Code -eq 0) -and ($vTCancel.Out -match 'result=ok') -and
+      (-not (Test-Path -LiteralPath $vTimerState))) -and
+     (($vTCancel2.Code -eq 0) -and ($vTCancel2.Out -match 'result=ok'))) `
+    ('exit=' + $vTCancel.Code + ' 记录=' + (Test-Path -LiteralPath $vTimerState))
+
+# 后台进程本体：真的等 3 秒 → 到点 → 试运行（不真睡）→ 清掉记录。
+# ⚠ 基准时间必须**现取**：上面那些 Check 每次都要起一次进程，用块首那个 $vNow 算出来的
+#   "两秒后"等跑到这儿早就过期了（第一次写这条就踩了：进程 181 毫秒就结束、记录也没了，
+#   因为它是"到点已过期 → 立刻执行"）。
+function Get-VTimerNow {
+    return [long][Math]::Floor(([DateTime]::UtcNow - (New-Object DateTime(1970,1,1,0,0,0,[DateTimeKind]::Utc))).TotalSeconds)
+}
+$vAt = (Get-VTimerNow) + 4
+Write-VTimer -Action 'sleep' -At $vAt -Token 'w1' -Mode 'worker'
+$vSw = [Diagnostics.Stopwatch]::StartNew()
+$vW1 = Invoke-Exe ('timer worker --at=' + $vAt + ' --action=sleep --token=w1') -Env $vTEnv
+$vSw.Stop()
+Check 'V36 后台进程会一直等到点（等够 3 秒以上才动手）、到点执行、然后自己把记录清掉（试运行不会真睡）' `
+    (($vW1.Code -eq 0) -and ($vW1.Out -match 'timer-worker done=1 dryrun=1') -and
+     ($vSw.ElapsedMilliseconds -ge 3000) -and (-not (Test-Path -LiteralPath $vTimerState))) `
+    ('exit=' + $vW1.Code + ' 用时=' + $vSw.ElapsedMilliseconds + 'ms 记录=' + (Test-Path -LiteralPath $vTimerState))
+
+# 记录被人换掉（用户取消了 / 又定了一条）→ 老的后台进程必须立刻安静退出，绝不能动新那条。
+$vAt2 = (Get-VTimerNow) + 600
+Write-VTimer -Action 'shutdown' -At $vAt2 -Token 'newtoken' -Mode 'system'
+$vSw2 = [Diagnostics.Stopwatch]::StartNew()
+$vW2 = Invoke-Exe ('timer worker --at=' + $vAt2 + ' --action=sleep --token=stale1') -Env $vTEnv
+$vSw2.Stop()
+$vKeep = $false
+if (Test-Path -LiteralPath $vTimerState) { $vKeep = ([System.IO.File]::ReadAllText($vTimerState) -match 'token=newtoken') }
+Check 'V37 记录被换掉时老的后台进程立刻退出（不等、不执行），新那条记录一个字都不动' `
+    (($vW2.Code -eq 0) -and ($vW2.Out -match 'timer-worker ignored=1') -and
+     ($vSw2.ElapsedMilliseconds -lt 5000) -and $vKeep) `
+    ('exit=' + $vW2.Code + ' 用时=' + $vSw2.ElapsedMilliseconds + 'ms 新记录还在=' + $vKeep)
+
 # 收尾：隔离根、夹具目录，以及那份写进工具箱自己目录的电池报告（按原样还回去）
 Remove-Item -Path $vKey -Recurse -Force -ErrorAction SilentlyContinue
 if ($vBatHad) { [System.IO.File]::WriteAllBytes($vBatFile, $vBatOld) }
 else { Remove-Item -LiteralPath $vBatFile -Force -ErrorAction SilentlyContinue }
 Remove-Item -LiteralPath $vDir -Recurse -Force -ErrorAction SilentlyContinue
-Check 'V28 电源测试的隔离根与夹具目录收拾干净了（用户真实的电源方案/原值记录一个字节没碰）' `
-    ((-not (Test-Path -LiteralPath $vKey)) -and (-not (Test-Path -LiteralPath $vDir))) $vDir
+Remove-Item -LiteralPath $vTimerDir -Recurse -Force -ErrorAction SilentlyContinue
+Check 'V38 电源 / 定时测试的隔离根与夹具目录收拾干净了（用户真实的电源方案 / 原值记录 / 定时任务一个字节没碰）' `
+    ((-not (Test-Path -LiteralPath $vKey)) -and (-not (Test-Path -LiteralPath $vDir)) -and
+     (-not (Test-Path -LiteralPath $vTimerDir))) $vTimerDir
 
 }
 

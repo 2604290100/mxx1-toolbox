@@ -151,6 +151,19 @@ $script:NoSingleHad = Test-Path Env:MXX1_NO_SINGLE
 $script:NoSingleOld = $env:MXX1_NO_SINGLE
 $env:MXX1_NO_SINGLE = '1'
 
+# 「定时关机 / 重启 / 睡眠」（2026-10-20 的 F4）：
+#   MXX1_TIMER_DRYRUN=1   一个字节都不发 —— 不调 shutdown.exe、不真的睡（只写日志），
+#                         所以 J17–J21 可以真点「开始计时」而**绝不会**把测试机弄关机；
+#   MXX1_TIMER_STATE      「现在有没有在计时」那份记录挪到测试自己的临时目录，
+#                         绝不去碰用户真实的定时任务（%LOCALAPPDATA%\mxx1-toolbox\timer.txt）。
+$script:TimerDryHad = Test-Path Env:MXX1_TIMER_DRYRUN
+$script:TimerDryOld = $env:MXX1_TIMER_DRYRUN
+$env:MXX1_TIMER_DRYRUN = '1'
+$script:TimerStateHad = Test-Path Env:MXX1_TIMER_STATE
+$script:TimerStateOld = $env:MXX1_TIMER_STATE
+$script:TimerStateFile = Join-Path $tmpRoot ('mxx1-gui-timer-' + [Guid]::NewGuid().ToString('N').Substring(0, 8) + '\timer.txt')
+$env:MXX1_TIMER_STATE = $script:TimerStateFile
+
 # 量文字宽度要用同一套渲染器，才能判断"文字装不装得下"
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
@@ -3693,6 +3706,124 @@ if ($pick -eq $null) {
             $rr3 = [TBGui]::Rect($_.H)
             $_.Class + ' ' + ($rr3[2] - $rr3[0]) + 'x' + ($rr3[3] - $rr3[1]) + ' [' + $_.Text + ']' }) -join ' / '))
 }
+
+# ---- 「定时关机 / 重启 / 睡眠」窗口（J17–J21，2026-10-20 用户点名的 F4）------------------
+# ⚠️ 这行注释头**别写成 `# ---- J17…`**：套件与闸门拿 `^# ---- <字母><数字>` 认"组"，
+#    写成那样会凭空多出一个 J17 组 → 汇总里冒出"本次没跑的组: …,J17"这种假欠账（坑 88 同类）。
+# 和上面那六件同一个口径：**真从按钮点开**，真点「开始计时」过确认框，再真取消掉。
+# ⚠️ 整套带着 MXX1_TIMER_DRYRUN=1（一个字节都不发，见文件开头），记录也写在隔离文件里 ——
+#    这两条一起保证"点了开始计时"不会真把跑测试的这台机器关掉。
+$tmTabJ = Switch-Tab -Handle $main -TabName '常用设置' -ExpectNames $commonNames
+$tmBtn = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '定时关机 / 重启 / 睡眠' })
+Check 'J17 常用设置页上有「定时关机 / 重启 / 睡眠」按钮（可点）' ($tmTabJ -and $tmBtn.Count -eq 1 -and $tmBtn[0].Enabled) ('切页签=' + $tmTabJ + ' 找到=' + $tmBtn.Count)
+$tmWin = $null
+if ($tmBtn.Count -eq 1) {
+    [void][TBGui]::Click($tmBtn[0].H)
+    for ($t1 = 0; $t1 -lt 40; $t1++) {
+        Start-Sleep -Milliseconds 200
+        $tmWin = Find-TopWindow -ProcessId $proc.Id -TextPrefix '定时关机'
+        if ($tmWin) { break }
+    }
+}
+if ($null -eq $tmWin) {
+    Check 'J18 窗口打开了：三种动作 / 两种时间都在，状态行写「现在没有定时任务」' $false '窗口没开出来'
+    Check 'J19 点「开始计时」先弹确认框：写明到点做什么、不会替你保存文档' $false '窗口没开出来'
+    Check 'J20 确认之后状态记录写进去了，窗口状态行跟着变、取消按钮解禁' $false '窗口没开出来'
+    Check 'J21 点「取消定时」→ 确认 → 记录清掉、状态回到「没有定时任务」' $false '窗口没开出来'
+} else {
+    $tmH = $tmWin.H
+    $tmKids = @(Get-ChildControls -RootHandle $tmH)
+    $tmRadios = @($tmKids | Where-Object { $_.Class -like '*BUTTON*' } | ForEach-Object { $_.Text })
+    $tmWant = @('关机', '重启', '睡眠', '多少分钟以后', '指定时间')
+    $tmMiss = @($tmWant | Where-Object { $tmRadios -notcontains $_ })
+    $tmStatus = @($tmKids | Where-Object { $_.Class -like '*STATIC*' -and $_.Text -like '*没有定时任务*' })
+    $tmStart = @($tmKids | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '开始计时' })
+    $tmCancel = @($tmKids | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '取消定时' })
+    Check 'J18 窗口打开了：三种动作 / 两种时间都在，状态行写「现在没有定时任务」，取消按钮是灰的' `
+        (($tmMiss.Count -eq 0) -and ($tmStatus.Count -ge 1) -and ($tmStart.Count -eq 1) -and $tmStart[0].Enabled `
+         -and ($tmCancel.Count -eq 1) -and (-not $tmCancel[0].Enabled)) `
+        ('缺=' + $(if ($tmMiss.Count -gt 0) { $tmMiss -join ' |' } else { '无' }) +
+         ' 状态行=' + $tmStatus.Count + ' 开始=' + $(if ($tmStart.Count -eq 1) { $tmStart[0].Enabled } else { '没找到' }) +
+         ' 取消=' + $(if ($tmCancel.Count -eq 1) { $tmCancel[0].Enabled } else { '没找到' }))
+
+    # 点「开始计时」→ 确认框（标题固定是「请确认」）。正文里必须有那句"不会替你保存文档"。
+    $tmDlg = $null
+    if ($tmStart.Count -eq 1 -and $tmStart[0].Enabled) {
+        [void][TBGui]::Click($tmStart[0].H)
+        for ($t2 = 0; $t2 -lt 40; $t2++) {
+            Start-Sleep -Milliseconds 200
+            $tmDlg = @((Get-TopWindows -ProcessId $proc.Id) | Where-Object { $_.Visible -and $_.Text -eq '请确认' })
+            if ($tmDlg.Count -gt 0) { break }
+        }
+    }
+    $tmDlgText = ''
+    $tmDlgOk = @()
+    if (@($tmDlg).Count -gt 0) {
+        $tmDlgH = @($tmDlg)[0].H
+        $tmDlgText = (@(Get-ChildControls -RootHandle $tmDlgH | Where-Object { $_.Class -like '*STATIC*' } | ForEach-Object { $_.Text }) -join "`n")
+        $tmDlgOk = @(Get-ChildControls -RootHandle $tmDlgH | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '开始计时' })
+    }
+    Check 'J19 点「开始计时」先弹确认框：写明到点做什么、不会替你保存文档' `
+        (($tmDlgText -like '*执行「关机」*') -and ($tmDlgText -like '*不会替你保存文档*') -and ($tmDlgOk.Count -eq 1)) `
+        ('确认框=' + @($tmDlg).Count + ' 按钮=' + $tmDlgOk.Count + ' 正文长度=' + $tmDlgText.Length)
+
+    # 确认 → 记录文件里应当出现 action=shutdown（dry-run 下不会真调 shutdown.exe）
+    if ($tmDlgOk.Count -eq 1) { [void][TBGui]::Click($tmDlgOk[0].H) }
+    $tmRec = ''
+    for ($t3 = 0; $t3 -lt 40; $t3++) {
+        Start-Sleep -Milliseconds 200
+        if (Test-Path -LiteralPath $script:TimerStateFile) {
+            $tmRec = [System.IO.File]::ReadAllText($script:TimerStateFile)
+            if ($tmRec -like '*action=shutdown*') { break }
+        }
+    }
+    $tmStatus2 = ''
+    for ($t4 = 0; $t4 -lt 30; $t4++) {
+        $tmStatus2 = (@(Get-ChildControls -RootHandle $tmH | Where-Object { $_.Class -like '*STATIC*' -and $_.Text -like '*还剩*' } | ForEach-Object { $_.Text }) -join ' ')
+        if ($tmStatus2.Length -gt 0) { break }
+        Start-Sleep -Milliseconds 200
+    }
+    $tmCancel2 = @(Get-ChildControls -RootHandle $tmH | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '取消定时' })
+    Check 'J20 确认之后状态记录写进去了（action=shutdown），状态行变成"还剩…"、取消按钮解禁' `
+        (($tmRec -like '*action=shutdown*') -and ($tmRec -like '*mode=system*') -and ($tmStatus2.Length -gt 0) `
+         -and ($tmCancel2.Count -eq 1) -and $tmCancel2[0].Enabled) `
+        ('记录=' + (($tmRec -split "`r?`n" | Where-Object { $_ -like 'action=*' -or $_ -like 'mode=*' }) -join ' ') +
+         ' 状态行=[' + $tmStatus2 + '] 取消=' + $(if ($tmCancel2.Count -eq 1) { $tmCancel2[0].Enabled } else { '没找到' }))
+
+    # 取消 → 又一个确认框（按钮也叫「取消定时」，但在**确认框里**）
+    $tmDlg2 = $null
+    if ($tmCancel2.Count -eq 1 -and $tmCancel2[0].Enabled) { [void][TBGui]::Click($tmCancel2[0].H) }
+    for ($t5 = 0; $t5 -lt 40; $t5++) {
+        Start-Sleep -Milliseconds 200
+        $tmDlg2 = @((Get-TopWindows -ProcessId $proc.Id) | Where-Object { $_.Visible -and $_.Text -eq '请确认' })
+        if ($tmDlg2.Count -gt 0) { break }
+    }
+    $tmDlg2Ok = @()
+    if (@($tmDlg2).Count -gt 0) {
+        $tmDlg2Ok = @(Get-ChildControls -RootHandle (@($tmDlg2)[0].H) | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '取消定时' })
+    }
+    if ($tmDlg2Ok.Count -eq 1) { [void][TBGui]::Click($tmDlg2Ok[0].H) }
+    $tmGone = $false
+    for ($t6 = 0; $t6 -lt 40; $t6++) {
+        Start-Sleep -Milliseconds 200
+        if (-not (Test-Path -LiteralPath $script:TimerStateFile)) { $tmGone = $true; break }
+    }
+    $tmStatus3 = ''
+    for ($t7 = 0; $t7 -lt 30; $t7++) {
+        $tmStatus3 = (@(Get-ChildControls -RootHandle $tmH | Where-Object { $_.Class -like '*STATIC*' -and $_.Text -like '*没有定时任务*' } | ForEach-Object { $_.Text }) -join ' ')
+        if ($tmStatus3.Length -gt 0) { break }
+        Start-Sleep -Milliseconds 200
+    }
+    $tmCancel3 = @(Get-ChildControls -RootHandle $tmH | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '取消定时' })
+    Check 'J21 点「取消定时」→ 确认 → 记录清掉、状态回到「没有定时任务」、取消按钮又灰了' `
+        ($tmGone -and ($tmStatus3.Length -gt 0) -and ($tmCancel3.Count -eq 1) -and (-not $tmCancel3[0].Enabled)) `
+        ('记录还在=' + (-not $tmGone) + ' 状态行=[' + $tmStatus3 + '] 取消=' +
+         $(if ($tmCancel3.Count -eq 1) { $tmCancel3[0].Enabled } else { '没找到' }))
+
+    $tmClose = @(Get-ChildControls -RootHandle $tmH | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '关闭' })
+    if ($tmClose.Count -eq 1) { [void][TBGui]::Click($tmClose[0].H) } else { [void][TBGui]::CloseWindow($tmH) }
+    Start-Sleep -Milliseconds 500
+}
 [void][TBGui]::CloseWindow($main)
 Start-Sleep -Milliseconds 600
 
@@ -4797,6 +4928,24 @@ Write-Host 'T 组：关闭窗口缩到托盘 · 重复启动只保留一个界�
 #    CloseReason=UserClosing）。从别的进程直接投 WM_CLOSE 会被 WinForms 当成"任务管理器结束任务"
 #    （TaskManagerClosing），那条路是**故意**照常退出的 —— 2026-10-20 先用 WM_CLOSE 验，白忙一场。
 $trayEnv = @{ MXX1_NO_TRAY = ''; MXX1_NO_SINGLE = '' }
+
+# ⚠️ 这一组**没法在"屏幕上已经开着另一个工具箱"的时候验**（2026-10-20 实测踩到）：
+# 用户自己开着工具箱时，这一组再起的进程会**正确地**"把前一个叫出来、然后自己退出"——
+# 于是 T01 拿到 `hwnd=0`，看着像"托盘模式下窗口打不开"。产品没问题，是这个环境里验不了，
+# 所以整组按 [SKIP] 记（和 V 组"编不出假 powercfg"、N21b"鼠标挪不动"同一条口径）。
+# 判定办法：数一下 Mxx1Toolbox 进程里**不属于本套件拉起的那几个**（$script:Procs 里记着）。
+$tForeign = @()
+foreach ($tp in @(Get-Process Mxx1Toolbox -ErrorAction SilentlyContinue)) {
+    $tid = $tp.Id
+    $known = @($script:Procs | Where-Object { $_.Id -eq $tid }).Count -gt 0
+    if (-not $known) { $tForeign += $tid }
+}
+if ($tForeign.Count -gt 0) {
+    Skip 'T 组（关闭缩到托盘 · 重复启动只保留一个界面）' `
+        ('屏幕上还开着别的工具箱实例（PID ' + ($tForeign -join ',') + '）—— 单实例那几条验不了；把它们关掉再跑这一组')
+}
+
+if ($tForeign.Count -eq 0) {
 $instancesBefore = @(Get-Process Mxx1Toolbox -ErrorAction SilentlyContinue).Count
 $trayLogPath = ''
 $trayStat = Invoke-Exe 'status'
@@ -4868,6 +5017,7 @@ if ($wT) {
 if ($pT -and -not $pT.HasExited) { try { $pT.Kill() } catch { } }
 $pT = $null
 }
+}
 
 # ---------------------------------------------------------------- 现场复原
 Restore-UserLayer
@@ -4885,6 +5035,16 @@ if ($script:NoTrayHad) { $env:MXX1_NO_TRAY = $script:NoTrayOld }
 else { Remove-Item Env:MXX1_NO_TRAY -ErrorAction SilentlyContinue }
 if ($script:NoSingleHad) { $env:MXX1_NO_SINGLE = $script:NoSingleOld }
 else { Remove-Item Env:MXX1_NO_SINGLE -ErrorAction SilentlyContinue }
+if ($script:TimerDryHad) { $env:MXX1_TIMER_DRYRUN = $script:TimerDryOld }
+else { Remove-Item Env:MXX1_TIMER_DRYRUN -ErrorAction SilentlyContinue }
+if ($script:TimerStateHad) { $env:MXX1_TIMER_STATE = $script:TimerStateOld }
+else { Remove-Item Env:MXX1_TIMER_STATE -ErrorAction SilentlyContinue }
+# 定时任务那条测试记录整份删掉（同上：不在用户机器上留测试痕迹；真要是有残留，
+# 下次打开窗口会显示成一条"过了点没执行"的旧记录 —— 不能留给用户）
+if ($script:TimerStateFile) {
+    $tmDir = Split-Path -Parent $script:TimerStateFile
+    if ($tmDir -and (Test-Path -LiteralPath $tmDir)) { Remove-Item -LiteralPath $tmDir -Recurse -Force -ErrorAction SilentlyContinue }
+}
 if ($script:CtxRootHad) { $env:MXX1_CTXMENU_ROOT = $script:CtxRootOld }
 else { Remove-Item Env:MXX1_CTXMENU_ROOT -ErrorAction SilentlyContinue }
 if ($script:CtxRootMachineHad) { $env:MXX1_CTXMENU_ROOT_MACHINE = $script:CtxRootMachineOld }

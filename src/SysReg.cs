@@ -212,7 +212,13 @@ namespace Mxx1Toolbox
             // ⑨ 快捷方式小箭头：Shell Icons\29 覆盖成 shell32.dll 里那个全透明的空图标
             //    （本机实测：ExtractIconEx(shell32.dll, -50) 出来 32×32 不透明像素 0 个）。
             //    关 = 把这个值删掉（OffValue = null → 引擎删值，不是写空字符串）。
-            //    ⚠️ 这个值要重启资源管理器才生效；本会话没有 explorer 桌面壳，没法做「箭头的确消失」的肉眼验证。
+            //
+            //    ⚠️ 2026-10-20 实测修正：**只写 HKCU 在这台 Win10 上完全没用** ——
+            //    拿一个真 .lnk 调 SHGetFileInfo(SHGFI_LINKOVERLAY)，HKCU 有值 / 没值，
+            //    叠加图标都是同样的 60 个像素；改成写 HKLM 的那一份，60 → **0**，删掉又回到 60。
+            //    所以两个位置一起写：认 HKCU 的系统照旧，认 HKLM 的（这台）也真的会变。
+            //    代价就是这一对从此要管理员（HKLM 那一条），「恢复」把两处都删掉。
+            //    ⚠️ 还是要重启资源管理器才看得到变化。
             Tweak arrow = new Tweak();
             arrow.OnLabel = "去掉小箭头";
             arrow.OffLabel = "恢复小箭头";
@@ -220,10 +226,11 @@ namespace Mxx1Toolbox
             arrow.Item = new RegItemSpec();
             arrow.Item.Id = "shortcut-arrow";
             arrow.Item.Name = "快捷方式小箭头";
-            arrow.Item.What = "快捷方式图标左下角那个小箭头（写 Shell Icons\\29 = shell32.dll,-50，那是一个全透明的空图标；「恢复小箭头」把这个值删掉）";
+            arrow.Item.What = "快捷方式图标左下角那个小箭头（把 Shell Icons\\29 写成 shell32.dll,-50，那是一个全透明的空图标；「恢复小箭头」把这个值删掉。HKCU 和 HKLM 两处一起写，改完要重启资源管理器）";
             arrow.Item.Values = new RegValueSpec[]
             {
-                Str("HKCU", "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Shell Icons", "29", "%SystemRoot%\\System32\\shell32.dll,-50", null)
+                Str("HKCU", "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Shell Icons", "29", "%SystemRoot%\\System32\\shell32.dll,-50", null),
+                Str("HKLM", "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Shell Icons", "29", "%SystemRoot%\\System32\\shell32.dll,-50", null)
             };
             list.Add(arrow);
 

@@ -168,7 +168,7 @@
 | 桌面模式·合盖不睡 | 一键开关（`power-desk`）：把**所有**方案的合盖动作接电源 + 用电池都改成「不采取任何操作」，再点一次改回「关机」；和「合盖与电源键动作」共用同一套记录 / 读回 / 还原（管理员 + 确认，§12.71）。⚠️ 按钮名 2026-10-19 从「桌面模式（合盖不睡）」缩成这个（标签宽度，见 §12.72） |
 | 显示 / 隐藏文件扩展名 | `HKCU\...\Explorer\Advanced\HideFileExt` = 0 / 1（注册表；改完资源管理器按 F5 就能看到） |
 | 显示 / 不显示隐藏文件 | 同一个键的 `Hidden` = 1 / 2（注册表）；带「系统」属性的文件仍由文件夹选项里那个受保护的勾单独控制，这里不碰 `ShowSuperHidden` |
-| 去掉 / 恢复快捷方式小箭头 | `HKCU\...\Explorer\Shell Icons\29` = `%SystemRoot%\System32\shell32.dll,-50`（本机实测资源 50 是**全透明的空图标**）；「恢复」= 把这个值**删掉**（`OffValue = null`，引擎删值不是写空串）。⚠️ 要重启资源管理器才生效（§12.77） |
+| 去掉 / 恢复快捷方式小箭头 | `HKCU` **和** `HKLM` 的 `\...\Explorer\Shell Icons\29` = `%SystemRoot%\System32\shell32.dll,-50`（本机实测资源 50 是**全透明的空图标**）；「恢复」= 两处都**删掉**（`OffValue = null`，引擎删值不是写空串）。⚠️ 要管理员、要重启资源管理器才生效（§12.77；2026-10-20 实测只写 HKCU 无效） |
 | 时钟显示秒 / 不显示秒 | `HKCU\...\Explorer\Advanced\ShowSecondsInSystemClock` = 1 / 0（注册表；**Windows 10 起才有**，Win7/8 上只给说明、一个字节都不写） |
 | 查看设置改动 / 还原设置改动 | `builtin:sysreg/status` / `builtin:sysreg/restore`：前者把 `sysreg-original.tsv` 里每条记录念成一句人话（现在是什么值、原来是几），后者按记录逐条写回（要管理员）。**记录里"原来整个键都不存在"的，还原时连键一起删掉** |
 
@@ -3518,20 +3518,34 @@ A 组做完之后按用户的"优先挑简单又好用的"接着做 `待做功�
 | --- | --- | --- |
 | 显示 / 隐藏文件扩展名 | `file-ext`：`HKCU\...\Explorer\Advanced\HideFileExt` = 0 / 1 | 最常被家人误关的一条 |
 | 显示 / 不显示隐藏文件 | `hidden-files`：同一个键的 `Hidden` = 1 / 2 | **不碰** `ShowSuperHidden`（受保护的系统文件仍由文件夹选项那个勾说了算） |
-| 去掉 / 恢复小箭头 | `shortcut-arrow`：`HKCU\...\Explorer\Shell Icons\29` = `%SystemRoot%\System32\shell32.dll,-50`，关 = **删掉这个值** | 见下面三条 |
+| 去掉 / 恢复小箭头 | `shortcut-arrow`：`HKCU` **和** `HKLM` 的 `...\Explorer\Shell Icons\29` 都写成 `%SystemRoot%\System32\shell32.dll,-50`，关 = **两处都删掉** | 见下面三条（2026-10-20 当天修正：只写 HKCU 在这台机器上**完全没用**） |
 | 时钟显示秒 / 不显示秒 | `clock-seconds`：同一个键的 `ShowSecondsInSystemClock` = 1 / 0 | `MinBuild = 10240`；Win7/8 上**只给说明、一个字节都不写** |
 
 1. **"空图标"这条是量出来的，不是抄的**：只读探针在本机 `ExtractIconEx(shell32.dll, -50)`，
    拿到的 32×32 大图标**不透明像素 = 0** —— 即 `-50` 确实是一张全透明的空图标，所以把 `Shell Icons\29`
    指过去 = 箭头位置什么都不画。探针脚本在 `%TEMP%\opencode\probe-lnk-arrow*.ps1`（不进仓库）。
-2. ⚠️ **"箭头的确消失"这一步在本会话没法验，别写成"已验证"**：本会话根本没有桌面壳
-   （`EnumWindows` 里连 `Progman` / `WorkerW` 都没有，`SHGetFileInfo(SHGFI_LINKOVERLAY)`
-   也画不出箭头），所以只能验到「值写进去了、读回对得上、关 = 值真的没了」；
-   肉眼那一步留给**重启资源管理器**之后的用户，提示文案里写清了这一点。
-   「恢复小箭头」用的是 `Str(..., on, null)` → `OffValue = null` → 引擎**删值**（不是写空串），
-   这条分支早在 L08 自检里就覆盖着（"原来没有这个值"）。
-3. 为什么不做成"直接删 `HKLM\...\ShellIconOverlayIdentifiers\Shortcut`"：那是别人的研究结论、
-   而且动 HKLM；`Shell Icons\29` 是 HKCU、可一键还原，符合这一页一贯的"只碰设置类开关"。
+2. ⚠️ **2026-10-20 当天用户反馈「恢复小箭头无效」→ 一量就明白：只写 HKCU 在这台 Win10 上什么都改变不了**。
+   量法（这才是"箭头到底消没消失"的唯一判据，也能在回归里跑）：拿桌面一个真 `.lnk`，各调一次
+   `SHGetFileInfo(SHGFI_ICON)` 与 `SHGetFileInfo(SHGFI_ICON | SHGFI_LINKOVERLAY)`，
+   两张 32×32 图标**逐像素比**，差出来的那些像素就是叠加箭头。实测：
+
+   | 状态 | 叠加像素 |
+   | --- | --- |
+   | 原样（HKLM 29 = `imageres.dll,197`，别的工具早就把箭头藏了） | 60 |
+   | 只把 **HKCU** 29 写成空图标 | **60（一个像素都没变）** |
+   | 把 **HKLM** 29 写成空图标 | **0** |
+   | 把 HKLM 29 删掉（= 系统默认箭头） | 169 |
+
+   → 这台机器**只认 HKLM 那一份**；而用户机器上早就被别的工具写了 `HKLM\...\Shell Icons\29 =
+   imageres.dll,197`（那是个几乎透明的图标，索引 197 实测只有 31 个不透明像素），所以
+   ① 我们的「去掉」看不出变化（箭头本来就被藏了）②「恢复」只删了 HKCU 那个不存在的值 → 看着就是"没反应"。
+   修法：**HKCU + HKLM 两处一起写**（两个 `RegValueSpec` 挂在同一个开关上），关 = 两处都删；
+   代价是这一对从此要管理员（`runAsAdmin`），原值照旧进 `sysreg-original.tsv`（HKLM 那份会被记下来，
+   「还原设置改动」能写回去）。修完实测：去掉 → 叠加像素 0；恢复 → 169（系统默认箭头）。
+   ⚠️ 别把这条改回"只写 HKCU"——L04c 现在钉着"2 个值 + 要管理员"。
+3. 为什么不直接删 `HKLM\...\ShellIconOverlayIdentifiers\Shortcut`：那是别人的研究结论、
+   而且那个键管的是**叠加图标处理器**（OneDrive 那种角标），不是快捷方式箭头；
+   `Shell Icons\29` 才是箭头本身，可一键还原。
 4. **数字连锁（这次要一起改的地方）**：内置按钮 145 → **153**、内嵌图标 145 → **153**
    （`status` 报 `buttons` 147 → 155）、常用设置页 38 → **46**（五段）；写死数字的断言
    `A04` / `A07` / `A09` / `A10` / `H02` 与 L 组（`L02` 6→10、`L03` 12→20、`L06` 10 个名字），
@@ -3539,6 +3553,28 @@ A 组做完之后按用户的"优先挑简单又好用的"接着做 `待做功�
    加一段不加它 B03 当场红（`PITFALLS.md` 84）。
 5. ⚠️ **做图标前先编译**：`tools\Make-Icons.ps1` 的按钮清单是**从 exe 的 `list` 读**的，
    所以顺序永远是 `build.ps1` → `Make-Icons.ps1` → `build.ps1`（第二遍才是把新图标嵌进去）。
+
+### 12.78 「重启资源管理器」点一次就把按钮钉在灰色上（2026-10-20 用户报的第二个问题）
+
+用户原话：「**重启资源管理器 点击执行后变成灰色了，没有恢复可点击状态**」。
+日志里那一笔只有"开始"，**永远没有"完成 · 用时"** —— 也就是说 `Launcher.Run` 根本没返回，
+界面上的按钮就一直停在"正在跑"（转灰/转圈）。
+
+真因在 `Launcher.Exec`（`src\Launcher.cs`）：脚本类按钮是把子进程的 `stdout` 用
+`ReadToEndAsync()` 读干净的，读完才 `outTask.Result`。而那条命令是
+`taskkill /f /im explorer.exe … & start explorer.exe` —— **`start` 出来的 explorer 把 cmd 的
+stdout 管道一并继承走了**：cmd 自己早就退出（退出码 0 也拿到了），可管道的写端还在 explorer 手里，
+EOF 永远不来 → `Result` 永远不返回 → 命令行动词边界（`Run`）永不返回。
+
+修法：**进程退出之后，输出只再等 3 秒**（`outTask.Wait(3000)`），等不到就当"这段子进程的输出不要了"，
+照常把退出码/报告交出去。这样任何"按钮顺手起一个长命子进程"的按钮（`start explorer.exe`、
+`start /b cmd …`）都不会再把按钮钉住。回归 **F05**（`tests\Test-Cli.ps1`）：
+用户层放一个 `kind=script` 的夹具按钮，`inline` 里 `start /b` 起一个 11 秒的 ping，
+断言 `run` **6 秒内退出**。
+⚠️ F05 **不能走 `Invoke-Exe`**：套件自己也要把 stdout 读到 EOF 才返回，量到的会是"那个孙进程活多久"
+（第一版就是这么错的：40 秒）。所以 F05 自己起进程、**只量 `WaitForExit`**（= 按钮什么时候停止转圈）。
+顺带一句：`$p.WaitForExit(ms)` 一返回就说明进程没了，卡住的是**读管道**那一半 —— 这是排这类
+"按钮转圈不回来"的第一刀。
 
 ## 15 测试怎么跑（2026-10-04 补：别用 pwsh 跑；2026-10-06 补：分层与挑组）
 

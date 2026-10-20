@@ -957,7 +957,17 @@ namespace Mxx1Toolbox
                         return r;
                     }
 
-                    string stdout = outTask.Result;
+                    // ⚠️ 按钮顺手起的子进程可能把 stdout 管道一并继承走（`start explorer.exe` /
+                    // `start /b cmd …`）：cmd 早就退出、退出码也拿到了，可管道写端还在那个长命子进程手里，
+                    // EOF 永远不来 —— 直接 `outTask.Result` 就会把按钮永久钉在"正在跑"上（转圈 / 变灰）。
+                    // 2026-10-20 用户实测：「重启资源管理器 点击执行后变成灰色了，没有恢复可点击状态」。
+                    // 所以进程退出之后，输出只再等一小会儿；等不到就当这段输出不要了。
+                    string stdout = "";
+                    try
+                    {
+                        if (outTask.Wait(3000)) { stdout = outTask.Result; }
+                    }
+                    catch { }
                     r.ExitCode = p.ExitCode;
                     string stderr = err.ToString();
                     StringBuilder sb = new StringBuilder();

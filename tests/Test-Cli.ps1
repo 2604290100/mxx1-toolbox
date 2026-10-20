@@ -775,13 +775,47 @@ if ($userTools.Length -gt 0 -and $toolDir.Length -gt 0) {
         [void][System.IO.Directory]::CreateDirectory((Split-Path -Parent $userTools))
         [void][System.IO.Directory]::CreateDirectory($toolDir)
         [System.IO.File]::WriteAllText($userTools,
-            '{ "tools": [ { "id": "test.rel", "tab": "mine", "name": "rel-probe", "kind": "exe", "path": "__probe__.txt" } ] }',
+            '{ "tools": [ ' +
+            '{ "id": "test.rel", "tab": "mine", "name": "rel-probe", "kind": "exe", "path": "__probe__.txt" }, ' +
+            '{ "id": "test.detach", "tab": "mine", "name": "detach-probe", "kind": "script", "shell": "cmd", "timeoutSec": 60, ' +
+            '"inline": "start \"\" /b cmd /c \"ping -n 12 127.0.0.1 >nul\" & echo started" } ' +
+            '] }',
             (New-Object System.Text.UTF8Encoding($false)))
         [System.IO.File]::WriteAllText((Join-Path $toolDir '__probe__.txt'), 'probe', (New-Object System.Text.UTF8Encoding($false)))
         $rel = Invoke-Exe 'run test.rel --dry'
         $t3 = Get-Key $rel.Out 'target'
         Check 'F04 相对路径按工具目录解析（不再是进程当前目录）' `
             (($rel.Code -eq 0) -and ($t3 -match 'bin-tools') -and ((Get-Key $rel.Out 'exists') -eq 'yes')) $t3
+
+        # F05：按钮顺手起一个"甩不掉"的子进程（`start /b` 会把 stdout 管道一并继承走）时，
+        # run 也不许被它挂住。2026-10-20 用户实测：「重启资源管理器 点击执行后变成灰色了，
+        # 没有恢复可点击状态」—— 真因就是 Launcher.Exec 在等 stdout 的 EOF，而那个 EOF
+        # 在长命子进程退出之前永远不会来（cmd 自己早就退出了）。
+        # ⚠️ 这里**故意不走 Invoke-Exe**：它自己也要把 stdout 读到 EOF 才返回，而那个管道
+        # 正好被 `start /b` 出来的孙进程攥着 —— 量到的会是"孙子活多久"，不是"按钮卡多久"。
+        # 所以只量**进程什么时候退出**（= 界面上那颗按钮什么时候停止转圈），输出不要了。
+        $detachPsi = New-Object System.Diagnostics.ProcessStartInfo
+        $detachPsi.FileName = $Exe
+        $detachPsi.Arguments = 'run test.detach'
+        $detachPsi.UseShellExecute = $false
+        $detachPsi.RedirectStandardOutput = $true
+        $detachPsi.RedirectStandardError = $true
+        $detachPsi.CreateNoWindow = $true
+        $detachP = New-Object System.Diagnostics.Process
+        $detachP.StartInfo = $detachPsi
+        $detachSw = [System.Diagnostics.Stopwatch]::StartNew()
+        [void]$detachP.Start()
+        $detachOut = $detachP.StandardOutput.ReadToEndAsync()
+        $detachExited = $detachP.WaitForExit(60000)
+        $detachSw.Stop()
+        $detachCode = -1
+        if ($detachExited) { $detachCode = $detachP.ExitCode }
+        $detachSecs = [int][Math]::Round($detachSw.Elapsed.TotalSeconds)
+        Check 'F05 子进程攥着 stdout 不放，run 也不许被挂住（几秒内退出，不留一个永远转圈的按钮）' `
+            ($detachExited -and ($detachCode -eq 0) -and ($detachSecs -lt 6)) `
+            ('exit=' + $detachCode + ' 用时=' + $detachSecs + ' 秒')
+        # 那个孙进程（ping 12 次 ≈ 11 秒）还会把管道攥到自然结束；不等它，后面的用例照跑。
+        if ($detachOut.IsCompleted) { try { [void]$detachOut.Result } catch { } }
     } finally {
         Remove-Item -LiteralPath (Join-Path $toolDir '__probe__.txt') -Force -ErrorAction SilentlyContinue
         if ($createdDir2) { Remove-Item -LiteralPath $toolDir -Force -ErrorAction SilentlyContinue }
@@ -1299,21 +1333,26 @@ Check 'L04 on / off 两个方向的按钮数一样多（成对）' ($srOn.Count 
 $srExtra = @($srList.Out -split "`r?`n" | Where-Object { $_ -match 'sysreg/(status|restore)' })
 Check 'L04b 另有「查看设置改动 / 还原设置改动」两个入口按钮' ($srExtra.Count -eq 2) ('找到=' + $srExtra.Count)
 
-# B 组那四对新开关：名字 / 两个方向 / 不用管理员 —— 从 sysreg items 的输出里逐条核对
+# B 组那四对新开关：名字 / 两个方向 / 权限 / 写几处 —— 从 sysreg items 的输出里逐条核对
+# ⚠️ 小箭头那一对 2026-10-20 起改成 **HKCU + HKLM 两处一起写**（实测：这台 Win10 只认 HKLM，
+#    只写 HKCU 时叠加图标一个像素都不变 → 用户报的「恢复小箭头无效」就是这么来的），所以要管理员。
 $srNew = @(
-    @{ Id = 'file-ext';       Name = '文件扩展名显示'; Labels = '显示扩展名 / 隐藏扩展名' },
-    @{ Id = 'hidden-files';   Name = '隐藏文件显示';   Labels = '显示隐藏文件 / 不显示隐藏文件' },
-    @{ Id = 'shortcut-arrow'; Name = '快捷方式小箭头'; Labels = '去掉小箭头 / 恢复小箭头' },
-    @{ Id = 'clock-seconds';  Name = '任务栏时钟秒';   Labels = '时钟显示秒 / 时钟不显示秒' }
+    @{ Id = 'file-ext';       Name = '文件扩展名显示'; Labels = '显示扩展名 / 隐藏扩展名'; Admin = $false; Values = 1 },
+    @{ Id = 'hidden-files';   Name = '隐藏文件显示';   Labels = '显示隐藏文件 / 不显示隐藏文件'; Admin = $false; Values = 1 },
+    @{ Id = 'shortcut-arrow'; Name = '快捷方式小箭头'; Labels = '去掉小箭头 / 恢复小箭头'; Admin = $true; Values = 2 },
+    @{ Id = 'clock-seconds';  Name = '任务栏时钟秒';   Labels = '时钟显示秒 / 时钟不显示秒'; Admin = $false; Values = 1 }
 )
 $srNewBad = @()
 foreach ($n in $srNew) {
     $hit = @($srLines | Where-Object { $_ -match ('^' + [regex]::Escape($n.Id) + "`t") })
     if ($hit.Count -ne 1) { $srNewBad += ($n.Id + '=缺'); continue }
-    $okLine = ($hit[0].IndexOf($n.Name) -ge 0) -and ($hit[0].IndexOf($n.Labels) -ge 0) -and ($hit[0].IndexOf('不用管理员') -ge 0)
+    $wantAdmin = '不用管理员'
+    if ($n.Admin) { $wantAdmin = '要管理员' }
+    $okLine = ($hit[0].IndexOf($n.Name) -ge 0) -and ($hit[0].IndexOf($n.Labels) -ge 0) `
+        -and ($hit[0].IndexOf($wantAdmin) -ge 0) -and ($hit[0].IndexOf(('' + $n.Values + ' 个值')) -ge 0)
     if (-not $okLine) { $srNewBad += ($n.Id + '=' + $hit[0]) }
 }
-Check 'L04c B 组四个新开关（扩展名 / 隐藏文件 / 小箭头 / 时钟秒）名字、两个方向、不用管理员都对' `
+Check 'L04c B 组四个新开关（扩展名 / 隐藏文件 / 小箭头 / 时钟秒）名字、两个方向、写几处、权限都对（小箭头 HKCU+HKLM 两处、要管理员）' `
     ($srNewBad.Count -eq 0) ($srNewBad -join ' | ')
 
 $srStatus = Invoke-Exe 'sysreg status'

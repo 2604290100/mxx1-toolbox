@@ -324,6 +324,27 @@ namespace Mxx1Toolbox
             };
             list.Add(fast);
 
+            // ⑮ 未激活水印（用户 2026-10-20 点名要的：「右下角 win 未激活的时候会显示出来，做个可以开关隐藏的功能」）。
+            //    右下角那行「激活 Windows / 转到设置以激活 Windows」是资源管理器画的；
+            //    写 SoftwareProtectionPlatform\NoAcrWatermark = 1 之后它就不画了，「恢复」= 把这个值删掉（回到系统默认）。
+            //    ⚠️ 这条**本机验不了**：这台是已激活的 Windows 10 Pro（LicenseStatus=1），水印本来就不出现
+            //       —— 所以说明里必须写清"已经激活的系统上点了看不出区别"，别让用户以为按钮没生效。
+            //    ⚠️ 微软没有为这个值出过官方文档（社区里通行的做法）：万一哪个版本不认，点「恢复」把值删掉即可回原样。
+            Tweak mark = new Tweak();
+            mark.OnLabel = "隐藏未激活水印";
+            mark.OffLabel = "恢复未激活水印";
+            mark.RestartExplorer = true;   // 水印是 explorer 画的，不重启看不到变化
+            mark.AfterNote = "只隐藏右下角那行提示，不会激活 Windows（未激活时的功能限制照旧）。已经激活的系统上本来就没有这行字，点了看不出任何区别；想让提示真正消失请激活 Windows。万一哪个版本不认这个值，点「恢复未激活水印」把值删掉就回到原样。";
+            mark.Item = new RegItemSpec();
+            mark.Item.Id = "activation-watermark";
+            mark.Item.Name = "未激活水印";
+            mark.Item.What = "右下角那行「激活 Windows / 转到设置以激活 Windows」要不要显示（NoAcrWatermark，1 = 不显示；「恢复」= 删掉这个值，回到系统默认）";
+            mark.Item.Values = new RegValueSpec[]
+            {
+                Dword("HKLM", "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\SoftwareProtectionPlatform", "NoAcrWatermark", "1", null)
+            };
+            list.Add(mark);
+
             foreach (Tweak t in list)
             {
                 foreach (RegValueSpec v in t.Item.Values)

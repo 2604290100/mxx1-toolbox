@@ -39,6 +39,14 @@ namespace Mxx1Toolbox
         private readonly Settings _settings;
         private Theme _theme;
 
+        // 「点 X = 缩到托盘」（用户 2026-10-20 要的，见 src\TrayIcon.cs 的说明）。
+        // 托盘图标**第一次真的要缩进去时才建**：窗口开着的时候桌面上不多一个图标。
+        private TrayIcon _tray;
+        private NoticeForm _trayHint;      // 第一次缩进托盘时那张说明卡（它自己会关，这里留着引用）
+        private bool _trayHintShown;
+        // 真的是"退出"（托盘菜单 / 不同意条款 / 系统关机）：FormClosing 里不许再拦
+        private bool _reallyExit;
+
         /// <summary>`ui log` / `ui settings`：右键「常用功能」子菜单里那几个固定入口用 —— 打开界面之后
         /// 替用户点一下那个界面动作（否则从资源管理器点出来会"什么都不发生"）。</summary>
         public static string StartupAction = "";
@@ -111,6 +119,7 @@ namespace Mxx1Toolbox
         {
             _settings = Settings.Load();
             _theme = Theme.Resolve(_settings.Theme);
+            _trayHintShown = _settings.TrayHintShown;
 
             Text = AboutForm.ProductTitle + " v" + AboutForm.VersionText;
             // The real size is set once the button names are known (see ComputeCellWidth).
@@ -817,6 +826,9 @@ namespace Mxx1Toolbox
                 if (!Consent.EnsureAccepted(this, _theme, "首次运行界面"))
                 {
                     // 窗口还没显示出来就退：先让消息循环转起来再关，别在 OnLoad 里硬关。
+                    // ⚠️ 要先把 _reallyExit 立起来：否则"点 X = 缩到托盘"会把这条拒绝退出的路也缩起来
+                    // （那就成了一个没同意条款、也没有窗口的进程）。
+                    _reallyExit = true;
                     BeginInvoke((MethodInvoker)delegate { Close(); });
                     return;
                 }
@@ -897,6 +909,21 @@ namespace Mxx1Toolbox
 
         protected override void WndProc(ref Message m)
         {
+            // 「又启动了一次工具箱」：第二个进程把这条注册消息投过来（见 src\SingleInstance.cs）。
+            // 缩在托盘里时窗口是隐藏的，但隐藏的窗口照样收得到消息 —— 这就是"叫回来"的正路。
+            int showMsg = SingleInstance.MessageId;
+            if (showMsg != 0 && m.Msg == showMsg)
+            {
+                int action = m.WParam.ToInt32();
+                RestoreFromTray();
+                string what = ActionNameOf(action);
+                if (what.Length > 0)
+                {
+                    BeginInvoke((MethodInvoker)delegate { RunStartupAction(what); });
+                }
+                m.Result = IntPtr.Zero;
+                return;
+            }
             if (m.Msg == WM_ENTERSIZEMOVE) { _sizeBeforeDrag = ClientSize; }
             base.WndProc(ref m);
             // _fitting 期间是我们自己在按内容改尺寸，那不是"用户拖过窗口"
@@ -2280,8 +2307,150 @@ namespace Mxx1Toolbox
             _gridButtons[target].Focus();
         }
 
+        // ---------------------------------------------------------------- 关闭 = 缩到托盘
+
+        /// <summary>`MXX1_NO_TRAY=1` = 关掉整套「关闭缩到托盘」（界面回归整套都设着它：
+        /// 那些检查靠"关窗口 = 进程退出"来收尾，收尾复原）。</summary>
+        private static bool TrayBlockedByEnv
+        {
+            get
+            {
+                string v = Environment.GetEnvironmentVariable("MXX1_NO_TRAY");
+                return (v != null) && (v.Trim() == "1");
+            }
+        }
+
+        /// <summary>按现在的设置，点 X 是该缩起来还是真退出。</summary>
+        private bool TrayWanted
+        {
+            get { return _settings.CloseToTray && !TrayBlockedByEnv; }
+        }
+
+        protected override void OnFormClosing(FormClosingEventArgs e)
+        {
+            // 系统关机 / 任务管理器结束 / 我们自己已经决定要退（托盘菜单、拒绝条款）→ 照常关。
+            // 只拦"用户点了 X"：`UserClosing` 和 `None` 都算 —— 实测从另一个进程 PostMessage(WM_CLOSE)
+            // 过来时 WinForms 报的是 `None`（不是 UserClosing），回归 T02 就是拿这个当判据的。
+            bool userClose = (e.CloseReason == CloseReason.UserClosing) || (e.CloseReason == CloseReason.None);
+            if (!_reallyExit && TrayWanted && userClose)
+            {
+                e.Cancel = true;
+                HideToTray();
+            }
+            if (!e.Cancel && (_tray != null))
+            {
+                _tray.Dispose();
+                _tray = null;
+            }
+            base.OnFormClosing(e);
+        }
+
+        /// <summary>把窗口收进托盘。托盘图标建不出来时**退到最小化**（窗口还在任务栏上，
+        /// 不然就成了"看不见也点不到"）。</summary>
+        private void HideToTray()
+        {
+            if (_tray == null) { CreateTray(); }
+            if (_tray == null)
+            {
+                WindowState = FormWindowState.Minimized;
+                SetStatus("托盘图标没能创建，窗口留在任务栏（没有缩进托盘）");
+                Logger.Write("托盘", "图标没建起来，改成最小化到任务栏");
+                return;
+            }
+            RememberGeometry();
+            try { _settings.Save(); } catch { }
+            Hide();
+            Logger.Write("界面", "点关闭 → 缩到托盘（双击托盘图标、或再启动一次工具箱都能叫回来；退出用托盘右键菜单）");
+            if (!_trayHintShown) { ShowTrayHintCard(); }
+        }
+
+        private void CreateTray()
+        {
+            try
+            {
+                // 托盘那格是 16/20/24 的小图（跟着 DPI 走）：优先用 AppIcon 里按 DPI 取的那一张，
+                // 拿不到再退回窗口自己的大图（系统会缩，糊一点但总比没有强）。
+                Icon ico = AppIcon.ForNotice();
+                if (ico == null) { ico = Icon; }
+                if (ico == null) { return; }
+                TrayIcon tray = new TrayIcon(ico, AboutForm.ProductTitle + " v" + AboutForm.VersionText, _theme);
+                if (!tray.Usable) { tray.Dispose(); return; }
+                tray.Open += delegate { RestoreFromTray(); };
+                tray.Exit += delegate { ExitApplication(); };
+                tray.Show();
+                _tray = tray;
+            }
+            catch (Exception ex)
+            {
+                Logger.Write("托盘", "创建失败：" + ex.Message);
+            }
+        }
+
+        /// <summary>第一次缩进托盘时那张说明卡（之后不再弹）。用程序自己的卡片，不用系统气泡
+        /// —— 系统气泡能不能看见由用户的系统设置说了算（见 src\Balloon.cs 开头）。</summary>
+        private void ShowTrayHintCard()
+        {
+            _trayHintShown = true;
+            _settings.TrayHintShown = true;
+            try { _settings.Save(); } catch { }
+            try
+            {
+                NoticeForm card = new NoticeForm("萌新工具箱",
+                    "已经缩到托盘了：双击托盘图标（或者再启动一次工具箱）就能打开；右键托盘图标可以退出。",
+                    6000, NoticeKind.Info, _theme);
+                card.FormClosed += delegate { _trayHint = null; };
+                _trayHint = card;
+                card.Show();
+            }
+            catch (Exception ex)
+            {
+                Logger.Write("托盘", "说明卡片没弹出来（不影响缩到托盘）：" + ex.Message);
+            }
+        }
+
+        /// <summary>从托盘叫回来（托盘双击 / 右键菜单 / 第二个进程发来的消息都走这里）。</summary>
+        public void RestoreFromTray()
+        {
+            bool wasHidden = !Visible;
+            try
+            {
+                if (!Visible) { Show(); }
+                if (WindowState == FormWindowState.Minimized) { WindowState = FormWindowState.Normal; }
+                Activate();
+                BringToFront();
+                Native.ForceForeground(Handle);
+            }
+            catch (Exception ex)
+            {
+                Logger.Write("托盘", "叫回窗口出错：" + ex.Message);
+            }
+            if (wasHidden) { Logger.Write("界面", "从托盘叫回主窗口"); }
+        }
+
+        /// <summary>托盘菜单里的「退出工具箱」—— 这里是真的退出（不再拦）。</summary>
+        private void ExitApplication()
+        {
+            _reallyExit = true;
+            if (_tray != null) { _tray.Dispose(); _tray = null; }
+            Close();
+        }
+
+        /// <summary>消息里的动作码 → `RunStartupAction` 认识的动作名。</summary>
+        private static string ActionNameOf(int code)
+        {
+            if (code == SingleInstance.ActionLog) { return "log"; }
+            if (code == SingleInstance.ActionSettings) { return "settings"; }
+            if (code == SingleInstance.ActionAbout) { return "about"; }
+            return "";
+        }
+
         protected override void OnFormClosed(FormClosedEventArgs e)
         {
+            if (_tray != null)
+            {
+                _tray.Dispose();
+                _tray = null;
+            }
             try { Microsoft.Win32.SystemEvents.UserPreferenceChanged -= OnUserPreferenceChanged; }
             catch { }
             // 记住窗口在哪、多大、停在哪个页签（下次打开就回到原样）

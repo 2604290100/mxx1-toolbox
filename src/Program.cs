@@ -47,7 +47,10 @@ namespace Mxx1Toolbox
                 // 然后替用户点一下那个界面动作（否则从资源管理器点出来会"什么都不发生"）。
                 if (string.Equals(args[0], "ui", StringComparison.OrdinalIgnoreCase))
                 {
-                    MainForm.StartupAction = (args.Length > 1) ? args[1].Trim().ToLowerInvariant() : "";
+                    string action = (args.Length > 1) ? args[1].Trim().ToLowerInvariant() : "";
+                    // 已经有一个界面在跑 → 把它叫到前面来（顺带替它做这个动作），本进程直接退出。
+                    if (!SingleInstance.TryAcquire(SingleInstance.ActionCode(action))) { return 0; }
+                    MainForm.StartupAction = action;
                     Logger.PruneOld(Settings.Load().LogKeepDays);
                     AppPaths.EnsurePayloadDir();
                     Application.Run(new MainForm());
@@ -57,6 +60,9 @@ namespace Mxx1Toolbox
                 return Cli.Run(args);
             }
 
+            // 用户 2026-10-20：「重复启动的情况下，直接激活显示前一个程序窗口」——
+            // 已经有一个界面在跑时这里就把那个叫到前面、本进程安静退出（见 src\SingleInstance.cs）。
+            if (!SingleInstance.TryAcquire(SingleInstance.ActionShow)) { return 0; }
             Logger.PruneOld(Settings.Load().LogKeepDays);
             // 工具目录 bin-tools 在第一次打开界面时就建好，并放一份「说明.txt」进去：空文件夹看着
             // 像坏了（用户 2026-10-04 就问过「bin-tools 里面为什么是空的？」）。位置不可写时

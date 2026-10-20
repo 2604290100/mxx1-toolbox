@@ -25,6 +25,13 @@ namespace Mxx1Toolbox
         public int LogKeepDays = 30;
         public string PermanentDeleteExe = "";       // empty = auto locate at run time
 
+        /// <summary>点窗口右上角的 X = 缩到托盘，不退出程序（用户 2026-10-20 要的）。
+        /// 关掉之后 X 就是真的退出（老行为）。托盘图标的右键菜单里永远有「退出工具箱」。</summary>
+        public bool CloseToTray = true;
+
+        /// <summary>第一次缩到托盘时那张说明卡片弹过没有（只弹一次，之后不再打扰）。</summary>
+        public bool TrayHintShown = false;
+
         /// <summary>窗口几何。X/Y = -1 表示没记过（第一次打开居中）；宽/高 = 0 表示没记过。
         /// **默认固定尺寸**（用户 2026-10-04 定的：固定比自适应好，宽度也不用跟着内容变）；
         /// 勾上 WindowAutoSize 之后高度才跟着当前页签的按钮走。</summary>
@@ -123,6 +130,8 @@ namespace Mxx1Toolbox
                     if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out days) && days >= 0) { LogKeepDays = days; }
                     break;
                 case "permanentdeleteexe": PermanentDeleteExe = value; break;
+                case "closetotray": CloseToTray = ToBool(value, true); break;
+                case "trayhintshown": TrayHintShown = ToBool(value, false); break;
                 case "windowx": WindowX = ToInt(value, -1); break;
                 case "windowy": WindowY = ToInt(value, -1); break;
                 case "windowwidth": WindowWidth = ToInt(value, 0); break;
@@ -186,6 +195,8 @@ namespace Mxx1Toolbox
                 sb.AppendLine("ShowLogPanel=" + (ShowLogPanel ? "1" : "0"));
                 sb.AppendLine("LogKeepDays=" + LogKeepDays.ToString(CultureInfo.InvariantCulture));
                 sb.AppendLine("PermanentDeleteExe=" + PermanentDeleteExe);
+                sb.AppendLine("CloseToTray=" + (CloseToTray ? "1" : "0"));
+                sb.AppendLine("TrayHintShown=" + (TrayHintShown ? "1" : "0"));
                 sb.AppendLine("WindowX=" + WindowX.ToString(CultureInfo.InvariantCulture));
                 sb.AppendLine("WindowY=" + WindowY.ToString(CultureInfo.InvariantCulture));
                 sb.AppendLine("WindowWidth=" + WindowWidth.ToString(CultureInfo.InvariantCulture));

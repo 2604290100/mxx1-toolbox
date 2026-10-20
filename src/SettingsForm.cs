@@ -22,6 +22,7 @@ namespace Mxx1Toolbox
         private readonly TextBox _permdelBox;
         private readonly CheckBox _autoSizeBox;
         private readonly CheckBox _rememberTabBox;
+        private readonly CheckBox _closeToTrayBox;
 
         public SettingsForm(Settings settings, Theme theme)
         {
@@ -124,6 +125,19 @@ namespace Mxx1Toolbox
             _rememberTabBox.AutoSize = true;
             _rememberTabBox.Checked = _settings.LastTab.Length > 0 || _settings.WindowX >= 0;
             AddRow("", _rememberTabBox);
+
+            _closeToTrayBox = new CheckBox();
+            _closeToTrayBox.Text = "关闭窗口时缩到托盘（不退出程序）";
+            _closeToTrayBox.AutoSize = true;
+            _closeToTrayBox.Checked = _settings.CloseToTray;
+            AddRow("关窗口", _closeToTrayBox);
+
+            Label trayHint = new Label();
+            trayHint.AutoSize = true;
+            trayHint.MaximumSize = new Size(380, 0);
+            trayHint.Text = "勾上之后：点右上角的 X 只是收进右下角托盘，"
+                + "再打开一次工具箱（或双击托盘图标）就回来；要真退出请用托盘图标的右键菜单。";
+            AddRow("", trayHint);
 
             Button clearRecent = MakeButton("清空最近使用（" + UserTools.LoadRecent().Count + " 个）");
             clearRecent.Click += delegate
@@ -249,6 +263,7 @@ namespace Mxx1Toolbox
             _settings.LogKeepDays = (int)_keepDays.Value;
             _settings.PermanentDeleteExe = _permdelBox.Text.Trim();
             _settings.WindowAutoSize = _autoSizeBox.Checked;
+            _settings.CloseToTray = _closeToTrayBox.Checked;
             if (!_rememberTabBox.Checked)
             {
                 _settings.LastTab = "";

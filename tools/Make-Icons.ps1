@@ -151,6 +151,10 @@ function Get-Shape {
         @('menu-default',      'refresh'),
         @('faststart-on',      'power'),
         @('faststart-off',     'power'),
+        # 2026-10-20 第三批（用户点名的「隐藏未激活水印」）：藏起来 = 减号 / 恢复 = 循环箭头，
+        # 跟「去掉 / 恢复小箭头」那一对同一个画法（都是"把某个提示藏掉 / 放回来"）。
+        @('watermark-hide',    'minus'),
+        @('watermark-restore', 'refresh'),
         @('appx',           'list'),
         @('uninstall-app',  'minus'),
         @('default-app',    'window'),

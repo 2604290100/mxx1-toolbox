@@ -70,5 +70,17 @@ namespace Mxx1Toolbox
             }
             catch { }
         }
+
+        [DllImport("user32.dll")]
+        private static extern bool SetForegroundWindow(IntPtr hwnd);
+
+        /// <summary>把窗口拍到最前面（从托盘叫回来时用）。抢不抢得到前台由系统说了算
+        /// （第二个实例会先 `AllowSetForegroundWindow` 把许可转交过来，见 src\SingleInstance.cs）。</summary>
+        public static void ForceForeground(IntPtr hwnd)
+        {
+            if (hwnd == IntPtr.Zero) { return; }
+            try { SetForegroundWindow(hwnd); }
+            catch { }
+        }
     }
 }

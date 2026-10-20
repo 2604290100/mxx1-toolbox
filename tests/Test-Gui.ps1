@@ -140,6 +140,17 @@ $script:NoExpHad = Test-Path Env:MXX1_NO_EXPLORER_RESTART
 $script:NoExpOld = $env:MXX1_NO_EXPLORER_RESTART
 $env:MXX1_NO_EXPLORER_RESTART = '1'
 
+# 「点 X = 缩到托盘」+「只开一个界面」都是 2026-10-20 新加的默认行为，而这两条**会把整套回归的
+# 收尾方式弄坏**：这里的检查全靠"关窗口 = 进程退出"来判断（`$p.CloseMainWindow()` 后面等它退出），
+# 而且会连着起好几个实例（前一个还没退干净就起下一个的话，单实例会把它顶回去）。
+# 所以整套一律带上这两个开关；它们真正的行为由**T 组**单独验（那里的两个进程把开关设成空字符串）。
+$script:NoTrayHad = Test-Path Env:MXX1_NO_TRAY
+$script:NoTrayOld = $env:MXX1_NO_TRAY
+$env:MXX1_NO_TRAY = '1'
+$script:NoSingleHad = Test-Path Env:MXX1_NO_SINGLE
+$script:NoSingleOld = $env:MXX1_NO_SINGLE
+$env:MXX1_NO_SINGLE = '1'
+
 # 量文字宽度要用同一套渲染器，才能判断"文字装不装得下"
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
@@ -407,6 +418,11 @@ public class TBGui
     private static extern IntPtr SendMessageTextW(IntPtr hWnd, uint msg, IntPtr wParam, string lParam);
     public static IntPtr SetText(IntPtr h, string text) { return SendMessageTextW(h, 0x000C, IntPtr.Zero, text); }
     public static bool CloseWindow(IntPtr h) { return PostMessageW(h, 0x0010, IntPtr.Zero, IntPtr.Zero); }  // WM_CLOSE
+    // 「真的点一下右上角的 X」：标题栏那个 × 走的是 WM_SYSCOMMAND(SC_CLOSE) → Form.Close()，
+    // WinForms 报的 CloseReason 是 UserClosing。⚠️ 上面那条 WM_CLOSE 是**从别的进程投过来**的，
+    // WinForms 把它当"任务管理器结束任务"（TaskManagerClosing）—— 2026-10-20 实测，用错了判据
+    // 会把"点 X 缩到托盘"验成"点了没反应"。
+    public static bool SysClose(IntPtr h) { return PostMessageW(h, 0x0112, (IntPtr)0xF060, IntPtr.Zero); }
     public static IntPtr Parent(IntPtr h) { return GetParent(h); }
 
     // 给窗口发一次按键（WM_KEYDOWN + WM_KEYUP）。F1 那种快捷键走的是 Form.ProcessCmdKey，
@@ -824,6 +840,24 @@ function Switch-Tab {
     return (Wait-Buttons -Handle $Handle -Names $ExpectNames)
 }
 
+# "弹窗"必须按窗口类判定：消息框的类是 #32770。WinForms 的 ToolTip 也是一个顶层窗口
+# （类名 tooltips_class32、标题为空），所以按"除主窗口以外的可见窗口"来判会把 tooltip
+# 当成弹窗，$dialog[0] 取到的就不是消息框了（加了按钮悬停提示以后踩到过）。
+# 注意：调用处必须再包一层 @()。函数里 `return @(单个对象)` 会被解包成一个 PSCustomObject，
+# 而单个 PSCustomObject **没有** .Count（返回空），于是 `.Count -gt 0` 恒为 False。
+# ⚠️ 2026-10-20 之前这个函数是**定义在 F 组里面**的，于是 `-Only N`（或闸门只映射到 N 的那种改动）
+#    跑起来会在 N 组里报"无法将 Get-Dialogs 识别为 cmdlet" —— 函数必须放在**不分组**的公共区。
+function Get-Dialogs {
+    param([int]$ProcessId, [IntPtr]$Main)
+    # 「确认执行」现在是专门的窗口（ConfirmForm —— 为了让说明能排版；用户报过 MessageBox 那个
+    # 提示没做好），它是 WinForms 窗口（类名 WindowsForms10.Window.*），**不是** #32770。
+    # 所以按标题找它，同时保留 #32770 那条（设置 / 新建按钮那些还是真正的对话框）。
+    return @((Get-TopWindows -ProcessId $ProcessId) | Where-Object {
+        $_.H -ne $Main -and $_.Visible -and $_.Text.Length -gt 0 -and
+        ($_.Class -eq '#32770' -or $_.Text -eq '请确认')
+    })
+}
+
 # 本脚本启动过的界面进程（只杀自己拉起来的；用户自己开着的 Mxx1Toolbox 不许碰）。
 $script:Procs = New-Object System.Collections.ArrayList
 
@@ -847,6 +881,23 @@ function Restore-UserLayer {
         Move-Item -LiteralPath $UserToolsPaused -Destination $UserToolsJson -Force
         Write-Host '（用户自己的 tools.json 已复原）'
     }
+
+    # 置顶 / 最近使用：脚本崩在准备阶段时这两个变量可能还没赋值，所以整段套在 try 里
+    try {
+        $pairs = @(
+            @('UserPinned', 'UserPinnedPaused'),
+            @('UserRecent', 'UserRecentPaused')
+        )
+        foreach ($pr in $pairs) {
+            $path = Get-Variable -Name $pr[0] -Scope Script -ValueOnly -ErrorAction SilentlyContinue
+            $paused = Get-Variable -Name $pr[1] -Scope Script -ValueOnly -ErrorAction SilentlyContinue
+            if ($path -and $paused -and (Test-Path -LiteralPath $paused)) {
+                if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Force }
+                Move-Item -LiteralPath $paused -Destination $path -Force
+                Write-Host ('（用户自己的 ' + (Split-Path -Leaf $path) + ' 已复原）')
+            }
+        }
+    } catch { }
 
     foreach ($p in $script:Procs) {
         try { if ($p -and -not $p.HasExited) { $p.Kill() } } catch { }
@@ -1036,6 +1087,37 @@ if ($UserToolsHad) {
     if (Test-Path -LiteralPath $UserToolsPaused) { Remove-Item -LiteralPath $UserToolsPaused -Force }
     Move-Item -LiteralPath $UserToolsJson -Destination $UserToolsPaused -Force
 }
+
+# 用户自己的「置顶」（pinned.txt）和「最近使用」（recent.txt）也会改这一页的排布：
+# 置顶的按钮被提到**段标题上面**那一行。2026-10-20 真踩过：用户置顶了 3 个内置按钮
+# （重启资源管理器 / 导入工具 / 导出工具）→ B03 的「段外按钮=1」、D01e 的墨迹行数当场假红，
+# 而那一轮一个字都没碰过这两条 —— 纯环境噪音。和 tools.json 一样先请到一边，收尾放回去。
+$UserPinned = Join-Path $env:LOCALAPPDATA 'mxx1-toolbox\pinned.txt'
+$UserPinnedPaused = $UserPinned + '.paused-by-gui-test'
+$UserRecent = Join-Path $env:LOCALAPPDATA 'mxx1-toolbox\recent.txt'
+$UserRecentPaused = $UserRecent + '.paused-by-gui-test'
+
+function Pause-UserStateFile([string]$Path, [string]$Paused) {
+    try {
+        # 自愈：上一次被中断时文件还停在"暂停"的名字上 → 先放回去再说
+        if (Test-Path -LiteralPath $Paused) {
+            if (Test-Path -LiteralPath $Path) { Remove-Item -LiteralPath $Paused -Force }
+            else {
+                Move-Item -LiteralPath $Paused -Destination $Path -Force
+                Write-Host ('（上一次测试留下的暂停文件已自动放回：' + (Split-Path -Leaf $Path) + '）')
+            }
+        }
+        if (-not (Test-Path -LiteralPath $Path)) { return $false }
+        Move-Item -LiteralPath $Path -Destination $Paused -Force
+        return $true
+    } catch {
+        Write-Host ('（暂停 ' + (Split-Path -Leaf $Path) + ' 失败，跳过：' + $_.Exception.Message + '）')
+        return $false
+    }
+}
+
+$UserPinnedHad = Pause-UserStateFile $UserPinned $UserPinnedPaused
+$UserRecentHad = Pause-UserStateFile $UserRecent $UserRecentPaused
 
 # 2026-10-04：两个「资源管理器」也接上真功能之后，内置清单里一个灰色占位按钮都不剩了，而
 # 「灰按钮禁止点击、必须明显比真按钮淡」（B09 / C01d / E02 / E03）这条规则本身还在 —— 用户自己
@@ -2984,8 +3066,8 @@ foreach ($b in $gridNow) {
 Check ('E02 灰色按钮全部禁止点击（{0} 个 Enabled=false）' -f $greyNames.Count) ($greyBad.Count -eq 0) (($greyBad -join ' ') + ' 灰=' + $greyNames.Count)
 Check ('E03 真功能按钮都可以点（{0} 个 Enabled=true）' -f $liveNames.Count) ($liveBad.Count -eq 0) ($liveBad -join ' ')
 
-# 真按钮真跑一次：挑一个只读的（激活状态 = 查授权信息），跑完会弹结果窗口
-$probeReal = '激活状态'
+# 真按钮真跑一次：挑一个只读的（查看激活状态 = 查授权信息），跑完会弹结果窗口
+$probeReal = '查看激活状态'
 $realBtn = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq $probeReal })
 if ($realBtn.Count -gt 0) {
     $before = @((Get-TopWindows -ProcessId $proc.Id) | Where-Object { $_.H -ne $main })
@@ -3024,13 +3106,13 @@ if ($realBtn.Count -gt 0) {
 }
 
 # 运行中不许改文字：旧版会追加 "…"，图标+文字整组重新居中 → 每点一次图标就跳一下。
-# 探针用「激活状态」（只读、要跑一两秒，正好能观察到运行中那一瞬间）。
-$probeName = '激活状态'
+# 探针用「查看激活状态」（只读、要跑一两秒，正好能观察到运行中那一瞬间）。
+$probeName = '查看激活状态'
 $probeBtn = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq $probeName })
 if ($probeBtn.Count -gt 0) {
     [void][TBGui]::Click($probeBtn[0].H)
     Start-Sleep -Milliseconds 180
-    $during = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -like '激活*' })
+    $during = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -like '*激活状态' })
     $duringText = ''
     if ($during.Count -gt 0) { $duringText = $during[0].Text }
     Check 'E06 运行中按钮文字一字不变（不许追加"…"造成跳动）' ($duringText -eq $probeName) ('运行中="' + $duringText + '"')
@@ -3056,7 +3138,7 @@ if ($probeBtn.Count -gt 0) {
     }
     Start-Sleep -Milliseconds 500
 } else {
-    Check 'E06 运行中按钮文字一字不变（不许追加"…"造成跳动）' $false '没找到激活状态按钮'
+    Check 'E06 运行中按钮文字一字不变（不许追加"…"造成跳动）' $false '没找到查看激活状态按钮'
     Check 'E07 运行中按钮还在（文字没变说明没被重排）' $false 'skipped'
     Check 'E08 出现长状态文字后仍然装得下' $false 'skipped'
     Check 'E09 跑完出现一条结果条（完成 / 失败 + 点它看日志）' $false 'skipped'
@@ -3069,21 +3151,8 @@ if (Test-GroupSelected 'F') {
 Write-Host ''
 Write-Host 'F 组 · 危险按钮必须先确认'
 
-# "弹窗"必须按窗口类判定：消息框的类是 #32770。WinForms 的 ToolTip 也是一个顶层窗口
-# （类名 tooltips_class32、标题为空），所以按"除主窗口以外的可见窗口"来判会把 tooltip
-# 当成弹窗，$dialog[0] 取到的就不是消息框了（加了按钮悬停提示以后踩到过）。
-# 注意：调用处必须再包一层 @()。函数里 `return @(单个对象)` 会被解包成一个 PSCustomObject，
-# 而单个 PSCustomObject **没有** .Count（返回空），于是 `.Count -gt 0` 恒为 False。
-function Get-Dialogs {
-    param([int]$ProcessId, [IntPtr]$Main)
-    # 「确认执行」现在是专门的窗口（ConfirmForm —— 为了让说明能排版；用户报过 MessageBox 那个
-    # 提示没做好），它是 WinForms 窗口（类名 WindowsForms10.Window.*），**不是** #32770。
-    # 所以按标题找它，同时保留 #32770 那条（设置 / 新建按钮那些还是真正的对话框）。
-    return @((Get-TopWindows -ProcessId $ProcessId) | Where-Object {
-        $_.H -ne $Main -and $_.Visible -and $_.Text.Length -gt 0 -and
-        ($_.Class -eq '#32770' -or $_.Text -eq '请确认')
-    })
-}
+# "弹窗"必须按窗口类判定 —— 判据与 `Get-Dialogs` 的注释都挪到了公共区（2026-10-20：
+# 它原来定义在这一段里，导致 `-Only N` 跑到 N 组时报"无法将 Get-Dialogs 识别为 cmdlet"）。
 
 # 危险按钮现在只有「清理优化」里那两个是真的（清空回收站 / 一键清理垃圾），
 # 常用设置里那几个危险按钮还是灰的（点不动）。这里切到清理优化，点「清空回收站」再取消 ——
@@ -4715,6 +4784,91 @@ try {
 
 }
 
+# ---------------------------------------------------------------- T 组：关窗口缩到托盘 + 只开一个界面
+if (Test-GroupSelected 'T') {
+Write-Host ''
+Write-Host 'T 组：关闭窗口缩到托盘 · 重复启动只保留一个界面（会把前一个叫到前面）'
+# 用户 2026-10-20 的两句话：
+#   「点击关闭后进入托盘图标，你看看完善一下」
+#   「还有就是重复启动的情况下，直接激活显示前一个程序窗口」
+# ① 这两条都是**默认行为**（设置里「关闭窗口时缩到托盘」默认勾着），所以整套回归都带着
+#    MXX1_NO_TRAY=1 / MXX1_NO_SINGLE=1 跑；这一组把两个开关设成空字符串 = 恢复出厂行为。
+# ② 判据必须是"真的点一下右上角的 X"：`SysClose` 发的是 WM_SYSCOMMAND(SC_CLOSE)（真的点 × 走的就是它，
+#    CloseReason=UserClosing）。从别的进程直接投 WM_CLOSE 会被 WinForms 当成"任务管理器结束任务"
+#    （TaskManagerClosing），那条路是**故意**照常退出的 —— 2026-10-20 先用 WM_CLOSE 验，白忙一场。
+$trayEnv = @{ MXX1_NO_TRAY = ''; MXX1_NO_SINGLE = '' }
+$instancesBefore = @(Get-Process Mxx1Toolbox -ErrorAction SilentlyContinue).Count
+$trayLogPath = ''
+$trayStat = Invoke-Exe 'status'
+if ($trayStat -match '(?m)^log=([^\r\n]+)') { $trayLogPath = $Matches[1].Trim() }
+$trayLogBefore = 0
+if (($trayLogPath.Length -gt 0) -and (Test-Path -LiteralPath $trayLogPath)) {
+    $trayLogBefore = @(Get-Content -LiteralPath $trayLogPath -Encoding UTF8 -ErrorAction SilentlyContinue).Count
+}
+
+$pT = Start-Gui -Env $trayEnv
+$wT = $null
+for ($i = 0; $i -lt 40; $i++) {
+    if ($pT.HasExited) { break }
+    foreach ($w in (Get-TopWindows -ProcessId $pT.Id)) {
+        if ($w.Visible -and $w.Text.StartsWith('萌新工具箱')) { $wT = $w; break }
+    }
+    if ($wT) { break }
+    Start-Sleep -Milliseconds 150
+}
+$trayHwnd = [IntPtr]::Zero
+if ($wT) { $trayHwnd = $wT.H }
+Check 'T01 托盘模式下主窗口正常打开（这一组用的是出厂默认：两个测试开关都清空）' `
+    (($wT -ne $null) -and (-not $pT.HasExited)) ('hwnd=' + $trayHwnd)
+
+if ($wT) {
+    [void][TBGui]::SysClose($trayHwnd)
+    Start-Sleep -Milliseconds 1500
+    $pT.Refresh()
+    $trayAlive = -not $pT.HasExited
+    $trayHidden = [TBGui]::Alive($trayHwnd) -and (-not [TBGui]::Visible($trayHwnd))
+    Check 'T02 点 X 之后程序没退出（缩到了托盘里，进程还在）' $trayAlive ('exited=' + $pT.HasExited)
+    Check 'T03 主窗口已经藏起来了（屏幕上和任务栏里都不再显示）' $trayHidden `
+        ('alive=' + [TBGui]::Alive($trayHwnd) + ' visible=' + [TBGui]::Visible($trayHwnd))
+
+    $trayLogged = $false
+    if (($trayLogPath.Length -gt 0) -and (Test-Path -LiteralPath $trayLogPath)) {
+        $trayFresh = @(Get-Content -LiteralPath $trayLogPath -Encoding UTF8 -ErrorAction SilentlyContinue | Select-Object -Skip $trayLogBefore)
+        $trayLogged = (@($trayFresh | Where-Object { $_ -match '缩到托盘' }).Count -gt 0)
+    }
+    Check 'T03b 日志里记下了这次"缩到托盘"' $trayLogged $trayLogPath
+
+    # 再启动一次 = 第二个进程自己退出，并且把第一个窗口叫回来（用户要的就是这个）
+    $traySw = [System.Diagnostics.Stopwatch]::StartNew()
+    $pT2 = Start-Gui -Env $trayEnv
+    $trayGone2 = $pT2.WaitForExit(12000)
+    $traySw.Stop()
+    $trayOthers = @(Get-Process Mxx1Toolbox -ErrorAction SilentlyContinue | Where-Object { $_.Id -ne $pT.Id }).Count - $instancesBefore
+    Check 'T04 重复启动时第二个进程自己退出（桌面上不会多出第二个工具箱）' `
+        ($trayGone2 -and ($trayOthers -le 0)) `
+        ('secondExited=' + $trayGone2 + ' 多出来的实例=' + $trayOthers + ' 用时=' + $traySw.ElapsedMilliseconds + 'ms')
+
+    $trayBack = $false
+    for ($i = 0; $i -lt 50; $i++) {
+        Start-Sleep -Milliseconds 200
+        $pT.Refresh()
+        if ($pT.HasExited) { break }
+        if ([TBGui]::Alive($trayHwnd) -and [TBGui]::Visible($trayHwnd)) { $trayBack = $true; break }
+    }
+    Check 'T05 重复启动会把前一个窗口重新显示出来（不是静默退出）' $trayBack ''
+    Check 'T06 叫回来的窗口是能点的（IsWindowEnabled）' ($trayBack -and [TBGui]::Enabled($trayHwnd)) ''
+
+    # 再点一次 X：仍然是缩到托盘（不是只有第一次特殊）
+    [void][TBGui]::SysClose($trayHwnd)
+    Start-Sleep -Milliseconds 1200
+    $pT.Refresh()
+    Check 'T07 第二次点 X 也还是缩到托盘' ((-not $pT.HasExited) -and (-not [TBGui]::Visible($trayHwnd))) ''
+}
+
+if ($pT -and -not $pT.HasExited) { try { $pT.Kill() } catch { } }
+$pT = $null
+}
+
 # ---------------------------------------------------------------- 现场复原
 Restore-UserLayer
 
@@ -4727,6 +4881,10 @@ if ($script:NoOpenHad) { $env:MXX1_NO_OPEN = $script:NoOpenOld }
 else { Remove-Item Env:MXX1_NO_OPEN -ErrorAction SilentlyContinue }
 if ($script:NoExpHad) { $env:MXX1_NO_EXPLORER_RESTART = $script:NoExpOld }
 else { Remove-Item Env:MXX1_NO_EXPLORER_RESTART -ErrorAction SilentlyContinue }
+if ($script:NoTrayHad) { $env:MXX1_NO_TRAY = $script:NoTrayOld }
+else { Remove-Item Env:MXX1_NO_TRAY -ErrorAction SilentlyContinue }
+if ($script:NoSingleHad) { $env:MXX1_NO_SINGLE = $script:NoSingleOld }
+else { Remove-Item Env:MXX1_NO_SINGLE -ErrorAction SilentlyContinue }
 if ($script:CtxRootHad) { $env:MXX1_CTXMENU_ROOT = $script:CtxRootOld }
 else { Remove-Item Env:MXX1_CTXMENU_ROOT -ErrorAction SilentlyContinue }
 if ($script:CtxRootMachineHad) { $env:MXX1_CTXMENU_ROOT_MACHINE = $script:CtxRootMachineOld }

@@ -256,7 +256,7 @@ namespace Mxx1Toolbox
             _root.Controls.Add(_searchRow, 0, 1);
             _tips.SetToolTip(_hint, "静态菜单项是每次右键现场拼的（2026-10-09 用只读探针在五个位置实测过），"
                 + "改完再点一次右键就是新的；DLL 扩展项是资源管理器启动时加载进去的，"
-                + "改完必须重启资源管理器才看得到。");
+                + "所以停用 / 恢复扩展项之后工具箱会自动重启一次资源管理器（不用自己去找那颗按钮）。");
         }
 
         private void AddFilter(FlowLayoutPanel host, string id, string text)
@@ -1017,7 +1017,16 @@ namespace Mxx1Toolbox
             _busy = false;
             Logger.Write("右键菜单管理", report.ToString());
             LoadRows();
-            string tail = (exts.Count > 0) ? "（扩展项要重启资源管理器才生效 —— 点底栏「重启资源管理器」）" : "";
+            // 扩展项的停用 / 恢复是写系统黑名单，**DLL 是 explorer 启动时加载的** —— 不重启就看不到变化。
+            // 用户 2026-10-20 的要求：「需要重启资源管理器的功能，要自动调用」→ 这里直接重启，
+            // 不再让人自己去点底栏那颗按钮（那颗按钮还在，留给"我就是想重启一下"的场合）。
+            string tail = "";
+            if (exts.Count > 0 && done > 0)
+            {
+                string rmsg;
+                ExplorerRestart.Run("右键菜单管理：扩展项的停用 / 恢复", out rmsg);
+                tail = "（" + rmsg + "）";
+            }
             Flash(kind + "：成功 " + done.ToString(CultureInfo.InvariantCulture)
                 + " / 共 " + (items.Count + exts.Count).ToString(CultureInfo.InvariantCulture) + " 项"
                 + (ok ? "" : "（没成功的那几条在动作记录里，红字那行写着原因）") + tail);
@@ -1200,16 +1209,11 @@ namespace Mxx1Toolbox
             }
             if (!go) { return; }
 
-            string off = Environment.GetEnvironmentVariable("MXX1_NO_EXPLORER_RESTART");
-            if (off != null && off.Trim() == "1")
-            {
-                Logger.Write("右键菜单管理", "（测试模式，没有真重启）重启资源管理器：" + cmd);
-                Flash("测试模式：没有真重启，只写进了日志");
-                return;
-            }
-            LaunchResult r = Launcher.Run(t, settings, false, false);
-            Logger.Write("右键菜单管理", "重启资源管理器：" + cmd
-                + ((r == null) ? " · （没有结果）" : (" · " + r.Message)));
+            string msg;
+            bool ran = ExplorerRestart.Run("右键菜单管理：扩展项的停用 / 恢复", out msg);
+            Logger.Write("右键菜单管理", "重启资源管理器：" + cmd + " · " + msg);
+            if (!ran) { Flash(msg); return; }
+            if (ExplorerRestart.Disabled) { Flash("测试模式：没有真重启，只写进了日志"); return; }
             Flash("已经重启资源管理器 —— 现在再点一次右键看看（扩展项的停用 / 恢复这下才生效）");
         }
 

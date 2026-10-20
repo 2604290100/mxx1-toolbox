@@ -133,6 +133,13 @@ $script:NoOpenHad = Test-Path Env:MXX1_NO_OPEN
 $script:NoOpenOld = $env:MXX1_NO_OPEN
 $env:MXX1_NO_OPEN = '1'
 
+# 「要重启资源管理器才生效」的功能现在会**自动重启**（用户 2026-10-20 的要求）：
+# 界面回归点这些按钮的时候一个 explorer 都不许少，所以整套测试一律带上这个开关
+# （工具箱里 ExplorerRestart / 右键菜单管理 / 修复图标缓存三处都认它）。
+$script:NoExpHad = Test-Path Env:MXX1_NO_EXPLORER_RESTART
+$script:NoExpOld = $env:MXX1_NO_EXPLORER_RESTART
+$env:MXX1_NO_EXPLORER_RESTART = '1'
+
 # 量文字宽度要用同一套渲染器，才能判断"文字装不装得下"
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
@@ -4718,6 +4725,8 @@ if ($script:UpdateHad) { $env:MXX1_NO_UPDATE = $script:UpdateOld }
 else { Remove-Item Env:MXX1_NO_UPDATE -ErrorAction SilentlyContinue }
 if ($script:NoOpenHad) { $env:MXX1_NO_OPEN = $script:NoOpenOld }
 else { Remove-Item Env:MXX1_NO_OPEN -ErrorAction SilentlyContinue }
+if ($script:NoExpHad) { $env:MXX1_NO_EXPLORER_RESTART = $script:NoExpOld }
+else { Remove-Item Env:MXX1_NO_EXPLORER_RESTART -ErrorAction SilentlyContinue }
 if ($script:CtxRootHad) { $env:MXX1_CTXMENU_ROOT = $script:CtxRootOld }
 else { Remove-Item Env:MXX1_CTXMENU_ROOT -ErrorAction SilentlyContinue }
 if ($script:CtxRootMachineHad) { $env:MXX1_CTXMENU_ROOT_MACHINE = $script:CtxRootMachineOld }

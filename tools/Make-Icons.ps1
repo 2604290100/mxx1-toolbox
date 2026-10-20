@@ -139,6 +139,18 @@ function Get-Shape {
         @('arrow-restore',     'refresh'),
         @('clock-sec',         'clock'),
         @('clock-nosec',       'clock'),
+        # 2026-10-20 第二批：C2 修复图标缓存 = 循环箭头；B5 小组件 = 图表（面板）、B6 Copilot = 放大镜、
+        # B7 菜单延迟「更快」= 闪电 /「恢复」= 循环、B8 快速启动 = 电源。
+        # ⚠ 必须排在下面那些泛匹配之前（`faststart` 里没有能撞的词，但 `icon-cache` 别被将来的 icon 规则吃掉）
+        @('icon-cache',        'refresh'),
+        @('widgets-hide',      'chart'),
+        @('widgets-show',      'chart'),
+        @('copilot-hide',      'search'),
+        @('copilot-show',      'search'),
+        @('menu-fast',         'bolt'),
+        @('menu-default',      'refresh'),
+        @('faststart-on',      'power'),
+        @('faststart-off',     'power'),
         @('appx',           'list'),
         @('uninstall-app',  'minus'),
         @('default-app',    'window'),

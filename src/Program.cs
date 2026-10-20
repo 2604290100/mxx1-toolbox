@@ -594,7 +594,8 @@ namespace Mxx1Toolbox
                 {
                     Console.WriteLine(t.Id + "\t" + t.Item.Name + "\t" + t.Item.Values.Length + " 个值\t"
                         + t.OnLabel + " / " + t.OffLabel + "\t"
-                        + (t.Item.Admin ? "要管理员" : "不用管理员"));
+                        + (t.Item.Admin ? "要管理员" : "不用管理员")
+                        + (t.RestartExplorer ? "\t写完自动重启资源管理器" : ""));
                 }
                 return 0;
             }

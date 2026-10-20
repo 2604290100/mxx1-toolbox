@@ -33,6 +33,11 @@ namespace Mxx1Toolbox
         /// <summary>版本对不上但写了也安全时，先照写再补一句提醒。</summary>
         public string AfterNote = "";
 
+        /// <summary>写完之后**自动重启一次资源管理器**（这个改动不重启就看不到）。
+        /// 用户 2026-10-20 的要求：「需要重启资源管理器的功能，要自动调用」——
+        /// 走 ExplorerRestart（命令的唯一来源是 common.json 里那颗「重启资源管理器」）。</summary>
+        public bool RestartExplorer;
+
         public string Name { get { return Item.Name; } }
         public string Id { get { return Item.Id; } }
     }
@@ -222,7 +227,8 @@ namespace Mxx1Toolbox
             Tweak arrow = new Tweak();
             arrow.OnLabel = "去掉小箭头";
             arrow.OffLabel = "恢复小箭头";
-            arrow.AfterNote = "这个值要重启资源管理器（或注销一次）之后才看得到变化。";
+            arrow.RestartExplorer = true;   // 不重启资源管理器看不到变化 → 写完之后自动重启一次
+            arrow.AfterNote = "这个值要重启资源管理器（或注销一次）才看得到变化 —— 重启这一步工具箱替你做了（见下一行）。";
             arrow.Item = new RegItemSpec();
             arrow.Item.Id = "shortcut-arrow";
             arrow.Item.Name = "快捷方式小箭头";
@@ -240,7 +246,8 @@ namespace Mxx1Toolbox
             clock.OffLabel = "时钟不显示秒";
             clock.MinBuild = 10240;
             clock.BuildNote = "「任务栏时钟显示秒」是 Windows 10 起才有的开关；这台是更早的系统（Win7/8），写进去也不会有效果，注册表没有动。";
-            clock.AfterNote = "如果任务栏没立刻变，重启资源管理器（或注销一次）之后就生效。";
+            clock.RestartExplorer = true;   // 任务栏时钟要重启资源管理器才刷新
+            clock.AfterNote = "任务栏时钟要重启资源管理器才刷新 —— 重启这一步工具箱替你做了（见下一行）。";
             clock.Item = new RegItemSpec();
             clock.Item.Id = "clock-seconds";
             clock.Item.Name = "任务栏时钟秒";
@@ -250,6 +257,72 @@ namespace Mxx1Toolbox
                 Dword("HKCU", "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced", "ShowSecondsInSystemClock", "1", "0")
             };
             list.Add(clock);
+
+            // ⑪ 任务栏小组件按钮（Win11 起才有这个按钮；这台不是 Win11 也照写，换系统后生效）
+            //    走 AfterNote 而不是 BuildNote：这个值在 Win10 上写了也没有副作用，
+            //    写进去之后换到 Win11 就直接是用户想要的样子。
+            Tweak widgets = new Tweak();
+            widgets.OnLabel = "关掉小组件按钮";
+            widgets.OffLabel = "显示小组件按钮";
+            widgets.AfterNote = "「任务栏小组件」是 Windows 11 才有的按钮（Win10 的任务栏上没有它）：值已经写好，换到 Win11 登录一次就看得出来；任务栏要重启资源管理器才刷新，这一步工具箱替你做了（见下一行）。";
+            widgets.RestartExplorer = true;   // 任务栏上的按钮是 explorer 画的，不重启看不到变化
+            widgets.Item = new RegItemSpec();
+            widgets.Item.Id = "taskbar-widgets";
+            widgets.Item.Name = "任务栏小组件按钮";
+            widgets.Item.What = "Win11 任务栏左边那个天气 / 小组件按钮要不要显示（TaskbarDa，0 = 关掉，1 = 显示）";
+            widgets.Item.Values = new RegValueSpec[]
+            {
+                Dword("HKCU", "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced", "TaskbarDa", "0", "1")
+            };
+            list.Add(widgets);
+
+            // ⑫ Copilot 按钮（Win11 22H2 / build 22621 起；同样是照写 + 一句说明）
+            Tweak copilot = new Tweak();
+            copilot.OnLabel = "隐藏 Copilot 按钮";
+            copilot.OffLabel = "显示 Copilot 按钮";
+            copilot.AfterNote = "「Copilot 按钮」是 Windows 11 22H2 起才有的东西：这台机器上没有这个按钮，值已经写好，换到 Win11 就生效；任务栏要重启才刷新，这一步工具箱替你做了（见下一行）。";
+            copilot.RestartExplorer = true;   // 同上：任务栏上的按钮要重启才刷新
+            copilot.Item = new RegItemSpec();
+            copilot.Item.Id = "copilot-button";
+            copilot.Item.Name = "Copilot 按钮";
+            copilot.Item.What = "Win11 任务栏上的 Copilot 图标要不要显示（ShowCopilotButton，0 = 隐藏，1 = 显示）";
+            copilot.Item.Values = new RegValueSpec[]
+            {
+                Dword("HKCU", "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced", "ShowCopilotButton", "0", "1")
+            };
+            list.Add(copilot);
+
+            // ⑬ 菜单弹出延迟：MenuShowDelay 是**字符串**值（REG_SZ），系统默认 400 毫秒。
+            //    「更快」写 20（几乎一按就出），「默认」写 400；原来的值照旧先记进 tsv，随时能还原。
+            Tweak menu = new Tweak();
+            menu.OnLabel = "菜单弹出更快";
+            menu.OffLabel = "恢复默认延迟";
+            menu.AfterNote = "新的等待时间下一次弹菜单就生效（个别老程序要重新打开一次）。";
+            menu.Item = new RegItemSpec();
+            menu.Item.Id = "menu-delay";
+            menu.Item.Name = "菜单弹出延迟";
+            menu.Item.What = "右键菜单 / 开始菜单弹出前等多久（MenuShowDelay，单位毫秒；「更快」写 20，「默认」写 400）";
+            menu.Item.Values = new RegValueSpec[]
+            {
+                Str("HKCU", "Control Panel\\Desktop", "MenuShowDelay", "20", "400")
+            };
+            list.Add(menu);
+
+            // ⑭ 快速启动：HKLM，自动算成"要管理员"（下面的循环会把它标上）。
+            //    ⚠️ 它要靠休眠文件：休眠关了（powercfg /h off）这个值写了也不生效 —— 说明里点明。
+            Tweak fast = new Tweak();
+            fast.OnLabel = "开启快速启动";
+            fast.OffLabel = "关闭快速启动";
+            fast.AfterNote = "快速启动要靠休眠文件：如果休眠被关掉（powercfg /h off），这个值写了也不生效 —— 这一页的「禁用/启用休眠」那颗按钮会把两者一起切。";
+            fast.Item = new RegItemSpec();
+            fast.Item.Id = "fast-startup";
+            fast.Item.Name = "快速启动";
+            fast.Item.What = "关机时把系统状态存进休眠文件、下次开机直接读回来（HiberbootEnabled，1 = 开，0 = 关）；只影响「关机 → 开机」，重启永远是完整启动";
+            fast.Item.Values = new RegValueSpec[]
+            {
+                Dword("HKLM", "SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Power", "HiberbootEnabled", "1", "0")
+            };
+            list.Add(fast);
 
             foreach (Tweak t in list)
             {
@@ -373,6 +446,15 @@ namespace Mxx1Toolbox
                 sb.Append("  ").Append(report.Written.ToString(CultureInfo.InvariantCulture))
                   .Append(" 处都写进去并读回核对过了。").AppendLine();
                 if (t.AfterNote.Length > 0) { sb.Append("  ").Append(t.AfterNote).AppendLine(); }
+                if (t.RestartExplorer)
+                {
+                    // 不重启资源管理器就看不到变化的开关（小箭头 / 时钟秒）：当场自动重启一次。
+                    // 用户 2026-10-20 的原话「需要重启资源管理器的功能，要自动调用」——
+                    // 命令走 common.json 里那颗「重启资源管理器」（ExplorerRestart 是唯一入口）。
+                    string restartMsg;
+                    ExplorerRestart.Run(t.Item.Name, out restartMsg);
+                    sb.Append("  ").Append(restartMsg).AppendLine();
+                }
                 sb.Append("  反悔就点「还原系统设置改动」（按改动前的原值写回去）。");
             }
             else

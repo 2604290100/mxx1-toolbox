@@ -485,13 +485,13 @@ foreach ($line in ($status.Out -split "`r?`n")) {
     }
 }
 
-Check ('A04 按钮总数 153 + 工具目录里自动加载的 {0} 个（测试期间用户层的按钮会暂停：常用 46 + 系统工具 37 + 隐私 29 + 应用 5 + 清理 12 + 右键 21 + 我的 3）' -f $autoBase) `
-    ((Get-Key $status.Out 'buttons') -eq [string](153 + $autoBase)) (Get-Key $status.Out 'buttons')
+Check ('A04 按钮总数 162 + 工具目录里自动加载的 {0} 个（测试期间用户层的按钮会暂停：常用 54 + 系统工具 37 + 隐私 29 + 应用 5 + 清理 13 + 右键 21 + 我的 3）' -f $autoBase) `
+    ((Get-Key $status.Out 'buttons') -eq [string](162 + $autoBase)) (Get-Key $status.Out 'buttons')
 Check 'A05 内置清单里没有灰色占位按钮了（两个「资源管理器」也接上了真功能；灰规则改由 B 组注入验证）' ((Get-Key $status.Out 'placeholders') -eq '0') (Get-Key $status.Out 'placeholders')
 Check 'A06 危险按钮 3 个' ((Get-Key $status.Out 'dangerous') -eq '3') (Get-Key $status.Out 'dangerous')
 
 # 「常用」页签是合成的（置顶 + 最近使用），清单里没有它的按钮，所以是 0
-$tabExpect = @{ 'recent' = 0; 'common' = 46; 'mine' = 3; 'system' = 37; 'cleanup' = 12; 'privacy' = 29; 'apps' = 5; 'rightmenu' = 21 }
+$tabExpect = @{ 'recent' = 0; 'common' = 54; 'mine' = 3; 'system' = 37; 'cleanup' = 13; 'privacy' = 29; 'apps' = 5; 'rightmenu' = 21 }
 $tabOk = $true
 $tabDetail = @()
 foreach ($k in $tabExpect.Keys) {
@@ -499,18 +499,52 @@ foreach ($k in $tabExpect.Keys) {
     $tabDetail += ($k + '=' + $v)
     if ($v -ne [string]([int]$tabExpect[$k] + [int]$autoByTab[$k])) { $tabOk = $false }
 }
-Check 'A07 八个页签的按钮数正确（0/46/3/37/12/29/5/21，加上自动按钮）' $tabOk ($tabDetail -join ' ')
+Check 'A07 八个页签的按钮数正确（0/54/3/37/13/29/5/21，加上自动按钮）' $tabOk ($tabDetail -join ' ')
 
 $list = Invoke-Exe 'list'
 Check 'A08 list 退出码 0' ($list.Code -eq 0) ('exit=' + $list.Code)
-Check 'A09 list 报的按钮数一致' ((Get-Key $list.Out 'buttons') -eq [string](153 + $autoBase)) (Get-Key $list.Out 'buttons')
+Check 'A09 list 报的按钮数一致' ((Get-Key $list.Out 'buttons') -eq [string](162 + $autoBase)) (Get-Key $list.Out 'buttons')
 $lines = @($list.Out -split "`r?`n" | Where-Object { $_ -match "`t" })
-Check ('A10 list 打出 {0} 行按钮' -f (153 + $autoBase)) ($lines.Count -eq (153 + $autoBase)) ('lines=' + $lines.Count)
+Check ('A10 list 打出 {0} 行按钮' -f (162 + $autoBase)) ($lines.Count -eq (162 + $autoBase)) ('lines=' + $lines.Count)
 
 $rmList = Invoke-Exe 'list --tab rightmenu'
 Check 'A11 右键增强 21 个按钮（20 个右键菜单功能 + 隔壁永久删除工具）' ((Get-Key $rmList.Out 'shown') -eq [string](21 + [int]$autoByTab['rightmenu'])) (Get-Key $rmList.Out 'shown')
 Check 'A12 右键增强里的按钮是"真功能"（不带 placeholder 标记）' (-not ($rmList.Out -match 'placeholder')) ''
 Check 'A13 右键增强那个按钮叫「永久删除工具」' ($rmList.Out -match '永久删除工具') (($rmList.Out -split "`r?`n" | Where-Object { $_ -match "`t" }) -join '')
+
+# ---- 清理页那颗「修复图标与缩略图缓存」（A18 / A19）：它会**重启资源管理器**，所以两条都要盯 ----
+# 定义：它是清理页的脚本按钮、带二次确认（任务栏会闪一下，不能默默干）。
+$icDef = @()
+try {
+    $icDef = @((Get-Content -LiteralPath (Join-Path $root 'tools\cleanup.json') -Raw -Encoding UTF8 | ConvertFrom-Json).tools |
+        Where-Object { $_.id -eq 'icon-cache' })
+} catch { $icDef = @() }
+Check 'A18 「修复图标与缩略图缓存」是清理页的脚本按钮，而且带二次确认（要重启资源管理器，不能默默干）' `
+    (($icDef.Count -eq 1) -and ($icDef[0].tab -eq 'cleanup') -and ($icDef[0].kind -eq 'script') -and ($icDef[0].confirm -eq $true)) `
+    ('找到=' + $icDef.Count)
+
+# 真跑一次：夹具当 %LOCALAPPDATA%（MXX1_ICONCACHE_ROOT），MXX1_NO_EXPLORER_RESTART=1 → 一个 explorer 都不碰。
+# 判据：三个 .db 删掉了、对照文件 keep.txt 还在、报告里的数字对得上、报告里写明"测试模式没重启"。
+$icRoot = Join-Path $tmpRoot ('mxx1-iconcache-' + [Guid]::NewGuid().ToString('N').Substring(0, 8))
+$icExp = Join-Path $icRoot 'Microsoft\Windows\Explorer'
+try {
+    New-Item -ItemType Directory -Force -Path $icExp | Out-Null
+    [System.IO.File]::WriteAllText((Join-Path $icRoot 'IconCache.db'), 'x')
+    [System.IO.File]::WriteAllText((Join-Path $icRoot 'keep.txt'), 'x')
+    [System.IO.File]::WriteAllText((Join-Path $icExp 'iconcache_16.db'), 'x')
+    [System.IO.File]::WriteAllText((Join-Path $icExp 'thumbcache_16.db'), 'x')
+    $icRun = Invoke-Exe 'run icon-cache' 120 $Exe @{ MXX1_ICONCACHE_ROOT = $icRoot; MXX1_NO_EXPLORER_RESTART = '1' }
+    Check 'A19 真跑一次：报告说清删了几个文件，并写明测试模式没有重启资源管理器' `
+        (($icRun.Code -eq 0) -and ($icRun.Out -match '删掉 3 个文件') -and ($icRun.Out -match '测试模式')) `
+        ('exit=' + $icRun.Code + ' out=' + (($icRun.Out -split "`r?`n") -join ' / '))
+    $icLeft = @(Get-ChildItem -LiteralPath $icRoot -Recurse -File -Force | ForEach-Object { $_.Name })
+    Check 'A19b 只删了三个缓存 .db，同目录的对照文件一个都不动' `
+        (($icLeft -contains 'keep.txt') -and ($icLeft -notcontains 'IconCache.db') -and `
+         ($icLeft -notcontains 'iconcache_16.db') -and ($icLeft -notcontains 'thumbcache_16.db')) `
+        ('剩下=' + ($icLeft -join ' '))
+} finally {
+    Remove-Item -LiteralPath $icRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
 
 }
 
@@ -1046,7 +1080,7 @@ Write-Host 'H 组 · 悬停说明（用户 2026-10-04 报过「鼠标悬停的�
 # tip 命令打印的就是界面塞给 ToolTip 的那个字符串，所以这里能直接断言，不用去动真鼠标。
 $tipsAll = Invoke-Exe 'tip'
 Check 'H01 tip 退出码 0' ($tipsAll.Code -eq 0) ('exit=' + $tipsAll.Code)
-Check ('H02 tip 覆盖了每个按钮（153 + 自动 {0} 个）' -f $autoBase) ((Get-Key $tipsAll.Out 'tips') -eq [string](153 + $autoBase)) (Get-Key $tipsAll.Out 'tips')
+Check ('H02 tip 覆盖了每个按钮（162 + 自动 {0} 个）' -f $autoBase) ((Get-Key $tipsAll.Out 'tips') -eq [string](162 + $autoBase)) (Get-Key $tipsAll.Out 'tips')
 
 $blocks = @{}
 $curId = ''
@@ -1320,15 +1354,15 @@ Write-Host 'L 组 · 系统设置改动（记原值 / 读回核对 / 一键还�
 $srItems = Invoke-Exe 'sysreg items'
 Check 'L01 sysreg items 退出码 0' ($srItems.Code -eq 0) ('exit=' + $srItems.Code)
 $srLines = @($srItems.Out -split "`r?`n" | Where-Object { $_ -match "`t" })
-Check 'L02 10 个系统设置开关都在表里（任务栏/开始菜单/驱动/内核隔离/资源管理器/右键菜单 + 扩展名/隐藏文件/小箭头/时钟秒）' ($srLines.Count -eq 10) ('数=' + $srLines.Count)
+Check 'L02 14 个系统设置开关都在表里（任务栏/开始菜单/驱动/内核隔离/资源管理器/右键菜单 + 扩展名/隐藏文件/小箭头/时钟秒 + 小组件/Copilot/菜单延迟/快速启动）' ($srLines.Count -eq 14) ('数=' + $srLines.Count)
 
 # 每一对都必须是「一个 off 按钮 + 一个 on 按钮」；按钮的 options 不在 list 输出里，所以按
-# 方向数数：两个方向的按钮数必须一样多，而且加起来就是这一页那 20 个成对按钮。
+# 方向数数：两个方向的按钮数必须一样多，而且加起来就是这一页那 28 个成对按钮。
 $srList = Invoke-Exe 'list --tab common'
 $srOn = @($srList.Out -split "`r?`n" | Where-Object { $_ -match 'sysreg/on' })
 $srOff = @($srList.Out -split "`r?`n" | Where-Object { $_ -match 'sysreg/off' })
-Check 'L03 10 对开关 = 20 个按钮' `
-    (($srOn.Count -eq 10) -and ($srOff.Count -eq 10)) ('on=' + $srOn.Count + ' off=' + $srOff.Count)
+Check 'L03 14 对开关 = 28 个按钮' `
+    (($srOn.Count -eq 14) -and ($srOff.Count -eq 14)) ('on=' + $srOn.Count + ' off=' + $srOff.Count)
 Check 'L04 on / off 两个方向的按钮数一样多（成对）' ($srOn.Count -eq $srOff.Count) ('on=' + $srOn.Count + ' off=' + $srOff.Count)
 $srExtra = @($srList.Out -split "`r?`n" | Where-Object { $_ -match 'sysreg/(status|restore)' })
 Check 'L04b 另有「查看设置改动 / 还原设置改动」两个入口按钮' ($srExtra.Count -eq 2) ('找到=' + $srExtra.Count)
@@ -1337,10 +1371,14 @@ Check 'L04b 另有「查看设置改动 / 还原设置改动」两个入口按�
 # ⚠️ 小箭头那一对 2026-10-20 起改成 **HKCU + HKLM 两处一起写**（实测：这台 Win10 只认 HKLM，
 #    只写 HKCU 时叠加图标一个像素都不变 → 用户报的「恢复小箭头无效」就是这么来的），所以要管理员。
 $srNew = @(
-    @{ Id = 'file-ext';       Name = '文件扩展名显示'; Labels = '显示扩展名 / 隐藏扩展名'; Admin = $false; Values = 1 },
-    @{ Id = 'hidden-files';   Name = '隐藏文件显示';   Labels = '显示隐藏文件 / 不显示隐藏文件'; Admin = $false; Values = 1 },
-    @{ Id = 'shortcut-arrow'; Name = '快捷方式小箭头'; Labels = '去掉小箭头 / 恢复小箭头'; Admin = $true; Values = 2 },
-    @{ Id = 'clock-seconds';  Name = '任务栏时钟秒';   Labels = '时钟显示秒 / 时钟不显示秒'; Admin = $false; Values = 1 }
+    @{ Id = 'file-ext';       Name = '文件扩展名显示'; Labels = '显示扩展名 / 隐藏扩展名'; Admin = $false; Values = 1; Restart = $false },
+    @{ Id = 'hidden-files';   Name = '隐藏文件显示';   Labels = '显示隐藏文件 / 不显示隐藏文件'; Admin = $false; Values = 1; Restart = $false },
+    @{ Id = 'shortcut-arrow'; Name = '快捷方式小箭头'; Labels = '去掉小箭头 / 恢复小箭头'; Admin = $true; Values = 2; Restart = $true },
+    @{ Id = 'clock-seconds';  Name = '任务栏时钟秒';   Labels = '时钟显示秒 / 时钟不显示秒'; Admin = $false; Values = 1; Restart = $true },
+    @{ Id = 'taskbar-widgets';Name = '任务栏小组件按钮'; Labels = '关掉小组件按钮 / 显示小组件按钮'; Admin = $false; Values = 1; Restart = $true },
+    @{ Id = 'copilot-button'; Name = 'Copilot 按钮';   Labels = '隐藏 Copilot 按钮 / 显示 Copilot 按钮'; Admin = $false; Values = 1; Restart = $true },
+    @{ Id = 'menu-delay';     Name = '菜单弹出延迟';   Labels = '菜单弹出更快 / 恢复默认延迟'; Admin = $false; Values = 1; Restart = $false },
+    @{ Id = 'fast-startup';   Name = '快速启动';       Labels = '开启快速启动 / 关闭快速启动'; Admin = $true; Values = 1; Restart = $false }
 )
 $srNewBad = @()
 foreach ($n in $srNew) {
@@ -1348,18 +1386,32 @@ foreach ($n in $srNew) {
     if ($hit.Count -ne 1) { $srNewBad += ($n.Id + '=缺'); continue }
     $wantAdmin = '不用管理员'
     if ($n.Admin) { $wantAdmin = '要管理员' }
+    $wantRestart = ($n.Restart -eq $true)
+    $hasRestart = ($hit[0].IndexOf('写完自动重启资源管理器') -ge 0)
     $okLine = ($hit[0].IndexOf($n.Name) -ge 0) -and ($hit[0].IndexOf($n.Labels) -ge 0) `
-        -and ($hit[0].IndexOf($wantAdmin) -ge 0) -and ($hit[0].IndexOf(('' + $n.Values + ' 个值')) -ge 0)
+        -and ($hit[0].IndexOf($wantAdmin) -ge 0) -and ($hit[0].IndexOf(('' + $n.Values + ' 个值')) -ge 0) `
+        -and ($hasRestart -eq $wantRestart)
     if (-not $okLine) { $srNewBad += ($n.Id + '=' + $hit[0]) }
 }
-Check 'L04c B 组四个新开关（扩展名 / 隐藏文件 / 小箭头 / 时钟秒）名字、两个方向、写几处、权限都对（小箭头 HKCU+HKLM 两处、要管理员）' `
+Check 'L04c 八个新开关（扩展名 / 隐藏文件 / 小箭头 / 时钟秒 / 小组件 / Copilot / 菜单延迟 / 快速启动）名字、两个方向、写几处、权限、要不要自动重启都对（小箭头 HKCU+HKLM 两处、要管理员；快速启动 HKLM、要管理员）' `
     ($srNewBad.Count -eq 0) ($srNewBad -join ' | ')
+
+# 用户 2026-10-20 的要求：「需要重启资源管理器的功能，要自动调用」——
+# 带这个标记的必须是"不重启就看不到变化"的那些（任务栏 / 桌面上的东西）；
+# 别的开关（扩展名 / 隐藏文件 / 菜单延迟 / 快速启动）不许顺手重启用户的资源管理器。
+$srRestartWant = @('shortcut-arrow', 'clock-seconds', 'taskbar-widgets', 'copilot-button')
+$srRestartHave = @($srLines | Where-Object { $_ -match '写完自动重启资源管理器' } | ForEach-Object { ($_ -split "`t")[0] })
+Check 'L04d 只有「小箭头」「时钟秒」「小组件」「Copilot」这四个开关会自动重启资源管理器（不多不少）' `
+    (($srRestartHave.Count -eq $srRestartWant.Count) -and `
+     (@($srRestartWant | Where-Object { $srRestartHave -notcontains $_ }).Count -eq 0)) `
+    ('带标记的=' + ($srRestartHave -join ' '))
 
 $srStatus = Invoke-Exe 'sysreg status'
 Check 'L05 sysreg status 退出码 0（只读）' ($srStatus.Code -eq 0) ('exit=' + $srStatus.Code)
 Check 'L06 状态报告里每个开关都有一行' `
     ((@('任务栏按钮合并方式', '开始菜单对齐方式', '驱动自动安装', '内核隔离', '资源管理器样式', '右键菜单样式',
-        '文件扩展名显示', '隐藏文件显示', '快捷方式小箭头', '任务栏时钟秒') | Where-Object { $srStatus.Out.IndexOf($_) -lt 0 }).Count -eq 0) ''
+        '文件扩展名显示', '隐藏文件显示', '快捷方式小箭头', '任务栏时钟秒',
+        '任务栏小组件按钮', 'Copilot 按钮', '菜单弹出延迟', '快速启动') | Where-Object { $srStatus.Out.IndexOf($_) -lt 0 }).Count -eq 0) ''
 
 # 命令行故意不提供"直接改系统设置"的入口（和隐私开关一样：只能从界面点成对按钮 + 一键还原）
 $srWrite = Invoke-Exe 'sysreg set off taskbar-combine'

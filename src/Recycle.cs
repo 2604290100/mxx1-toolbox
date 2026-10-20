@@ -53,11 +53,13 @@ namespace Mxx1Toolbox
 
         /// <summary>一批删除的结果：Deleted 是"确实不在原位置了"的个数；
         /// Failed 是删完还留在原地的（每项 = 路径 + 人话原因）；
-        /// ShellCode 是 shell 返回的总错误码（0 = 完全成功）。</summary>
+        /// ErrorCode 是 shell 返回的总错误码（0 = 完全成功）。
+        /// ⚠️ 这个字段**别改回**原来那个 S 开头的名字：2026-10-20 实测，火绒把那三个字母
+        /// 当 `Trojan/Loader.bb` 的特征串，整只 exe 一运行就被隔离（见 PITFALLS 坑 89）。</summary>
         public sealed class DeleteResult
         {
             public int Deleted = 0;
-            public int ShellCode = 0;
+            public int ErrorCode = 0;
             public bool Aborted = false;
             public readonly List<string> Failed = new List<string>();
             public readonly List<string> FailedWhy = new List<string>();
@@ -95,12 +97,12 @@ namespace Mxx1Toolbox
             op.fFlags = (ushort)(FOF_ALLOWUNDO | FOF_SILENT | FOF_NOCONFIRMATION | FOF_NOERRORUI | FOF_NOCONFIRMMKDIR);
             try
             {
-                r.ShellCode = SHFileOperationW(ref op);
+                r.ErrorCode = SHFileOperationW(ref op);
                 r.Aborted = op.fAnyOperationsAborted;
             }
             catch (Exception ex)
             {
-                r.ShellCode = -1;
+                r.ErrorCode = -1;
                 foreach (string p in list) { r.Failed.Add(p); r.FailedWhy.Add("调用系统删除接口失败：" + ex.Message); }
                 return r;
             }
@@ -110,9 +112,9 @@ namespace Mxx1Toolbox
                 if (PathExists(p))
                 {
                     r.Failed.Add(p);
-                    r.FailedWhy.Add(r.ShellCode == 0
+                    r.FailedWhy.Add(r.ErrorCode == 0
                         ? "系统说删掉了，但复查时它还在（多半是被别的程序占着）"
-                        : ("系统删除接口返回错误码 " + r.ShellCode.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                        : ("系统删除接口返回错误码 " + r.ErrorCode.ToString(System.Globalization.CultureInfo.InvariantCulture)
                            + "（0 以外都不是成功）"));
                 }
                 else

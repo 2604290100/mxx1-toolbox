@@ -55,6 +55,18 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
 > ⚠️ 「去掉小箭头」的**可见效果要重启资源管理器**，而且本会话根本没有桌面壳
 > （`Progman` / `WorkerW` 都不存在）—— 只验到"值写进去了 / 关 = 值真被删掉了"，
 > **别在汇报里写成"箭头已肉眼验证消失"**。
+>
+> **同日再往后（2026-10-20 白天）：「要重启就自动重启」+ C2 + B5–B8**：用户一句
+> 「**需要重启资源管理器的功能，要自动调用明白？**」→ 新 `src\ExplorerRestart.cs`
+> （**命令唯一来源** = `tools\common.json` 的 `restart-explorer` 按钮）：小箭头 / 时钟秒 / 小组件 /
+> Copilot 这四个开关**写成功就自动重启一次**；右键菜单管理里停用 / 恢复 DLL 扩展项也自动重启。
+> 另加 **C2「修复图标与缩略图缓存」**（清理页 `icon-cache`，先杀 explorer → 删三种缓存 .db →
+> 再起 explorer；测试走 `MXX1_ICONCACHE_ROOT` 隔离根）与 **B5–B8 四个开关**（`taskbar-widgets` /
+> `copilot-button` / `menu-delay`（字符串 20/400）/ `fast-startup`（HKLM，要管理员））。
+> 数字：内置 **153 → 162**（`status` **164**）、常用设置 **46 → 54**、清理 **12 → 13**；
+> 回归新增 **A18/A19/A19b** 与 **L04d**，`L02` 14、`L03` 14/14、`L04c` 8 行；界面整套带
+> `MXX1_NO_EXPLORER_RESTART=1`。正本 `docs\DESIGN.md` **§12.79**、坑 **88**。
+> ⚠️ 仍未推送 / 未发版。
 
 > **（上一轮）2026-10-19，**v1.5.9 已发布**：「电源与笔记本（合盖 · 电池 · 唤醒）」+ 一个按钮标签修复
 + 那个"死窗口"bug）
@@ -346,7 +358,7 @@ D:\萌新工具开发\toolbox\
   src\Launcher.cs                  按 kind 启动；SystemTargets 表（26 个系统工具）；找隔壁 exe / bin-tools；
                                    `LaunchElevatedCopy`（自己提权再起一遍 = 静默、不弹黑窗口）；UTF-8 输出
   src\RegEngine.cs                 "记原值 → 写入 → 读回核对 → 一键还原"的唯一实现（Privacy 与 SysReg 共用）
-  src\SysReg.cs                    6 组系统设置开关（12 个按钮）+ 查看/还原改动 + selftest（TSV 记录）
+  src\SysReg.cs                    14 组系统设置开关（28 个按钮）+ 查看/还原改动 + selftest（TSV 记录）
   src\Power.cs                     **2026-10-19**：「电源与笔记本」后端 —— 读方案状态**直接读注册表**
                                    （`HKLM\SYSTEM\CurrentControlSet\Control\Power\User\PowerSchemes\…`；
                                    `powercfg /query` 是本地化文本，解析不得，坑 74），
@@ -526,9 +538,9 @@ D:\萌新工具开发\toolbox\
                                    「网址要点击后可以访问，主页改成官网」）
   src\LogForm.cs / OutputForm.cs   程序内日志窗口（最新在最上）/ 命令输出窗口
   src\SettingsForm.cs              设置窗口
-  tools\*.json                     **153** 个按钮的内置定义（编译时内嵌，资源名 tools.<文件名>）；7 个文件 =
+  tools\*.json                     **162** 个按钮的内置定义（编译时内嵌，资源名 tools.<文件名>）；7 个文件 =
                                  common / system / privacy / apps / cleanup / rightmenu / mine
-                                 （这台机器上 `status` 报 `buttons=155` = 153 + bin-tools 自动 1 + 用户自己 1）
+                                 （这台机器上 `status` 报 `buttons=164` = 162 + bin-tools 自动 1 + 用户自己 1）
   tools\Test-Encoding.ps1          编码红线体检（-Fix 修 BOM）
   tools\Test-Quick.ps1             **提交前闸门**：读 git 改动 → 查 tests\test-map.json → 跑
                                    L0（编码 + 内联）+ 编译 + `Test-Cli.ps1 -Only <受影响的组>`；
@@ -543,7 +555,7 @@ D:\萌新工具开发\toolbox\
   tools\Make-AppIcon.ps1           画 assets\app.ico（程序自己的图标，八尺寸；改完要重新 build）
   tools\Make-Package.ps1           打发布包 zip（build.ps1 -Package 调它；**回读 zip 逐个核对**，
                                    少一个文件就失败 —— 见"打包"那条坑）
-  assets\icons\*.png               **153** 个按钮图标（编译时内嵌成 icons.<id>.png）
+  assets\icons\*.png               **162** 个按钮图标（编译时内嵌成 icons.<id>.png）
   assets\app.ico                   程序图标（`/win32icon` 用的就是它）
   tests\Test-All.ps1               一条命令跑完全部（也支持 `-Only` / `-Skip` 透传给两个套件）
   tools\Test-InlineSyntax.ps1      内联脚本语法 + 清单 JSON + **每个 .ps1 的语法**体检（34 个内联 / 7 个清单）
@@ -789,17 +801,26 @@ powershell -File tools\Make-AppIcon.ps1       # 重生成 assets\app.ico（改�
 ③ **写完读回核对**。需要写 HKLM 的开关走「把自己以管理员身份再起一遍」（`run <id> --admin`），
 结果是 winexe 没有控制台，所以写进 `last-elevated-result.txt`、父进程过几秒读出来弹窗口。
 
-## 「常用设置」怎么点（38 个；其中 12 个注册表开关都能一键还原）
+## 「常用设置」怎么点（54 个；其中 24 个注册表开关都能一键还原）
 
-**四段**：段 1 = 6 组「关 X / 开 X」成对开关，段 2 = 安全入口 / 电源 / 系统维护
-（**只打开官方界面，绝不代关系统防线**），段 3 = **电源与笔记本（合盖 · 电池 · 唤醒）**（5 个，2026-10-19 加的；
-**段 4 = 改动的记录与还原**；这一页现在 4 段 11 行，界面 B03/B04 就是按段数行数的）。
+**五段**：段 1 = 9 组「关 X / 开 X」成对开关（2026-10-20 追加了小组件 / Copilot / 菜单延迟三对），
+段 2 = 安全入口 / 电源 / 系统维护（**只打开官方界面，绝不代关系统防线**），
+段 3 = **电源与笔记本（合盖 · 电池 · 唤醒）**（5 个 + 「快速启动」那一对，2026-10-19 / 10-20 加的）、
+段 4 = **文件显示 · 快捷方式 · 时钟**（4 对 8 个）、**段 5 = 改动的记录与还原**；这一页现在 5 段 16 行，
+界面 B03/B04 就是按段数行数的）。
 
-- 6 组注册表开关（走 `src\SysReg.cs` + `src\RegEngine.cs`，**和隐私设置共用同一份引擎**）：
+- 6 组老开关（走 `src\SysReg.cs` + `src\RegEngine.cs`，**和隐私设置共用同一份引擎**）：
   `taskbar-combine`（`TaskbarGlomLevel` 2 / 0，Win11 已取消这个开关 → `MaxBuild 22000`）、
   `startmenu-align`（`TaskbarAl` 0 / 1）、`driver-install`（HKLM `SearchOrderConfig` 1 / 0）、
   `core-isolation`（HKLM HVCI `Enabled` 1 / 0，重启后生效）、
   `explorer-classic`（3 个 CLSID 键树，Win11 专属）、`ctxmenu-classic`（`{86ca1aa0-…}\InprocServer32`）。
+- **2026-10-20 追加的 8 个开关**：`file-ext` / `hidden-files` / `shortcut-arrow` / `clock-seconds`（段 4）、
+  `taskbar-widgets`（`TaskbarDa` 0/1） / `copilot-button`（`ShowCopilotButton` 0/1） /
+  `menu-delay`（`MenuShowDelay` **字符串** `20` / `400`）（段 1 末尾）、
+  `fast-startup`（HKLM `HiberbootEnabled` 1/0，自动算成"要管理员"，段 3）。
+  ⚠️ **小箭头 / 时钟秒 / 小组件 / Copilot 这四个带 `Tweak.RestartExplorer`** —— 写完
+  `SysReg.Set` 自动调一次 `src\ExplorerRestart.cs`（命令唯一来源 = common.json 的 `restart-explorer`；
+  `sysreg items` 会多打一列，`L04d` 盯着"正好这四个"）。`MXX1_NO_EXPLORER_RESTART=1` 时不真做。
 - **段 3「电源与笔记本」五颗**（`src\Power.cs` / `src\PowerForm.cs`）：
   `power-lid`（开窗设**合盖 / 按电源按钮 / 按睡眠按钮**三个动作 × 接电源·用电池；写的时候**所有方案一起写**；
   窗口里能「还原成改前的值」，还有一个「让控制面板里能看见『选择关闭盖子的功能』」的勾）、
@@ -1266,7 +1287,7 @@ powershell -File tools\Make-AppIcon.ps1       # 重生成 assets\app.ico（改�
     命令行全量 **461 通过 + 1 环境跳过 / 0 失败**（共 462 项）、界面全量 **244 通过 / 0 失败 / 0 跳过**、
     编码体检 **263 文件 PASS**。❌ **没做**：push / tag / Release / 站点同步 —— 都要用户点头。
     发版时要一起改的数字：版本号（`src\AssemblyInfo.cs` + `Test-Cli.ps1` 的 A03/S11）、
-    README 与站点上的按钮数（`status` 报 **155**；内置 **153**、内嵌图标 **153**）；
+    README 与站点上的按钮数（`status` 报 **164**；内置 **162**、内嵌图标 **162**、常用设置 **54**、清理 **13**）；
     站点顺序照旧「**先改站点、再让用户跑新版本**」（见待办 10）。
     ⚠️ 这一轮**故意没动**的已知小缺口（用户没点过头的别自己开工）：H5 列表还没有勾选框（文案里写着"勾选"）、
     H4 行上没有右键菜单（复制这一行 / 打开文件所在位置）、H6 没有实时预览与后台执行、

@@ -407,6 +407,7 @@ namespace Mxx1Toolbox
                         if (pa == "battery") { return "生成电池健康报告（powercfg /batteryreport，只读）并打开它"; }
                         if (pa == "wake") { return "只读：谁按着不让电脑睡、上次是谁把它唤醒的、哪些设备允许唤醒"; }
                         if (pa == "desktop") { return "一键把合盖动作改成「不采取任何操作」（接电源和用电池都改，所有方案；再点一次改回「关机」）"; }
+                        if (pa == "timer") { return "在本程序里打开「定时关机 / 重启 / 睡眠」窗口（到点自动关机 / 重启 / 睡眠；定错了随时能撤）"; }
                         return "内置动作: " + t.Module + "/" + t.Action;
                     }
                     if (t.Module == ModuleApp)
@@ -764,6 +765,16 @@ namespace Mxx1Toolbox
                 // 界面里点 = MainForm 直接开窗；`run <id>` 走到这里只报一句（不改任何东西）
                 r.UiAction = true;
                 r.UiActionName = "power";
+                return r;
+            }
+            if (a == "timer")
+            {
+                // 「定时关机 / 重启 / 睡眠」：同上 —— 命令行只报一句，开始计时只能在窗口里点
+                // （`timer status` / `timer cancel` 是另外两条命令）。
+                r.UiAction = true;
+                r.UiActionName = "timer";
+                r.Ok = true;
+                r.Message = "这是界面动作：开始计时只能在窗口里点（命令行只有 timer status / timer cancel）";
                 return r;
             }
             if (a == "fit")

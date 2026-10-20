@@ -1473,6 +1473,16 @@ namespace Mxx1Toolbox
                 Logger.Write(t.Name, "打开合盖与电源键动作窗口");
                 return;
             }
+            if (t.Kind == "builtin" && t.Module == Launcher.ModulePower && t.Action == "timer")
+            {
+                // 「定时关机 / 重启 / 睡眠」：程序自己的窗口（开始 / 取消 / 状态）。
+                // 同「合盖与电源键动作」的口径：点这颗按钮本身什么都不改，不弹确认框；
+                // 窗口里每一次「开始计时 / 取消定时」才过条款门 + 确认框。
+                OpenTimerForm();
+                SetStatus(t.Name + " · 已打开「定时关机 / 重启 / 睡眠」窗口");
+                Logger.Write(t.Name, "打开定时关机 / 重启 / 睡眠窗口");
+                return;
+            }
             if (t.Kind == "builtin" && t.Module == Launcher.ModulePermdel && t.Action == "enginelog")
             {
                 OpenEngineLog();
@@ -1846,6 +1856,14 @@ namespace Mxx1Toolbox
         private void OpenPowerForm()
         {
             PowerForm f = new PowerForm(_theme);
+            WindowPlacement.ShowCentered(f, this);
+        }
+
+        /// <summary>「定时关机 / 重启 / 睡眠」窗口（常用设置 →「电源与笔记本」段）。
+        /// 真正的计时在 PowerTimer 里（关机 / 重启交给 Windows，睡眠靠自己的后台进程）。</summary>
+        private void OpenTimerForm()
+        {
+            TimerForm f = new TimerForm(_theme);
             WindowPlacement.ShowCentered(f, this);
         }
 

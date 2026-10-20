@@ -56,6 +56,10 @@ namespace Mxx1Toolbox
                     Application.Run(new MainForm());
                     return 0;
                 }
+                // 「定时关机 / 重启 / 睡眠」的后台进程（界面「开始计时」时由工具箱自己起，
+                // 用户不会自己敲）：等时间 → 到点执行 → 清掉记录。⚠️ 它**不挂控制台**、
+                // 也**不占单实例那把锁**，所以必须放在 AttachParentConsole / TryAcquire 之前。
+                if (PowerTimer.IsWorker(args)) { return PowerTimer.RunWorker(args); }
                 Native.AttachParentConsole();
                 return Cli.Run(args);
             }
@@ -179,6 +183,7 @@ namespace Mxx1Toolbox
                     case "privacy": return PrivacyCommand(args);
                     case "sysreg": return SysRegCommand(args);
                     case "rightmenu": return RightMenuCommand(args);
+                    case "timer": return TimerCommand(args);
                     case "pin": return PinCommand(args, true);
                     case "unpin": return PinCommand(args, false);
                     case "export": return ExportCommand(args);
@@ -313,6 +318,10 @@ namespace Mxx1Toolbox
             Console.WriteLine("  Mxx1Toolbox.exe rightmenu manage     打开「右键菜单管理」窗口（禁用 / 恢复 / 删除都在界面里点）");
             Console.WriteLine("  Mxx1Toolbox.exe rightmenu help       右键增强的说明（怎么卸干净 / 菜单没出现怎么办）");
             Console.WriteLine("  Mxx1Toolbox.exe power                打开「合盖与电源键动作」窗口（改的是所有电源方案；合盖设置只能在窗口里点）");
+            Console.WriteLine("  Mxx1Toolbox.exe timer status         只读：现在有没有定时关机 / 重启 / 睡眠，还剩多久");
+            Console.WriteLine("  Mxx1Toolbox.exe timer plan --action=<shutdown|restart|sleep> --after=<秒>   只读：真跑时会执行的那条命令");
+            Console.WriteLine("  Mxx1Toolbox.exe timer cancel         撤掉现在这条定时（睡眠 = 结束后台进程；关机 / 重启 = shutdown /a）");
+            Console.WriteLine("                                                        （开始计时只能在界面里点：常用设置 →「定时关机 / 重启 / 睡眠」）");
             Console.WriteLine("  Mxx1Toolbox.exe rightmenu unlock --query-only <路径>   只查谁占着这个文件，不弹窗不结束进程");
             Console.WriteLine("  Mxx1Toolbox.exe rightmenu unlock --auto <路径>         一键解除占用：不弹窗口，直接结束占用它的程序");
             Console.WriteLine("                                                        （右键菜单里的「" + RightMenu.AutoTitle + "」用的就是它）");
@@ -614,6 +623,103 @@ namespace Mxx1Toolbox
                 return ok ? 0 : 1;
             }
             Console.Error.WriteLine("用法: sysreg status | items | selftest");
+            return 2;
+        }
+
+        /// <summary>`timer status | plan | cancel`。**没有"开始计时"的入口** —— 定哪一条只能从界面
+        /// 那颗「定时关机 / 重启 / 睡眠」按钮里点（要过条款门 + 确认框），同 `sysreg` /
+        /// `rightmenu` / `power` 的规矩。
+        ///
+        /// · `timer status`：只读。有记录就报动作 / 到点 / 还剩多久；过了点没执行会如实写 `stale=1`。
+        /// · `timer plan --action=&lt;shutdown|restart|sleep&gt; --after=&lt;秒&gt;|--at=&lt;epoch|HH:mm&gt;`：
+        ///   只读，打出来的是**真跑时会执行的那条命令**（和 Start 用的是同一份 ShutdownArgs）。
+        /// · `timer cancel`：撤掉现在这条（睡眠 = 结束后台进程；关机 / 重启 = `shutdown /a`）。
+        /// 回归测试用 `MXX1_TIMER_STATE` 把记录挪走、`MXX1_TIMER_DRYRUN=1` 保证不会真的关机。</summary>
+        private static int TimerCommand(string[] args)
+        {
+            string what = (args.Length > 1) ? args[1].ToLowerInvariant() : "status";
+            if (what == "status")
+            {
+                TimerStatus st = PowerTimer.Status();
+                Console.WriteLine("present=" + (st.Present ? "1" : "0"));
+                Console.WriteLine("active=" + (st.Active ? "1" : "0"));
+                Console.WriteLine("stale=" + (st.Stale ? "1" : "0"));
+                if (st.Present)
+                {
+                    Console.WriteLine("action=" + st.Record.Action);
+                    Console.WriteLine("label=" + st.Record.Label);
+                    Console.WriteLine("at=" + st.Record.AtLocal.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture));
+                    Console.WriteLine("epoch=" + st.Record.At.ToString(CultureInfo.InvariantCulture));
+                    Console.WriteLine("remaining=" + st.Remaining.ToString(CultureInfo.InvariantCulture));
+                    Console.WriteLine("mode=" + st.Record.Mode);
+                    Console.WriteLine("pid=" + st.Record.Pid.ToString(CultureInfo.InvariantCulture));
+                }
+                Console.WriteLine("dryrun=" + (PowerTimer.DryRun ? "1" : "0"));
+                Console.WriteLine("state=" + PowerTimer.StatePath);
+                Console.WriteLine("text=" + st.Text);
+                return 0;
+            }
+            if (what == "plan")
+            {
+                string action = "";
+                int after = 0;
+                string atText = "";
+                for (int i = 2; i < args.Length; i++)
+                {
+                    string a = args[i];
+                    if (a.StartsWith("--action=", StringComparison.OrdinalIgnoreCase)) { action = a.Substring(9); }
+                    else if (a.StartsWith("--after=", StringComparison.OrdinalIgnoreCase))
+                    {
+                        int.TryParse(a.Substring(8), NumberStyles.Integer, CultureInfo.InvariantCulture, out after);
+                    }
+                    else if (a.StartsWith("--at=", StringComparison.OrdinalIgnoreCase)) { atText = a.Substring(5); }
+                }
+                if (PowerTimer.Normalize(action).Length == 0 || (after <= 0 && atText.Length == 0))
+                {
+                    Console.Error.WriteLine("用法: timer plan --action=<shutdown|restart|sleep> --after=<秒> | --at=<epoch>");
+                    return 2;
+                }
+                DateTime now = DateTime.Now;
+                DateTime at;
+                if (after > 0) { at = now.AddSeconds(after); }
+                else
+                {
+                    long ep;
+                    if (long.TryParse(atText, NumberStyles.Integer, CultureInfo.InvariantCulture, out ep))
+                    {
+                        at = PowerTimer.FromEpoch(ep);
+                    }
+                    else
+                    {
+                        TimeSpan ts;
+                        if (!TimeSpan.TryParseExact(atText, new string[] { "hh\\:mm" }, CultureInfo.InvariantCulture, out ts))
+                        {
+                            Console.Error.WriteLine("--at 只认 epoch 秒或者 HH:mm：" + atText);
+                            return 2;
+                        }
+                        at = PowerTimer.AtClock(ts.Hours, ts.Minutes, now);
+                    }
+                }
+                Console.Write(PowerTimer.PlanText(action, at, now));
+                return 0;
+            }
+            if (what == "cancel")
+            {
+                string report;
+                bool ok = PowerTimer.Cancel(out report);
+                Console.WriteLine(report);
+                Console.WriteLine("result=" + (ok ? "ok" : "failed"));
+                return ok ? 0 : 1;
+            }
+            if (what == "worker")
+            {
+                // 正常走不到这里（Program.Main 在挂控制台之前就把 worker 接走了）；
+                // 万一有人手敲，也只说一句它是什么，不当成"开始计时"的入口。
+                Console.Error.WriteLine("timer worker 是「开始计时」时由工具箱自己起的后台进程，不对外用。");
+                Console.Error.WriteLine("用法: timer status | plan --action=<…> --after=<秒> | cancel");
+                return 2;
+            }
+            Console.Error.WriteLine("用法: timer status | plan --action=<shutdown|restart|sleep> --after=<秒> | cancel");
             return 2;
         }
 
@@ -1817,6 +1923,12 @@ namespace Mxx1Toolbox
                     kind = "registry";
                     target = Launcher.DescribeCommand(t, settings, false);
                     hint = "会改电源方案（接电源和用电池、所有方案一起改），改前先把原值记在 power-original.tsv";
+                }
+                else if (pa == "timer")
+                {
+                    kind = "window";
+                    target = "（本程序内的窗口）";
+                    hint = "开始计时只能在窗口里点（要过确认框）；命令行只有 timer status / timer cancel";
                 }
                 else if (pa == "fit" || pa == "wake" || pa == "battery")
                 {

@@ -183,6 +183,9 @@ function Get-Shape {
         @('power-fit',      'check'),
         @('power-wake',     'clock'),
         @('power-desk',     'monitor'),
+        # 2026-10-20 第四批（F4「定时关机 / 重启 / 睡眠」）：时钟（跟「谁在阻止睡眠」同一个画法，
+        # 都是"等着时间到"）。⚠ 同样必须排在 `@('power-','bolt')` 前面。
+        @('power-timer',    'clock'),
         @('hibernate',      'power'),
         @('power-',         'bolt'),
         @('dns',            'globe'),

@@ -30,7 +30,10 @@
 **③ 未激活水印**（sysreg 第 15 组 `activation-watermark`）：写 HKLM
 `...\SoftwareProtectionPlatform\NoAcrWatermark = 1`，「恢复」= **删值**；要管理员 + 确认 + 写完自动重启资源管理器。
 ⚠️ 这台是**已激活**的系统（`LicenseStatus=1`），水印本来就不出现 —— **只验到"值写得进、读得回、删得掉"**，
-汇报时别说成"实测水印消失"。
+汇报时别说成"实测水印消失"。**而且值名也没核实到**：把 `explorer.exe` / `shell32.dll` / `sppsvc.exe` /
+`sppc.dll` 等 **130 个激活相关模块**整个搜了一遍（UTF-16 + ASCII），**一处都没有 `NoAcrWatermark`**
+（只在 explorer 里找到 `Software\Microsoft\Windows\CurrentVersion\Watermark` 键路径，旁边就是
+`page=SettingsPageActivate`）→ 这个开关**不保证有效**，按钮的结果说明里已写明、`PITFALLS.md` 坑 92。
 
 **踩的两个坑**：跨进程 `WM_CLOSE` 在 WinForms 里是 `CloseReason.TaskManagerClosing`（模拟点 X 要发
 `WM_SYSCOMMAND` + `SC_CLOSE`，坑 90）；用户自己的 `pinned.txt` / `recent.txt` 会把按钮墙排布改掉 →

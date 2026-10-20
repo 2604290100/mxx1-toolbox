@@ -329,12 +329,15 @@ namespace Mxx1Toolbox
             //    写 SoftwareProtectionPlatform\NoAcrWatermark = 1 之后它就不画了，「恢复」= 把这个值删掉（回到系统默认）。
             //    ⚠️ 这条**本机验不了**：这台是已激活的 Windows 10 Pro（LicenseStatus=1），水印本来就不出现
             //       —— 所以说明里必须写清"已经激活的系统上点了看不出区别"，别让用户以为按钮没生效。
-            //    ⚠️ 微软没有为这个值出过官方文档（社区里通行的做法）：万一哪个版本不认，点「恢复」把值删掉即可回原样。
+            //    ⚠️ 微软没有为这个值出过官方文档（社区里通行的做法）；2026-10-20 本机又核了一遍：
+            //       explorer.exe / shell32.dll / sppsvc.exe / sppc.dll 等 130 个激活相关模块里
+            //       **都找不到 "NoAcrWatermark" 这个字符串** → 不保证在每个版本上都灵。
+            //       所以「恢复」必须做成"删值"（不是写 0），并且说明里要如实写"不保证有效、删掉就回原样"。
             Tweak mark = new Tweak();
             mark.OnLabel = "隐藏未激活水印";
             mark.OffLabel = "恢复未激活水印";
             mark.RestartExplorer = true;   // 水印是 explorer 画的，不重启看不到变化
-            mark.AfterNote = "只隐藏右下角那行提示，不会激活 Windows（未激活时的功能限制照旧）。已经激活的系统上本来就没有这行字，点了看不出任何区别；想让提示真正消失请激活 Windows。万一哪个版本不认这个值，点「恢复未激活水印」把值删掉就回到原样。";
+            mark.AfterNote = "只隐藏右下角那行提示，不会激活 Windows（未激活时的功能限制照旧）。已经激活的系统上本来就没有这行字，点了看不出任何区别。⚠️ 这个值名在系统的激活组件里查不到引用（本机核过 explorer / shell32 / sppsvc / sppc 等 130 个模块），所以不保证在每个 Windows 版本上都灵；不灵就点「恢复未激活水印」把这个值删掉，立刻回到原样。";
             mark.Item = new RegItemSpec();
             mark.Item.Id = "activation-watermark";
             mark.Item.Name = "未激活水印";

@@ -181,6 +181,69 @@ namespace Mxx1Toolbox
             };
             list.Add(ctx);
 
+            // ⑦ 显示文件扩展名（B 组：都是 HKCU、不用管理员，写之前照旧记原值）
+            Tweak ext = new Tweak();
+            ext.OnLabel = "显示扩展名";
+            ext.OffLabel = "隐藏扩展名";
+            ext.Item = new RegItemSpec();
+            ext.Item.Id = "file-ext";
+            ext.Item.Name = "文件扩展名显示";
+            ext.Item.What = "资源管理器里文件名后面要不要显示 .txt / .exe 这类扩展名（HideFileExt，0 = 显示，1 = 隐藏）";
+            ext.Item.Values = new RegValueSpec[]
+            {
+                Dword("HKCU", "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced", "HideFileExt", "0", "1")
+            };
+            list.Add(ext);
+
+            // ⑧ 显示隐藏文件（Hidden：1 = 显示，2 = 不显示；系统文件另由 ShowSuperHidden 控制）
+            Tweak hidden = new Tweak();
+            hidden.OnLabel = "显示隐藏文件";
+            hidden.OffLabel = "不显示隐藏文件";
+            hidden.Item = new RegItemSpec();
+            hidden.Item.Id = "hidden-files";
+            hidden.Item.Name = "隐藏文件显示";
+            hidden.Item.What = "要不要把隐藏属性的文件也列出来（Hidden，1 = 显示，2 = 不显示）；带「系统」属性的文件仍由文件夹选项里那个受保护的勾单独控制";
+            hidden.Item.Values = new RegValueSpec[]
+            {
+                Dword("HKCU", "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced", "Hidden", "1", "2")
+            };
+            list.Add(hidden);
+
+            // ⑨ 快捷方式小箭头：Shell Icons\29 覆盖成 shell32.dll 里那个全透明的空图标
+            //    （本机实测：ExtractIconEx(shell32.dll, -50) 出来 32×32 不透明像素 0 个）。
+            //    关 = 把这个值删掉（OffValue = null → 引擎删值，不是写空字符串）。
+            //    ⚠️ 这个值要重启资源管理器才生效；本会话没有 explorer 桌面壳，没法做「箭头的确消失」的肉眼验证。
+            Tweak arrow = new Tweak();
+            arrow.OnLabel = "去掉小箭头";
+            arrow.OffLabel = "恢复小箭头";
+            arrow.AfterNote = "这个值要重启资源管理器（或注销一次）之后才看得到变化。";
+            arrow.Item = new RegItemSpec();
+            arrow.Item.Id = "shortcut-arrow";
+            arrow.Item.Name = "快捷方式小箭头";
+            arrow.Item.What = "快捷方式图标左下角那个小箭头（写 Shell Icons\\29 = shell32.dll,-50，那是一个全透明的空图标；「恢复小箭头」把这个值删掉）";
+            arrow.Item.Values = new RegValueSpec[]
+            {
+                Str("HKCU", "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Shell Icons", "29", "%SystemRoot%\\System32\\shell32.dll,-50", null)
+            };
+            list.Add(arrow);
+
+            // ⑩ 任务栏时钟显示秒：Windows 10 起才有这个值，Win7/8 上不成立（只给说明、不写注册表）
+            Tweak clock = new Tweak();
+            clock.OnLabel = "时钟显示秒";
+            clock.OffLabel = "时钟不显示秒";
+            clock.MinBuild = 10240;
+            clock.BuildNote = "「任务栏时钟显示秒」是 Windows 10 起才有的开关；这台是更早的系统（Win7/8），写进去也不会有效果，注册表没有动。";
+            clock.AfterNote = "如果任务栏没立刻变，重启资源管理器（或注销一次）之后就生效。";
+            clock.Item = new RegItemSpec();
+            clock.Item.Id = "clock-seconds";
+            clock.Item.Name = "任务栏时钟秒";
+            clock.Item.What = "任务栏右下角时钟里要不要显示秒数（ShowSecondsInSystemClock，1 = 显示，0 = 不显示）";
+            clock.Item.Values = new RegValueSpec[]
+            {
+                Dword("HKCU", "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced", "ShowSecondsInSystemClock", "1", "0")
+            };
+            list.Add(clock);
+
             foreach (Tweak t in list)
             {
                 foreach (RegValueSpec v in t.Item.Values)

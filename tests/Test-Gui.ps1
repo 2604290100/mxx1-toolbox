@@ -1191,7 +1191,7 @@ $all = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Visible -and $_
 # 分段标题（Label，STATIC 类）就是"每段另起一行"的那条线：正确的行数**不是** ceil(总数/4)，
 # 而是各段 ceil(段内数/4) 之和。2026-10-19 加「电源与笔记本」（5 个按钮 = 2 行）时，
 # 老写法 ceil(39/4)=10 当场假红（实测 11 行）—— 现在按段算，以后再加按钮也不会错。
-$wantCaps = @('任务栏 · 开始菜单 · 资源管理器（每一列是一对开关）', '安全入口 · 电源 · 系统维护', '电源与笔记本（合盖 · 电池 · 唤醒）', '改动的记录与还原')
+$wantCaps = @('任务栏 · 开始菜单 · 资源管理器（每一列是一对开关）', '安全入口 · 电源 · 系统维护', '电源与笔记本（合盖 · 电池 · 唤醒）', '文件显示 · 快捷方式 · 时钟（每一列是一对开关）', '改动的记录与还原')
 $capTops = @()
 foreach ($cap in $wantCaps) {
     $hit = @($all | Where-Object { $_.Class -like '*STATIC*' -and $_.Text -eq $cap } | Sort-Object Top)
@@ -1211,7 +1211,7 @@ for ($si = 0; $si -lt $capTops.Count; $si++) {
 $uncovered = @($toolButtons | Where-Object { $capTops.Count -gt 0 -and ([int]$_.Top) -lt $capTops[0] })
 $expectRows = 0
 foreach ($r in $segRows) { $expectRows += $r.Count }
-Check ('B03 排成多行（{0} 个按钮 = 4 段共 {1} 行：{2}）' -f $toolButtons.Count, $expectRows, `
+Check ('B03 排成多行（{0} 个按钮 = 5 段共 {1} 行：{2}）' -f $toolButtons.Count, $expectRows, `
         (($segRows | ForEach-Object { ($_ -join '+') }) -join ' / ')) `
     (($capTops.Count -eq $wantCaps.Count) -and ($uncovered.Count -eq 0) -and ($rows.Count -eq $expectRows)) `
     ('段标题=' + $capTops.Count + ' 段外按钮=' + $uncovered.Count + ' 行数=' + $rows.Count + `

@@ -129,6 +129,16 @@ function Get-Shape {
         # 「常用设置」里那批写注册表的按钮（builtin/sysreg）：查看改动 / 还原改动
         @('sysreg-status',     'info'),
         @('sysreg-restore',    'refresh'),
+        # 2026-10-20 加的 B 组四对开关（文件扩展名 / 隐藏文件 / 小箭头 / 时钟秒）：
+        # 扩展名 = 文档、隐藏文件 = 眼睛、去掉箭头 = 减号 / 恢复箭头 = 循环、时钟 = 时钟
+        @('ext-show',          'doc'),
+        @('ext-hide',          'doc'),
+        @('hidden-show',       'eye'),
+        @('hidden-hide',       'eye'),
+        @('arrow-hide',        'minus'),
+        @('arrow-restore',     'refresh'),
+        @('clock-sec',         'clock'),
+        @('clock-nosec',       'clock'),
         @('appx',           'list'),
         @('uninstall-app',  'minus'),
         @('default-app',    'window'),

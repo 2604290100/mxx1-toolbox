@@ -485,13 +485,13 @@ foreach ($line in ($status.Out -split "`r?`n")) {
     }
 }
 
-Check ('A04 按钮总数 145 + 工具目录里自动加载的 {0} 个（测试期间用户层的按钮会暂停：常用 38 + 系统工具 37 + 隐私 29 + 应用 5 + 清理 12 + 右键 21 + 我的 3）' -f $autoBase) `
-    ((Get-Key $status.Out 'buttons') -eq [string](145 + $autoBase)) (Get-Key $status.Out 'buttons')
+Check ('A04 按钮总数 153 + 工具目录里自动加载的 {0} 个（测试期间用户层的按钮会暂停：常用 46 + 系统工具 37 + 隐私 29 + 应用 5 + 清理 12 + 右键 21 + 我的 3）' -f $autoBase) `
+    ((Get-Key $status.Out 'buttons') -eq [string](153 + $autoBase)) (Get-Key $status.Out 'buttons')
 Check 'A05 内置清单里没有灰色占位按钮了（两个「资源管理器」也接上了真功能；灰规则改由 B 组注入验证）' ((Get-Key $status.Out 'placeholders') -eq '0') (Get-Key $status.Out 'placeholders')
 Check 'A06 危险按钮 3 个' ((Get-Key $status.Out 'dangerous') -eq '3') (Get-Key $status.Out 'dangerous')
 
 # 「常用」页签是合成的（置顶 + 最近使用），清单里没有它的按钮，所以是 0
-$tabExpect = @{ 'recent' = 0; 'common' = 38; 'mine' = 3; 'system' = 37; 'cleanup' = 12; 'privacy' = 29; 'apps' = 5; 'rightmenu' = 21 }
+$tabExpect = @{ 'recent' = 0; 'common' = 46; 'mine' = 3; 'system' = 37; 'cleanup' = 12; 'privacy' = 29; 'apps' = 5; 'rightmenu' = 21 }
 $tabOk = $true
 $tabDetail = @()
 foreach ($k in $tabExpect.Keys) {
@@ -499,13 +499,13 @@ foreach ($k in $tabExpect.Keys) {
     $tabDetail += ($k + '=' + $v)
     if ($v -ne [string]([int]$tabExpect[$k] + [int]$autoByTab[$k])) { $tabOk = $false }
 }
-Check 'A07 八个页签的按钮数正确（0/38/3/37/12/29/5/21，加上自动按钮）' $tabOk ($tabDetail -join ' ')
+Check 'A07 八个页签的按钮数正确（0/46/3/37/12/29/5/21，加上自动按钮）' $tabOk ($tabDetail -join ' ')
 
 $list = Invoke-Exe 'list'
 Check 'A08 list 退出码 0' ($list.Code -eq 0) ('exit=' + $list.Code)
-Check 'A09 list 报的按钮数一致' ((Get-Key $list.Out 'buttons') -eq [string](145 + $autoBase)) (Get-Key $list.Out 'buttons')
+Check 'A09 list 报的按钮数一致' ((Get-Key $list.Out 'buttons') -eq [string](153 + $autoBase)) (Get-Key $list.Out 'buttons')
 $lines = @($list.Out -split "`r?`n" | Where-Object { $_ -match "`t" })
-Check ('A10 list 打出 {0} 行按钮' -f (145 + $autoBase)) ($lines.Count -eq (145 + $autoBase)) ('lines=' + $lines.Count)
+Check ('A10 list 打出 {0} 行按钮' -f (153 + $autoBase)) ($lines.Count -eq (153 + $autoBase)) ('lines=' + $lines.Count)
 
 $rmList = Invoke-Exe 'list --tab rightmenu'
 Check 'A11 右键增强 21 个按钮（20 个右键菜单功能 + 隔壁永久删除工具）' ((Get-Key $rmList.Out 'shown') -eq [string](21 + [int]$autoByTab['rightmenu'])) (Get-Key $rmList.Out 'shown')
@@ -1012,7 +1012,7 @@ Write-Host 'H 组 · 悬停说明（用户 2026-10-04 报过「鼠标悬停的�
 # tip 命令打印的就是界面塞给 ToolTip 的那个字符串，所以这里能直接断言，不用去动真鼠标。
 $tipsAll = Invoke-Exe 'tip'
 Check 'H01 tip 退出码 0' ($tipsAll.Code -eq 0) ('exit=' + $tipsAll.Code)
-Check ('H02 tip 覆盖了每个按钮（145 + 自动 {0} 个）' -f $autoBase) ((Get-Key $tipsAll.Out 'tips') -eq [string](145 + $autoBase)) (Get-Key $tipsAll.Out 'tips')
+Check ('H02 tip 覆盖了每个按钮（153 + 自动 {0} 个）' -f $autoBase) ((Get-Key $tipsAll.Out 'tips') -eq [string](153 + $autoBase)) (Get-Key $tipsAll.Out 'tips')
 
 $blocks = @{}
 $curId = ''
@@ -1279,30 +1279,48 @@ Check 'K11 体检报告包含系统/激活/内存/磁盘/自启项/hosts/管理�
 
 # ---------------------------------------------------------------- L 组：系统设置改动（sysreg）
 if (Test-GroupSelected 'L') {
-# 「常用设置」里那 6 对写注册表的按钮现在和隐私开关共用一套「记原值 + 读回核对 + 一键还原」的机制。
+# 「常用设置」里那 10 对写注册表的按钮现在和隐私开关共用一套「记原值 + 读回核对 + 一键还原」的机制。
 Write-Host ''
 Write-Host 'L 组 · 系统设置改动（记原值 / 读回核对 / 一键还原；只读命令 + 自检）'
 
 $srItems = Invoke-Exe 'sysreg items'
 Check 'L01 sysreg items 退出码 0' ($srItems.Code -eq 0) ('exit=' + $srItems.Code)
 $srLines = @($srItems.Out -split "`r?`n" | Where-Object { $_ -match "`t" })
-Check 'L02 6 个系统设置开关都在表里（任务栏/开始菜单/驱动/内核隔离/资源管理器/右键菜单）' ($srLines.Count -eq 6) ('数=' + $srLines.Count)
+Check 'L02 10 个系统设置开关都在表里（任务栏/开始菜单/驱动/内核隔离/资源管理器/右键菜单 + 扩展名/隐藏文件/小箭头/时钟秒）' ($srLines.Count -eq 10) ('数=' + $srLines.Count)
 
 # 每一对都必须是「一个 off 按钮 + 一个 on 按钮」；按钮的 options 不在 list 输出里，所以按
-# 方向数数：两个方向的按钮数必须一样多，而且加起来就是这一页那 12 个成对按钮。
+# 方向数数：两个方向的按钮数必须一样多，而且加起来就是这一页那 20 个成对按钮。
 $srList = Invoke-Exe 'list --tab common'
 $srOn = @($srList.Out -split "`r?`n" | Where-Object { $_ -match 'sysreg/on' })
 $srOff = @($srList.Out -split "`r?`n" | Where-Object { $_ -match 'sysreg/off' })
-Check 'L03 6 对开关 = 12 个按钮（任务栏/开始菜单/驱动/内核隔离/资源管理器/右键菜单）' `
-    (($srOn.Count -eq 6) -and ($srOff.Count -eq 6)) ('on=' + $srOn.Count + ' off=' + $srOff.Count)
+Check 'L03 10 对开关 = 20 个按钮' `
+    (($srOn.Count -eq 10) -and ($srOff.Count -eq 10)) ('on=' + $srOn.Count + ' off=' + $srOff.Count)
 Check 'L04 on / off 两个方向的按钮数一样多（成对）' ($srOn.Count -eq $srOff.Count) ('on=' + $srOn.Count + ' off=' + $srOff.Count)
 $srExtra = @($srList.Out -split "`r?`n" | Where-Object { $_ -match 'sysreg/(status|restore)' })
 Check 'L04b 另有「查看设置改动 / 还原设置改动」两个入口按钮' ($srExtra.Count -eq 2) ('找到=' + $srExtra.Count)
 
+# B 组那四对新开关：名字 / 两个方向 / 不用管理员 —— 从 sysreg items 的输出里逐条核对
+$srNew = @(
+    @{ Id = 'file-ext';       Name = '文件扩展名显示'; Labels = '显示扩展名 / 隐藏扩展名' },
+    @{ Id = 'hidden-files';   Name = '隐藏文件显示';   Labels = '显示隐藏文件 / 不显示隐藏文件' },
+    @{ Id = 'shortcut-arrow'; Name = '快捷方式小箭头'; Labels = '去掉小箭头 / 恢复小箭头' },
+    @{ Id = 'clock-seconds';  Name = '任务栏时钟秒';   Labels = '时钟显示秒 / 时钟不显示秒' }
+)
+$srNewBad = @()
+foreach ($n in $srNew) {
+    $hit = @($srLines | Where-Object { $_ -match ('^' + [regex]::Escape($n.Id) + "`t") })
+    if ($hit.Count -ne 1) { $srNewBad += ($n.Id + '=缺'); continue }
+    $okLine = ($hit[0].IndexOf($n.Name) -ge 0) -and ($hit[0].IndexOf($n.Labels) -ge 0) -and ($hit[0].IndexOf('不用管理员') -ge 0)
+    if (-not $okLine) { $srNewBad += ($n.Id + '=' + $hit[0]) }
+}
+Check 'L04c B 组四个新开关（扩展名 / 隐藏文件 / 小箭头 / 时钟秒）名字、两个方向、不用管理员都对' `
+    ($srNewBad.Count -eq 0) ($srNewBad -join ' | ')
+
 $srStatus = Invoke-Exe 'sysreg status'
 Check 'L05 sysreg status 退出码 0（只读）' ($srStatus.Code -eq 0) ('exit=' + $srStatus.Code)
 Check 'L06 状态报告里每个开关都有一行' `
-    ((@('任务栏按钮合并方式', '开始菜单对齐方式', '驱动自动安装', '内核隔离', '资源管理器样式', '右键菜单样式') | Where-Object { $srStatus.Out.IndexOf($_) -lt 0 }).Count -eq 0) ''
+    ((@('任务栏按钮合并方式', '开始菜单对齐方式', '驱动自动安装', '内核隔离', '资源管理器样式', '右键菜单样式',
+        '文件扩展名显示', '隐藏文件显示', '快捷方式小箭头', '任务栏时钟秒') | Where-Object { $srStatus.Out.IndexOf($_) -lt 0 }).Count -eq 0) ''
 
 # 命令行故意不提供"直接改系统设置"的入口（和隐私开关一样：只能从界面点成对按钮 + 一键还原）
 $srWrite = Invoke-Exe 'sysreg set off taskbar-combine'

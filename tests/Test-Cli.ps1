@@ -4183,7 +4183,11 @@ if ($ws -eq $null) {
     New-XLink (Join-Path $xDesk 'ok-file.lnk') $goodExe
     New-XLink (Join-Path $xDesk 'ok-dir.lnk') $goodDir
     New-XLink (Join-Path $xDesk 'broken.lnk') $missingExe
-    New-XLink (Join-Path $xSub '中文 坏链.lnk') $missingExe
+    # ⚠ 中文名这一条**故意不走 WScript.Shell**：那个 COM 组件是 ANSI 的，
+    # 在英文 / 非中文代码页的机器上（GitHub runner 就是）CreateShortcut('中文 坏链.lnk') 直接抛
+    # 「Unable to save shortcut …\?? ??.lnk」，整组 X 就此中断（2026-10-21 CI 实测踩到）。
+    # 直接复制一份同内容的 .lnk 再改名 —— 目标是"扫描器要认非 ASCII 文件名"，和怎么造出来无关。
+    Copy-Item -LiteralPath (Join-Path $xDesk 'broken.lnk') -Destination (Join-Path $xSub '中文 坏链.lnk') -Force
     New-XLink (Join-Path $xDesk 'network.lnk') '\\mxx1-no-such-host\share\nope.exe'
     New-XLink (Join-Path $xDesk 'store.lnk') 'shell:AppsFolder\Microsoft.WindowsCalculator_8wekyb3d8bbwe!App'
     $removableName = ''

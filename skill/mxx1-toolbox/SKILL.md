@@ -16,7 +16,28 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
 > **接手 / 新会话先做两件事**：读 `docs\DESIGN.md`（外观与行为的**唯一正本**）和本文件。
 > 设计一改先改 `DESIGN.md`，再同步本 skill —— 两份分叉就会出现"两套行为"。
 
-## 当前状态（2026-10-20，**六件新工具 H1–H6 验收完、已本地提交、未推送未发版**；上一版 v1.5.9 已发布）
+## 当前状态（2026-10-22，**豆包缺口清单 10 条功能做完并推送、未打 tag 未发版**；上一版 v1.5.9 已发布）
+
+> **⚠️ 2026-10-22 这一轮（缺口清单 GAP-01…09 / GAP-11 全部落地，已推送 `b439580`，没打 tag、没发版、站点没动）**：
+> 照 `夜巡-20261021\02-缺口清单.md`（用户拍板的 10 条）逐条做：
+> ① 第一批（`cb01b33`）：**显示设置**（`display-settings`，`ms-settings:display`）、**打印机显示脱机**
+>   （`printer-offline-fix`，WMI 取消脱机）、**输入法打不出字**（`input-fix`，重启文本进程 + 列语言）、
+>   **蓝屏原因解读**（`bsod-decode`，读 BugCheck + 错误码人话）；
+> ② 第二批（`a6893f5`）：**输出设备体检**（`sound-devices` 窗）、**进程占用体检**（`proc-top`）、
+>   **C 盘空间体检**（`disk-usage`，后台线程扫顶级目录）；
+> ③ **一键换 DNS**（`dns-switch`，`src\DnsConfig.cs` 走 netsh + **读回核对**；CLI `dns` 只读，
+>   `dns --apply=` 只在 `MXX1_NETSH` 下走）；
+> ④ **启动项管理**（`startup-manage`，`src\StartupItems.cs` 只禁用不删除、原值记 TSV、能还原；
+>   CLI `startup` 只读，写入口只在 `MXX1_STARTUP_ROOT` 下走）；
+> ⑤ **U 盘安全弹出**（`usb-eject`，`src\UsbEject.cs` = 锁卷 + 卸载 + `CM_Request_Device_Eject`，
+>   占用程序复用 `FileLock`；CLI `eject` 只读，`--now=` 只在 `MXX1_EJECT_FAKE` 下走）；
+> ⑥ **砍掉** GAP-10（Windows.old，不可逆+重叠）与 GAP-12（开始菜单/右键故障，GUI 够不着）。
+> 数字：内置按钮 / 图标 **178**（`status` **181**）、系统工具 **49**、常用设置 57、应用 **6**、清理 13、
+> 隐私 29、右键 21、`systemTargets` 29。
+> 验证：命令行全量 **502 通过 + 1 跳过（F03）/ 0 失败**；界面 `-Only J` **46 通过 / 0 失败**（**全套没跑，发版前要清**）；
+> 编码体检 **304 文件 PASS**；CI 五次 green。坑 **95–97**（隔离根才可自动化 / 编码体检咬夹具盘符路径 / 跨页签先 Switch-Tab）。
+> ⚠️ **没验到的**：真 U 盘弹出成功路径、真改本机 DNS、界面全套回归。发版前还欠：火绒报 `Trojan/Loader.bb` 误报、
+> 站点标题版本号先改、README/站点数字（178 / 49）一起改。
 
 > **⚠️ 2026-10-19/20 这一轮（**代码 + 验收全做完，本地四笔提交，没推送没发版**）**：
 > 用户 2026-10-19 拍板「这些都做」的六件新工具全部落地：
@@ -590,9 +611,9 @@ D:\萌新工具开发\toolbox\
                                    `MXX1_TIMER_STATE` 换记录路径；worker 往 stdout 写一行纯 ASCII 痕迹供回归断言）
   src\TimerForm.cs                 **本轮新增**：那个窗口（三种动作 / 「N 分钟后」+「今天 HH:mm」两种模式 /
                                    状态行 / 开始·取消·刷新·关闭；条款门 + 确认框在这条路上）
-  tools\*.json                     **165** 个按钮的内置定义（编译时内嵌，资源名 tools.<文件名>）；7 个文件 =
+  tools\*.json                     **178** 个按钮的内置定义（编译时内嵌，资源名 tools.<文件名>）；7 个文件 =
                                  common / system / privacy / apps / cleanup / rightmenu / mine
-                                 （这台机器上 `status` 报 `buttons=167` = 165 + bin-tools 自动 1 + 用户自己 1）
+                                 （这台机器上 `status` 报 `buttons=181` = 178 + bin-tools 自动 1 + 用户自己 2）
   tools\Test-Encoding.ps1          编码红线体检（-Fix 修 BOM）
   tools\Test-Quick.ps1             **提交前闸门**：读 git 改动 → 查 tests\test-map.json → 跑
                                    L0（编码 + 内联）+ 编译 + `Test-Cli.ps1 -Only <受影响的组>`；
@@ -607,7 +628,7 @@ D:\萌新工具开发\toolbox\
   tools\Make-AppIcon.ps1           画 assets\app.ico（程序自己的图标，八尺寸；改完要重新 build）
   tools\Make-Package.ps1           打发布包 zip（build.ps1 -Package 调它；**回读 zip 逐个核对**，
                                    少一个文件就失败 —— 见"打包"那条坑）
-  assets\icons\*.png               **164** 个按钮图标（编译时内嵌成 icons.<id>.png）
+  assets\icons\*.png               **178** 个按钮图标（编译时内嵌成 icons.<id>.png）
   assets\app.ico                   程序图标（`/win32icon` 用的就是它）
   tests\Test-All.ps1               一条命令跑完全部（也支持 `-Only` / `-Skip` 透传给两个套件）
   tools\Test-InlineSyntax.ps1      内联脚本语法 + 清单 JSON + **每个 .ps1 的语法**体检（34 个内联 / 7 个清单）

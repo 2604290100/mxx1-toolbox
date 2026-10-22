@@ -388,6 +388,35 @@
     },
     {
       "paths": [
+        "src/AudioDevices.cs",
+        "src/SoundForm.cs"
+      ],
+      "cli": [
+        "A",
+        "D"
+      ],
+      "gui": [
+        "J"
+      ],
+      "note": "2026-10-22 GAP-02「输出设备体检」：后端走 Windows 自带的 MMDevice（Core Audio）+ IPolicyConfig 真切默认设备，名字读注册表 MMDevices\\Audio\\Render|Capture 的三个属性（不用 IPropertyStore，省一层 PROPVARIANT marshaling）。命令行判据 D10/D10b/D10c/D10d（**写的那条路只拿一个不存在的 id 去试**，绝不许把用户正在用的默认设备换掉）；界面 J13b/J13c 真把这个窗口从按钮开一次、读状态行、认「没选东西时『设为默认设备』是灰的」"
+    },
+
+    {
+      "paths": [
+        "src/DiskUsage.cs",
+        "src/DiskUsageForm.cs"
+      ],
+      "cli": [
+        "A",
+        "D"
+      ],
+      "gui": [
+        "J"
+      ],
+      "note": "2026-10-22 GAP-04「C 盘空间体检」：后端自己走目录（不跟 junction、逐目录容错、后台线程），命令行判据用**字节数已知的小夹具**（D12：aaa 3000 + bbb 9000 + 根下散文件 100 = 12100；D12b：junction 指向 bbb 但 bbb 不许算成 18000；D12c：目录不存在退 1）；界面 J13d/J13e 真开一次窗口（根被 MXX1_DISKUSAGE_ROOT 指到夹具，验「统计跑完、按钮都可点、没被后台线程卡死」）"
+    },
+    {
+      "paths": [
         "src/PowerForm.cs"
       ],
       "cli": [],

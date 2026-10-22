@@ -485,13 +485,13 @@ foreach ($line in ($status.Out -split "`r?`n")) {
     }
 }
 
-Check ('A04 按钮总数 172 + 工具目录里自动加载的 {0} 个（测试期间用户层的按钮会暂停：常用 57 + 系统工具 44 + 隐私 29 + 应用 5 + 清理 13 + 右键 21 + 我的 3）' -f $autoBase) `
-    ((Get-Key $status.Out 'buttons') -eq [string](172 + $autoBase)) (Get-Key $status.Out 'buttons')
+Check ('A04 按钮总数 175 + 工具目录里自动加载的 {0} 个（测试期间用户层的按钮会暂停：常用 57 + 系统工具 47 + 隐私 29 + 应用 5 + 清理 13 + 右键 21 + 我的 3）' -f $autoBase) `
+    ((Get-Key $status.Out 'buttons') -eq [string](175 + $autoBase)) (Get-Key $status.Out 'buttons')
 Check 'A05 内置清单里没有灰色占位按钮了（两个「资源管理器」也接上了真功能；灰规则改由 B 组注入验证）' ((Get-Key $status.Out 'placeholders') -eq '0') (Get-Key $status.Out 'placeholders')
 Check 'A06 危险按钮 3 个' ((Get-Key $status.Out 'dangerous') -eq '3') (Get-Key $status.Out 'dangerous')
 
 # 「常用」页签是合成的（置顶 + 最近使用），清单里没有它的按钮，所以是 0
-$tabExpect = @{ 'recent' = 0; 'common' = 57; 'mine' = 3; 'system' = 44; 'cleanup' = 13; 'privacy' = 29; 'apps' = 5; 'rightmenu' = 21 }
+$tabExpect = @{ 'recent' = 0; 'common' = 57; 'mine' = 3; 'system' = 47; 'cleanup' = 13; 'privacy' = 29; 'apps' = 5; 'rightmenu' = 21 }
 $tabOk = $true
 $tabDetail = @()
 foreach ($k in $tabExpect.Keys) {
@@ -503,9 +503,9 @@ Check 'A07 八个页签的按钮数正确（0/57/3/44/13/29/5/21，加上自动�
 
 $list = Invoke-Exe 'list'
 Check 'A08 list 退出码 0' ($list.Code -eq 0) ('exit=' + $list.Code)
-Check 'A09 list 报的按钮数一致' ((Get-Key $list.Out 'buttons') -eq [string](172 + $autoBase)) (Get-Key $list.Out 'buttons')
+Check 'A09 list 报的按钮数一致' ((Get-Key $list.Out 'buttons') -eq [string](175 + $autoBase)) (Get-Key $list.Out 'buttons')
 $lines = @($list.Out -split "`r?`n" | Where-Object { $_ -match "`t" })
-Check ('A10 list 打出 {0} 行按钮' -f (172 + $autoBase)) ($lines.Count -eq (172 + $autoBase)) ('lines=' + $lines.Count)
+Check ('A10 list 打出 {0} 行按钮' -f (175 + $autoBase)) ($lines.Count -eq (175 + $autoBase)) ('lines=' + $lines.Count)
 
 $rmList = Invoke-Exe 'list --tab rightmenu'
 Check 'A11 右键增强 21 个按钮（20 个右键菜单功能 + 隔壁永久删除工具）' ((Get-Key $rmList.Out 'shown') -eq [string](21 + [int]$autoByTab['rightmenu'])) (Get-Key $rmList.Out 'shown')
@@ -687,7 +687,7 @@ if ($permdel -eq '(未找到)' -or $permdel.Length -eq 0) {
 # ---------------------------------------------------------------- D 组：系统工具
 if (Test-GroupSelected 'D') {
 Write-Host ''
-Write-Host 'D 组 · 「系统工具」44 个按钮（Windows 自带组件 + 修复/诊断 + 文件哈希校验 / 屏幕取色器 / 端口与进程，--dry 只解析不启动）'
+Write-Host 'D 组 · 「系统工具」47 个按钮（Windows 自带组件 + 修复/诊断 + 文件哈希校验 / 屏幕取色器 / 端口与进程，--dry 只解析不启动）'
 
 # 缺组件的口径按系统版本分叉：Win7 上那 7 个 ms-settings: 按钮天生打不开（算"没有"），
 # Win10/11 上一个都不该缺。这样才能在两种机器上跑同一套测试。
@@ -697,14 +697,14 @@ Check 'D01 status 报 29 个系统工具动作（21 组件 + 2 诊断 + 4 权限
     (((Get-Key $status.Out 'systemTargets') -eq '29') -and $missOk) $d01detail
 
 $sysList = Invoke-Exe 'list --tab system'
-Check 'D02 系统工具页签 44 个按钮（33 + 文件哈希校验 + 屏幕取色器 + 端口与进程 + 系统体检 + 打印卡住了 + 声音问题体检 + 网络体检 + 显示设置 + 打印机显示脱机 + 输入法打不出字 + 蓝屏原因解读）、没有 placeholder' `
-    (((Get-Key $sysList.Out 'shown') -eq '44') -and (-not ($sysList.Out -match 'placeholder'))) ''
+Check 'D02 系统工具页签 47 个按钮（33 + 文件哈希校验 + 屏幕取色器 + 端口与进程 + 系统体检 + 打印卡住了 + 声音问题体检 + 网络体检 + 显示设置 + 打印机显示脱机 + 输入法打不出字 + 蓝屏原因解读 + 输出设备体检 + 进程占用体检 + C 盘空间体检）、没有 placeholder' `
+    (((Get-Key $sysList.Out 'shown') -eq '47') -and (-not ($sysList.Out -match 'placeholder'))) ''
 
 $sysIds = @()
 foreach ($line in ($sysList.Out -split "`r?`n")) {
     if ($line -match "`t") { $sysIds += ($line -split "`t")[0] }
 }
-Check 'D03 读到 44 个系统工具 id' ($sysIds.Count -eq 44) ($sysIds -join ' ')
+Check 'D03 读到 47 个系统工具 id' ($sysIds.Count -eq 47) ($sysIds -join ' ')
 
 $bad = @()
 $detail = @()
@@ -717,7 +717,7 @@ foreach ($id in $sysIds) {    $d = Invoke-Exe ('run ' + $id + ' --dry')
     if ($exists -ne 'yes' -and $hint.Length -eq 0) { $bad += ($id + ':没有解释'); continue }
     $detail += ($id + '=' + (Get-Key $d.Out 'kind'))
 }
-Check 'D04 44 个系统工具都有目标、且缺了就说明了原因' ($bad.Count -eq 0) (($bad -join ' ') + ' ' + ($detail -join ' '))
+Check 'D04 47 个系统工具都有目标、且缺了就说明了原因' ($bad.Count -eq 0) (($bad -join ' ') + ' ' + ($detail -join ' '))
 
 # 2026-10-20 加的 8 个「系统工具页入口」（A 组）—— 按 id 点名，免得哪天清单被改坏一条也没人发现。
 # （原计划里还有「Internet 选项 inetcpl.cpl」，量出来这台机器的精简版 Windows 里根本没这个文件，
@@ -748,6 +748,121 @@ $gapBoundary = (($defPrint.Count -eq 1) -and ($defPrint[0].runAsAdmin -eq $true)
                (($defBsod.Count -eq 1) -and ($defBsod[0].runAsAdmin -ne $true) -and ($defBsod[0].confirm -ne $true))
 Check 'D09b 三颗脚本按钮的边界写对了（打印机脱机要管理员、输入法修复有确认框、蓝屏解读既不要管理员也不要确认框）' `
     $gapBoundary ('print=' + $defPrint.Count + ' input=' + $defInput.Count + ' bsod=' + $defBsod.Count)
+
+# D10 —— `audio` 命令行出口（GAP-02「输出设备体检」）
+# 和窗口那颗按钮读的是**同一份** src\AudioDevices.cs，所以这里验后端。
+# ⚠️ 测试**绝不真改**这台机器的默认音频设备：写的那条路只拿一个不存在的 id 去试，
+#    要求它退 1 + 说清原因（用户正在放歌 / 开会的时候，测试把默认设备换掉是不可接受的）。
+$audioJson = Invoke-Exe 'audio --json'
+$audioObj = $null
+try { $audioObj = $audioJson.Out.Trim() | ConvertFrom-Json } catch { $audioObj = $null }
+$audioCount = -1
+$audioErr = ''
+$audioDevices = @()
+if ($audioObj -ne $null) {
+    $audioCount = [int]$audioObj.count
+    $audioErr = [string]$audioObj.error
+    $audioDevices = @($audioObj.devices)
+}
+# 口径：接口叫得起来就退 0（**一台设备都没有也不算失败** —— 虚拟机 / 精简版 Windows 很常见）；
+#       接口叫不起来（error 有话说）才退 1。
+Check 'D10 `audio --json` 吐一行合法 JSON（count / error / devices 三个字段齐全、条数对得上）' `
+    (($audioObj -ne $null) -and ($audioObj.PSObject.Properties['count'] -ne $null) -and `
+     ($audioObj.PSObject.Properties['devices'] -ne $null) -and ($audioDevices.Count -eq $audioCount) -and `
+     (($audioJson.Code -eq 0) -eq ($audioErr.Length -eq 0))) `
+    ('exit=' + $audioJson.Code + ' count=' + $audioCount + ' devices=' + $audioDevices.Count + ' error=' + $audioErr)
+
+# 每台设备都要有 id / 名字 / 状态；默认设备要么没有、要么角色写得出人话
+$badDev = @()
+foreach ($d in $audioDevices) {
+    if (([string]$d.id).Length -eq 0) { $badDev += '缺id'; continue }
+    if (([string]$d.name).Length -eq 0) { $badDev += ([string]$d.id + ':缺名字') }
+    if (([string]$d.stateText).Length -eq 0) { $badDev += ([string]$d.id + ':缺状态') }
+    if ($d.default -and (([string]$d.roles).Length -eq 0)) { $badDev += ([string]$d.id + ':是默认但没写角色') }
+}
+Check 'D10b 每台音频设备都有 id / 名字 / 状态（默认设备还写得出是哪几个角色的默认）' `
+    ($badDev.Count -eq 0) ($badDev -join ' ')
+
+$audioText = Invoke-Exe 'audio'
+$audioHead = (Get-Key $audioText.Out 'render') + '|' + (Get-Key $audioText.Out 'capture') + '|' + (Get-Key $audioText.Out 'defaultRender')
+Check 'D10c 不带 --json 时打的是人能读的字段（render / capture / defaultRender）' `
+    (((Get-Key $audioText.Out 'render').Length -gt 0) -and ((Get-Key $audioText.Out 'capture').Length -gt 0)) $audioHead
+
+$audioBad = Invoke-Exe 'audio --set-default {0.0.0.00000000}.{11111111-2222-3333-4444-555555555555}'
+$audioBadMsg = Get-Key $audioBad.Out 'message'
+Check 'D10d `audio --set-default` 给一个不存在的设备时退 1、并说清为什么（绝不真改这台机器的默认设备）' `
+    (($audioBad.Code -eq 1) -and ($audioBadMsg.Length -gt 0)) ('exit=' + $audioBad.Code + ' msg=' + $audioBadMsg)
+
+# D11 —— 第二批追加的两颗：进程占用体检（只读脚本）+ C 盘空间体检（只读窗口）
+$gap2Ids = @('proc-top', 'disk-usage')
+$lackGap2 = @($gap2Ids | Where-Object { $sysIds -notcontains $_ })
+Check 'D11 第二批的两颗按钮都在（进程占用体检 / C 盘空间体检）' ($lackGap2.Count -eq 0) ('缺=' + ($lackGap2 -join ' '))
+
+$defProc = @($sysDefs | Where-Object { $_.id -eq 'proc-top' })
+$defDisk = @($sysDefs | Where-Object { $_.id -eq 'disk-usage' })
+$procInline = if ($defProc.Count -eq 1) { [string]$defProc[0].inline } else { '' }
+# 「只读」不能只看说明文字：内联脚本里**一条**结束进程 / 删东西 / 改服务的命令都不许有
+$procReadonly = ($procInline.Length -gt 0) -and (-not ($procInline -match 'Stop-Process|Remove-Item|taskkill|Set-Service|Set-ItemProperty'))
+$gap2Boundary = (($defProc.Count -eq 1) -and ($defProc[0].kind -eq 'script') -and `
+                 ($defProc[0].runAsAdmin -ne $true) -and ($defProc[0].confirm -ne $true) -and $procReadonly) -and `
+                (($defDisk.Count -eq 1) -and ($defDisk[0].kind -eq 'builtin') -and ($defDisk[0].module -eq 'app') -and `
+                 ($defDisk[0].runAsAdmin -ne $true) -and ($defDisk[0].confirm -ne $true))
+Check 'D11b 这两颗的边界写对了（进程占用体检的脚本里没有任何结束进程 / 删东西 / 改服务的命令；C 盘空间体检是窗口、不写系统）' `
+    $gap2Boundary ('proc=' + $defProc.Count + ' readonly=' + $procReadonly + ' disk=' + $defDisk.Count)
+
+# D12 —— `disksize` 拿一个**字节数已知**的夹具验（不是看它"能跑"，是看它算得对不对）
+$dsRoot = Join-Path $tmpRoot ('mxx1-dsfix-' + $PID)
+try {
+    if (Test-Path -LiteralPath $dsRoot) { Remove-Item -LiteralPath $dsRoot -Recurse -Force }
+    [void][System.IO.Directory]::CreateDirectory((Join-Path $dsRoot 'aaa'))
+    [void][System.IO.Directory]::CreateDirectory((Join-Path $dsRoot 'bbb\sub'))
+    [System.IO.File]::WriteAllBytes((Join-Path $dsRoot 'aaa\f1.bin'), (New-Object byte[] 1000))
+    [System.IO.File]::WriteAllBytes((Join-Path $dsRoot 'aaa\f2.bin'), (New-Object byte[] 2000))
+    [System.IO.File]::WriteAllBytes((Join-Path $dsRoot 'bbb\f3.bin'), (New-Object byte[] 5000))
+    [System.IO.File]::WriteAllBytes((Join-Path $dsRoot 'bbb\sub\f4.bin'), (New-Object byte[] 4000))
+    [System.IO.File]::WriteAllBytes((Join-Path $dsRoot 'loose.bin'), (New-Object byte[] 100))
+} catch { }
+
+$dsLink = Join-Path $dsRoot 'aaa\link-to-bbb'
+$dsMkOk = $false
+if (Test-Path -LiteralPath (Join-Path $dsRoot 'bbb')) {
+    $dsMk = Start-Process -FilePath 'cmd.exe' -ArgumentList ('/c mklink /J "' + $dsLink + '" "' + (Join-Path $dsRoot 'bbb') + '"') -Wait -PassThru -WindowStyle Hidden
+    $dsMkOk = (($dsMk.ExitCode -eq 0) -and (Test-Path -LiteralPath $dsLink))
+}
+
+$dsJson = Invoke-Exe ('disksize --root=' + (Quote-Arg $dsRoot) + ' --json')
+$dsObj = $null
+try { $dsObj = $dsJson.Out.Trim() | ConvertFrom-Json } catch { $dsObj = $null }
+$dsTotal = -1; $dsAaa = -1; $dsBbb = -1; $dsJunc = 0; $dsDirs = 0
+if ($dsObj -ne $null) {
+    $dsTotal = [long]$dsObj.bytes
+    foreach ($d in @($dsObj.dirs)) {
+        $dsDirs++
+        if ($d.name -eq 'aaa') { $dsAaa = [long]$d.bytes; $dsJunc = [int]$d.junctions }
+        if ($d.name -eq 'bbb') { $dsBbb = [long]$d.bytes }
+    }
+}
+Check 'D12 `disksize` 算得对：aaa 3000 + bbb 9000 + 根下散文件 100 = 12100 字节，三行都在' `
+    (($dsJson.Code -eq 0) -and ($dsTotal -eq 12100) -and ($dsAaa -eq 3000) -and ($dsBbb -eq 9000) -and ($dsDirs -eq 3)) `
+    ('exit=' + $dsJson.Code + ' total=' + $dsTotal + ' aaa=' + $dsAaa + ' bbb=' + $dsBbb + ' dirs=' + $dsDirs)
+
+if ($dsMkOk) {
+    Check 'D12b junction 不跟进去（aaa 里那个链接指向 bbb，bbb 没被算成 18000、aaa 只记一笔链接）' `
+        (($dsBbb -eq 9000) -and ($dsJunc -ge 1)) ('bbb=' + $dsBbb + ' aaa.junctions=' + $dsJunc)
+} else {
+    Skip 'D12b junction 不跟进去（aaa 里那个链接指向 bbb，bbb 没被算成 18000、aaa 只记一笔链接）' '这台机器建不了 junction（mklink /J 失败）'
+}
+
+$dsBad = Invoke-Exe ('disksize --root=' + (Quote-Arg (Join-Path $dsRoot 'no-such-dir')))
+Check 'D12c 目录不存在时退 1，并说清是哪个目录' `
+    (($dsBad.Code -eq 1) -and (($dsBad.Err + $dsBad.Out) -match '没有这个目录|no-such-dir')) `
+    ('exit=' + $dsBad.Code + ' err=' + ($dsBad.Err -replace "`r?`n", ' '))
+
+# 收尾：先把 junction 摘掉再删（-Recurse 撞上 junction 有风险，Y12 那边也是这么收的）
+try { if (Test-Path -LiteralPath $dsLink) { [System.IO.Directory]::Delete($dsLink) } } catch { }
+try { if (Test-Path -LiteralPath $dsRoot) { Remove-Item -LiteralPath $dsRoot -Recurse -Force -ErrorAction SilentlyContinue } } catch { }
+
+
 
 $dryMissing = Invoke-Exe 'run no.such.button --dry'
 Check 'D05 不存在的按钮 --dry 也是退出码 2' ($dryMissing.Code -eq 2) ('exit=' + $dryMissing.Code)
@@ -1102,7 +1217,7 @@ Write-Host 'H 组 · 悬停说明（用户 2026-10-04 报过「鼠标悬停的�
 # tip 命令打印的就是界面塞给 ToolTip 的那个字符串，所以这里能直接断言，不用去动真鼠标。
 $tipsAll = Invoke-Exe 'tip'
 Check 'H01 tip 退出码 0' ($tipsAll.Code -eq 0) ('exit=' + $tipsAll.Code)
-Check ('H02 tip 覆盖了每个按钮（172 + 自动 {0} 个）' -f $autoBase) ((Get-Key $tipsAll.Out 'tips') -eq [string](172 + $autoBase)) (Get-Key $tipsAll.Out 'tips')
+Check ('H02 tip 覆盖了每个按钮（175 + 自动 {0} 个）' -f $autoBase) ((Get-Key $tipsAll.Out 'tips') -eq [string](175 + $autoBase)) (Get-Key $tipsAll.Out 'tips')
 
 $blocks = @{}
 $curId = ''

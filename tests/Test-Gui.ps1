@@ -3484,11 +3484,26 @@ if (Test-GroupSelected 'J') {
 Write-Host ''
 Write-Host 'J 组 · 六件新工具窗口（按钮点开 → 加载完 → 关键按钮可点 / 安全按钮默认灰 → 能关）'
 
+# 「C 盘空间体检」这个窗口默认扫整个 C 盘（可能几分钟）——界面回归不能等它，
+# 所以给它一个**字节数已知的小夹具**（`MXX1_DISKUSAGE_ROOT` 是只给测试用的隔离根，
+# 和 MXX1_ICONCACHE_ROOT / MXX1_TIMER_STATE 那几个是同一类东西）。
+$jDsFix = Join-Path $tmpRoot ('mxx1-dsfix-gui-' + $PID)
+try {
+    if (Test-Path -LiteralPath $jDsFix) { Remove-Item -LiteralPath $jDsFix -Recurse -Force }
+    [void][System.IO.Directory]::CreateDirectory((Join-Path $jDsFix 'aaa'))
+    [void][System.IO.Directory]::CreateDirectory((Join-Path $jDsFix 'bbb\sub'))
+    [System.IO.File]::WriteAllBytes((Join-Path $jDsFix 'aaa\f1.bin'), (New-Object byte[] 1000))
+    [System.IO.File]::WriteAllBytes((Join-Path $jDsFix 'aaa\f2.bin'), (New-Object byte[] 2000))
+    [System.IO.File]::WriteAllBytes((Join-Path $jDsFix 'bbb\f3.bin'), (New-Object byte[] 5000))
+    [System.IO.File]::WriteAllBytes((Join-Path $jDsFix 'bbb\sub\f4.bin'), (New-Object byte[] 4000))
+} catch { }
+$jDsEnv = @{ MXX1_DISKUSAGE_ROOT = $jDsFix }
+
 # ⚠ **必须自己起一个界面实例**：G 组（深色主题）在它结尾就把最开始的 `$main` 关掉了
 # （Test-Gui.ps1 里那句 CloseWindow($main)），H 组用的是自己的 `$procFixed`。
 # 2026-10-20 夜间全量跑时 J 全红就是这个原因（J 单独跑是绿的）—— 修法：这里 Start-Gui 一个，
 # 同时把 `$proc` / `$main` 更新成它（后面 N / I 两组各起各的进程，不用这两个变量）。
-$proc = Start-Gui
+$proc = Start-Gui -Env $jDsEnv
 $main = [IntPtr]::Zero
 if (($proc -ne $null) -and (-not $proc.HasExited) -and ($proc.MainWindowHandle -ne [IntPtr]::Zero)) {
     $main = $proc.MainWindowHandle
@@ -3651,6 +3666,65 @@ if ($w4 -eq $null) {
     Close-JWindow $w4
     Start-Sleep -Milliseconds 400
 }
+
+# ---- 「输出设备体检」窗口（豆包缺口清单 GAP-02）---------------------------------------------
+# 为什么要真开一次：这个窗口【列表 / 状态行 / 按钮的灰亮】全在窗口自己身上，
+# 命令行 D10 验的是同一份后端（src\AudioDevices.cs），**后端有测试 ≠ 这个按钮这条路有测试**（PITFALLS 78）。
+# ⚠️ 这里只开窗 + 读状态行 + 认「没选东西时『设为默认设备』是灰的」，**一下都不点它** ——
+#    测试绝不许把用户正在用的默认音频设备换掉。
+$w7 = Open-JWindow '输出设备体检' '输出设备体检'
+Check 'J13b 点「输出设备体检」能开窗口' ($w7 -ne $null) ''
+if ($w7 -eq $null) {
+    Check 'J13c 窗口读完了：状态行报出输出 / 输入台数与音频服务，没选东西时「设为默认设备」是灰的' $false '窗口没开出来'
+} else {
+    $resp7 = [TBGui]::Responds($w7.H, 3000)
+    $st7 = ''
+    for ($i = 0; $i -lt 120; $i++) {
+        $st7 = Find-JStatus $w7.H '^输出 \d+ 个、输入 \d+ 个'
+        if ($st7.Length -gt 0) { break }
+        Start-Sleep -Milliseconds 250
+    }
+    $b7 = Get-ChildControls -RootHandle $w7.H
+    $set7 = @($b7 | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '设为默认设备' })
+    $open7 = @($b7 | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '打开声音设置' })
+    $lv7 = @($b7 | Where-Object { $_.Class -like '*SysListView*' })
+    Check 'J13c 窗口读完了：状态行报出输出 / 输入台数与音频服务，没选东西时「设为默认设备」是灰的' `
+        ($resp7 -and ($st7.Length -gt 0) -and ($set7.Count -eq 1) -and (-not $set7[0].Enabled) -and `
+         ($open7.Count -eq 1) -and $open7[0].Enabled -and ($lv7.Count -eq 1)) `
+        ('响应=' + $resp7 + ' 状态="' + $st7 + '" 设为默认=' + $set7.Count + ' 打开设置=' + $open7.Count + ' 列表=' + $lv7.Count)
+    Close-JWindow $w7
+    Start-Sleep -Milliseconds 400
+}
+
+# ---- 「C 盘空间体检」窗口（豆包缺口清单 GAP-04）--------------------------------------------
+# 同样真开一次：这个窗口的「统计放在后台线程」是最容易写错的地方（PITFALLS 78/79 的"死窗口"），
+# 后端算得对（命令行 D12 用字节数已知的夹具验）**不代表**窗口这条路没卡死。
+# 统计的根被 MXX1_DISKUSAGE_ROOT 指到一个小夹具，所以这里等的是"扫完了"而不是"正在统计"。
+$w8 = Open-JWindow 'C 盘空间体检' 'C 盘空间体检'
+Check 'J13d 点「C 盘空间体检」能开窗口' ($w8 -ne $null) ''
+if ($w8 -eq $null) {
+    Check 'J13e 统计跑完了：状态行报出合计大小，列表在、四个按钮都可点（窗口没被后台线程卡死）' $false '窗口没开出来'
+} else {
+    $st8 = ''
+    for ($i = 0; $i -lt 80; $i++) {
+        $st8 = Find-JStatus $w8.H '^一共 '
+        if ($st8.Length -gt 0) { break }
+        Start-Sleep -Milliseconds 250
+    }
+    $b8 = Get-ChildControls -RootHandle $w8.H
+    $btn8 = @()
+    foreach ($nm in @('重新统计', '换个目录', '在资源管理器里打开', '关闭')) {
+        $hit = @($b8 | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq $nm })
+        if (($hit.Count -ne 1) -or (-not $hit[0].Enabled)) { $btn8 += $nm }
+    }
+    $lv8 = @($b8 | Where-Object { $_.Class -like '*SysListView*' })
+    Check 'J13e 统计跑完了：状态行报出合计大小（11.7 KB），列表在、四个按钮都可点（窗口没被后台线程卡死）' `
+        (($st8.Length -gt 0) -and ($st8 -match '11\.7 KB') -and ($btn8.Count -eq 0) -and ($lv8.Count -eq 1)) `
+        ('状态="' + $st8 + '" 缺/灰=' + ($btn8 -join '|') + ' 列表=' + $lv8.Count)
+    Close-JWindow $w8
+    Start-Sleep -Milliseconds 400
+}
+try { if (Test-Path -LiteralPath $jDsFix) { Remove-Item -LiteralPath $jDsFix -Recurse -Force -ErrorAction SilentlyContinue } } catch { }
 
 # ---- H3 屏幕取色器（全屏遮罩 + Esc 退出）---------------------------------------------------
 # 它没有标题（FormBorderStyle.None），所以按"有没有一个盖住虚拟屏幕的顶层窗口"找。

@@ -1654,6 +1654,12 @@ namespace Mxx1Toolbox
                 case "brokenlinks":
                     OpenBrokenLinks();
                     break;
+                case "sounddevices":
+                    OpenSoundDevices();
+                    break;
+                case "diskusage":
+                    OpenDiskUsage();
+                    break;
                 case "emptyfolders":
                     OpenEmptyFolders();
                     break;
@@ -1883,6 +1889,15 @@ namespace Mxx1Toolbox
             Logger.Write("文件哈希校验", "打开窗口");
         }
 
+        /// <summary>「输出设备体检」窗口（系统工具页，GAP-02）：列出音频端点 + 真切默认设备。</summary>
+        private void OpenSoundDevices()
+        {
+            SoundForm f = new SoundForm(_theme);
+            WindowPlacement.ShowCentered(f, this);
+            SetStatus("输出设备体检 · 哪个在响、哪个是默认；「设为默认」是真的改系统默认设备");
+            Logger.Write("输出设备体检", "打开窗口");
+        }
+
         /// <summary>「无效快捷方式清理」窗口（清理页）。</summary>
         private void OpenBrokenLinks()
         {
@@ -1910,6 +1925,15 @@ namespace Mxx1Toolbox
             f.Activate();
             SetStatus("屏幕取色器 · 左键复制颜色，滚轮切换复制格式，Esc / 右键退出");
             Logger.Write("屏幕取色器", "打开取色器");
+        }
+
+        /// <summary>「C 盘空间体检」窗口（系统工具页 · 体检段，GAP-04）——**只读**统计各子目录占用。</summary>
+        private void OpenDiskUsage()
+        {
+            DiskUsageForm f = new DiskUsageForm(_theme);
+            WindowPlacement.ShowCentered(f, this);
+            SetStatus("C 盘空间体检 · 只读统计各文件夹占用；不删文件、不清缓存");
+            Logger.Write("C 盘空间体检", "打开窗口");
         }
 
         /// <summary>「端口与进程」窗口（系统工具页）。</summary>

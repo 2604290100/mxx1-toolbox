@@ -94,6 +94,7 @@ $cscArgs = @(
     '/reference:System.Core.dll'
     '/reference:System.Drawing.dll'
     '/reference:System.Windows.Forms.dll'
+    '/reference:System.ServiceProcess.dll'
     '/reference:Microsoft.CSharp.dll'
 )
 

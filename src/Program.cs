@@ -178,6 +178,8 @@ namespace Mxx1Toolbox
                     case "emptyfolders": return EmptyFoldersCommand(args);
                     case "pick": return PickCommand(args);
                     case "ports": return PortsCommand(args);
+                    case "audio": return AudioCommand(args);
+                    case "disksize": return DiskSizeCommand(args);
                     case "dup": return DupCommand(args);
                     case "rename": return RenameCommand(args);
                     case "privacy": return PrivacyCommand(args);
@@ -348,6 +350,9 @@ namespace Mxx1Toolbox
             Console.WriteLine("                                                        默认只读；--delete 才删（进回收站，由深到浅删）；系统目录 / junction 只报不动");
             Console.WriteLine("  Mxx1Toolbox.exe pick --decode=<颜色>   把一种颜色写法换成三种（#RRGGBB / 26,43,60 / rgb(26,43,60) 都认）");
             Console.WriteLine("  Mxx1Toolbox.exe ports [--port=N] [--pid=N] [--filter=文本] [--json]   只读列出正在监听的 TCP / 绑着的 UDP 端口和进程");
+            Console.WriteLine("  Mxx1Toolbox.exe audio [--json]       只读列出音频设备（输出 / 输入）、谁是默认、音频服务状态");
+            Console.WriteLine("  Mxx1Toolbox.exe audio --set-default <设备 id>   把某个设备设成默认（普通 / 多媒体 / 通话三个角色一起改）");
+            Console.WriteLine("  Mxx1Toolbox.exe disksize [--root=目录] [--top=N] [--json]   只读统计每个子目录占多大（默认系统盘），按大小排序");
             Console.WriteLine("  Mxx1Toolbox.exe dup <目录…> [--min-size=1MB] [--full] [--keep=oldest|shortest|first]   找内容完全相同的文件");
             Console.WriteLine("                                                        默认只读；--delete 才删（进回收站，每组留 --keep 指定的那一个；硬链接不删）");
             Console.WriteLine("  Mxx1Toolbox.exe rename <目录> [--prefix=] [--suffix=] [--find=] [--replace=] [--index-start=N] [--index-digits=N] [--ext=lower|upper]");
@@ -1292,6 +1297,188 @@ namespace Mxx1Toolbox
             }
             if (error.Length > 0) { Console.WriteLine("error\t" + OneLine(error)); }
             return 0;
+        }
+
+        /// <summary>`audio [--json]` / `audio --set-default &lt;设备 id&gt;` —— 「输出设备体检」的命令行出口
+        /// （窗口那颗按钮是 `sound-devices`，读的是同一份 `src\AudioDevices.cs`）。
+        ///
+        /// 口径：
+        /// ① **默认只读**：列出所有音频端点（含已停用 / 没插 / 不在了的）、谁是默认设备、音频服务状态；
+        /// ② `--set-default` 是**真的改系统默认设备**（普通 / 多媒体 / 通话三个角色一起改）——
+        ///    和窗口里点「设为默认」完全同一条路，改完可以用另一个 id 改回去；
+        /// ③ 一台设备都没有**不算失败**（虚拟机 / 精简版 Windows 很常见），只要接口叫得起来就退 0；
+        ///    叫不起来（`LastError` 有话说）才退 1，并把原因原样报出来。</summary>
+        private static int AudioCommand(string[] args)
+        {
+            string setId = "";
+            for (int i = 1; i < args.Length; i++)
+            {
+                if (string.Equals(args[i], "--set-default", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
+                {
+                    setId = args[i + 1];
+                    i++;
+                }
+            }
+
+            if (setId.Length > 0)
+            {
+                string message;
+                bool ok = AudioDevices.SetDefault(setId, out message);
+                Console.WriteLine("set-default=" + (ok ? "ok" : "failed"));
+                Console.WriteLine("id=" + setId);
+                Console.WriteLine("message=" + OneLine(message));
+                return ok ? 0 : 1;
+            }
+
+            List<AudioDevice> list = AudioDevices.List(true);
+            string error = AudioDevices.LastError;
+
+            if (HasFlag(args, "--json"))
+            {
+                StringBuilder sb = new StringBuilder();
+                sb.Append("{\"count\":").Append(list.Count.ToString(CultureInfo.InvariantCulture));
+                sb.Append(",\"error\":").Append(JsonEscape(error));
+                sb.Append(",\"devices\":[");
+                for (int i = 0; i < list.Count; i++)
+                {
+                    AudioDevice d = list[i];
+                    if (i > 0) { sb.Append(","); }
+                    sb.Append("{\"id\":").Append(JsonEscape(d.Id));
+                    sb.Append(",\"flow\":").Append(JsonEscape(d.Flow));
+                    sb.Append(",\"name\":").Append(JsonEscape(d.Name));
+                    sb.Append(",\"state\":").Append(d.State.ToString(CultureInfo.InvariantCulture));
+                    sb.Append(",\"stateText\":").Append(JsonEscape(d.StateText));
+                    sb.Append(",\"default\":").Append(d.IsDefault ? "true" : "false");
+                    sb.Append(",\"roles\":").Append(JsonEscape(d.DefaultRoles));
+                    sb.Append(",\"problem\":").Append(JsonEscape(d.Problem)).Append("}");
+                }
+                sb.Append("]}");
+                Console.WriteLine(sb.ToString());
+                return error.Length == 0 ? 0 : 1;
+            }
+
+            int render = 0;
+            int capture = 0;
+            int bad = 0;
+            string defOut = "";
+            string defIn = "";
+            foreach (AudioDevice d in list)
+            {
+                if (d.FlowValue == 0) { render++; } else { capture++; }
+                if (d.State != 1) { bad++; }
+                if (d.IsDefault)
+                {
+                    if (d.FlowValue == 0 && defOut.Length == 0) { defOut = d.Name; }
+                    if (d.FlowValue == 1 && defIn.Length == 0) { defIn = d.Name; }
+                }
+            }
+            Console.WriteLine("count=" + list.Count.ToString(CultureInfo.InvariantCulture));
+            Console.WriteLine("render=" + render.ToString(CultureInfo.InvariantCulture));
+            Console.WriteLine("capture=" + capture.ToString(CultureInfo.InvariantCulture));
+            Console.WriteLine("inactive=" + bad.ToString(CultureInfo.InvariantCulture));
+            Console.WriteLine("defaultRender=" + OneLine(defOut));
+            Console.WriteLine("defaultCapture=" + OneLine(defIn));
+            foreach (string s in AudioDevices.Services()) { Console.WriteLine("service\t" + OneLine(s)); }
+            foreach (AudioDevice d in list)
+            {
+                Console.WriteLine((d.FlowValue == 0 ? "render" : "capture") + "\t" + OneLine(d.Name) + "\t"
+                    + OneLine(d.StateText) + "\t" + (d.IsDefault ? OneLine(d.DefaultRoles) : "-")
+                    + "\t" + OneLine(d.Problem) + "\t" + d.Id);
+            }
+            if (error.Length > 0) { Console.WriteLine("error\t" + OneLine(error)); }
+            return error.Length == 0 ? 0 : 1;
+        }
+
+        /// <summary>`disksize [--root=目录] [--top=N] [--json]` —— 「C 盘空间体检」的命令行出口（GAP-04）。
+        ///
+        /// 口径（和窗口里点「重新统计」完全同一条路，实现见 `src\DiskUsage.cs`）：
+        /// ① **只读**：一个字节都不删、不改，只回答"地方被谁占了"；
+        /// ② 不跟 junction / 符号链接（跟了会算重甚至绕圈），跳过了几个如实报；
+        /// ③ 没权限的目录不让整次统计失败 —— 那一行标 `denied=`，最后如实写"数字可能偏小"；
+        /// ④ 默认 root 是系统盘（`%SystemRoot%` 所在的盘），`--top` 只影响**打印几行**，不影响统计。
+        ///
+        /// 退出码：0 = 统计完了；1 = 目录不存在 / 读不了；2 = 用法错。</summary>
+        private static int DiskSizeCommand(string[] args)
+        {
+            string root = "";
+            int top = 20;
+            for (int i = 1; i < args.Length; i++)
+            {
+                string a = args[i];
+                if (a.StartsWith("--root=", StringComparison.OrdinalIgnoreCase)) { root = a.Substring(7).Trim('"'); }
+                else if (a.StartsWith("--top=", StringComparison.OrdinalIgnoreCase))
+                {
+                    int n;
+                    if (int.TryParse(a.Substring(6), NumberStyles.Integer, CultureInfo.InvariantCulture, out n) && n > 0) { top = n; }
+                }
+            }
+            if (root.Length == 0)
+            {
+                try { root = Path.GetPathRoot(Environment.GetFolderPath(Environment.SpecialFolder.Windows)); }
+                catch { }
+                if (string.IsNullOrEmpty(root)) { root = "C:\\"; }
+            }
+            if (!Directory.Exists(root))
+            {
+                Console.Error.WriteLine("没有这个目录：" + root);
+                return 1;
+            }
+
+            List<DirUsage> rows = DiskUsage.Scan(root, null);
+            string error = DiskUsage.LastError;
+            long free, total;
+            DiskUsage.DriveSpace(root, out free, out total);
+
+            long sum = 0;
+            foreach (DirUsage du in rows) { sum += du.Bytes; }
+
+            if (HasFlag(args, "--json"))
+            {
+                StringBuilder sb = new StringBuilder();
+                sb.Append("{\"root\":").Append(JsonEscape(root));
+                sb.Append(",\"bytes\":").Append(sum.ToString(CultureInfo.InvariantCulture));
+                sb.Append(",\"total\":").Append(total.ToString(CultureInfo.InvariantCulture));
+                sb.Append(",\"free\":").Append(free.ToString(CultureInfo.InvariantCulture));
+                sb.Append(",\"error\":").Append(JsonEscape(error));
+                sb.Append(",\"dirs\":[");
+                int shown = 0;
+                foreach (DirUsage du in rows)
+                {
+                    if (shown >= top) { break; }
+                    if (shown > 0) { sb.Append(","); }
+                    sb.Append("{\"name\":").Append(JsonEscape(du.Name));
+                    sb.Append(",\"bytes\":").Append(du.Bytes.ToString(CultureInfo.InvariantCulture));
+                    sb.Append(",\"files\":").Append(du.Files.ToString(CultureInfo.InvariantCulture));
+                    sb.Append(",\"dirs\":").Append(du.Dirs.ToString(CultureInfo.InvariantCulture));
+                    sb.Append(",\"junctions\":").Append(du.Junctions.ToString(CultureInfo.InvariantCulture));
+                    sb.Append(",\"denied\":").Append(du.Denied.ToString(CultureInfo.InvariantCulture));
+                    sb.Append(",\"rootFiles\":").Append(du.IsRootFiles ? "true" : "false").Append("}");
+                    shown++;
+                }
+                sb.Append("]}");
+                Console.WriteLine(sb.ToString());
+                return error.Length == 0 ? 0 : 1;
+            }
+
+            Console.WriteLine("root=" + root);
+            Console.WriteLine("dirs=" + rows.Count.ToString(CultureInfo.InvariantCulture));
+            Console.WriteLine("bytes=" + sum.ToString(CultureInfo.InvariantCulture));
+            Console.WriteLine("total=" + total.ToString(CultureInfo.InvariantCulture));
+            Console.WriteLine("free=" + free.ToString(CultureInfo.InvariantCulture));
+            int printed = 0;
+            foreach (DirUsage du in rows)
+            {
+                if (printed >= top) { break; }
+                string note = DiskUsage.Note(du);
+                Console.WriteLine((du.IsRootFiles ? "(根目录散文件)" : OneLine(du.Name)) + "\t"
+                    + du.Bytes.ToString(CultureInfo.InvariantCulture) + "\t"
+                    + du.Files.ToString(CultureInfo.InvariantCulture) + "\t"
+                    + du.Dirs.ToString(CultureInfo.InvariantCulture) + "\t"
+                    + (note.Length > 0 ? note : "-"));
+                printed++;
+            }
+            if (error.Length > 0) { Console.WriteLine("error\t" + OneLine(error)); }
+            return error.Length == 0 ? 0 : 1;
         }
 
         /// <summary>`dup &lt;目录或文件…&gt; [--min-size=1MB] [--full] [--keep=oldest|shortest|first] [--delete] [--json]`

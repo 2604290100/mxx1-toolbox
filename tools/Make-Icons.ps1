@@ -41,8 +41,16 @@ function Get-Shape {
         # 夜巡（2026-10-21）补的三个"修一修"按钮：打印机卡住 = 一张纸（卡住的是文档）、
         # 没声音 = 喇叭、网络体检 = 地球（和下面泛匹配的 globe 一致，这里写明免得以后被别的词抢走）
         @('print-queue-fix', 'doc'),
+        @('printer-offline-fix', 'doc'),
         @('sound-check',     'speaker'),
         @('net-check',       'globe'),
+        # 2026-10-22 补的四颗（豆包缺口清单 GAP-01/06/07/08）：显示设置 = 显示器、
+        # 输入法打不出字 = 钥匙（和账户 / 激活同画法，都是"某个开关拧不动了"）、
+        # 蓝屏解读 = 信息（只读、只解释）。
+        # ⚠ 必须排在下面对 `@('desktop','monitor')` 等泛匹配之前。
+        @('display-settings', 'monitor'),
+        @('input-fix',        'key'),
+        @('bsod-decode',      'info'),
         # 「右键增强」页签那 7 个按钮（v1.5.0）：装上 = 加号、撤掉 = 减号、
         # 解除占用 = 钥匙（解锁）、常用功能 = 清单、重建 = 刷新、说明 = 文档
         @('rightmenu.unlock.on',  'key'),

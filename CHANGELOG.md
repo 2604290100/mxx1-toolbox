@@ -185,8 +185,45 @@ explorer 画的，不重启就刷不出来。这一轮把"重启这一步"收进
   声音体检重启后两个服务都回到 `Running`；打印体检在空队列上报「清掉了 0 个」，
   再往 `spool\PRINTERS` 塞一个假任务 → 报「清掉了 1 个」并**真的删掉**、服务回到 `Running`。
 
+### 豆包缺口清单第一批：四颗按钮（GAP-01 / 06 / 07 / 08，2026-10-22）
+
+豆包调研的《02-缺口清单》（`夜巡-20261021\02-缺口清单.md`）里用户拍了板要做，先做**不需要新窗口**的四颗：
+
+- **显示设置**（`display-settings`，段 1「设备与硬件」，order 15，`module=system`）：直达
+  `ms-settings:display`（分辨率 / 缩放 / 多显示器）。Win7 上没有「设置」应用，说明里给出
+  「桌面右键 → 屏幕分辨率」这条老路。`src\Launcher.cs` 的 `SystemTargets` 加一条 `UrlTarget("display", …)`。
+- **打印机显示脱机**（`printer-offline-fix`，段 1，order 37，要管理员，`timeoutSec` 120）：
+  `Get-CimInstance Win32_Printer` 列出所有打印机 + 脱机状态 → 只对**处于脱机**的那几台取消勾选
+  （先 `Set-Printer -WorkOffline $false`，没有这个 cmdlet 的机器退 `Set-CimInstance` 走 WMI）→ 逐台汇报。
+  **不动队列里任何任务**（清队列是「打印卡住了」那颗的事）。
+- **输入法打不出字**（`input-fix`，段 4「修复与诊断」，order 85，**确认框**，不要管理员）：
+  ① 只读列出已装语言 / 输入法（`Get-WinUserLanguageList`，老系统退 `HKCU\Keyboard Layout\Preload`）
+  ② 读 `ctfmon` 在不在 ③ 重启 `ctfmon.exe` ④ 读回状态。**不写注册表、不删装语言包**。
+- **蓝屏原因解读**（`bsod-decode`，段 5「日志与监控」，order 25，**只读**）：读系统日志里
+  `WER-SystemErrorReporting` 的 1001 事件（最近 5 条），把 `0x…` 错误码按 15 条常见对照表翻成人话，
+  再数一遍 `%SystemRoot%\Minidump\*.dmp`，最后给三条下一步（内存诊断 / 磁盘检测 / 卸最近装的驱动）。
+  读不到就如实说「没读到」，**不猜**。
+- 计数：内置图标 / 内置按钮 **168 → 172**（`status` 报的按钮数 170 → **174**）、系统工具页 40 → **44**、
+  `systemTargets` 28 → **29**；`tests\Test-Cli.ps1` 的 A04 / A07 / A09 / A10 / H02 / D01 / D02 / D03 一起改。
+- 验证：命令行全量 **477 通过 / 0 失败 / 1 项环境跳过（F03）**；`-Only A,D` 32 通过；
+  三颗脚本按钮都在**真机**上跑过（打印机两颗 / 蓝屏解读输出正常；输入法那颗在这台"没有桌面壳"的
+  会话里如实报「ctfmon 没在运行、重启后还是没起来」—— 没有说成修好了）。
+
 ### 修复
 
+- **英文 / 非中文代码页的 Windows 上，内联脚本的中文输出会变成 `?`**（2026-10-21 CI 抓到，
+  `A19` 报「?? 3 ?」）：工具箱是 winexe，子进程没有自己的控制台 → PowerShell 的
+  `[Console]::OutputEncoding` 退回系统 OEM 代码页（英文系统上是 437），中文**在写出去的时候**
+  就已经丢了。修法：内联 PowerShell 的 prelude 加 `[Console]::OutputEncoding=UTF8`、cmd 那条加
+  `chcp 65001>nul`，父进程按 UTF-8 读（**只对这两类自己拼的脚本生效**，别的 exe 仍按系统代码页读，
+  免得把 GBK 输出的老工具读成乱码）。`src\Launcher.cs`。
+- **中文文件名的快捷方式在英文 Windows 上读不出来**（同一次 CI，X 组 7 条连带失败）：
+  `src\Shortcuts.cs` 原来用 `WScript.Shell` 解析 `.lnk`，那是 **ANSI** COM 组件 —— 代码页不是
+  中文时中文文件名直接打不开（`Unable to save shortcut …\?? ??.lnk`），工具只好把它当成"读不出来"。
+  换成新文件 `src\ShellLinkFile.cs`（Unicode 的 **IShellLinkW** + `IPersistFile.Load`，`STGM_READ` 只读），
+  `Shortcuts` 与 `DroppedFile.ResolveShortcut` 都走它。顺手把结果分成三种：读到文件目标 /
+  **没有文件目标**（商店应用 `shell:AppsFolder…`，算跳过）/ 文件本身坏了（才算坏链）——
+  换接口的第一版把 `store.lnk` 判成坏链、差点被删，X 组当场抓红。
 - **「恢复小箭头」点了没反应**（2026-10-20 用户报「我刚刚试了恢复小箭头 无效」）：
   量出来是**只写 HKCU 在这台 Win10 上完全无效** —— 拿桌面一个真 `.lnk` 比
   `SHGetFileInfo` 带不带 `SHGFI_LINKOVERLAY` 的两张图标：HKCU 有值 / 没值都是同样的 **60** 个叠加像素，

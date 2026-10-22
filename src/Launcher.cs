@@ -134,6 +134,8 @@ namespace Mxx1Toolbox
         {
             FileTarget("devmgmt", "设备管理器", "%SystemRoot%\\System32\\devmgmt.msc",
                 "这台电脑上找不到设备管理器（devmgmt.msc）"),
+            UrlTarget("display", "显示设置", "ms-settings:display",
+                "Win7 上没有「设置」应用。分辨率和缩放请到桌面空白处右键 →「屏幕分辨率」，或者控制面板的「显示」里调。"),
             UrlTarget("sound", "声音设置", "ms-settings:sound",
                 "Win7 上没有「设置」应用。声音请到控制面板的「硬件和声音 - 声音」里调。"),
             ShellTarget("printers", "设备和打印机", "shell:PrintersFolder"),

@@ -403,6 +403,20 @@
 
     {
       "paths": [
+        "src/UsbEject.cs",
+        "src/UsbEjectForm.cs"
+      ],
+      "cli": [
+        "A",
+        "D"
+      ],
+      "gui": [
+        "J"
+      ],
+      "note": "2026-10-22 GAP-03「U 盘安全弹出」：列 DriveType.Removable 的盘 + 复用 FileLock（Restart Manager）列占用程序 + CM_Request_Device_Eject 弹盘。D14/D14b 只读列盘（真机 count=0 也退 0；MXX1_EJECT_FAKE 假盘下断言两个盘符），D14c 断言没有夹具时退 2，D14d 断言假盘真去弹时如实说「打不开」且绝不出现「可以拔了」；界面 J13j/J13k 只开窗口看状态行与按钮状态，一下都不点「安全弹出」"
+    },
+    {
+      "paths": [
         "src/StartupItems.cs",
         "src/StartupForm.cs"
       ],

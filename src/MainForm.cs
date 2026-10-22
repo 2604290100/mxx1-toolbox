@@ -1666,6 +1666,9 @@ namespace Mxx1Toolbox
                 case "startup":
                     OpenStartup();
                     break;
+                case "eject":
+                    OpenEject();
+                    break;
                 case "emptyfolders":
                     OpenEmptyFolders();
                     break;
@@ -1931,6 +1934,15 @@ namespace Mxx1Toolbox
             f.Activate();
             SetStatus("屏幕取色器 · 左键复制颜色，滚轮切换复制格式，Esc / 右键退出");
             Logger.Write("屏幕取色器", "打开取色器");
+        }
+
+        /// <summary>「U 盘安全弹出」窗口（系统工具页 · 设备与硬件段，GAP-03）——只看谁占着 + 系统 API 弹盘，不删盘上文件。</summary>
+        private void OpenEject()
+        {
+            UsbEjectForm f = new UsbEjectForm(_theme);
+            WindowPlacement.ShowCentered(f, this);
+            SetStatus("U 盘安全弹出 · 先看谁占着，再弹出；盘上的文件不会被删");
+            Logger.Write("U 盘弹出", "打开窗口");
         }
 
         /// <summary>「启动项管理」窗口（应用管理页，GAP-05）——只禁用不删除，随时能还原。</summary>

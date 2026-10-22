@@ -485,13 +485,13 @@ foreach ($line in ($status.Out -split "`r?`n")) {
     }
 }
 
-Check ('A04 按钮总数 177 + 工具目录里自动加载的 {0} 个（测试期间用户层的按钮会暂停：常用 57 + 系统工具 48 + 隐私 29 + 应用 6 + 清理 13 + 右键 21 + 我的 3）' -f $autoBase) `
-    ((Get-Key $status.Out 'buttons') -eq [string](177 + $autoBase)) (Get-Key $status.Out 'buttons')
+Check ('A04 按钮总数 178 + 工具目录里自动加载的 {0} 个（测试期间用户层的按钮会暂停：常用 57 + 系统工具 49 + 隐私 29 + 应用 6 + 清理 13 + 右键 21 + 我的 3）' -f $autoBase) `
+    ((Get-Key $status.Out 'buttons') -eq [string](178 + $autoBase)) (Get-Key $status.Out 'buttons')
 Check 'A05 内置清单里没有灰色占位按钮了（两个「资源管理器」也接上了真功能；灰规则改由 B 组注入验证）' ((Get-Key $status.Out 'placeholders') -eq '0') (Get-Key $status.Out 'placeholders')
 Check 'A06 危险按钮 3 个' ((Get-Key $status.Out 'dangerous') -eq '3') (Get-Key $status.Out 'dangerous')
 
 # 「常用」页签是合成的（置顶 + 最近使用），清单里没有它的按钮，所以是 0
-$tabExpect = @{ 'recent' = 0; 'common' = 57; 'mine' = 3; 'system' = 48; 'cleanup' = 13; 'privacy' = 29; 'apps' = 6; 'rightmenu' = 21 }
+$tabExpect = @{ 'recent' = 0; 'common' = 57; 'mine' = 3; 'system' = 49; 'cleanup' = 13; 'privacy' = 29; 'apps' = 6; 'rightmenu' = 21 }
 $tabOk = $true
 $tabDetail = @()
 foreach ($k in $tabExpect.Keys) {
@@ -499,13 +499,13 @@ foreach ($k in $tabExpect.Keys) {
     $tabDetail += ($k + '=' + $v)
     if ($v -ne [string]([int]$tabExpect[$k] + [int]$autoByTab[$k])) { $tabOk = $false }
 }
-Check 'A07 八个页签的按钮数正确（0/57/3/48/13/29/6/21，加上自动按钮）' $tabOk ($tabDetail -join ' ')
+Check 'A07 八个页签的按钮数正确（0/57/3/49/13/29/6/21，加上自动按钮）' $tabOk ($tabDetail -join ' ')
 
 $list = Invoke-Exe 'list'
 Check 'A08 list 退出码 0' ($list.Code -eq 0) ('exit=' + $list.Code)
-Check 'A09 list 报的按钮数一致' ((Get-Key $list.Out 'buttons') -eq [string](177 + $autoBase)) (Get-Key $list.Out 'buttons')
+Check 'A09 list 报的按钮数一致' ((Get-Key $list.Out 'buttons') -eq [string](178 + $autoBase)) (Get-Key $list.Out 'buttons')
 $lines = @($list.Out -split "`r?`n" | Where-Object { $_ -match "`t" })
-Check ('A10 list 打出 {0} 行按钮' -f (177 + $autoBase)) ($lines.Count -eq (177 + $autoBase)) ('lines=' + $lines.Count)
+Check ('A10 list 打出 {0} 行按钮' -f (178 + $autoBase)) ($lines.Count -eq (178 + $autoBase)) ('lines=' + $lines.Count)
 
 $rmList = Invoke-Exe 'list --tab rightmenu'
 Check 'A11 右键增强 21 个按钮（20 个右键菜单功能 + 隔壁永久删除工具）' ((Get-Key $rmList.Out 'shown') -eq [string](21 + [int]$autoByTab['rightmenu'])) (Get-Key $rmList.Out 'shown')
@@ -697,14 +697,14 @@ Check 'D01 status 报 29 个系统工具动作（21 组件 + 2 诊断 + 4 权限
     (((Get-Key $status.Out 'systemTargets') -eq '29') -and $missOk) $d01detail
 
 $sysList = Invoke-Exe 'list --tab system'
-Check 'D02 系统工具页签 48 个按钮（33 + 文件哈希校验 + 屏幕取色器 + 端口与进程 + 系统体检 + 打印卡住了 + 声音问题体检 + 网络体检 + 显示设置 + 打印机显示脱机 + 输入法打不出字 + 蓝屏原因解读 + 输出设备体检 + 进程占用体检 + C 盘空间体检 + 一键换 DNS）、没有 placeholder' `
-    (((Get-Key $sysList.Out 'shown') -eq '48') -and (-not ($sysList.Out -match 'placeholder'))) ''
+Check 'D02 系统工具页签 49 个按钮（33 + 文件哈希校验 + 屏幕取色器 + 端口与进程 + 系统体检 + 打印卡住了 + 声音问题体检 + 网络体检 + 显示设置 + 打印机显示脱机 + 输入法打不出字 + 蓝屏原因解读 + 输出设备体检 + 进程占用体检 + C 盘空间体检 + 一键换 DNS + U 盘安全弹出）、没有 placeholder' `
+    (((Get-Key $sysList.Out 'shown') -eq '49') -and (-not ($sysList.Out -match 'placeholder'))) ''
 
 $sysIds = @()
 foreach ($line in ($sysList.Out -split "`r?`n")) {
     if ($line -match "`t") { $sysIds += ($line -split "`t")[0] }
 }
-Check 'D03 读到 48 个系统工具 id' ($sysIds.Count -eq 48) ($sysIds -join ' ')
+Check 'D03 读到 49 个系统工具 id' ($sysIds.Count -eq 49) ($sysIds -join ' ')
 
 $bad = @()
 $detail = @()
@@ -717,7 +717,7 @@ foreach ($id in $sysIds) {    $d = Invoke-Exe ('run ' + $id + ' --dry')
     if ($exists -ne 'yes' -and $hint.Length -eq 0) { $bad += ($id + ':没有解释'); continue }
     $detail += ($id + '=' + (Get-Key $d.Out 'kind'))
 }
-Check 'D04 48 个系统工具都有目标、且缺了就说明了原因' ($bad.Count -eq 0) (($bad -join ' ') + ' ' + ($detail -join ' '))
+Check 'D04 49 个系统工具都有目标、且缺了就说明了原因' ($bad.Count -eq 0) (($bad -join ' ') + ' ' + ($detail -join ' '))
 
 # 2026-10-20 加的 8 个「系统工具页入口」（A 组）—— 按 id 点名，免得哪天清单被改坏一条也没人发现。
 # （原计划里还有「Internet 选项 inetcpl.cpl」，量出来这台机器的精简版 Windows 里根本没这个文件，
@@ -921,6 +921,37 @@ Check 'D13d 「改回自动（还原）」这条路：命令是 dhcp、退 0（�
 
 try { if (Test-Path -LiteralPath $fakeNetsh) { Remove-Item -LiteralPath $fakeNetsh -Force } } catch { }
 try { if (Test-Path -LiteralPath $netshLog) { Remove-Item -LiteralPath $netshLog -Force } } catch { }
+
+# ---- GAP-03 U 盘安全弹出：列盘只读；真弹那条路只在假盘（MXX1_EJECT_FAKE）下走 ----
+# ⚠️ 绝不许真弹用户插着的盘：所以「弹」这条路径只让假盘走，而且断言的是"弹不成就如实说"。
+$ejectReal = Invoke-Exe 'eject --json'
+$ejectObj = $null
+try { $ejectObj = $ejectReal.Out.Trim() | ConvertFrom-Json } catch { $ejectObj = $null }
+Check 'D14 `eject --json` 只读列出可移动磁盘（没插盘时 count=0，也是退出码 0）' `
+    (($ejectReal.Code -eq 0) -and ($ejectObj -ne $null) -and ($null -ne $ejectObj.count)) `
+    ('exit=' + $ejectReal.Code + ' out=' + $ejectReal.Out)
+
+$fakeDrives = @{ MXX1_EJECT_FAKE = 'K:=测试U盘;L:=读卡器' }
+$ejectFake = Invoke-Exe 'eject --json' -Env $fakeDrives
+$fakeObj = $null
+try { $fakeObj = $ejectFake.Out.Trim() | ConvertFrom-Json } catch { $fakeObj = $null }
+$fakeLetters = @()
+if ($fakeObj -ne $null) { $fakeLetters = @($fakeObj.drives | ForEach-Object { $_.letter }) }
+Check 'D14b 假盘夹具下能列出两个盘、盘符都在' `
+    (($ejectFake.Code -eq 0) -and ($fakeObj -ne $null) -and ($fakeObj.count -eq 2) -and `
+     ($fakeLetters -contains 'K:') -and ($fakeLetters -contains 'L:')) `
+    ('exit=' + $ejectFake.Code + ' count=' + $fakeObj.count + ' letters=' + ($fakeLetters -join ','))
+
+$ejectDeny = Invoke-Exe 'eject --now=K:'
+Check 'D14c 没有测试夹具时，命令行**拒绝**弹盘（退 2，并说清只能在窗口里点）' `
+    (($ejectDeny.Code -eq 2) -and (($ejectDeny.Err + $ejectDeny.Out) -match '窗口')) `
+    ('exit=' + $ejectDeny.Code + ' ' + (($ejectDeny.Err + $ejectDeny.Out) -replace "`r?`n", ' '))
+
+$ejectTry = Invoke-Exe 'eject --now=K:' -Env $fakeDrives
+$ejectTryMsg = Get-Key $ejectTry.Out 'message'
+Check 'D14d 假盘真去弹：弹不成就如实说「打不开」，**绝不说**可以拔了' `
+    (($ejectTry.Code -eq 1) -and ($ejectTryMsg -match '打不开') -and ($ejectTryMsg -notmatch '可以拔了')) `
+    ('exit=' + $ejectTry.Code + ' msg=' + $ejectTryMsg)
 
 
 
@@ -1277,7 +1308,7 @@ Write-Host 'H 组 · 悬停说明（用户 2026-10-04 报过「鼠标悬停的�
 # tip 命令打印的就是界面塞给 ToolTip 的那个字符串，所以这里能直接断言，不用去动真鼠标。
 $tipsAll = Invoke-Exe 'tip'
 Check 'H01 tip 退出码 0' ($tipsAll.Code -eq 0) ('exit=' + $tipsAll.Code)
-Check ('H02 tip 覆盖了每个按钮（177 + 自动 {0} 个）' -f $autoBase) ((Get-Key $tipsAll.Out 'tips') -eq [string](177 + $autoBase)) (Get-Key $tipsAll.Out 'tips')
+Check ('H02 tip 覆盖了每个按钮（178 + 自动 {0} 个）' -f $autoBase) ((Get-Key $tipsAll.Out 'tips') -eq [string](178 + $autoBase)) (Get-Key $tipsAll.Out 'tips')
 
 $blocks = @{}
 $curId = ''

@@ -3516,6 +3516,9 @@ $jSuTsv = Join-Path $tmpRoot ('mxx1-startup-gui-' + $PID + '.tsv')
 $jDsEnv['MXX1_STARTUP_ROOT'] = 'HKCU\Software\mxx1-toolbox\startup-gui'
 $jDsEnv['MXX1_STARTUP_FOLDER'] = $jSuFolder
 $jDsEnv['MXX1_STARTUP_TSV'] = $jSuTsv
+# 「U 盘安全弹出」窗口也给它两个**假盘**（MXX1_EJECT_FAKE）：界面回归绝不真弹用户插着的盘，
+# 而"列盘 + 按钮状态"还是能断言到。
+$jDsEnv['MXX1_EJECT_FAKE'] = 'K:=测试U盘;L:=读卡器'
 
 # ⚠ **必须自己起一个界面实例**：G 组（深色主题）在它结尾就把最开始的 `$main` 关掉了
 # （Test-Gui.ps1 里那句 CloseWindow($main)），H 组用的是自己的 `$procFixed`。
@@ -3808,6 +3811,56 @@ if ($w10 -eq $null) {
 try { if (Test-Path -LiteralPath 'HKCU:\Software\mxx1-toolbox\startup-gui') { Remove-Item -LiteralPath 'HKCU:\Software\mxx1-toolbox\startup-gui' -Recurse -Force } } catch { }
 try { if (Test-Path -LiteralPath $jSuFolder) { Remove-Item -LiteralPath $jSuFolder -Recurse -Force } } catch { }
 try { if (Test-Path -LiteralPath $jSuTsv) { Remove-Item -LiteralPath $jSuTsv -Force } } catch { }
+
+# ---- 「U 盘安全弹出」窗口（豆包缺口清单 GAP-03）-----------------------------------------------
+# 两个假盘（MXX1_EJECT_FAKE）→ 状态行报「一共 2 个可移动磁盘」；选中第一个自动带出来，
+# 所以「看谁占着」「安全弹出」是亮的、而「结束勾选的」在没勾时是灰的（不给"一键全杀"）。
+# ⚠️ 一下都不点「安全弹出」：那是真系统动作（D14d 已经用假盘验过"弹不成就如实说"）。
+[void](Switch-Tab -Handle $main -TabName '系统工具' -ExpectNames @('U 盘安全弹出'))
+$w11 = Open-JWindow 'U 盘安全弹出' 'U 盘安全弹出'
+Check 'J13j 点「U 盘安全弹出」能开窗口' ($w11 -ne $null) ''
+if ($w11 -eq $null) {
+    Check 'J13k 窗口读完了：状态行报出「一共 2 个可移动磁盘」，按钮状态对' $false '窗口没开出来'
+} else {
+    $st11 = ''
+    for ($i = 0; $i -lt 80; $i++) {
+        $st11 = Find-JStatus $w11.H '^一共 2 个可移动磁盘'
+        if ($st11.Length -gt 0) { break }
+        Start-Sleep -Milliseconds 250
+    }
+    $c11 = Get-ChildControls -RootHandle $w11.H
+    $on11 = @()
+    $off11 = @()
+    foreach ($nm in @('刷新', '关闭', '看谁占着', '安全弹出', '结束勾选的')) {
+        $hit = @($c11 | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq $nm })
+        if ($hit.Count -ne 1) { $off11 += ($nm + '(缺)'); continue }
+        if ($hit[0].Enabled) { $on11 += $nm } else { $off11 += $nm }
+    }
+    $lv11 = @($c11 | Where-Object { $_.Class -like '*SysListView*' })
+    $ok11 = ($st11.Length -gt 0) -and ($on11 -contains '看谁占着') -and ($on11 -contains '安全弹出') -and `
+        ($on11 -contains '刷新') -and ($on11 -contains '关闭') -and `
+        (-not ($on11 -contains '结束勾选的')) -and ($lv11.Count -eq 2)
+    Check 'J13k 窗口读完了：状态行报出「一共 2 个可移动磁盘」，动作按钮该亮的亮、该灰的灰' $ok11 `
+        ('状态="' + $st11 + '" 亮=' + ($on11 -join '|') + ' 灰/缺=' + ($off11 -join '|') + ' 列表=' + $lv11.Count)
+
+    # 「看谁占着」走的是后台线程（FileLock.Scan）—— 这里点一下，确认窗口**不会变死**
+    # （假盘 K: 不存在，所以结论只会是"没查到 / 出错"，不会误报"有程序占着"）。
+    $scanBtn = @($c11 | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '看谁占着' })
+    if ($scanBtn.Count -eq 1) { [void][TBGui]::Click($scanBtn[0].H) }
+    $st11b = ''
+    for ($i = 0; $i -lt 40; $i++) {
+        $st11b = Find-JStatus $w11.H '没查到|出错了|查到 '
+        if ($st11b.Length -gt 0) { break }
+        Start-Sleep -Milliseconds 250
+    }
+    $c11b = Get-ChildControls -RootHandle $w11.H
+    $ejectBtn2 = @($c11b | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '安全弹出' })
+    Check 'J13l 点「看谁占着」走后台线程：窗口没死（状态行给出结论、按钮还能用）' `
+        (($st11b.Length -gt 0) -and ($ejectBtn2.Count -eq 1) -and $ejectBtn2[0].Enabled) `
+        ('状态="' + $st11b + '" 弹出按钮=' + $ejectBtn2.Count)
+    Close-JWindow $w11
+    Start-Sleep -Milliseconds 400
+}
 
 # ---- H3 屏幕取色器（全屏遮罩 + Esc 退出）---------------------------------------------------
 # 它没有标题（FormBorderStyle.None），所以按"有没有一个盖住虚拟屏幕的顶层窗口"找。

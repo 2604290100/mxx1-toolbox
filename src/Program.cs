@@ -58,6 +58,12 @@ namespace Mxx1Toolbox
                     Application.Run(new StartupForm(Theme.Resolve(Settings.Load().Theme)));
                     return 0;
                 }
+                // 「U 盘安全弹出」窗口。同上：只有单独一个 `eject` 参数才开窗口，`eject --json` 走命令行（只读）。
+                if (args.Length == 1 && string.Equals(args[0], "eject", StringComparison.OrdinalIgnoreCase))
+                {
+                    Application.Run(new UsbEjectForm(Theme.Resolve(Settings.Load().Theme)));
+                    return 0;
+                }
                 // `ui log` / `ui settings`：右键「常用功能」子菜单里那几个固定入口。打开主界面，
                 // 然后替用户点一下那个界面动作（否则从资源管理器点出来会"什么都不发生"）。
                 if (string.Equals(args[0], "ui", StringComparison.OrdinalIgnoreCase))
@@ -197,6 +203,7 @@ namespace Mxx1Toolbox
                     case "disksize": return DiskSizeCommand(args);
                     case "dns": return DnsCommand(args);
                     case "startup": return StartupCommand(args);
+                    case "eject": return EjectCommand(args);
                     case "dup": return DupCommand(args);
                     case "rename": return RenameCommand(args);
                     case "privacy": return PrivacyCommand(args);
@@ -372,6 +379,7 @@ namespace Mxx1Toolbox
             Console.WriteLine("  Mxx1Toolbox.exe disksize [--root=目录] [--top=N] [--json]   只读统计每个子目录占多大（默认系统盘），按大小排序");
             Console.WriteLine("  Mxx1Toolbox.exe dns [--json]        只读列出每块网卡现在的 DNS（改 DNS 只能在窗口里点：单独敲 dns 开窗口）");
             Console.WriteLine("  Mxx1Toolbox.exe startup [--json]    只读列出开机自启项（禁用 / 还原只能在窗口里点：单独敲 startup 开窗口）");
+            Console.WriteLine("  Mxx1Toolbox.exe eject [--json]      只读列出可移动磁盘（U 盘 / 读卡器；安全弹出只能在窗口里点：单独敲 eject 开窗口）");
             Console.WriteLine("  Mxx1Toolbox.exe dup <目录…> [--min-size=1MB] [--full] [--keep=oldest|shortest|first]   找内容完全相同的文件");
             Console.WriteLine("                                                        默认只读；--delete 才删（进回收站，每组留 --keep 指定的那一个；硬链接不删）");
             Console.WriteLine("  Mxx1Toolbox.exe rename <目录> [--prefix=] [--suffix=] [--find=] [--replace=] [--index-start=N] [--index-digits=N] [--ext=lower|upper]");
@@ -1652,6 +1660,80 @@ namespace Mxx1Toolbox
             {
                 Console.WriteLine((it.Enabled ? "on" : "off") + "\t" + (it.Critical ? "critical" : "-") + "\t"
                     + OneLine(it.Name) + "\t" + OneLine(it.Source) + "\t" + OneLine(it.Command));
+            }
+            if (error.Length > 0) { Console.WriteLine("error\t" + OneLine(error)); }
+            return error.Length == 0 ? 0 : 1;
+        }
+
+        /// <summary>`eject [--json]` —— 「U 盘安全弹出」的命令行出口（GAP-03），**只读**：
+        /// 列出系统报成「可移动」的盘（U 盘 / 读卡器）。真的弹出只在窗口里点（要过确认框），
+        /// `--now=<盘符>` 那条路只在 `MXX1_EJECT_FAKE` 造出来的假盘下才走 —— 用来验"弹不出时如实说"。</summary>
+        private static int EjectCommand(string[] args)
+        {
+            string now = "";
+            for (int i = 1; i < args.Length; i++)
+            {
+                if (args[i].StartsWith("--now=", StringComparison.OrdinalIgnoreCase)) { now = args[i].Substring(6).Trim('"').Trim(); }
+            }
+
+            List<RemovableDrive> drives = UsbEject.List();
+
+            if (now.Length > 0)
+            {
+                string fake = (Environment.GetEnvironmentVariable("MXX1_EJECT_FAKE") ?? "").Trim();
+                if (fake.Length == 0)
+                {
+                    Console.Error.WriteLine("弹出磁盘只能在窗口里点（「U 盘安全弹出」那颗按钮）。命令行只读：eject / eject --json");
+                    return 2;
+                }
+                RemovableDrive target = null;
+                foreach (RemovableDrive d in drives)
+                {
+                    if (string.Equals(d.Letter.TrimEnd(':'), now.TrimEnd(':'), StringComparison.OrdinalIgnoreCase)) { target = d; break; }
+                }
+                if (target == null)
+                {
+                    Console.Error.WriteLine("假盘里没有这个盘符：" + now + "（MXX1_EJECT_FAKE=" + fake + "）");
+                    return 1;
+                }
+                string msg;
+                bool ok = UsbEject.Eject(target, out msg);
+                Console.WriteLine("drive=" + target.Letter);
+                Console.WriteLine("result=" + (ok ? "ok" : "failed"));
+                Console.WriteLine("message=" + OneLine(msg));
+                return ok ? 0 : 1;
+            }
+
+            string error = UsbEject.LastError;
+            if (HasFlag(args, "--json"))
+            {
+                StringBuilder sb = new StringBuilder();
+                sb.Append("{\"count\":").Append(drives.Count.ToString(CultureInfo.InvariantCulture));
+                sb.Append(",\"error\":").Append(JsonEscape(error));
+                sb.Append(",\"drives\":[");
+                for (int i = 0; i < drives.Count; i++)
+                {
+                    if (i > 0) { sb.Append(","); }
+                    RemovableDrive d = drives[i];
+                    sb.Append("{\"letter\":").Append(JsonEscape(d.Letter));
+                    sb.Append(",\"label\":").Append(JsonEscape(d.Label));
+                    sb.Append(",\"ready\":").Append(d.Ready ? "true" : "false");
+                    sb.Append(",\"kind\":").Append(JsonEscape(d.Kind));
+                    sb.Append(",\"total\":").Append(d.TotalBytes.ToString(CultureInfo.InvariantCulture));
+                    sb.Append(",\"free\":").Append(d.FreeBytes.ToString(CultureInfo.InvariantCulture));
+                    sb.Append(",\"note\":").Append(JsonEscape(d.Note)).Append("}");
+                }
+                sb.Append("]}");
+                Console.WriteLine(sb.ToString());
+                return error.Length == 0 ? 0 : 1;
+            }
+
+            Console.WriteLine("count=" + drives.Count.ToString(CultureInfo.InvariantCulture));
+            foreach (RemovableDrive d in drives)
+            {
+                Console.WriteLine((d.Ready ? "ready" : "notready") + "\t" + d.Letter + "\t" + OneLine(d.Label)
+                    + "\t" + UsbEject.SizeText(d.FreeBytes) + " / " + UsbEject.SizeText(d.TotalBytes)
+                    + "\t" + OneLine(d.Kind));
             }
             if (error.Length > 0) { Console.WriteLine("error\t" + OneLine(error)); }
             return error.Length == 0 ? 0 : 1;

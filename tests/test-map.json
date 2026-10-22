@@ -403,6 +403,20 @@
 
     {
       "paths": [
+        "src/StartupItems.cs",
+        "src/StartupForm.cs"
+      ],
+      "cli": [
+        "A",
+        "J"
+      ],
+      "gui": [
+        "J"
+      ],
+      "note": "2026-10-22 GAP-05「启动项管理」：只禁用不删除（注册表记原值再删值 / 启动文件夹文件挪到备份目录），系统自带组件标灰不给动。命令行只读（startup / startup --json）；禁用 / 还原只在 MXX1_STARTUP_ROOT 隔离下走（J14 断言值真没了 + 记录含类型，J16 断言还原后值原样回来，J17 验文件挪走又挪回，J15 验系统组件拒绝禁用，J13 验没有隔离就退 2）"
+    },
+    {
+      "paths": [
         "src/DnsConfig.cs",
         "src/DnsForm.cs"
       ],

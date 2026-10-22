@@ -3499,6 +3499,24 @@ try {
 } catch { }
 $jDsEnv = @{ MXX1_DISKUSAGE_ROOT = $jDsFix }
 
+# 「启动项管理」窗口也给它一个隔离根（`MXX1_STARTUP_ROOT` 那三个）：窗口里看到的是夹具，
+# 用户真实的 Run 键 / 启动文件夹一个字节都不动（界面回归只读不勾，不会真禁用）。
+$jSuRoot = 'HKCU:\Software\mxx1-toolbox\startup-gui\Run'
+try { if (Test-Path -LiteralPath 'HKCU:\Software\mxx1-toolbox\startup-gui') { Remove-Item -LiteralPath 'HKCU:\Software\mxx1-toolbox\startup-gui' -Recurse -Force } } catch { }
+[void](New-Item -Path $jSuRoot -Force)
+Set-ItemProperty -LiteralPath $jSuRoot -Name 'Mxx1GuiApp' -Value '%ProgramFiles%\Mxx1Test\gui-app.exe' -Type String
+Set-ItemProperty -LiteralPath $jSuRoot -Name 'Mxx1GuiBad' -Value '%SystemRoot%\System32\bar.exe' -Type String
+$jSuFolder = Join-Path $tmpRoot ('mxx1-startup-gui-' + $PID)
+try {
+    if (Test-Path -LiteralPath $jSuFolder) { Remove-Item -LiteralPath $jSuFolder -Recurse -Force }
+    [void][System.IO.Directory]::CreateDirectory($jSuFolder)
+    [System.IO.File]::WriteAllText((Join-Path $jSuFolder 'Mxx1GuiLink.lnk'), 'fake shortcut')
+} catch { }
+$jSuTsv = Join-Path $tmpRoot ('mxx1-startup-gui-' + $PID + '.tsv')
+$jDsEnv['MXX1_STARTUP_ROOT'] = 'HKCU\Software\mxx1-toolbox\startup-gui'
+$jDsEnv['MXX1_STARTUP_FOLDER'] = $jSuFolder
+$jDsEnv['MXX1_STARTUP_TSV'] = $jSuTsv
+
 # ⚠ **必须自己起一个界面实例**：G 组（深色主题）在它结尾就把最开始的 `$main` 关掉了
 # （Test-Gui.ps1 里那句 CloseWindow($main)），H 组用的是自己的 `$procFixed`。
 # 2026-10-20 夜间全量跑时 J 全红就是这个原因（J 单独跑是绿的）—— 修法：这里 Start-Gui 一个，
@@ -3755,8 +3773,46 @@ if ($w9 -eq $null) {
     Start-Sleep -Milliseconds 400
 }
 
+# ---- 「启动项管理」窗口（豆包缺口清单 GAP-05）------------------------------------------------
+# 只看不勾：窗口里的根也被隔离到夹具（MXX1_STARTUP_ROOT / _FOLDER），所以状态行能断言到"一共 3 项"。
+# 「禁用勾选的」「恢复选中的」在没勾 / 没选中已禁用项时必须是灰的 —— 这一版不给"一键全禁"。
+# ⚠️ 这颗按钮在「应用管理」页签上，先把页签切过去再点（Open-JWindow 只在当前页签里找按钮）。
+[void](Switch-Tab -Handle $main -TabName '应用管理' -ExpectNames @('启动项管理'))
+$w10 = Open-JWindow '启动项管理' '启动项管理'
+Check 'J13h 点「启动项管理」能开窗口' ($w10 -ne $null) ''
+if ($w10 -eq $null) {
+    Check 'J13i 窗口读完了：状态行报出「一共 3 项」，四个按钮都在，两个动作按钮默认是灰的' $false '窗口没开出来'
+} else {
+    $st10 = ''
+    for ($i = 0; $i -lt 80; $i++) {
+        $st10 = Find-JStatus $w10.H '^一共 3 项'
+        if ($st10.Length -gt 0) { break }
+        Start-Sleep -Milliseconds 250
+    }
+    $b10 = Get-ChildControls -RootHandle $w10.H
+    $miss10 = @()
+    foreach ($nm in @('刷新', '关闭')) {
+        $hit = @($b10 | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq $nm })
+        if (($hit.Count -ne 1) -or (-not $hit[0].Enabled)) { $miss10 += $nm }
+    }
+    $off10 = @($b10 | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -like '禁用勾选的*' })
+    $res10 = @($b10 | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '恢复选中的' })
+    $gray10 = (($off10.Count -eq 1) -and (-not $off10[0].Enabled) -and ($res10.Count -eq 1) -and (-not $res10[0].Enabled))
+    $lv10 = @($b10 | Where-Object { $_.Class -like '*SysListView*' })
+    Check 'J13i 窗口读完了：状态行报出「一共 3 项」，四个按钮都在，两个动作按钮默认是灰的' `
+        (($st10.Length -gt 0) -and ($miss10.Count -eq 0) -and $gray10 -and ($lv10.Count -eq 1)) `
+        ('状态="' + $st10 + '" 缺/灰=' + ($miss10 -join '|') + ' 动作灰=' + $gray10 + ' 列表=' + $lv10.Count)
+    Close-JWindow $w10
+    Start-Sleep -Milliseconds 400
+}
+try { if (Test-Path -LiteralPath 'HKCU:\Software\mxx1-toolbox\startup-gui') { Remove-Item -LiteralPath 'HKCU:\Software\mxx1-toolbox\startup-gui' -Recurse -Force } } catch { }
+try { if (Test-Path -LiteralPath $jSuFolder) { Remove-Item -LiteralPath $jSuFolder -Recurse -Force } } catch { }
+try { if (Test-Path -LiteralPath $jSuTsv) { Remove-Item -LiteralPath $jSuTsv -Force } } catch { }
+
 # ---- H3 屏幕取色器（全屏遮罩 + Esc 退出）---------------------------------------------------
 # 它没有标题（FormBorderStyle.None），所以按"有没有一个盖住虚拟屏幕的顶层窗口"找。
+# ⚠️ 上面刚把页签切到「应用管理」，这颗按钮在「系统工具」页签上 —— 先切回来。
+[void](Switch-Tab -Handle $main -TabName '系统工具' -ExpectNames @('屏幕取色器'))
 $pickBtn = @((Get-ChildControls -RootHandle $main) | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '屏幕取色器' })
 $pick = $null
 if ($pickBtn.Count -eq 1) {

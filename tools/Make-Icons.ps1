@@ -45,6 +45,7 @@ function Get-Shape {
         @('sound-check',     'speaker'),
         @('sound-devices',   'speaker'),
         @('dns-switch',      'globe'),
+        @('startup-manage',  'refresh'),
         @('net-check',       'globe'),
         # 2026-10-22 补的四颗（豆包缺口清单 GAP-01/06/07/08）：显示设置 = 显示器、
         # 输入法打不出字 = 钥匙（和账户 / 激活同画法，都是"某个开关拧不动了"）、

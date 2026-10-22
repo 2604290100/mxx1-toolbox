@@ -485,13 +485,13 @@ foreach ($line in ($status.Out -split "`r?`n")) {
     }
 }
 
-Check ('A04 按钮总数 176 + 工具目录里自动加载的 {0} 个（测试期间用户层的按钮会暂停：常用 57 + 系统工具 48 + 隐私 29 + 应用 5 + 清理 13 + 右键 21 + 我的 3）' -f $autoBase) `
-    ((Get-Key $status.Out 'buttons') -eq [string](176 + $autoBase)) (Get-Key $status.Out 'buttons')
+Check ('A04 按钮总数 177 + 工具目录里自动加载的 {0} 个（测试期间用户层的按钮会暂停：常用 57 + 系统工具 48 + 隐私 29 + 应用 6 + 清理 13 + 右键 21 + 我的 3）' -f $autoBase) `
+    ((Get-Key $status.Out 'buttons') -eq [string](177 + $autoBase)) (Get-Key $status.Out 'buttons')
 Check 'A05 内置清单里没有灰色占位按钮了（两个「资源管理器」也接上了真功能；灰规则改由 B 组注入验证）' ((Get-Key $status.Out 'placeholders') -eq '0') (Get-Key $status.Out 'placeholders')
 Check 'A06 危险按钮 3 个' ((Get-Key $status.Out 'dangerous') -eq '3') (Get-Key $status.Out 'dangerous')
 
 # 「常用」页签是合成的（置顶 + 最近使用），清单里没有它的按钮，所以是 0
-$tabExpect = @{ 'recent' = 0; 'common' = 57; 'mine' = 3; 'system' = 48; 'cleanup' = 13; 'privacy' = 29; 'apps' = 5; 'rightmenu' = 21 }
+$tabExpect = @{ 'recent' = 0; 'common' = 57; 'mine' = 3; 'system' = 48; 'cleanup' = 13; 'privacy' = 29; 'apps' = 6; 'rightmenu' = 21 }
 $tabOk = $true
 $tabDetail = @()
 foreach ($k in $tabExpect.Keys) {
@@ -499,13 +499,13 @@ foreach ($k in $tabExpect.Keys) {
     $tabDetail += ($k + '=' + $v)
     if ($v -ne [string]([int]$tabExpect[$k] + [int]$autoByTab[$k])) { $tabOk = $false }
 }
-Check 'A07 八个页签的按钮数正确（0/57/3/44/13/29/5/21，加上自动按钮）' $tabOk ($tabDetail -join ' ')
+Check 'A07 八个页签的按钮数正确（0/57/3/48/13/29/6/21，加上自动按钮）' $tabOk ($tabDetail -join ' ')
 
 $list = Invoke-Exe 'list'
 Check 'A08 list 退出码 0' ($list.Code -eq 0) ('exit=' + $list.Code)
-Check 'A09 list 报的按钮数一致' ((Get-Key $list.Out 'buttons') -eq [string](176 + $autoBase)) (Get-Key $list.Out 'buttons')
+Check 'A09 list 报的按钮数一致' ((Get-Key $list.Out 'buttons') -eq [string](177 + $autoBase)) (Get-Key $list.Out 'buttons')
 $lines = @($list.Out -split "`r?`n" | Where-Object { $_ -match "`t" })
-Check ('A10 list 打出 {0} 行按钮' -f (176 + $autoBase)) ($lines.Count -eq (176 + $autoBase)) ('lines=' + $lines.Count)
+Check ('A10 list 打出 {0} 行按钮' -f (177 + $autoBase)) ($lines.Count -eq (177 + $autoBase)) ('lines=' + $lines.Count)
 
 $rmList = Invoke-Exe 'list --tab rightmenu'
 Check 'A11 右键增强 21 个按钮（20 个右键菜单功能 + 隔壁永久删除工具）' ((Get-Key $rmList.Out 'shown') -eq [string](21 + [int]$autoByTab['rightmenu'])) (Get-Key $rmList.Out 'shown')
@@ -1277,7 +1277,7 @@ Write-Host 'H 组 · 悬停说明（用户 2026-10-04 报过「鼠标悬停的�
 # tip 命令打印的就是界面塞给 ToolTip 的那个字符串，所以这里能直接断言，不用去动真鼠标。
 $tipsAll = Invoke-Exe 'tip'
 Check 'H01 tip 退出码 0' ($tipsAll.Code -eq 0) ('exit=' + $tipsAll.Code)
-Check ('H02 tip 覆盖了每个按钮（176 + 自动 {0} 个）' -f $autoBase) ((Get-Key $tipsAll.Out 'tips') -eq [string](176 + $autoBase)) (Get-Key $tipsAll.Out 'tips')
+Check ('H02 tip 覆盖了每个按钮（177 + 自动 {0} 个）' -f $autoBase) ((Get-Key $tipsAll.Out 'tips') -eq [string](177 + $autoBase)) (Get-Key $tipsAll.Out 'tips')
 
 $blocks = @{}
 $curId = ''
@@ -1409,7 +1409,7 @@ Write-Host 'J 组 · 应用管理（只读 + 单个卸载；不做批量、不�
 $appList = Invoke-Exe 'list --tab apps'
 $appIds = @()
 foreach ($line in ($appList.Out -split "`r?`n")) { if ($line -match "`t") { $appIds += ($line -split "`t")[0] } }
-Check 'J01 应用管理页签 5 个按钮' ($appIds.Count -eq 5) ($appIds -join ' ')
+Check 'J01 应用管理页签 6 个按钮' ($appIds.Count -eq 6) ($appIds -join ' ')
 
 # 只读的两个：真的跑一遍（查看启动项 / 查看已安装应用都不改任何东西）
 $startup = Invoke-Exe 'run apps-startup'
@@ -1470,6 +1470,94 @@ if ($pl.Count -eq 0) {
 Check 'J11 列表模式只列不卸（没有真的执行卸载）' `
     (($pick.Code -eq 0) -and (@(($pick.Out -split "`r?`n") | Where-Object { $_ -match '^(已卸载|卸载失败)：' }).Count -eq 0)) `
     ('exit=' + $pick.Code)
+
+# ---- 启动项管理（GAP-05）：隔离根里**端到端**验「禁用 → 值真没了 → 还原 → 值原样回来」----
+# ⚠️ 全程只碰 HKCU\Software\mxx1-toolbox\startup-test 这个夹具键 + 临时启动文件夹，
+#    用户真实的 Run 键 / 启动文件夹一个字节都不动（`MXX1_STARTUP_ROOT` 那三个隔离开关）。
+$suRoot = 'HKCU:\Software\mxx1-toolbox\startup-test'
+$suRun = $suRoot + '\Run'
+try { if (Test-Path -LiteralPath $suRoot) { Remove-Item -LiteralPath $suRoot -Recurse -Force } } catch { }
+[void](New-Item -Path $suRun -Force)
+Set-ItemProperty -LiteralPath $suRun -Name 'Mxx1TestApp' -Value '%ProgramFiles%\Mxx1Test\app.exe' -Type String
+Set-ItemProperty -LiteralPath $suRun -Name 'Mxx1TestBad' -Value '%SystemRoot%\System32\foo.exe' -Type String
+$suFolder = Join-Path $tmpRoot ('mxx1-startup-folder-' + $PID)
+try {
+    if (Test-Path -LiteralPath $suFolder) { Remove-Item -LiteralPath $suFolder -Recurse -Force }
+    [void][System.IO.Directory]::CreateDirectory($suFolder)
+    [System.IO.File]::WriteAllText((Join-Path $suFolder 'Mxx1TestLink.lnk'), 'fake shortcut')
+} catch { }
+$suTsv = Join-Path $tmpRoot ('mxx1-startup-' + $PID + '.tsv')
+if (Test-Path -LiteralPath $suTsv) { Remove-Item -LiteralPath $suTsv -Force }
+$suBackup = Join-Path $tmpRoot 'startup-disabled'
+$suEnv = @{
+    MXX1_STARTUP_ROOT = 'HKCU\Software\mxx1-toolbox\startup-test'
+    MXX1_STARTUP_FOLDER = $suFolder
+    MXX1_STARTUP_TSV = $suTsv
+}
+
+$suJson = Invoke-Exe 'startup --json' 60 $Exe $suEnv
+$suObj = $null
+try { $suObj = $suJson.Out.Trim() | ConvertFrom-Json } catch { $suObj = $null }
+$suItems = @()
+if ($suObj -ne $null) { $suItems = @($suObj.items) }
+$aApp = @($suItems | Where-Object { $_.name -eq 'Mxx1TestApp' })
+$aBad = @($suItems | Where-Object { $_.name -eq 'Mxx1TestBad' })
+$aFile = @($suItems | Where-Object { $_.name -eq 'Mxx1TestLink.lnk' })
+Check 'J12 `startup --json` 在隔离根里读到 3 项（两条注册表 + 一个启动文件夹文件），系统组件被标成 critical' `
+    (($suJson.Code -eq 0) -and ($suItems.Count -eq 3) -and ($aApp.Count -eq 1) -and ($aApp[0].enabled -eq $true) -and `
+     ($aBad.Count -eq 1) -and ($aBad[0].critical -eq $true) -and ($aFile.Count -eq 1) -and ($aFile[0].kind -eq 'file')) `
+    ('exit=' + $suJson.Code + ' count=' + $suItems.Count + ' critical=' + (@($suItems | Where-Object { $_.critical -eq $true }).Count))
+
+$suNoEnv = Invoke-Exe 'startup --disable=Mxx1TestApp'
+Check 'J13 没有测试隔离时，命令行**拒绝**禁用自启项（退 2，并说清只能在窗口里点）' `
+    (($suNoEnv.Code -eq 2) -and (($suNoEnv.Err + $suNoEnv.Out) -match '窗口')) `
+    ('exit=' + $suNoEnv.Code + ' ' + (($suNoEnv.Err + $suNoEnv.Out) -replace "`r?`n", ' '))
+
+$suOff = Invoke-Exe 'startup --disable=Mxx1TestApp' 60 $Exe $suEnv
+$suRunProps = Get-ItemProperty -LiteralPath $suRun
+$suStillThere = ($null -ne $suRunProps.Mxx1TestApp)
+$suTsvText = ''
+if (Test-Path -LiteralPath $suTsv) { $suTsvText = [System.IO.File]::ReadAllText($suTsv, [System.Text.Encoding]::UTF8) }
+Check 'J14 禁用一项：值真的从 Run 键里没了，原值（含类型 String）先记进了记录文件' `
+    (($suOff.Code -eq 0) -and (-not $suStillThere) -and ($suTsvText -match 'Mxx1TestApp') -and `
+     ($suTsvText -match '%ProgramFiles%\\Mxx1Test\\app\.exe') -and ($suTsvText -match "`tString`t")) `
+    ('exit=' + $suOff.Code + ' 值还在=' + $suStillThere + ' 记录=' + ($suTsvText -replace "`r?`n", ' | '))
+
+$suBad = Invoke-Exe 'startup --disable=Mxx1TestBad' 60 $Exe $suEnv
+$suBadMsg = Get-Key $suBad.Out 'message'
+Check 'J15 系统自带组件拒绝禁用（命令落在 Windows\System32 里 → 退 1 并说明原因）' `
+    (($suBad.Code -eq 1) -and ($suBadMsg -match '系统自带')) ('exit=' + $suBad.Code + ' msg=' + $suBadMsg)
+
+$suBack = Invoke-Exe 'startup --restore=Mxx1TestApp' 60 $Exe $suEnv
+$suRunProps2 = Get-ItemProperty -LiteralPath $suRun
+$suBackValue = ''
+if ($null -ne $suRunProps2.Mxx1TestApp) { $suBackValue = [string]$suRunProps2.Mxx1TestApp }
+$suTsvText2 = ''
+if (Test-Path -LiteralPath $suTsv) { $suTsvText2 = [System.IO.File]::ReadAllText($suTsv, [System.Text.Encoding]::UTF8) }
+Check 'J16 还原：值原样写回去了（同一条命令），记录文件里那条也删掉了' `
+    (($suBack.Code -eq 0) -and ($suBackValue -eq '%ProgramFiles%\Mxx1Test\app.exe') -and ($suTsvText2 -notmatch 'Mxx1TestApp')) `
+    ('exit=' + $suBack.Code + ' 值=' + $suBackValue + ' 记录=' + ($suTsvText2 -replace "`r?`n", ' | '))
+
+$suFileOff = Invoke-Exe 'startup --disable=Mxx1TestLink.lnk' 60 $Exe $suEnv
+$suFileGone = (-not (Test-Path -LiteralPath (Join-Path $suFolder 'Mxx1TestLink.lnk')))
+$suFileBack = Invoke-Exe 'startup --restore=Mxx1TestLink.lnk' 60 $Exe $suEnv
+$suFileAgain = (Test-Path -LiteralPath (Join-Path $suFolder 'Mxx1TestLink.lnk'))
+Check 'J17 启动文件夹里的文件：禁用 = 挪到备份目录（不是删掉），还原 = 挪回来' `
+    (($suFileOff.Code -eq 0) -and $suFileGone -and ($suFileBack.Code -eq 0) -and $suFileAgain) `
+    ('禁用 exit=' + $suFileOff.Code + ' 文件不见了=' + $suFileGone + ' 还原 exit=' + $suFileBack.Code + ' 文件回来了=' + $suFileAgain)
+
+# 收尾：夹具键、夹具文件夹、记录文件、备份目录（只删我们自己那一个）
+try { if (Test-Path -LiteralPath $suRoot) { Remove-Item -LiteralPath $suRoot -Recurse -Force } } catch { }
+try { if (Test-Path -LiteralPath $suFolder) { Remove-Item -LiteralPath $suFolder -Recurse -Force } } catch { }
+try { if (Test-Path -LiteralPath $suTsv) { Remove-Item -LiteralPath $suTsv -Force } } catch { }
+try {
+    if (Test-Path -LiteralPath $suBackup) {
+        foreach ($f in @(Get-ChildItem -LiteralPath $suBackup -Force)) {
+            if ($f.Name -like '*Mxx1TestLink.lnk') { Remove-Item -LiteralPath $f.FullName -Force }
+        }
+        if (@(Get-ChildItem -LiteralPath $suBackup -Force).Count -eq 0) { Remove-Item -LiteralPath $suBackup -Force }
+    }
+} catch { }
 
 }
 

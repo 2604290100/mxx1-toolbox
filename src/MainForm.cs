@@ -1663,6 +1663,9 @@ namespace Mxx1Toolbox
                 case "dns":
                     OpenDns();
                     break;
+                case "startup":
+                    OpenStartup();
+                    break;
                 case "emptyfolders":
                     OpenEmptyFolders();
                     break;
@@ -1928,6 +1931,15 @@ namespace Mxx1Toolbox
             f.Activate();
             SetStatus("屏幕取色器 · 左键复制颜色，滚轮切换复制格式，Esc / 右键退出");
             Logger.Write("屏幕取色器", "打开取色器");
+        }
+
+        /// <summary>「启动项管理」窗口（应用管理页，GAP-05）——只禁用不删除，随时能还原。</summary>
+        private void OpenStartup()
+        {
+            StartupForm f = new StartupForm(_theme);
+            WindowPlacement.ShowCentered(f, this);
+            SetStatus("启动项管理 · 只禁用不删除；注册表原值会记下来，随时能还原");
+            Logger.Write("启动项管理", "打开窗口");
         }
 
         /// <summary>「一键换 DNS」窗口（系统工具页 · 设备与硬件段，GAP-09）——改 DNS 才写系统，窗口里过确认框。</summary>

@@ -51,6 +51,13 @@ namespace Mxx1Toolbox
                     Application.Run(new DnsForm(Theme.Resolve(Settings.Load().Theme)));
                     return 0;
                 }
+                // 「启动项管理」窗口。来路同 `dns`：界面里那个按钮直接 new；需要管理员时提权重开自己（`startup`）。
+                // ⚠️ 同样**只有单独一个 `startup` 参数才开窗口**，`startup --json` 走命令行（只读）。
+                if (args.Length == 1 && string.Equals(args[0], "startup", StringComparison.OrdinalIgnoreCase))
+                {
+                    Application.Run(new StartupForm(Theme.Resolve(Settings.Load().Theme)));
+                    return 0;
+                }
                 // `ui log` / `ui settings`：右键「常用功能」子菜单里那几个固定入口。打开主界面，
                 // 然后替用户点一下那个界面动作（否则从资源管理器点出来会"什么都不发生"）。
                 if (string.Equals(args[0], "ui", StringComparison.OrdinalIgnoreCase))
@@ -189,6 +196,7 @@ namespace Mxx1Toolbox
                     case "audio": return AudioCommand(args);
                     case "disksize": return DiskSizeCommand(args);
                     case "dns": return DnsCommand(args);
+                    case "startup": return StartupCommand(args);
                     case "dup": return DupCommand(args);
                     case "rename": return RenameCommand(args);
                     case "privacy": return PrivacyCommand(args);
@@ -363,6 +371,7 @@ namespace Mxx1Toolbox
             Console.WriteLine("  Mxx1Toolbox.exe audio --set-default <设备 id>   把某个设备设成默认（普通 / 多媒体 / 通话三个角色一起改）");
             Console.WriteLine("  Mxx1Toolbox.exe disksize [--root=目录] [--top=N] [--json]   只读统计每个子目录占多大（默认系统盘），按大小排序");
             Console.WriteLine("  Mxx1Toolbox.exe dns [--json]        只读列出每块网卡现在的 DNS（改 DNS 只能在窗口里点：单独敲 dns 开窗口）");
+            Console.WriteLine("  Mxx1Toolbox.exe startup [--json]    只读列出开机自启项（禁用 / 还原只能在窗口里点：单独敲 startup 开窗口）");
             Console.WriteLine("  Mxx1Toolbox.exe dup <目录…> [--min-size=1MB] [--full] [--keep=oldest|shortest|first]   找内容完全相同的文件");
             Console.WriteLine("                                                        默认只读；--delete 才删（进回收站，每组留 --keep 指定的那一个；硬链接不删）");
             Console.WriteLine("  Mxx1Toolbox.exe rename <目录> [--prefix=] [--suffix=] [--find=] [--replace=] [--index-start=N] [--index-digits=N] [--ext=lower|upper]");
@@ -1566,6 +1575,83 @@ namespace Mxx1Toolbox
                 Console.WriteLine((a.IsUp ? "up" : "down") + "\t" + OneLine(a.Name) + "\t"
                     + (a.Dns.Count > 0 ? OneLine(string.Join(" / ", a.Dns.ToArray())) : "（自动获取）")
                     + "\t" + OneLine(a.Description));
+            }
+            if (error.Length > 0) { Console.WriteLine("error\t" + OneLine(error)); }
+            return error.Length == 0 ? 0 : 1;
+        }
+
+        /// <summary>`startup [--json]` —— 「启动项管理」的命令行出口（GAP-05），**只读**：
+        /// 列出 Run 键 + 「启动」文件夹里的自启项（含本窗口禁用的、可恢复的那几条）。
+        /// 禁用 / 还原只在窗口里点（要过条款门 + 确认框），命令行一条写命令都没有。</summary>
+        private static int StartupCommand(string[] args)
+        {
+            string disable = "";
+            string restore = "";
+            for (int i = 1; i < args.Length; i++)
+            {
+                string a = args[i];
+                if (a.StartsWith("--disable=", StringComparison.OrdinalIgnoreCase)) { disable = a.Substring(10).Trim('"'); }
+                else if (a.StartsWith("--restore=", StringComparison.OrdinalIgnoreCase)) { restore = a.Substring(10).Trim('"'); }
+            }
+
+            if (disable.Length > 0 || restore.Length > 0)
+            {
+                if (!StartupItems.WriteAllowed())
+                {
+                    Console.Error.WriteLine("禁用 / 还原自启项只能在窗口里点（「启动项管理」那颗按钮）。命令行只读：startup / startup --json");
+                    return 2;
+                }
+                string wantName = (disable.Length > 0) ? disable : restore;
+                StartupItem target = null;
+                foreach (StartupItem it in StartupItems.List())
+                {
+                    if (string.Equals(it.Name, wantName, StringComparison.OrdinalIgnoreCase)) { target = it; break; }
+                }
+                if (target == null)
+                {
+                    Console.Error.WriteLine("隔离根里没有这一项：" + wantName);
+                    return 1;
+                }
+                string msg;
+                bool ok = (disable.Length > 0) ? StartupItems.Disable(target, out msg) : StartupItems.Restore(target, out msg);
+                Console.WriteLine("action=" + (disable.Length > 0 ? "disable" : "restore"));
+                Console.WriteLine("name=" + OneLine(target.Name));
+                Console.WriteLine("result=" + (ok ? "ok" : "failed"));
+                Console.WriteLine("message=" + OneLine(msg));
+                return ok ? 0 : 1;
+            }
+
+            List<StartupItem> items = StartupItems.List();
+            string error = StartupItems.LastError;
+            if (HasFlag(args, "--json"))
+            {
+                StringBuilder sb = new StringBuilder();
+                sb.Append("{\"count\":").Append(items.Count.ToString(CultureInfo.InvariantCulture));
+                sb.Append(",\"error\":").Append(JsonEscape(error));
+                sb.Append(",\"items\":[");
+                for (int i = 0; i < items.Count; i++)
+                {
+                    if (i > 0) { sb.Append(","); }
+                    StartupItem it = items[i];
+                    sb.Append("{\"name\":").Append(JsonEscape(it.Name));
+                    sb.Append(",\"kind\":").Append(JsonEscape(it.Kind));
+                    sb.Append(",\"enabled\":").Append(it.Enabled ? "true" : "false");
+                    sb.Append(",\"critical\":").Append(it.Critical ? "true" : "false");
+                    sb.Append(",\"source\":").Append(JsonEscape(it.Source));
+                    sb.Append(",\"command\":").Append(JsonEscape(it.Command));
+                    sb.Append(",\"note\":").Append(JsonEscape(it.Note)).Append("}");
+                }
+                sb.Append("]}");
+                Console.WriteLine(sb.ToString());
+                return error.Length == 0 ? 0 : 1;
+            }
+
+            Console.WriteLine("count=" + items.Count.ToString(CultureInfo.InvariantCulture));
+            Console.WriteLine("record=" + StartupItems.RecordFile());
+            foreach (StartupItem it in items)
+            {
+                Console.WriteLine((it.Enabled ? "on" : "off") + "\t" + (it.Critical ? "critical" : "-") + "\t"
+                    + OneLine(it.Name) + "\t" + OneLine(it.Source) + "\t" + OneLine(it.Command));
             }
             if (error.Length > 0) { Console.WriteLine("error\t" + OneLine(error)); }
             return error.Length == 0 ? 0 : 1;

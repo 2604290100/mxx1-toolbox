@@ -1660,6 +1660,9 @@ namespace Mxx1Toolbox
                 case "diskusage":
                     OpenDiskUsage();
                     break;
+                case "dns":
+                    OpenDns();
+                    break;
                 case "emptyfolders":
                     OpenEmptyFolders();
                     break;
@@ -1925,6 +1928,15 @@ namespace Mxx1Toolbox
             f.Activate();
             SetStatus("屏幕取色器 · 左键复制颜色，滚轮切换复制格式，Esc / 右键退出");
             Logger.Write("屏幕取色器", "打开取色器");
+        }
+
+        /// <summary>「一键换 DNS」窗口（系统工具页 · 设备与硬件段，GAP-09）——改 DNS 才写系统，窗口里过确认框。</summary>
+        private void OpenDns()
+        {
+            DnsForm f = new DnsForm(_theme);
+            WindowPlacement.ShowCentered(f, this);
+            SetStatus("一键换 DNS · 114 / 阿里 / 改回自动三选一；只改 DNS，不动 IP / 网关 / 代理");
+            Logger.Write("一键换 DNS", "打开窗口");
         }
 
         /// <summary>「C 盘空间体检」窗口（系统工具页 · 体检段，GAP-04）——**只读**统计各子目录占用。</summary>

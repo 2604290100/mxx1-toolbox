@@ -43,6 +43,14 @@ namespace Mxx1Toolbox
                     Application.Run(new PowerForm(Theme.Resolve(Settings.Load().Theme)));
                     return 0;
                 }
+                // 「一键换 DNS」窗口。来路同 `power`：界面里那个按钮直接 new；需要管理员时提权重开自己（`dns`）。
+                // ⚠️ **只有单独一个 `dns` 参数才开窗口** —— 带参数的 `dns --json` / `dns --apply=…`
+                // 仍然走命令行（只读，或者在 MXX1_NETSH 隔离下写），免得"想查一下"却弹出一个窗口。
+                if (args.Length == 1 && string.Equals(args[0], "dns", StringComparison.OrdinalIgnoreCase))
+                {
+                    Application.Run(new DnsForm(Theme.Resolve(Settings.Load().Theme)));
+                    return 0;
+                }
                 // `ui log` / `ui settings`：右键「常用功能」子菜单里那几个固定入口。打开主界面，
                 // 然后替用户点一下那个界面动作（否则从资源管理器点出来会"什么都不发生"）。
                 if (string.Equals(args[0], "ui", StringComparison.OrdinalIgnoreCase))
@@ -180,6 +188,7 @@ namespace Mxx1Toolbox
                     case "ports": return PortsCommand(args);
                     case "audio": return AudioCommand(args);
                     case "disksize": return DiskSizeCommand(args);
+                    case "dns": return DnsCommand(args);
                     case "dup": return DupCommand(args);
                     case "rename": return RenameCommand(args);
                     case "privacy": return PrivacyCommand(args);
@@ -353,6 +362,7 @@ namespace Mxx1Toolbox
             Console.WriteLine("  Mxx1Toolbox.exe audio [--json]       只读列出音频设备（输出 / 输入）、谁是默认、音频服务状态");
             Console.WriteLine("  Mxx1Toolbox.exe audio --set-default <设备 id>   把某个设备设成默认（普通 / 多媒体 / 通话三个角色一起改）");
             Console.WriteLine("  Mxx1Toolbox.exe disksize [--root=目录] [--top=N] [--json]   只读统计每个子目录占多大（默认系统盘），按大小排序");
+            Console.WriteLine("  Mxx1Toolbox.exe dns [--json]        只读列出每块网卡现在的 DNS（改 DNS 只能在窗口里点：单独敲 dns 开窗口）");
             Console.WriteLine("  Mxx1Toolbox.exe dup <目录…> [--min-size=1MB] [--full] [--keep=oldest|shortest|first]   找内容完全相同的文件");
             Console.WriteLine("                                                        默认只读；--delete 才删（进回收站，每组留 --keep 指定的那一个；硬链接不删）");
             Console.WriteLine("  Mxx1Toolbox.exe rename <目录> [--prefix=] [--suffix=] [--find=] [--replace=] [--index-start=N] [--index-digits=N] [--ext=lower|upper]");
@@ -1476,6 +1486,86 @@ namespace Mxx1Toolbox
                     + du.Dirs.ToString(CultureInfo.InvariantCulture) + "\t"
                     + (note.Length > 0 ? note : "-"));
                 printed++;
+            }
+            if (error.Length > 0) { Console.WriteLine("error\t" + OneLine(error)); }
+            return error.Length == 0 ? 0 : 1;
+        }
+
+        /// <summary>`dns [--json]` —— 「一键换 DNS」的命令行出口（GAP-09），**默认只读**：
+        /// 列出每块网卡现在的 DNS（哪块在用、是不是自动获取）。窗口（单独敲 `dns` 或者点按钮）才改。
+        ///
+        /// 写的那条路 `dns --apply=114|ali|dhcp --name=网卡名` **只允许在 `MXX1_NETSH` 指定的
+        /// 假程序下走**（测试用）；没设这个变量就退 2 并说清"写 DNS 只在窗口里做" ——
+        /// 一句命令行把用户 DNS 改掉的风险不接受（同 `timer start` 那条底线）。</summary>
+        private static int DnsCommand(string[] args)
+        {
+            string apply = "";
+            string name = "";
+            for (int i = 1; i < args.Length; i++)
+            {
+                string a = args[i];
+                if (a.StartsWith("--apply=", StringComparison.OrdinalIgnoreCase)) { apply = a.Substring(8).Trim().ToLowerInvariant(); }
+                else if (a.StartsWith("--name=", StringComparison.OrdinalIgnoreCase)) { name = a.Substring(7).Trim('"'); }
+            }
+
+            if (apply.Length > 0)
+            {
+                if (!DnsConfig.WriteAllowed())
+                {
+                    Console.Error.WriteLine("写 DNS 只能在窗口里做（点「一键换 DNS」那颗按钮）。命令行只读：dns / dns --json");
+                    return 2;
+                }
+                if (apply != DnsConfig.Choice114 && apply != DnsConfig.ChoiceAli && apply != DnsConfig.ChoiceDhcp)
+                {
+                    Console.Error.WriteLine("--apply= 只认 114 / ali / dhcp");
+                    return 2;
+                }
+                string msg;
+                bool ok = DnsConfig.Apply(name, apply, out msg);
+                Console.WriteLine("apply=" + (ok ? "ok" : "failed"));
+                Console.WriteLine("choice=" + apply);
+                Console.WriteLine("name=" + name);
+                Console.WriteLine("command=" + OneLine(DnsConfig.LastCommand));
+                Console.WriteLine("message=" + OneLine(msg));
+                return ok ? 0 : 1;
+            }
+
+            List<DnsAdapter> list = DnsConfig.List();
+            string error = DnsConfig.LastError;
+            if (HasFlag(args, "--json"))
+            {
+                StringBuilder sb = new StringBuilder();
+                sb.Append("{\"count\":").Append(list.Count.ToString(CultureInfo.InvariantCulture));
+                sb.Append(",\"error\":").Append(JsonEscape(error));
+                sb.Append(",\"adapters\":[");
+                for (int i = 0; i < list.Count; i++)
+                {
+                    if (i > 0) { sb.Append(","); }
+                    DnsAdapter a = list[i];
+                    sb.Append("{\"name\":").Append(JsonEscape(a.Name));
+                    sb.Append(",\"description\":").Append(JsonEscape(a.Description));
+                    sb.Append(",\"up\":").Append(a.IsUp ? "true" : "false");
+                    sb.Append(",\"dhcp\":").Append(a.LooksDhcp ? "true" : "false");
+                    sb.Append(",\"dns\":[");
+                    for (int j = 0; j < a.Dns.Count; j++)
+                    {
+                        if (j > 0) { sb.Append(","); }
+                        sb.Append(JsonEscape(a.Dns[j]));
+                    }
+                    sb.Append("]}");
+                }
+                sb.Append("]}");
+                Console.WriteLine(sb.ToString());
+                return error.Length == 0 ? 0 : 1;
+            }
+
+            Console.WriteLine("count=" + list.Count.ToString(CultureInfo.InvariantCulture));
+            Console.WriteLine("writeAllowed=" + (DnsConfig.WriteAllowed() ? "yes" : "no"));
+            foreach (DnsAdapter a in list)
+            {
+                Console.WriteLine((a.IsUp ? "up" : "down") + "\t" + OneLine(a.Name) + "\t"
+                    + (a.Dns.Count > 0 ? OneLine(string.Join(" / ", a.Dns.ToArray())) : "（自动获取）")
+                    + "\t" + OneLine(a.Description));
             }
             if (error.Length > 0) { Console.WriteLine("error\t" + OneLine(error)); }
             return error.Length == 0 ? 0 : 1;

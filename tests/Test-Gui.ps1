@@ -3726,6 +3726,35 @@ if ($w8 -eq $null) {
 }
 try { if (Test-Path -LiteralPath $jDsFix) { Remove-Item -LiteralPath $jDsFix -Recurse -Force -ErrorAction SilentlyContinue } } catch { }
 
+# ---- 「一键换 DNS」窗口（豆包缺口清单 GAP-09）---------------------------------------------
+# ⚠️ 只开窗 + 读状态行 + 认"三个选项都在、应用可点"，**一下都不点「应用」** ——
+#    点了会真改这台机器的 DNS（窗口里还要过条款门 + 确认框），界面回归不许碰用户网络。
+$w9 = Open-JWindow '一键换 DNS' '一键换 DNS'
+Check 'J13f 点「一键换 DNS」能开窗口' ($w9 -ne $null) ''
+if ($w9 -eq $null) {
+    Check 'J13g 窗口读完了：状态行报出读到几块网卡，三个选项 + 应用 / 刷新 / 关闭都在（应用可点，因为默认选中第一块网卡）' $false '窗口没开出来'
+} else {
+    $st9 = ''
+    for ($i = 0; $i -lt 80; $i++) {
+        $st9 = Find-JStatus $w9.H '^读到 \d+ 块网卡|一块网卡都没读到'
+        if ($st9.Length -gt 0) { break }
+        Start-Sleep -Milliseconds 250
+    }
+    $b9 = Get-ChildControls -RootHandle $w9.H
+    $miss9 = @()
+    foreach ($nm in @('刷新', '应用这个 DNS', '关闭')) {
+        $hit = @($b9 | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq $nm })
+        if (($hit.Count -ne 1) -or (-not $hit[0].Enabled)) { $miss9 += $nm }
+    }
+    $radio9 = @($b9 | Where-Object { $_.Class -like '*BUTTON*' -and ($_.Text -eq '114 DNS' -or $_.Text -eq '阿里 DNS（223.5.5.5）' -or $_.Text -eq '改回自动（还原）') })
+    $lv9 = @($b9 | Where-Object { $_.Class -like '*SysListView*' })
+    Check 'J13g 窗口读完了：状态行报出读到几块网卡，三个选项 + 应用 / 刷新 / 关闭都在（应用可点，因为默认选中第一块网卡）' `
+        (($st9.Length -gt 0) -and ($radio9.Count -eq 3) -and ($miss9.Count -eq 0) -and ($lv9.Count -eq 1)) `
+        ('状态="' + $st9 + '" 单选项=' + $radio9.Count + ' 缺/灰=' + ($miss9 -join '|') + ' 列表=' + $lv9.Count)
+    Close-JWindow $w9
+    Start-Sleep -Milliseconds 400
+}
+
 # ---- H3 屏幕取色器（全屏遮罩 + Esc 退出）---------------------------------------------------
 # 它没有标题（FormBorderStyle.None），所以按"有没有一个盖住虚拟屏幕的顶层窗口"找。
 $pickBtn = @((Get-ChildControls -RootHandle $main) | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '屏幕取色器' })

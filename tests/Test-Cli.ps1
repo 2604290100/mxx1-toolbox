@@ -485,13 +485,13 @@ foreach ($line in ($status.Out -split "`r?`n")) {
     }
 }
 
-Check ('A04 按钮总数 175 + 工具目录里自动加载的 {0} 个（测试期间用户层的按钮会暂停：常用 57 + 系统工具 47 + 隐私 29 + 应用 5 + 清理 13 + 右键 21 + 我的 3）' -f $autoBase) `
-    ((Get-Key $status.Out 'buttons') -eq [string](175 + $autoBase)) (Get-Key $status.Out 'buttons')
+Check ('A04 按钮总数 176 + 工具目录里自动加载的 {0} 个（测试期间用户层的按钮会暂停：常用 57 + 系统工具 48 + 隐私 29 + 应用 5 + 清理 13 + 右键 21 + 我的 3）' -f $autoBase) `
+    ((Get-Key $status.Out 'buttons') -eq [string](176 + $autoBase)) (Get-Key $status.Out 'buttons')
 Check 'A05 内置清单里没有灰色占位按钮了（两个「资源管理器」也接上了真功能；灰规则改由 B 组注入验证）' ((Get-Key $status.Out 'placeholders') -eq '0') (Get-Key $status.Out 'placeholders')
 Check 'A06 危险按钮 3 个' ((Get-Key $status.Out 'dangerous') -eq '3') (Get-Key $status.Out 'dangerous')
 
 # 「常用」页签是合成的（置顶 + 最近使用），清单里没有它的按钮，所以是 0
-$tabExpect = @{ 'recent' = 0; 'common' = 57; 'mine' = 3; 'system' = 47; 'cleanup' = 13; 'privacy' = 29; 'apps' = 5; 'rightmenu' = 21 }
+$tabExpect = @{ 'recent' = 0; 'common' = 57; 'mine' = 3; 'system' = 48; 'cleanup' = 13; 'privacy' = 29; 'apps' = 5; 'rightmenu' = 21 }
 $tabOk = $true
 $tabDetail = @()
 foreach ($k in $tabExpect.Keys) {
@@ -503,9 +503,9 @@ Check 'A07 八个页签的按钮数正确（0/57/3/44/13/29/5/21，加上自动�
 
 $list = Invoke-Exe 'list'
 Check 'A08 list 退出码 0' ($list.Code -eq 0) ('exit=' + $list.Code)
-Check 'A09 list 报的按钮数一致' ((Get-Key $list.Out 'buttons') -eq [string](175 + $autoBase)) (Get-Key $list.Out 'buttons')
+Check 'A09 list 报的按钮数一致' ((Get-Key $list.Out 'buttons') -eq [string](176 + $autoBase)) (Get-Key $list.Out 'buttons')
 $lines = @($list.Out -split "`r?`n" | Where-Object { $_ -match "`t" })
-Check ('A10 list 打出 {0} 行按钮' -f (175 + $autoBase)) ($lines.Count -eq (175 + $autoBase)) ('lines=' + $lines.Count)
+Check ('A10 list 打出 {0} 行按钮' -f (176 + $autoBase)) ($lines.Count -eq (176 + $autoBase)) ('lines=' + $lines.Count)
 
 $rmList = Invoke-Exe 'list --tab rightmenu'
 Check 'A11 右键增强 21 个按钮（20 个右键菜单功能 + 隔壁永久删除工具）' ((Get-Key $rmList.Out 'shown') -eq [string](21 + [int]$autoByTab['rightmenu'])) (Get-Key $rmList.Out 'shown')
@@ -687,7 +687,7 @@ if ($permdel -eq '(未找到)' -or $permdel.Length -eq 0) {
 # ---------------------------------------------------------------- D 组：系统工具
 if (Test-GroupSelected 'D') {
 Write-Host ''
-Write-Host 'D 组 · 「系统工具」47 个按钮（Windows 自带组件 + 修复/诊断 + 文件哈希校验 / 屏幕取色器 / 端口与进程，--dry 只解析不启动）'
+Write-Host 'D 组 · 「系统工具」48 个按钮（Windows 自带组件 + 修复/诊断 + 文件哈希校验 / 屏幕取色器 / 端口与进程，--dry 只解析不启动）'
 
 # 缺组件的口径按系统版本分叉：Win7 上那 7 个 ms-settings: 按钮天生打不开（算"没有"），
 # Win10/11 上一个都不该缺。这样才能在两种机器上跑同一套测试。
@@ -697,14 +697,14 @@ Check 'D01 status 报 29 个系统工具动作（21 组件 + 2 诊断 + 4 权限
     (((Get-Key $status.Out 'systemTargets') -eq '29') -and $missOk) $d01detail
 
 $sysList = Invoke-Exe 'list --tab system'
-Check 'D02 系统工具页签 47 个按钮（33 + 文件哈希校验 + 屏幕取色器 + 端口与进程 + 系统体检 + 打印卡住了 + 声音问题体检 + 网络体检 + 显示设置 + 打印机显示脱机 + 输入法打不出字 + 蓝屏原因解读 + 输出设备体检 + 进程占用体检 + C 盘空间体检）、没有 placeholder' `
-    (((Get-Key $sysList.Out 'shown') -eq '47') -and (-not ($sysList.Out -match 'placeholder'))) ''
+Check 'D02 系统工具页签 48 个按钮（33 + 文件哈希校验 + 屏幕取色器 + 端口与进程 + 系统体检 + 打印卡住了 + 声音问题体检 + 网络体检 + 显示设置 + 打印机显示脱机 + 输入法打不出字 + 蓝屏原因解读 + 输出设备体检 + 进程占用体检 + C 盘空间体检 + 一键换 DNS）、没有 placeholder' `
+    (((Get-Key $sysList.Out 'shown') -eq '48') -and (-not ($sysList.Out -match 'placeholder'))) ''
 
 $sysIds = @()
 foreach ($line in ($sysList.Out -split "`r?`n")) {
     if ($line -match "`t") { $sysIds += ($line -split "`t")[0] }
 }
-Check 'D03 读到 47 个系统工具 id' ($sysIds.Count -eq 47) ($sysIds -join ' ')
+Check 'D03 读到 48 个系统工具 id' ($sysIds.Count -eq 48) ($sysIds -join ' ')
 
 $bad = @()
 $detail = @()
@@ -717,7 +717,7 @@ foreach ($id in $sysIds) {    $d = Invoke-Exe ('run ' + $id + ' --dry')
     if ($exists -ne 'yes' -and $hint.Length -eq 0) { $bad += ($id + ':没有解释'); continue }
     $detail += ($id + '=' + (Get-Key $d.Out 'kind'))
 }
-Check 'D04 47 个系统工具都有目标、且缺了就说明了原因' ($bad.Count -eq 0) (($bad -join ' ') + ' ' + ($detail -join ' '))
+Check 'D04 48 个系统工具都有目标、且缺了就说明了原因' ($bad.Count -eq 0) (($bad -join ' ') + ' ' + ($detail -join ' '))
 
 # 2026-10-20 加的 8 个「系统工具页入口」（A 组）—— 按 id 点名，免得哪天清单被改坏一条也没人发现。
 # （原计划里还有「Internet 选项 inetcpl.cpl」，量出来这台机器的精简版 Windows 里根本没这个文件，
@@ -794,21 +794,24 @@ Check 'D10d `audio --set-default` 给一个不存在的设备时退 1、并说�
     (($audioBad.Code -eq 1) -and ($audioBadMsg.Length -gt 0)) ('exit=' + $audioBad.Code + ' msg=' + $audioBadMsg)
 
 # D11 —— 第二批追加的两颗：进程占用体检（只读脚本）+ C 盘空间体检（只读窗口）
-$gap2Ids = @('proc-top', 'disk-usage')
+$gap2Ids = @('proc-top', 'disk-usage', 'dns-switch')
 $lackGap2 = @($gap2Ids | Where-Object { $sysIds -notcontains $_ })
 Check 'D11 第二批的两颗按钮都在（进程占用体检 / C 盘空间体检）' ($lackGap2.Count -eq 0) ('缺=' + ($lackGap2 -join ' '))
 
 $defProc = @($sysDefs | Where-Object { $_.id -eq 'proc-top' })
 $defDisk = @($sysDefs | Where-Object { $_.id -eq 'disk-usage' })
+$defDns = @($sysDefs | Where-Object { $_.id -eq 'dns-switch' })
 $procInline = if ($defProc.Count -eq 1) { [string]$defProc[0].inline } else { '' }
 # 「只读」不能只看说明文字：内联脚本里**一条**结束进程 / 删东西 / 改服务的命令都不许有
 $procReadonly = ($procInline.Length -gt 0) -and (-not ($procInline -match 'Stop-Process|Remove-Item|taskkill|Set-Service|Set-ItemProperty'))
 $gap2Boundary = (($defProc.Count -eq 1) -and ($defProc[0].kind -eq 'script') -and `
                  ($defProc[0].runAsAdmin -ne $true) -and ($defProc[0].confirm -ne $true) -and $procReadonly) -and `
                 (($defDisk.Count -eq 1) -and ($defDisk[0].kind -eq 'builtin') -and ($defDisk[0].module -eq 'app') -and `
-                 ($defDisk[0].runAsAdmin -ne $true) -and ($defDisk[0].confirm -ne $true))
-Check 'D11b 这两颗的边界写对了（进程占用体检的脚本里没有任何结束进程 / 删东西 / 改服务的命令；C 盘空间体检是窗口、不写系统）' `
-    $gap2Boundary ('proc=' + $defProc.Count + ' readonly=' + $procReadonly + ' disk=' + $defDisk.Count)
+                 ($defDisk[0].runAsAdmin -ne $true) -and ($defDisk[0].confirm -ne $true)) -and `
+                (($defDns.Count -eq 1) -and ($defDns[0].kind -eq 'builtin') -and ($defDns[0].module -eq 'app') -and `
+                 ($defDns[0].action -eq 'dns') -and ($defDns[0].runAsAdmin -ne $true) -and ($defDns[0].confirm -ne $true))
+Check 'D11b 这三颗的边界写对了（进程占用体检的脚本里没有任何结束进程 / 删东西 / 改服务的命令；C 盘空间体检 / 一键换 DNS 都是窗口、按钮本身不写系统）' `
+    $gap2Boundary ('proc=' + $defProc.Count + ' readonly=' + $procReadonly + ' disk=' + $defDisk.Count + ' dns=' + $defDns.Count)
 
 # D12 —— `disksize` 拿一个**字节数已知**的夹具验（不是看它"能跑"，是看它算得对不对）
 $dsRoot = Join-Path $tmpRoot ('mxx1-dsfix-' + $PID)
@@ -861,6 +864,63 @@ Check 'D12c 目录不存在时退 1，并说清是哪个目录' `
 # 收尾：先把 junction 摘掉再删（-Recurse 撞上 junction 有风险，Y12 那边也是这么收的）
 try { if (Test-Path -LiteralPath $dsLink) { [System.IO.Directory]::Delete($dsLink) } } catch { }
 try { if (Test-Path -LiteralPath $dsRoot) { Remove-Item -LiteralPath $dsRoot -Recurse -Force -ErrorAction SilentlyContinue } } catch { }
+
+# D13 —— 一键换 DNS：命令行**只读**；写的那条路只在 MXX1_NETSH 隔离下走
+$dnsJson = Invoke-Exe 'dns --json'
+$dnsObj = $null
+try { $dnsObj = $dnsJson.Out.Trim() | ConvertFrom-Json } catch { $dnsObj = $null }
+$dnsCount = -1
+$dnsAdapters = @()
+$dnsErr = ''
+if ($dnsObj -ne $null) {
+    $dnsCount = [int]$dnsObj.count
+    $dnsAdapters = @($dnsObj.adapters)
+    $dnsErr = [string]$dnsObj.error
+}
+$dnsBadIp = 0
+foreach ($a in $dnsAdapters) {
+    if (([string]$a.name).Length -eq 0) { $dnsBadIp++ }
+    foreach ($ip in @($a.dns)) {
+        if (-not ([string]$ip -match '^\d{1,3}(\.\d{1,3}){3}$')) { $dnsBadIp++ }
+    }
+}
+Check 'D13 `dns --json` 吐一行合法 JSON（count / adapters / error，条数对得上、每块网卡有名字、DNS 都是 IPv4 写法）' `
+    (($dnsObj -ne $null) -and ($dnsAdapters.Count -eq $dnsCount) -and ($dnsBadIp -eq 0) -and `
+     (($dnsJson.Code -eq 0) -eq ($dnsErr.Length -eq 0))) `
+    ('exit=' + $dnsJson.Code + ' count=' + $dnsCount + ' bad=' + $dnsBadIp + ' error=' + $dnsErr)
+
+$dnsNoEnv = Invoke-Exe 'dns --apply=114 --name=Mxx1FakeNic'
+Check 'D13b 没有测试隔离开关时，命令行**拒绝**写 DNS（退 2，并说清写 DNS 只能在窗口里点）' `
+    (($dnsNoEnv.Code -eq 2) -and (($dnsNoEnv.Err + $dnsNoEnv.Out) -match '窗口')) `
+    ('exit=' + $dnsNoEnv.Code + ' ' + (($dnsNoEnv.Err + $dnsNoEnv.Out) -replace "`r?`n", ' '))
+
+# 假 netsh：只把参数记进一个日志文件、什么都不改（这台机器的 DNS 一个字节都不许动）
+$fakeNetsh = Join-Path $tmpRoot ('mxx1-fake-netsh-' + $PID + '.cmd')
+$netshLog = Join-Path $tmpRoot ('mxx1-netsh-' + $PID + '.log')
+$fakeBody = "@echo off`r`n>>`"$netshLog`" echo %*`r`nexit /b 0`r`n"
+[System.IO.File]::WriteAllText($fakeNetsh, $fakeBody, [System.Text.Encoding]::ASCII)
+if (Test-Path -LiteralPath $netshLog) { Remove-Item -LiteralPath $netshLog -Force }
+$fakeEnv = @{ MXX1_NETSH = $fakeNetsh }
+
+$dnsFake = Invoke-Exe 'dns --apply=114 --name=Mxx1FakeNic' -Env $fakeEnv
+$netshText = ''
+if (Test-Path -LiteralPath $netshLog) { $netshText = [System.IO.File]::ReadAllText($netshLog, [System.Text.Encoding]::Default) }
+$dnsFakeMsg = Get-Key $dnsFake.Out 'message'
+Check 'D13c 假 netsh 下命令真的发出去了（static 114.114.114.114 primary + 114.114.115.115 index=2），读回核对不上时**绝不报成功**' `
+    (($netshText -match 'static 114\.114\.114\.114 primary') -and ($netshText -match '114\.114\.115\.115 index=2') -and `
+     ($dnsFake.Code -eq 1) -and ($dnsFakeMsg -match '读回来没看到')) `
+    ('exit=' + $dnsFake.Code + ' log=' + ($netshText -replace "`r?`n", ' | ') + ' msg=' + $dnsFakeMsg)
+
+if (Test-Path -LiteralPath $netshLog) { Remove-Item -LiteralPath $netshLog -Force }
+$dnsDhcp = Invoke-Exe 'dns --apply=dhcp --name=Mxx1FakeNic' -Env $fakeEnv
+$netshText2 = ''
+if (Test-Path -LiteralPath $netshLog) { $netshText2 = [System.IO.File]::ReadAllText($netshLog, [System.Text.Encoding]::Default) }
+Check 'D13d 「改回自动（还原）」这条路：命令是 dhcp、退 0（用户改坏了要能一键回原样）' `
+    (($dnsDhcp.Code -eq 0) -and ($netshText2 -match 'set dnsservers name="Mxx1FakeNic" dhcp')) `
+    ('exit=' + $dnsDhcp.Code + ' log=' + ($netshText2 -replace "`r?`n", ' | '))
+
+try { if (Test-Path -LiteralPath $fakeNetsh) { Remove-Item -LiteralPath $fakeNetsh -Force } } catch { }
+try { if (Test-Path -LiteralPath $netshLog) { Remove-Item -LiteralPath $netshLog -Force } } catch { }
 
 
 
@@ -1217,7 +1277,7 @@ Write-Host 'H 组 · 悬停说明（用户 2026-10-04 报过「鼠标悬停的�
 # tip 命令打印的就是界面塞给 ToolTip 的那个字符串，所以这里能直接断言，不用去动真鼠标。
 $tipsAll = Invoke-Exe 'tip'
 Check 'H01 tip 退出码 0' ($tipsAll.Code -eq 0) ('exit=' + $tipsAll.Code)
-Check ('H02 tip 覆盖了每个按钮（175 + 自动 {0} 个）' -f $autoBase) ((Get-Key $tipsAll.Out 'tips') -eq [string](175 + $autoBase)) (Get-Key $tipsAll.Out 'tips')
+Check ('H02 tip 覆盖了每个按钮（176 + 自动 {0} 个）' -f $autoBase) ((Get-Key $tipsAll.Out 'tips') -eq [string](176 + $autoBase)) (Get-Key $tipsAll.Out 'tips')
 
 $blocks = @{}
 $curId = ''

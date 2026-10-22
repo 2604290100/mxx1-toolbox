@@ -403,6 +403,20 @@
 
     {
       "paths": [
+        "src/DnsConfig.cs",
+        "src/DnsForm.cs"
+      ],
+      "cli": [
+        "A",
+        "D"
+      ],
+      "gui": [
+        "J"
+      ],
+      "note": "2026-10-22 GAP-09「一键换 DNS」：读走 NetworkInterface、写走 netsh（写完读回核对）。命令行只读（dns / dns --json）；写的那条路 `dns --apply=` **只在 MXX1_NETSH 指定假程序时才走**（D13b 盯着"没有隔离就退 2"；D13c 用假 netsh 断言两条命令真的发出去了、且读回核对不上时绝不报成功；D13d 验还原 DHCP 那条）。界面 J13f/J13g 只开窗、绝不点「应用」（点了会真改用户 DNS）"
+    },
+    {
+      "paths": [
         "src/DiskUsage.cs",
         "src/DiskUsageForm.cs"
       ],

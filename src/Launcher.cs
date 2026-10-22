@@ -446,8 +446,14 @@ namespace Mxx1Toolbox
         /// <summary>Prefixed to every inline PowerShell button before it is encoded. PowerShell
         /// writes progress records ("正在准备首次使用模块。") to the redirected stderr as CLIXML,
         /// which the result window then shows as "#&lt; CLIXML &lt;Objs ...&gt;" garbage; turning
-        /// progress off inside the script keeps the output readable.</summary>
-        private const string NoProgressPrelude = "$ProgressPreference='SilentlyContinue';";
+        /// progress off inside the script keeps the output readable.
+        ///
+        /// 第二句是**中文输出的编码**：子进程没有自己的控制台（工具箱是 winexe），此时
+        /// `[Console]::OutputEncoding` 会退回系统 OEM 代码页 —— 英文 Windows 上那就是 437，
+        /// 中文一律被写成 `?`（2026-10-21 CI 的 A19 抓到的就是这个：「删掉 3 个」变成了「?? 3 ?」）。
+        /// 在子进程里显式切成 UTF-8，父进程再按 UTF-8 读（见 Exec 的 utf8 参数），两边才对得上。</summary>
+        private const string NoProgressPrelude =
+            "$ProgressPreference='SilentlyContinue';[Console]::OutputEncoding=[System.Text.Encoding]::UTF8;";
 
         /// <summary>Expands %SystemRoot% / %USERPROFILE% placeholders inside an argument list.
         /// The path field was always expanded but the arguments were passed verbatim, so
@@ -524,11 +530,15 @@ namespace Mxx1Toolbox
                         // 再起一遍（本程序是 winexe，没有控制台），由那个进程静默跑、结果写交接文件。
                         if (asAdmin && !IsAdmin()) { return LaunchElevatedCopy(t, showResult); }
                         string shell = (t.Shell == "cmd") ? "cmd.exe" : "powershell.exe";
+                        // cmd 那条：`chcp 65001` 把子进程的控制台代码页切成 UTF-8，否则英文 Windows 上
+                        // 中文会变成 `?`（同 NoProgressPrelude 里那句 [Console]::OutputEncoding）。
                         string args = (t.Shell == "cmd")
-                            ? "/c " + (t.Inline.Length > 0 ? t.Inline : Quote(file) + " " + ExpandArgs(t.Args))
+                            ? "/c chcp 65001>nul & " + (t.Inline.Length > 0 ? t.Inline : Quote(file) + " " + ExpandArgs(t.Args))
                             : "-NoProfile -ExecutionPolicy Bypass " +
                               (t.Inline.Length > 0 ? "-EncodedCommand " + ToBase64(NoProgressPrelude + t.Inline) : "-File " + Quote(file) + " " + ExpandArgs(t.Args));
-                        return Exec(shell, args, AppPaths.Resolve(t.WorkDir), false, true, t.TimeoutSec);
+                        // inline 脚本的输出已经由 prelude 固定成 UTF-8；-File 那条没改子进程的编码，
+                        // 仍旧按默认（系统代码页）读 —— 和改动前完全一致，不会把老脚本读成乱码。
+                        return Exec(shell, args, AppPaths.Resolve(t.WorkDir), false, true, t.TimeoutSec, t.Inline.Length > 0);
                     }
                 case "open":
                     {
@@ -898,6 +908,14 @@ namespace Mxx1Toolbox
 
         private static LaunchResult Exec(string file, string args, string workDir, bool elevate, bool wait, int timeoutSec)
         {
+            return Exec(file, args, workDir, elevate, wait, timeoutSec, false);
+        }
+
+        /// <summary>utf8Output：子进程的输出是不是 UTF-8（我们自己拼的 inline 脚本会先把
+        /// `[Console]::OutputEncoding` / `chcp 65001` 切成 UTF-8，读的时候就得按 UTF-8 解）。
+        /// 别的 exe 保持默认（系统代码页）—— 硬按 UTF-8 读会把 GBK 输出的老工具读成乱码。</summary>
+        private static LaunchResult Exec(string file, string args, string workDir, bool elevate, bool wait, int timeoutSec, bool utf8Output)
+        {
             LaunchResult r = new LaunchResult();
             try
             {
@@ -936,6 +954,14 @@ namespace Mxx1Toolbox
                 psi.UseShellExecute = false;
                 psi.RedirectStandardOutput = true;
                 psi.RedirectStandardError = true;
+                if (utf8Output)
+                {
+                    // 只给"我们自己拼的脚本"用：子进程已切成 UTF-8，这里要按同一套解，
+                    // 否则英文 Windows 上中文会是一串问号（A19 那条 CI 红就是这么来的）。
+                    UTF8Encoding utf8 = new UTF8Encoding(false);
+                    psi.StandardOutputEncoding = utf8;
+                    psi.StandardErrorEncoding = utf8;
+                }
                 using (Process p = new Process())
                 {
                     p.StartInfo = psi;

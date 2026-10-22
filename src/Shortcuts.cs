@@ -3,7 +3,6 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Reflection;
 
 namespace Mxx1Toolbox
 {
@@ -15,9 +14,10 @@ namespace Mxx1Toolbox
     ///   ③ 当前用户开始菜单  ④ 所有用户开始菜单
     /// 子文件夹会递归进去（开始菜单本来就是一层层目录）。
     ///
-    /// 解析用 WScript.Shell 的 COM（`Type.GetTypeFromProgID("WScript.Shell")`，和脚本里
-    /// `CreateObject("WScript.Shell").CreateShortcut` 是同一个东西）—— 比自己解 .lnk 的二进制
-    /// 格式靠谱得多，而且它在 Win7～Win11 上一直都在。
+    /// 解析走 ShellLink 的 **IShellLinkW**（Unicode 接口，见 src\ShellLinkFile.cs）—— 比自己解 .lnk
+    /// 的二进制格式靠谱得多，而且它在 Win7～Win11 上一直都在。
+    /// ⚠️ 以前用的是 WScript.Shell：那是 ANSI 组件，在**代码页不是中文**的 Windows 上（英文系统 /
+    /// GitHub runner）中文文件名的快捷方式根本打不开，会被一律当成"读不出来"（2026-10-21 CI 抓到）。
     ///
     /// 分五类（**只有第一类会被删**，其余都只是"报出来"）：
     ///   broken    目标没了（文件/文件夹都找不到）—— 这一类的勾选框才能打勾、才允许删
@@ -111,16 +111,9 @@ namespace Mxx1Toolbox
         {
             errors = new List<string>();
             List<LinkInfo> found = new List<LinkInfo>();
-            object shell = null;
-            Type shellType = Type.GetTypeFromProgID("WScript.Shell");
-            if (shellType != null)
+            if (!ShellLinkFile.IsAvailable())
             {
-                try { shell = Activator.CreateInstance(shellType); }
-                catch { shell = null; }
-            }
-            if (shell == null)
-            {
-                errors.Add("这台机器上叫不起 WScript.Shell（解析快捷方式要用它）—— 一个快捷方式都没法检查。");
+                errors.Add("这台机器上叫不起 ShellLink（解析快捷方式要用它）—— 一个快捷方式都没法检查。");
                 return found;
             }
 
@@ -130,7 +123,7 @@ namespace Mxx1Toolbox
                 Collect(root, 0, files, errors);
                 foreach (string lnk in files)
                 {
-                    found.Add(Classify(lnk, shell, shellType));
+                    found.Add(Classify(lnk));
                 }
             }
             return found;
@@ -172,25 +165,20 @@ namespace Mxx1Toolbox
             }
         }
 
-        private static LinkInfo Classify(string lnkPath, object shell, Type shellType)
+        private static LinkInfo Classify(string lnkPath)
         {
             LinkInfo li = new LinkInfo();
             li.Path = lnkPath;
             string target = "";
             string args = "";
-            try
+            string workDir = "";
+            ShellLinkFile.ReadResult rr = ShellLinkFile.Read(lnkPath, out target, out args, out workDir);
+            if (rr == ShellLinkFile.ReadResult.Unreadable)
             {
-                object link = shellType.InvokeMember("CreateShortcut", BindingFlags.InvokeMethod, null, shell,
-                    new object[] { lnkPath });
-                if (link == null) { throw new InvalidOperationException("CreateShortcut 返回空"); }
-                Type linkType = link.GetType();
-                target = AsText(linkType.InvokeMember("TargetPath", BindingFlags.GetProperty, null, link, null));
-                args = AsText(linkType.InvokeMember("Arguments", BindingFlags.GetProperty, null, link, null));
-            }
-            catch (Exception ex)
-            {
+                // 读不出来 = 这个 .lnk 文件本身坏了（被截断 / 不是快捷方式），不是"目标不在了"。
+                // 这类文件删掉不会有别的损失，但仍然和"坏链"分开说。
                 li.Kind = "broken";
-                li.Note = "读不出它指向哪里（快捷方式文件可能坏了）：" + Short(ex.Message);
+                li.Note = "读不出这个快捷方式本身（文件可能坏了）—— 它指向哪里看不出来，删了不会有别的损失";
                 return li;
             }
 
@@ -270,20 +258,6 @@ namespace Mxx1Toolbox
             }
             catch { }
             return false;
-        }
-
-        private static string AsText(object value)
-        {
-            if (value == null) { return ""; }
-            return Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture);
-        }
-
-        private static string Short(string message)
-        {
-            if (message == null) { return ""; }
-            message = message.Replace("\r", " ").Replace("\n", " ").Trim();
-            if (message.Length > 160) { message = message.Substring(0, 160) + "…"; }
-            return message;
         }
 
         /// <summary>删掉这批里**唯一的 broken**（调用方即使把别的类别混进来也不会误删；

@@ -2,8 +2,6 @@
 // Copyright (C) 2026 mxx1.cn
 using System;
 using System.IO;
-using System.Reflection;
-using System.Runtime.InteropServices;
 
 namespace Mxx1Toolbox
 {
@@ -27,33 +25,13 @@ namespace Mxx1Toolbox
                 && path.EndsWith(".url", StringComparison.OrdinalIgnoreCase);
         }
 
-        /// <summary>Resolves a .lnk through WScript.Shell. Late bound on purpose: the toolbox is
-        /// compiled by csc.exe with no COM references, so CreateShortcut is reached by reflection.
-        /// Returns false when the shell cannot answer (then the caller keeps the .lnk itself).</summary>
+        /// <summary>Resolves a .lnk through ShellLink (IShellLinkW, Unicode — see src\ShellLinkFile.cs).
+        /// Returns false when the shortcut cannot be read (then the caller keeps the .lnk itself).
+        /// ⚠️ 以前走的是 WScript.Shell：那个是 ANSI 组件，英文 Windows 上中文名 / 中文目标的快捷方式
+        /// 读不出来（2026-10-21 CI 抓到）；换 IShellLinkW 之后两种名字都能读。</summary>
         public static bool ResolveShortcut(string lnk, out string target, out string args, out string workDir)
         {
-            target = ""; args = ""; workDir = "";
-            object shell = null;
-            object shortcut = null;
-            try
-            {
-                Type t = Type.GetTypeFromProgID("WScript.Shell");
-                if (t == null) { return false; }
-                shell = Activator.CreateInstance(t);
-                shortcut = t.InvokeMember("CreateShortcut", BindingFlags.InvokeMethod,
-                    null, shell, new object[] { lnk });
-                Type st = shortcut.GetType();
-                target = AsText(st.InvokeMember("TargetPath", BindingFlags.GetProperty, null, shortcut, null));
-                args = AsText(st.InvokeMember("Arguments", BindingFlags.GetProperty, null, shortcut, null));
-                workDir = AsText(st.InvokeMember("WorkingDirectory", BindingFlags.GetProperty, null, shortcut, null));
-            }
-            catch { return false; }
-            finally
-            {
-                if (shortcut != null) { try { Marshal.ReleaseComObject(shortcut); } catch { } }
-                if (shell != null) { try { Marshal.ReleaseComObject(shell); } catch { } }
-            }
-            return target.Length > 0;
+            return ShellLinkFile.Read(lnk, out target, out args, out workDir) == ShellLinkFile.ReadResult.Ok;
         }
 
         /// <summary>The URL= line of a .url (internet shortcut), or "" when there is none.</summary>
@@ -150,11 +128,6 @@ namespace Mxx1Toolbox
             if (t.Name.Length > 24) { t.Name = t.Name.Substring(0, 24); }
             if (resolved && t.Hint.Length == 0) { t.Hint = "快捷方式指向：" + target; }
             return t;
-        }
-
-        private static string AsText(object o)
-        {
-            return o == null ? "" : Convert.ToString(o).Trim();
         }
 
         private static string BaseName(string path)

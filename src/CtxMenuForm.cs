@@ -1029,7 +1029,11 @@ namespace Mxx1Toolbox
             }
             Flash(kind + "：成功 " + done.ToString(CultureInfo.InvariantCulture)
                 + " / 共 " + (items.Count + exts.Count).ToString(CultureInfo.InvariantCulture) + " 项"
-                + (ok ? "" : "（没成功的那几条在动作记录里，红字那行写着原因）") + tail);
+                + (ok ? "" : "（没成功的那几条在动作记录里，红字那行写着原因）")
+                + (kind == "删除" && done > 0
+                    ? "（每个删掉的键都先导成了 .reg，放在 " + CtxMenu.BackupDir + "；动作记录里点「还原来」也能还原）"
+                    : "")
+                + tail);
             // 动完之后，"刚才到底动了哪几个键"的答案就在动作记录里 —— 收起着就替用户展开一次
             if (_actionPanel != null && !_actionPanel.Visible) { ToggleActionPanel(); }
         }

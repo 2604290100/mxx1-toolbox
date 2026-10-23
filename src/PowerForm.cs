@@ -33,6 +33,7 @@ namespace Mxx1Toolbox
         private readonly ComboBox _slpDc = new ComboBox();
         private readonly CheckBox _visible = new CheckBox();
         private readonly TextBox _report = new TextBox();
+        private readonly Label _now = new Label();
         private readonly Label _status = new Label();
         private readonly Button _apply = new Button();
         private readonly Button _restore = new Button();
@@ -56,12 +57,20 @@ namespace Mxx1Toolbox
             TableLayoutPanel root = new TableLayoutPanel();
             root.Dock = DockStyle.Fill;
             root.ColumnCount = 1;
-            root.RowCount = 9;
+            root.RowCount = 10;
             root.Padding = new Padding(12, 10, 12, 10);
             root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
-            for (int i = 0; i < 7; i++) { root.RowStyles.Add(new RowStyle(SizeType.AutoSize)); }
+            for (int i = 0; i < 8; i++) { root.RowStyles.Add(new RowStyle(SizeType.AutoSize)); }
             root.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));   // 报告区吃掉剩下的高度
             root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+
+            // 顶部这一行回答"现在到底会怎样"（2026-10-24 UX 复查第 3 条）：
+            // 下面那六个下拉框是"改成什么"，很多人数不清当前值，就先给一句人话。
+            _now.AutoSize = true;
+            _now.MaximumSize = new Size(750, 0);
+            _now.Margin = new Padding(2, 0, 2, 6);
+            _now.Text = "现在：正在读本机的电源方案…";
+            root.Controls.Add(_now, 0, 0);
 
             Label intro = new Label();
             intro.AutoSize = true;
@@ -71,7 +80,7 @@ namespace Mxx1Toolbox
                 + "用着用着自己切过去，只改当前那个的话，一被切走就又不管用了。"
                 + "改之前会把每个方案的原值记下来，随时能点「还原成改前的值」写回去。";
             intro.Margin = new Padding(2, 0, 2, 8);
-            root.Controls.Add(intro, 0, 0);
+            root.Controls.Add(intro, 0, 1);
 
             // ---- 三个动作 × 两组 ----
             TableLayoutPanel grid = new TableLayoutPanel();
@@ -93,7 +102,7 @@ namespace Mxx1Toolbox
             AddActionRow(grid, 1, "合上盖子", _lidAc, _lidDc);
             AddActionRow(grid, 2, "按电源按钮", _pwrAc, _pwrDc);
             AddActionRow(grid, 3, "按睡眠按钮", _slpAc, _slpDc);
-            root.Controls.Add(grid, 0, 1);
+            root.Controls.Add(grid, 0, 2);
 
             _visible.AutoSize = true;
             // ⚠️ CheckBox 的 AutoSize **不折行**（只有 Label 会）——一整段长句子塞进去会被窗口右边缘
@@ -102,13 +111,13 @@ namespace Mxx1Toolbox
                 + "（系统默认是藏着的；勾上、点「应用」之后，控制面板-电源选项-选择电源按钮的功能 里就会出现这三项）";
             _visible.MaximumSize = new Size(750, 0);
             _visible.Margin = new Padding(2, 2, 2, 8);
-            root.Controls.Add(_visible, 0, 2);
+            root.Controls.Add(_visible, 0, 3);
 
             Label reportCap = new Label();
             reportCap.AutoSize = true;
             reportCap.Text = "体检 / 上一次的结果（只读）：";
             reportCap.Margin = new Padding(2, 2, 2, 2);
-            root.Controls.Add(reportCap, 0, 3);
+            root.Controls.Add(reportCap, 0, 4);
 
             _report.Multiline = true;
             _report.ReadOnly = true;
@@ -117,12 +126,12 @@ namespace Mxx1Toolbox
             _report.Dock = DockStyle.Fill;
             _report.Height = 240;
             _report.Margin = new Padding(2, 0, 2, 6);
-            root.Controls.Add(_report, 0, 4);
+            root.Controls.Add(_report, 0, 5);
 
             _status.AutoSize = true;
             _status.MaximumSize = new Size(750, 0);
             _status.Margin = new Padding(2, 0, 2, 6);
-            root.Controls.Add(_status, 0, 5);
+            root.Controls.Add(_status, 0, 6);
 
             TableLayoutPanel buttons = new TableLayoutPanel();
             buttons.Dock = DockStyle.Fill;
@@ -151,7 +160,7 @@ namespace Mxx1Toolbox
             buttons.Controls.Add(_restore, 2, 0);
             buttons.Controls.Add(_refresh, 3, 0);
             buttons.Controls.Add(close, 4, 0);
-            root.Controls.Add(buttons, 0, 6);
+            root.Controls.Add(buttons, 0, 7);
 
             foreach (ComboBox b in new ComboBox[] { _lidAc, _lidDc, _pwrAc, _pwrDc, _slpAc, _slpDc }) { Prepare(b, 150); }
             Controls.Add(root);
@@ -293,6 +302,11 @@ namespace Mxx1Toolbox
             Pick(_pwrAc, Known(cur.PwrAc, mp, 3)); Pick(_pwrDc, Known(cur.PwrDc, mp, 3));
             Pick(_slpAc, Known(cur.SlpAc, ms, 1)); Pick(_slpDc, Known(cur.SlpDc, ms, 1));
             _visible.Checked = !Power.Hidden();
+            // 顶部那行"现在会怎样"：写的是**当前方案自己的值**（没单独设过就直说），
+            // 不拿下面下拉框的兜底值冒充 —— 那是两回事。
+            _now.Text = "现在（当前方案「" + cur.Label + "」）：合上盖子 → 接电源「" + NowText(cur.LidAc)
+                + "」，用电池「" + NowText(cur.LidDc) + "」；按电源按钮 → 接电源「" + NowText(cur.PwrAc)
+                + "」，用电池「" + NowText(cur.PwrDc) + "」。";
 
             int thirdParty = 0;
             foreach (PowerScheme s in list)
@@ -313,6 +327,12 @@ namespace Mxx1Toolbox
             if (value < 0) { value = 0; }
             if (value >= box.Items.Count) { value = box.Items.Count - 1; }
             box.SelectedIndex = value;
+        }
+
+        /// <summary>「现在」那一行用：没单独设过就直说，不拿兜底值冒充当前值。</summary>
+        private static string NowText(int value)
+        {
+            return value < 0 ? "没单独设" : Power.ActionLabel(value);
         }
 
         /// <summary>下拉框先填什么：当前方案的值 → 大多数方案的值 → 系统常见默认。</summary>

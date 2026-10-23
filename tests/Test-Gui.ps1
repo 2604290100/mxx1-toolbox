@@ -2061,6 +2061,13 @@ try {
              (-not (Test-Path -LiteralPath $ctxDel))) `
             ('新备份=' + $ctxNewBackups.Count + ' 键还在=' + (Test-Path -LiteralPath $ctxDel))
 
+        # C19n2（2026-10-24 加的）：删完之后状态行要顺手说清"备份在哪个文件夹"
+        # —— 不然用户只看到"成功"，过了一会儿想还原就找不到备份了。
+        $ctxFlash = @(Get-ChildControls -RootHandle $mw | Where-Object { $_.Class -like '*STATIC*' -and $_.Text -like '删除：成功*' })
+        Check 'C19n2 删完之后状态行告诉用户备份在哪（含 ctxmenu-backup 路径）' `
+            (($ctxFlash.Count -ge 1) -and ($ctxFlash[0].Text -like '*ctxmenu-backup*')) `
+            ('状态行=' + $(if ($ctxFlash.Count -ge 1) { $ctxFlash[0].Text } else { '(没找到)' }))
+
         $undo2 = Wait-CtxButton -Hwnd $mw -Text '还原来'
         if ($undo2.Count -ge 1 -and $undo2[0].Enabled) {
             [void][TBGui]::Click($undo2[0].H)
@@ -3338,6 +3345,13 @@ try {
             Check 'H08c 六个下拉框都填上了当前值（不是空白）' `
                 (($pwCombos.Count -eq 6) -and (@($pwPicks | Where-Object { $_ -lt 0 }).Count -eq 0)) `
                 ('下拉框=' + $pwCombos.Count + ' 选中项=' + ($pwPicks -join ','))
+
+            # H08d（2026-10-24 加的）：「现在会怎样」那一行 —— 六个下拉框是"改成什么"，
+            # 用户原话是看不出当前值；这行必须真填上（而不是一直停在"正在读…"）。
+            $pwNow = @(Get-ChildControls -RootHandle $pwH | Where-Object { $_.Class -like '*STATIC*' -and $_.Text -like '现在（当前方案*' })
+            $pwNowOk = ($pwNow.Count -eq 1) -and ($pwNow[0].Text -like '*合上盖子*') -and ($pwNow[0].Text -notlike '*正在读*')
+            Check 'H08d 顶部那行「现在（当前方案…）」真的填上了（不是一直停在"正在读"）' $pwNowOk `
+                ('找到=' + $pwNow.Count + ' 正文=' + $(if ($pwNow.Count -eq 1) { $pwNow[0].Text } else { '(无)' }))
 
             $pwIntro = @(Get-ChildControls -RootHandle $pwH | Where-Object { $_.Class -like '*STATIC*' -and $_.Text -like '这一页管三个动作*' })
             if ($pwIntro.Count -eq 0) {

@@ -136,7 +136,8 @@ namespace Mxx1Toolbox
             trayHint.AutoSize = true;
             trayHint.MaximumSize = new Size(380, 0);
             trayHint.Text = "勾上之后：点右上角的 X 只是收进右下角托盘，"
-                + "再打开一次工具箱（或双击托盘图标）就回来；要真退出请用托盘图标的右键菜单。";
+                + "再打开一次工具箱（或双击托盘图标）就回来；要真退出（连进程一起关掉）："
+                + "右键那个小图标 → 点「退出工具箱」。";
             AddRow("", trayHint);
 
             Button clearRecent = MakeButton("清空最近使用（" + UserTools.LoadRecent().Count + " 个）");

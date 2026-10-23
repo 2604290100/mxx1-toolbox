@@ -51,6 +51,13 @@ namespace Mxx1Toolbox
                     Application.Run(new DnsForm(Theme.Resolve(Settings.Load().Theme)));
                     return 0;
                 }
+                // 「关掉系统代理」窗口。来路同 `dns`：单独敲 `proxy` 才开窗口，
+                // `proxy --json` / `proxy --off` 走命令行（只读，写只在隔离根下跑）。
+                if (args.Length == 1 && string.Equals(args[0], "proxy", StringComparison.OrdinalIgnoreCase))
+                {
+                    Application.Run(new ProxyForm(Theme.Resolve(Settings.Load().Theme)));
+                    return 0;
+                }
                 // 「启动项管理」窗口。来路同 `dns`：界面里那个按钮直接 new；需要管理员时提权重开自己（`startup`）。
                 // ⚠️ 同样**只有单独一个 `startup` 参数才开窗口**，`startup --json` 走命令行（只读）。
                 if (args.Length == 1 && string.Equals(args[0], "startup", StringComparison.OrdinalIgnoreCase))
@@ -202,6 +209,7 @@ namespace Mxx1Toolbox
                     case "audio": return AudioCommand(args);
                     case "disksize": return DiskSizeCommand(args);
                     case "dns": return DnsCommand(args);
+                    case "proxy": return ProxyCommand(args);
                     case "startup": return StartupCommand(args);
                     case "eject": return EjectCommand(args);
                     case "dup": return DupCommand(args);
@@ -378,6 +386,7 @@ namespace Mxx1Toolbox
             Console.WriteLine("  Mxx1Toolbox.exe audio --set-default <设备 id>   把某个设备设成默认（普通 / 多媒体 / 通话三个角色一起改）");
             Console.WriteLine("  Mxx1Toolbox.exe disksize [--root=目录] [--top=N] [--json]   只读统计每个子目录占多大（默认系统盘），按大小排序");
             Console.WriteLine("  Mxx1Toolbox.exe dns [--json]        只读列出每块网卡现在的 DNS（改 DNS 只能在窗口里点：单独敲 dns 开窗口）");
+            Console.WriteLine("  Mxx1Toolbox.exe proxy [--json]      只读看系统代理（浏览器用的那一层）开没开、地址 / PAC / WPAD（关掉只能在窗口里点：单独敲 proxy 开窗口）");
             Console.WriteLine("  Mxx1Toolbox.exe startup [--json]    只读列出开机自启项（禁用 / 还原只能在窗口里点：单独敲 startup 开窗口）");
             Console.WriteLine("  Mxx1Toolbox.exe eject [--json]      只读列出可移动磁盘（U 盘 / 读卡器；安全弹出只能在窗口里点：单独敲 eject 开窗口）");
             Console.WriteLine("  Mxx1Toolbox.exe dup <目录…> [--min-size=1MB] [--full] [--keep=oldest|shortest|first]   找内容完全相同的文件");
@@ -1586,6 +1595,74 @@ namespace Mxx1Toolbox
             }
             if (error.Length > 0) { Console.WriteLine("error\t" + OneLine(error)); }
             return error.Length == 0 ? 0 : 1;
+        }
+
+        /// <summary>`proxy [--json]` —— 「关掉系统代理」的命令行出口（2026-10-23 的 Q1），**默认只读**：
+        /// 看系统代理开没开、地址 / PAC / WPAD，以及上次关掉之前记下的原值在不在。
+        /// 写的那条路（`--off` / `--restore`）**只认 `MXX1_PROXY_ROOT` 隔离根**（测试用）；
+        /// 真实机器上关代理只能在窗口里点（过条款门 + 确认框），命令行一条写命令都不给。</summary>
+        private static int ProxyCommand(string[] args)
+        {
+            bool off = false;
+            bool restore = false;
+            for (int i = 1; i < args.Length; i++)
+            {
+                string a = args[i];
+                if (string.Equals(a, "--off", StringComparison.OrdinalIgnoreCase)) { off = true; }
+                else if (string.Equals(a, "--restore", StringComparison.OrdinalIgnoreCase)) { restore = true; }
+            }
+
+            if (off || restore)
+            {
+                if (!ProxyConfig.WriteAllowed())
+                {
+                    Console.Error.WriteLine("改系统代理只能在窗口里点（「关掉系统代理」那颗按钮）。命令行只读：proxy / proxy --json");
+                    return 2;
+                }
+                string message;
+                bool ok = off ? ProxyConfig.Off(out message) : ProxyConfig.Restore(out message);
+                Console.WriteLine("apply=" + (ok ? "ok" : "failed"));
+                Console.WriteLine("action=" + (off ? "off" : "restore"));
+                Console.WriteLine("message=" + OneLine(message));
+                Console.WriteLine("backup=" + (ProxyConfig.HasBackup() ? "yes" : "no"));
+                return ok ? 0 : 1;
+            }
+
+            ProxyState st = ProxyConfig.Read();
+            if (HasFlag(args, "--json"))
+            {
+                StringBuilder sb = new StringBuilder();
+                sb.Append("{\"enable\":").Append(st.Enabled ? "true" : "false");
+                sb.Append(",\"server\":").Append(JsonEscape(st.Server));
+                sb.Append(",\"pac\":").Append(JsonEscape(st.Pac));
+                sb.Append(",\"autodetect\":").Append(st.AutoDetect ? "true" : "false");
+                sb.Append(",\"probe\":").Append(JsonEscape(st.Probe));
+                sb.Append(",\"backup\":").Append(st.HasBackup ? "true" : "false");
+                sb.Append(",\"writeAllowed\":").Append(ProxyConfig.WriteAllowed() ? "true" : "false");
+                sb.Append(",\"error\":").Append(JsonEscape(st.Error));
+                sb.Append("}");
+                Console.WriteLine(sb.ToString());
+                return st.Error.Length == 0 ? 0 : 1;
+            }
+
+            Console.WriteLine("enable=" + (st.Enabled ? "1" : "0"));
+            Console.WriteLine("server=" + OneLine(st.Server));
+            Console.WriteLine("pac=" + OneLine(st.Pac));
+            Console.WriteLine("autodetect=" + (st.AutoDetect ? "1" : "0"));
+            Console.WriteLine("state=" + OneLine(st.Describe()));
+            if (st.Probe.Length > 0) { Console.WriteLine("probe=" + OneLine(st.Probe)); }
+            Console.WriteLine("backup=" + (st.HasBackup ? "yes" : "no"));
+            Console.WriteLine("writeAllowed=" + (ProxyConfig.WriteAllowed() ? "yes" : "no"));
+            if (st.WinHttp.Length > 0)
+            {
+                foreach (string line in st.WinHttp.Replace("\r\n", "\n").Split('\n'))
+                {
+                    string t = line.Trim();
+                    if (t.Length > 0) { Console.WriteLine("winhttp\t" + OneLine(t)); }
+                }
+            }
+            if (st.Error.Length > 0) { Console.WriteLine("error\t" + OneLine(st.Error)); }
+            return st.Error.Length == 0 ? 0 : 1;
         }
 
         /// <summary>`startup [--json]` —— 「启动项管理」的命令行出口（GAP-05），**只读**：

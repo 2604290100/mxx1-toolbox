@@ -797,9 +797,14 @@ function Start-Manager {
 }
 
 # 找一个本进程里的顶层窗口（按标题前缀）。I 组用它找《使用条款确认》。
+# ⚠️ **必须排掉鼠标提示条**（`tooltips_class32`，阴影是 `SysShadow`）：按钮的悬停提示
+#    文字是「按钮名 / 说明…」，同样以按钮名为前缀，而且它是个**没有子窗口**的顶层窗口 ——
+#    鼠标恰好停在某颗按钮上时，找出来的"窗口"就是那条提示，于是"窗口里没有按钮 / 没有下拉框 /
+#    找不到说明"一起假红（2026-10-24 全套实测：H08b/H08c/H09 三条同时红，单跑 H 组却全绿）。
 function Find-TopWindow {
     param([int]$ProcessId, [string]$TextPrefix)
     foreach ($w in (Get-TopWindows -ProcessId $ProcessId)) {
+        if ($w.Class -like '*tooltips_class32*' -or $w.Class -eq 'SysShadow') { continue }
         if ($w.Visible -and $w.Text.StartsWith($TextPrefix)) { return $w }
     }
     return $null
@@ -3325,7 +3330,8 @@ try {
                 (($pwReport.Length -gt 40) -and $pwReport.StartsWith('电源方案体检') -and $pwOk) `
                 ('报告长度=' + $pwReport.Length + ' 头一行=' + (($pwReport -split "`r?`n")[0]) +
                  ' 应用=' + $(if ($pwApply.Count -eq 1) { $pwApply[0].Enabled } else { '没找到' }) +
-                 ' 刷新=' + $(if ($pwRefresh.Count -eq 1) { $pwRefresh[0].Enabled } else { '没找到' }))
+                 ' 刷新=' + $(if ($pwRefresh.Count -eq 1) { $pwRefresh[0].Enabled } else { '没找到' }) +
+                 ' 窗口类=' + $pwrWin.Class)
 
             $pwCombos = @(Get-ChildControls -RootHandle $pwH | Where-Object { $_.Class -like '*COMBOBOX*' })
             $pwPicks = @($pwCombos | ForEach-Object { [TBGui]::ComboIndex($_.H) })
@@ -3684,6 +3690,26 @@ if ($w4 -eq $null) {
     Check 'J13 端口表读完了（状态行报出端点总数、窗口不卡，「刷新」可点）' `
         ($resp4 -and ($st4.Length -gt 0) -and ($r4.Count -eq 1) -and $r4[0].Enabled -and ($k4.Count -ge 1) -and ($l4.Count -ge 1)) `
         ('响应=' + $resp4 + ' 状态="' + $st4 + '" 刷新=' + $r4.Count + ' 结束=' + $k4.Count + ' 列表=' + $l4.Count)
+
+    # J13h（2026-10-23 用户要的「没有使用端口的程序也要可以扫描出来」）：
+    # 勾上那个复选框 → 窗口重读一遍 → 状态行多出"另外有 N 个没开端口的程序"。
+    # 只读操作，点完再勾回去（后面的检查都按默认状态算）。
+    # WinForms 的 CheckBox 窗口类是 BUTTON（不是 CHECKBOX），所以这里只按文字认
+    $all4 = @($b4 | Where-Object { $_.Text -eq '也列出没开端口的程序' })
+    $stAll = ''
+    if ($all4.Count -eq 1) {
+        [void][TBGui]::Click($all4[0].H)
+        for ($i = 0; $i -lt 200; $i++) {
+            $stAll = Find-JStatus $w4.H '另外有 \d+ 个没开端口的程序'
+            if ($stAll.Length -gt 0) { break }
+            Start-Sleep -Milliseconds 250
+        }
+        [void][TBGui]::Click($all4[0].H)
+        Start-Sleep -Milliseconds 800
+    }
+    Check 'J13h 勾上「也列出没开端口的程序」→ 状态行说"另外有 N 个没开端口的程序"' `
+        (($all4.Count -eq 1) -and ($stAll.Length -gt 0)) `
+        ('勾选框=' + $all4.Count + ' 状态="' + $stAll + '"')
     Close-JWindow $w4
     Start-Sleep -Milliseconds 400
 }
@@ -3925,9 +3951,32 @@ if ($pick -eq $null) {
 # 和上面那六件同一个口径：**真从按钮点开**，真点「开始计时」过确认框，再真取消掉。
 # ⚠️ 整套带着 MXX1_TIMER_DRYRUN=1（一个字节都不发，见文件开头），记录也写在隔离文件里 ——
 #    这两条一起保证"点了开始计时"不会真把跑测试的这台机器关掉。
-$tmTabJ = Switch-Tab -Handle $main -TabName '常用设置' -ExpectNames $commonNames
-$tmBtn = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '定时关机 / 重启 / 睡眠' })
-Check 'J17 常用设置页上有「定时关机 / 重启 / 睡眠」按钮（可点）' ($tmTabJ -and $tmBtn.Count -eq 1 -and $tmBtn[0].Enabled) ('切页签=' + $tmTabJ + ' 找到=' + $tmBtn.Count)
+$tmTabJ = $false
+$tmBtn = @()
+for ($tj = 0; $tj -lt 3; $tj++) {
+    $tmTabJ = Switch-Tab -Handle $main -TabName '常用设置' -ExpectNames $commonNames
+    $tmBtn = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '定时关机 / 重启 / 睡眠' })
+    if ($tmTabJ -and $tmBtn.Count -eq 1) { break }
+    # 全套跑时上一组（全屏取色器）刚关掉，偶尔 6 秒内这一页还没画完 —— 再点一次，最多 3 轮
+    Start-Sleep -Milliseconds 700
+}
+$tmTabJ = $false
+$tmBtn = @()
+for ($tj = 0; $tj -lt 3; $tj++) {
+    # ⚠️ 这里**不能**拿 $commonNames 当"这一页该有几个按钮"的判据：那份名单是启动时带着
+    #    测试注入的「占位自检」读出来的（见上方 Add-TestPlaceholder 与 H 组末尾那句
+    #    `Remove-Item $UserToolsJson`），而 H 组跑完就把那个注入文件删了 ——
+    #    于是 J 这边永远等不到「占位自检」，Switch-Tab 恒为 False，**按钮其实一直都在**
+    #    （2026-10-24 全套实测：页上按钮=70 缺=占位自检，这是测试自己的账，不是产品的）。
+    #    这条检查真正要问的是"常用设置页上有没有这颗按钮、能不能点"，那就直接等它。
+    $tmTabJ = Switch-Tab -Handle $main -TabName '常用设置' -ExpectNames @('定时关机 / 重启 / 睡眠')
+    $tmBtn = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '定时关机 / 重启 / 睡眠' })
+    if ($tmTabJ -and $tmBtn.Count -eq 1) { break }
+    # 全套跑时上一组（全屏取色器）刚关掉，偶尔 6 秒内这一页还没画完 —— 再点一次，最多 3 轮
+    Start-Sleep -Milliseconds 700
+}
+Check 'J17 常用设置页上有「定时关机 / 重启 / 睡眠」按钮（可点）' ($tmTabJ -and $tmBtn.Count -eq 1 -and $tmBtn[0].Enabled) `
+    ('切页签=' + $tmTabJ + ' 找到=' + $tmBtn.Count)
 $tmWin = $null
 if ($tmBtn.Count -eq 1) {
     [void][TBGui]::Click($tmBtn[0].H)
@@ -4035,6 +4084,44 @@ if ($null -eq $tmWin) {
     $tmClose = @(Get-ChildControls -RootHandle $tmH | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '关闭' })
     if ($tmClose.Count -eq 1) { [void][TBGui]::Click($tmClose[0].H) } else { [void][TBGui]::CloseWindow($tmH) }
     Start-Sleep -Milliseconds 500
+}
+
+# ---- 「关掉系统代理」窗口（2026-10-23 的 Q1）--------------------------------------------------
+# ⚠️ 这一组**只读**：开窗 / 读报告 / 认按钮，**一下都不点「关掉系统代理」** ——
+#    那会真改这台机器浏览器用的代理（界面回归绝不许动用户的真实设置）。
+# 为什么要真开一次：窗口的读取全在它自己身上（构造函数不预置 busy、Load 里后台读、Render 写报告），
+# PowerForm 那次「死窗口」就是同一层的毛病，命令行 D15 验的是后端、盯不到这里（PITFALLS 78/79）。
+$sysTabPx = Switch-Tab -Handle $main -TabName '系统工具' -ExpectNames $sysNames
+$pxBtnMain = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '关掉系统代理' })
+Check 'J22 系统工具页上有「关掉系统代理」按钮（可点）' ($sysTabPx -and $pxBtnMain.Count -eq 1 -and $pxBtnMain[0].Enabled) ('切页签=' + $sysTabPx + ' 找到=' + $pxBtnMain.Count)
+$pxWin = Open-JWindow '关掉系统代理' '关掉系统代理'
+if ($pxWin -eq $null) {
+    Check 'J22b 窗口打开了、报告区有「现在的状态」正文（不是空框 / 不是死窗口）' $false '窗口没开出来'
+    Check 'J22c 状态行说清了现在是什么样（读完了 / 出错了），不是一直停在「正在读」' $false '窗口没开出来'
+} else {
+    $pxH = $pxWin.H
+    $respPx = [TBGui]::Responds($pxH, 3000)
+    $pxKids = @(Get-ChildControls -RootHandle $pxH)
+    $pxReport = ''
+    for ($i = 0; $i -lt 120; $i++) {
+        $pxEdit = @($pxKids | Where-Object { $_.Class -like '*EDIT*' })
+        if ($pxEdit.Count -ge 1) { $pxReport = $pxEdit[0].Text }
+        if ($pxReport -match '现在的状态') { break }
+        Start-Sleep -Milliseconds 250
+        $pxKids = @(Get-ChildControls -RootHandle $pxH)
+    }
+    $pxBtns = @($pxKids | Where-Object { $_.Class -like '*BUTTON*' } | ForEach-Object { $_.Text })
+    $pxWant = @('关掉系统代理', '恢复上次的代理设置', 'Windows 的代理页', '刷新', '关闭')
+    $pxMiss = @($pxWant | Where-Object { $pxBtns -notcontains $_ })
+    Check 'J22b 窗口打开了、报告区有「现在的状态」正文（不是空框 / 不是死窗口）' `
+        ($respPx -and ($pxMiss.Count -eq 0) -and ($pxReport -match '现在的状态') -and `
+         ($pxReport -match '系统级（WinHTTP）代理') -and ($pxReport.Length -gt 80)) `
+        ('响应=' + $respPx + ' 缺按钮=' + ($pxMiss -join ' ') + ' 报告长度=' + $pxReport.Length)
+    $pxStatus = Find-JStatus $pxH '读完了|出错了'
+    Check 'J22c 状态行说清了现在是什么样（读完了 / 出错了），不是一直停在「正在读」' `
+        ($pxStatus.Length -gt 0) ('状态="' + $pxStatus + '"')
+    Close-JWindow $pxWin
+    Start-Sleep -Milliseconds 400
 }
 [void][TBGui]::CloseWindow($main)
 Start-Sleep -Milliseconds 600

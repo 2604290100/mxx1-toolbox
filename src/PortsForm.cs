@@ -2,6 +2,7 @@
 // Copyright (C) 2026 mxx1.cn
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Drawing;
 using System.Globalization;
 using System.Text;
@@ -28,12 +29,16 @@ namespace Mxx1Toolbox
         private readonly Label _status = new Label();
         private readonly Button _refresh = new Button();
         private readonly Button _kill = new Button();
+        private readonly CheckBox _allProcs = new CheckBox();
         private readonly ContextMenuStrip _menu = new ContextMenuStrip();
+        private readonly ToolStripMenuItem _miOpen = new ToolStripMenuItem("打开所在位置");
         private readonly ToolStripMenuItem _miPid = new ToolStripMenuItem("复制 PID");
         private readonly ToolStripMenuItem _miPath = new ToolStripMenuItem("复制程序路径");
         private readonly ToolStripMenuItem _miKill = new ToolStripMenuItem("结束这个进程…");
+        private readonly ToolStripMenuItem _miKillTree = new ToolStripMenuItem("结束它和它开的子进程…");
 
         private volatile bool _busy = false;
+        private bool _lastWithProcs = false;   // 上一次真正读的时候，那个复选框是什么状态
         private List<PortTable.Endpoint> _all = new List<PortTable.Endpoint>();
 
         public PortsForm(Theme theme)
@@ -65,7 +70,8 @@ namespace Mxx1Toolbox
             intro.MaximumSize = new Size(930, 0);
             intro.Text = "列出**正在监听的 TCP 端口**和**绑着的 UDP 端口**（UDP 没有\"监听\"这回事），"
                 + "以及每个端口属于哪个进程。数据来自 Windows 自己的端口表，不需要管理员、不联网。"
-                + Environment.NewLine + "点一行选中；右键可以复制 PID / 路径；「结束这个进程」要过确认框（没保存的东西会丢）。";
+                + Environment.NewLine + "勾上「也列出没开端口的程序」就能看全部程序；右键可以：打开所在位置 / 复制 PID / 复制路径 /"
+                + "结束这个进程 / 结束它和它开的子进程（都要过确认框，没保存的东西会丢）。";
             intro.Margin = new Padding(2, 0, 2, 8);
             root.Controls.Add(intro, 0, 0);
 
@@ -86,10 +92,15 @@ namespace Mxx1Toolbox
             _filter.Margin = new Padding(2, 3, 6, 3);
             _filter.TextChanged += delegate { Fill(_all); };
             filterRow.Controls.Add(_filter, 1, 0);
+            _allProcs.Text = "也列出没开端口的程序";
+            _allProcs.AutoSize = true;
+            _allProcs.Margin = new Padding(2, 6, 8, 0);
+            _allProcs.CheckedChanged += delegate { Reload(); };
+            filterRow.Controls.Add(_allProcs, 2, 0);
             _refresh.Text = "刷新";
             StyleButton(_refresh, 84);
             _refresh.Click += delegate { Reload(); };
-            filterRow.Controls.Add(_refresh, 2, 0);
+            filterRow.Controls.Add(_refresh, 3, 0);
             root.Controls.Add(filterRow, 0, 1);
 
             _list.View = View.Details;
@@ -133,13 +144,17 @@ namespace Mxx1Toolbox
             buttons.Controls.Add(close, 2, 0);
             root.Controls.Add(buttons, 0, 4);
 
+            _miOpen.Click += delegate { OpenLocation(); };
             _miPid.Click += delegate { CopyPid(); };
             _miPath.Click += delegate { CopyPath(); };
             _miKill.Click += delegate { KillSelected(); };
+            _miKillTree.Click += delegate { KillTreeSelected(); };
+            _menu.Items.Add(_miOpen);
             _menu.Items.Add(_miPid);
             _menu.Items.Add(_miPath);
             _menu.Items.Add(new ToolStripSeparator());
             _menu.Items.Add(_miKill);
+            _menu.Items.Add(_miKillTree);
             _list.ContextMenuStrip = _menu;
 
             Controls.Add(root);
@@ -204,10 +219,12 @@ namespace Mxx1Toolbox
         {
             if (_busy) { return; }
             SetBusy(true, "正在读端口表…");
+            bool withProcs = _allProcs.Checked;
+            _lastWithProcs = withProcs;
             Thread t = new Thread(delegate ()
             {
                 string error;
-                List<PortTable.Endpoint> list = PortTable.List(out error);
+                List<PortTable.Endpoint> list = PortTable.List(out error, withProcs);
                 try { BeginInvoke((MethodInvoker)delegate { AfterLoad(list, error); }); }
                 catch { }
             });
@@ -221,6 +238,9 @@ namespace Mxx1Toolbox
             _all = list;
             Fill(list);
             SetBusy(false, "");
+            // 读的这一两秒里用户又勾 / 取消了「也列出没开端口的程序」：按新的口径再读一遍，
+            // 不然复选框是勾着的、列表里却没有那些程序（点了像没反应）。
+            if (_allProcs.Checked != _lastWithProcs) { Reload(); return; }
             if (error.Length > 0)
             {
                 _status.Text = error;
@@ -229,12 +249,19 @@ namespace Mxx1Toolbox
             }
             int tcp = 0;
             int udp = 0;
-            foreach (PortTable.Endpoint ep in list) { if (ep.Proto == "TCP") { tcp++; } else { udp++; } }
-            _status.Text = "共 " + list.Count.ToString(CultureInfo.InvariantCulture) + " 个端点：TCP 监听 "
+            int idle = 0;
+            foreach (PortTable.Endpoint ep in list)
+            {
+                if (ep.NoPort) { idle++; }
+                else if (ep.Proto == "TCP") { tcp++; }
+                else { udp++; }
+            }
+            _status.Text = "共 " + (tcp + udp).ToString(CultureInfo.InvariantCulture) + " 个端点：TCP 监听 "
                 + tcp.ToString(CultureInfo.InvariantCulture) + " 个，UDP 绑定 " + udp.ToString(CultureInfo.InvariantCulture)
-                + " 个。选一行才能结束它（系统关键进程不给结束）。";
+                + " 个" + (idle > 0 ? "；另外有 " + idle.ToString(CultureInfo.InvariantCulture) + " 个没开端口的程序（排在最下面）" : "")
+                + "。选中一行看右键菜单（系统关键进程不给结束）。";
             Logger.Write("端口与进程", "读取完成：TCP " + tcp.ToString(CultureInfo.InvariantCulture)
-                + " / UDP " + udp.ToString(CultureInfo.InvariantCulture));
+                + " / UDP " + udp.ToString(CultureInfo.InvariantCulture) + (idle > 0 ? " / 无端口 " + idle.ToString(CultureInfo.InvariantCulture) : ""));
         }
 
         private void Fill(List<PortTable.Endpoint> list)
@@ -254,9 +281,9 @@ namespace Mxx1Toolbox
                             + ep.ProcName + " " + ep.ProcPath;
                         if (hay.IndexOf(needle, StringComparison.OrdinalIgnoreCase) < 0) { continue; }
                     }
-                    ListViewItem row = new ListViewItem(ep.Proto);
-                    row.SubItems.Add(ep.Port.ToString(CultureInfo.InvariantCulture));
-                    row.SubItems.Add(ep.LocalAddr);
+                    ListViewItem row = new ListViewItem(ep.NoPort ? "—" : ep.Proto);
+                    row.SubItems.Add(ep.NoPort ? "—" : ep.Port.ToString(CultureInfo.InvariantCulture));
+                    row.SubItems.Add(ep.NoPort ? "（没开端口）" : ep.LocalAddr);
                     row.SubItems.Add(ep.Pid.ToString(CultureInfo.InvariantCulture));
                     row.SubItems.Add(ep.ProcName);
                     row.SubItems.Add(ep.SignatureText);
@@ -288,6 +315,8 @@ namespace Mxx1Toolbox
             PortTable.Endpoint ep = Selected();
             _kill.Enabled = !_busy && ep != null && !ep.Protected;
             _miKill.Enabled = _kill.Enabled;
+            _miKillTree.Enabled = _kill.Enabled;
+            _miOpen.Enabled = !_busy && ep != null && ep.ProcPath.Length > 0;
             _miPid.Enabled = ep != null;
             _miPath.Enabled = ep != null;
             if (ep != null && ep.Protected) { _kill.Text = "系统关键进程（不给结束）"; }
@@ -335,6 +364,30 @@ namespace Mxx1Toolbox
             catch { _status.Text = "剪贴板被别的程序占着，没复制成：" + ep.ProcPath; }
         }
 
+        /// <summary>在资源管理器里定位这个程序（选中它，不是打开它）。</summary>
+        private void OpenLocation()
+        {
+            PortTable.Endpoint ep = Selected();
+            if (ep == null) { return; }
+            if (ep.ProcPath.Length == 0)
+            {
+                _status.Text = "这个程序的路径读不到（可能需要以管理员身份运行工具箱），没法定位。";
+                return;
+            }
+            try
+            {
+                ProcessStartInfo psi = new ProcessStartInfo("explorer.exe", "/select,\"" + ep.ProcPath + "\"");
+                psi.UseShellExecute = true;
+                Process.Start(psi);
+                _status.Text = "已在资源管理器里定位：" + ep.ProcPath;
+                Logger.Write("端口与进程", "打开所在位置：" + ep.ProcPath);
+            }
+            catch (Exception ex)
+            {
+                _status.Text = "打不开资源管理器：" + ex.Message;
+            }
+        }
+
         // ------------------------------------------------------------------ 结束进程
 
         private void KillSelected()
@@ -374,6 +427,94 @@ namespace Mxx1Toolbox
             Logger.Write("端口与进程", (ok ? "结束进程：" : "结束进程失败：") + ep.ProcName + " PID="
                 + ep.Pid.ToString(CultureInfo.InvariantCulture) + " —— " + message);
             Reload();
+        }
+
+        /// <summary>结束这个进程**和它开的子进程**（用户 2026-10-23 要的「结束进程树」）。
+        /// 先列出会连带结束谁，再让用户确认；跑在后台线程，结束多个进程时窗口不会僵住。</summary>
+        private void KillTreeSelected()
+        {
+            if (_busy) { return; }
+            PortTable.Endpoint ep = Selected();
+            if (ep == null) { _status.Text = "先选一行。"; return; }
+            if (ep.Protected)
+            {
+                _status.Text = "这个不能结束：" + ep.ProtectedWhy;
+                return;
+            }
+            if (!Consent.EnsureAccepted(this, _theme, "要结束这个进程和它开的子进程"))
+            {
+                _status.Text = "没有同意《免责声明与服务条款》，这次结束被拦下了。";
+                return;
+            }
+
+            List<PortTable.ProcNode> tree = PortTable.Descendants(ep.Pid);
+            int kids = (tree.Count > 0) ? tree.Count - 1 : 0;
+
+            StringBuilder body = new StringBuilder();
+            body.AppendLine("要结束这个进程，连同它开的子进程一起吗？");
+            body.AppendLine();
+            body.Append("  进程：").AppendLine(ep.ProcName);
+            body.Append("  PID ：").AppendLine(ep.Pid.ToString(CultureInfo.InvariantCulture));
+            if (!ep.NoPort)
+            {
+                body.Append("  端口：").AppendLine(ep.Proto + " " + ep.Port.ToString(CultureInfo.InvariantCulture));
+            }
+            if (ep.ProcPath.Length > 0) { body.Append("  路径：").AppendLine(ep.ProcPath); }
+            body.AppendLine();
+            if (kids > 0)
+            {
+                body.Append("会一起结束 ").Append(kids.ToString(CultureInfo.InvariantCulture)).AppendLine(" 个子进程：");
+                int shown = 0;
+                for (int i = 0; i < tree.Count && shown < 8; i++)
+                {
+                    PortTable.ProcNode n = tree[i];
+                    if (n.Pid == ep.Pid) { continue; }
+                    string nm = string.IsNullOrEmpty(n.Name) ? "（读不到名字）" : n.Name;
+                    body.Append("    ").Append(nm).Append("  (PID ").Append(n.Pid.ToString(CultureInfo.InvariantCulture)).AppendLine(")");
+                    shown++;
+                }
+                if (kids > shown)
+                {
+                    body.Append("    …另外还有 ").Append((kids - shown).ToString(CultureInfo.InvariantCulture)).AppendLine(" 个");
+                }
+            }
+            else
+            {
+                body.AppendLine("它现在没有开着子进程（只会结束它自己）。");
+            }
+            body.AppendLine();
+            body.AppendLine("⚠ 它们里面没保存的东西会丢，而且不会问你要不要保存。"
+                + "系统关键程序、资源管理器、工具箱自己不会被顺手带走。");
+            using (ConfirmForm f = new ConfirmForm("要结束这个进程树吗？", body.ToString(), "结束进程树", _theme))
+            {
+                if (f.ShowDialog(this) != DialogResult.OK) { return; }
+            }
+
+            SetBusy(true, "正在结束 " + ep.ProcName + " 和它的子进程 …");
+            PortTable.Endpoint target = ep;
+            Thread t = new Thread(delegate ()
+            {
+                string message;
+                bool ok;
+                try { ok = PortTable.KillTree(target, out message); }
+                catch (Exception ex) { ok = false; message = "结束进程树时出错了：" + ex.Message; }
+                try
+                {
+                    BeginInvoke((MethodInvoker)delegate
+                    {
+                        if (IsDisposed) { return; }
+                        SetBusy(false, "");
+                        _status.Text = message;
+                        _status.ForeColor = ok ? _theme.BarText : _theme.Danger;
+                        Logger.Write("端口与进程", (ok ? "结束进程树：" : "结束进程树失败：") + target.ProcName
+                            + " PID=" + target.Pid.ToString(CultureInfo.InvariantCulture) + " —— " + message);
+                        Reload();
+                    });
+                }
+                catch { }
+            });
+            t.IsBackground = true;
+            t.Start();
         }
     }
 }

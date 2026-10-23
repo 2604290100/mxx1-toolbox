@@ -71,7 +71,8 @@ namespace Mxx1Toolbox
             intro.MaximumSize = new Size(890, 0);
             intro.Text = "规则按这个顺序叠：① 查找替换（或正则替换）→ ② 序号 → ③ 前缀 / 后缀 → ④ 扩展名大小写。"
                 + "前缀和后缀里可以用两个占位符：{n} = 序号、{date} = 文件的修改日期（yyyyMMdd）。"
-                + Environment.NewLine + "**有冲突就整批拒绝**（目标名字已存在 / 两个文件撞名 / 名字里有 Windows 不允许的字符），绝不覆盖。"
+                + Environment.NewLine + "文件夹那一行可以直接把路径粘进去、回车就加载（「浏览…」选完也会马上列出文件）。"
+                + "**有冲突就整批拒绝**（目标名字已存在 / 两个文件撞名 / 名字里有 Windows 不允许的字符），绝不覆盖。"
                 + " 改名之前会先在 %LOCALAPPDATA%\\mxx1-toolbox 里留一份撤销记录，写不进记录就一个都不改。";
             intro.Margin = new Padding(2, 0, 2, 8);
             root.Controls.Add(intro, 0, 0);
@@ -90,6 +91,14 @@ namespace Mxx1Toolbox
             dirRow.Controls.Add(cap, 0, 0);
             _dir.Dock = DockStyle.Fill;
             _dir.Margin = new Padding(2, 3, 6, 3);
+            _dir.KeyDown += delegate(object sender, KeyEventArgs e)
+            {
+                if (e.KeyCode == Keys.Enter)
+                {
+                    e.SuppressKeyPress = true;
+                    Preview();   // 路径粘进来、回车 = 直接读这个文件夹
+                }
+            };
             dirRow.Controls.Add(_dir, 1, 0);
             _browse.Text = "浏览…";
             StyleButton(_browse, 84);
@@ -302,16 +311,12 @@ namespace Mxx1Toolbox
 
         private void PickFolder()
         {
-            using (FolderBrowserDialog dlg = new FolderBrowserDialog())
-            {
-                dlg.Description = "选一个要批量改名的文件夹（只改这一层，不进子文件夹）";
-                dlg.ShowNewFolderButton = false;
-                if (_dir.Text.Trim().Length > 0 && Directory.Exists(_dir.Text.Trim()))
-                {
-                    dlg.SelectedPath = _dir.Text.Trim();
-                }
-                if (dlg.ShowDialog(this) == DialogResult.OK) { _dir.Text = dlg.SelectedPath; }
-            }
+            string picked = FolderPicker.Pick(this,
+                "选一个要批量改名的文件夹（只改这一层，不进子文件夹；也可以把路径粘到上面的输入框、回车）",
+                _dir.Text.Trim());
+            if (picked == null) { return; }
+            _dir.Text = picked;
+            Preview();   // 选完马上把文件列出来（不用再点一次「预览」）
         }
 
         private RenameRules.Rule RuleFromUi()

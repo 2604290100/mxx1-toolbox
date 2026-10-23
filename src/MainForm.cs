@@ -1663,6 +1663,9 @@ namespace Mxx1Toolbox
                 case "dns":
                     OpenDns();
                     break;
+                case "proxy":
+                    OpenProxy();
+                    break;
                 case "startup":
                     OpenStartup();
                     break;
@@ -1961,6 +1964,16 @@ namespace Mxx1Toolbox
             WindowPlacement.ShowCentered(f, this);
             SetStatus("一键换 DNS · 114 / 阿里 / 改回自动三选一；只改 DNS，不动 IP / 网关 / 代理");
             Logger.Write("一键换 DNS", "打开窗口");
+        }
+
+        /// <summary>「关掉系统代理」窗口（系统工具页 · 设备与硬件段，Q1）——只关浏览器用的那一层，
+        /// 改之前记原值；窗口里过条款门 + 确认框。</summary>
+        private void OpenProxy()
+        {
+            ProxyForm f = new ProxyForm(_theme);
+            WindowPlacement.ShowCentered(f, this);
+            SetStatus("关掉系统代理 · 网页全打不开但 QQ 能上时用；只关浏览器这一层，改前记原值、能恢复");
+            Logger.Write("关掉系统代理", "打开窗口");
         }
 
         /// <summary>「C 盘空间体检」窗口（系统工具页 · 体检段，GAP-04）——**只读**统计各子目录占用。</summary>

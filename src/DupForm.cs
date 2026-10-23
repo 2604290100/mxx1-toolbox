@@ -276,16 +276,8 @@ namespace Mxx1Toolbox
 
         private void PickFolder()
         {
-            using (FolderBrowserDialog dlg = new FolderBrowserDialog())
-            {
-                dlg.Description = "选一个要查重复文件的目录（只读扫描）";
-                dlg.ShowNewFolderButton = false;
-                if (_root.Text.Trim().Length > 0 && Directory.Exists(_root.Text.Trim()))
-                {
-                    dlg.SelectedPath = _root.Text.Trim();
-                }
-                if (dlg.ShowDialog(this) == DialogResult.OK) { _root.Text = dlg.SelectedPath; }
-            }
+            string picked = FolderPicker.Pick(this, "选一个要查重复文件的目录（只读扫描）", _root.Text.Trim());
+            if (picked != null) { _root.Text = picked; }
         }
 
         // ------------------------------------------------------------------ 扫描

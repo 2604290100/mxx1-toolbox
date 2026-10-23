@@ -45,6 +45,9 @@ function Get-Shape {
         @('sound-check',     'speaker'),
         @('sound-devices',   'speaker'),
         @('dns-switch',      'globe'),
+        # 2026-10-23 Q1「关掉系统代理」：也是网络那一层，用地球（和网络体检 / DNS 同画法，
+        # 三个按钮都在「设备与硬件」段里，看名字分得清）
+        @('proxy-off',       'globe'),
         @('startup-manage',  'refresh'),
         @('usb-eject',       'disk'),
         @('net-check',       'globe'),

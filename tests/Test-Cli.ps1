@@ -485,13 +485,13 @@ foreach ($line in ($status.Out -split "`r?`n")) {
     }
 }
 
-Check ('A04 按钮总数 178 + 工具目录里自动加载的 {0} 个（测试期间用户层的按钮会暂停：常用 57 + 系统工具 49 + 隐私 29 + 应用 6 + 清理 13 + 右键 21 + 我的 3）' -f $autoBase) `
-    ((Get-Key $status.Out 'buttons') -eq [string](178 + $autoBase)) (Get-Key $status.Out 'buttons')
+Check ('A04 按钮总数 179 + 工具目录里自动加载的 {0} 个（测试期间用户层的按钮会暂停：常用 57 + 系统工具 50 + 隐私 29 + 应用 6 + 清理 13 + 右键 21 + 我的 3）' -f $autoBase) `
+    ((Get-Key $status.Out 'buttons') -eq [string](179 + $autoBase)) (Get-Key $status.Out 'buttons')
 Check 'A05 内置清单里没有灰色占位按钮了（两个「资源管理器」也接上了真功能；灰规则改由 B 组注入验证）' ((Get-Key $status.Out 'placeholders') -eq '0') (Get-Key $status.Out 'placeholders')
 Check 'A06 危险按钮 3 个' ((Get-Key $status.Out 'dangerous') -eq '3') (Get-Key $status.Out 'dangerous')
 
 # 「常用」页签是合成的（置顶 + 最近使用），清单里没有它的按钮，所以是 0
-$tabExpect = @{ 'recent' = 0; 'common' = 57; 'mine' = 3; 'system' = 49; 'cleanup' = 13; 'privacy' = 29; 'apps' = 6; 'rightmenu' = 21 }
+$tabExpect = @{ 'recent' = 0; 'common' = 57; 'mine' = 3; 'system' = 50; 'cleanup' = 13; 'privacy' = 29; 'apps' = 6; 'rightmenu' = 21 }
 $tabOk = $true
 $tabDetail = @()
 foreach ($k in $tabExpect.Keys) {
@@ -499,13 +499,13 @@ foreach ($k in $tabExpect.Keys) {
     $tabDetail += ($k + '=' + $v)
     if ($v -ne [string]([int]$tabExpect[$k] + [int]$autoByTab[$k])) { $tabOk = $false }
 }
-Check 'A07 八个页签的按钮数正确（0/57/3/49/13/29/6/21，加上自动按钮）' $tabOk ($tabDetail -join ' ')
+Check 'A07 八个页签的按钮数正确（0/57/3/50/13/29/6/21，加上自动按钮）' $tabOk ($tabDetail -join ' ')
 
 $list = Invoke-Exe 'list'
 Check 'A08 list 退出码 0' ($list.Code -eq 0) ('exit=' + $list.Code)
-Check 'A09 list 报的按钮数一致' ((Get-Key $list.Out 'buttons') -eq [string](178 + $autoBase)) (Get-Key $list.Out 'buttons')
+Check 'A09 list 报的按钮数一致' ((Get-Key $list.Out 'buttons') -eq [string](179 + $autoBase)) (Get-Key $list.Out 'buttons')
 $lines = @($list.Out -split "`r?`n" | Where-Object { $_ -match "`t" })
-Check ('A10 list 打出 {0} 行按钮' -f (178 + $autoBase)) ($lines.Count -eq (178 + $autoBase)) ('lines=' + $lines.Count)
+Check ('A10 list 打出 {0} 行按钮' -f (179 + $autoBase)) ($lines.Count -eq (179 + $autoBase)) ('lines=' + $lines.Count)
 
 $rmList = Invoke-Exe 'list --tab rightmenu'
 Check 'A11 右键增强 21 个按钮（20 个右键菜单功能 + 隔壁永久删除工具）' ((Get-Key $rmList.Out 'shown') -eq [string](21 + [int]$autoByTab['rightmenu'])) (Get-Key $rmList.Out 'shown')
@@ -687,7 +687,7 @@ if ($permdel -eq '(未找到)' -or $permdel.Length -eq 0) {
 # ---------------------------------------------------------------- D 组：系统工具
 if (Test-GroupSelected 'D') {
 Write-Host ''
-Write-Host 'D 组 · 「系统工具」48 个按钮（Windows 自带组件 + 修复/诊断 + 文件哈希校验 / 屏幕取色器 / 端口与进程，--dry 只解析不启动）'
+Write-Host 'D 组 · 「系统工具」50 个按钮（Windows 自带组件 + 修复/诊断 + 文件哈希校验 / 屏幕取色器 / 端口与进程 / 关掉系统代理，--dry 只解析不启动）'
 
 # 缺组件的口径按系统版本分叉：Win7 上那 7 个 ms-settings: 按钮天生打不开（算"没有"），
 # Win10/11 上一个都不该缺。这样才能在两种机器上跑同一套测试。
@@ -697,14 +697,14 @@ Check 'D01 status 报 29 个系统工具动作（21 组件 + 2 诊断 + 4 权限
     (((Get-Key $status.Out 'systemTargets') -eq '29') -and $missOk) $d01detail
 
 $sysList = Invoke-Exe 'list --tab system'
-Check 'D02 系统工具页签 49 个按钮（33 + 文件哈希校验 + 屏幕取色器 + 端口与进程 + 系统体检 + 打印卡住了 + 声音问题体检 + 网络体检 + 显示设置 + 打印机显示脱机 + 输入法打不出字 + 蓝屏原因解读 + 输出设备体检 + 进程占用体检 + C 盘空间体检 + 一键换 DNS + U 盘安全弹出）、没有 placeholder' `
-    (((Get-Key $sysList.Out 'shown') -eq '49') -and (-not ($sysList.Out -match 'placeholder'))) ''
+Check 'D02 系统工具页签 50 个按钮（33 + 文件哈希校验 + 屏幕取色器 + 端口与进程 + 系统体检 + 打印卡住了 + 声音问题体检 + 网络体检 + 显示设置 + 打印机显示脱机 + 输入法打不出字 + 蓝屏原因解读 + 输出设备体检 + 进程占用体检 + C 盘空间体检 + 一键换 DNS + U 盘安全弹出 + 关掉系统代理）、没有 placeholder' `
+    (((Get-Key $sysList.Out 'shown') -eq '50') -and (-not ($sysList.Out -match 'placeholder'))) ''
 
 $sysIds = @()
 foreach ($line in ($sysList.Out -split "`r?`n")) {
     if ($line -match "`t") { $sysIds += ($line -split "`t")[0] }
 }
-Check 'D03 读到 49 个系统工具 id' ($sysIds.Count -eq 49) ($sysIds -join ' ')
+Check 'D03 读到 50 个系统工具 id' ($sysIds.Count -eq 50) ($sysIds -join ' ')
 
 $bad = @()
 $detail = @()
@@ -717,7 +717,7 @@ foreach ($id in $sysIds) {    $d = Invoke-Exe ('run ' + $id + ' --dry')
     if ($exists -ne 'yes' -and $hint.Length -eq 0) { $bad += ($id + ':没有解释'); continue }
     $detail += ($id + '=' + (Get-Key $d.Out 'kind'))
 }
-Check 'D04 49 个系统工具都有目标、且缺了就说明了原因' ($bad.Count -eq 0) (($bad -join ' ') + ' ' + ($detail -join ' '))
+Check 'D04 50 个系统工具都有目标、且缺了就说明了原因' ($bad.Count -eq 0) (($bad -join ' ') + ' ' + ($detail -join ' '))
 
 # 2026-10-20 加的 8 个「系统工具页入口」（A 组）—— 按 id 点名，免得哪天清单被改坏一条也没人发现。
 # （原计划里还有「Internet 选项 inetcpl.cpl」，量出来这台机器的精简版 Windows 里根本没这个文件，
@@ -952,6 +952,91 @@ $ejectTryMsg = Get-Key $ejectTry.Out 'message'
 Check 'D14d 假盘真去弹：弹不成就如实说「打不开」，**绝不说**可以拔了' `
     (($ejectTry.Code -eq 1) -and ($ejectTryMsg -match '打不开') -and ($ejectTryMsg -notmatch '可以拔了')) `
     ('exit=' + $ejectTry.Code + ' msg=' + $ejectTryMsg)
+
+# ---- Q1「关掉系统代理」：命令行只读；写的那条路只认 MXX1_PROXY_ROOT 隔离根 ----
+# ⚠️ 绝不许碰这台机器真实的系统代理：夹具键在 HKCU\Software\mxx1-toolbox\proxy-cli，
+#    原值记录也指到 %TEMP%（MXX1_PROXY_TSV）。跑完（不管成没成）两样都删掉。
+# 判据的重点：① 没隔离时**拒绝写**；② 隔离下真的写进去了（读回逐项核对）；
+#            ③ 原值记录真的落在隔离路径里，而且记的是**改之前**的样子（恢复能照它写回去）。
+$pxKeyRel = 'Software\mxx1-toolbox\proxy-cli'
+$pxKey = 'HKCU:\' + $pxKeyRel
+$pxTsv = Join-Path $tmpRoot ('mxx1-proxy-cli-' + $PID + '.tsv')
+$pxEnv = @{ MXX1_PROXY_ROOT = $pxKeyRel; MXX1_PROXY_TSV = $pxTsv }
+function Reset-ProxyFixture {
+    param([switch]$AlreadyOff)
+    if (Test-Path -LiteralPath $pxKey) { Remove-Item -LiteralPath $pxKey -Recurse -Force }
+    New-Item -Path $pxKey -Force | Out-Null
+    if (Test-Path -LiteralPath $pxTsv) { Remove-Item -LiteralPath $pxTsv -Force }
+    if (-not $AlreadyOff) {
+        New-ItemProperty -Path $pxKey -Name 'ProxyEnable' -Value 1 -PropertyType DWord -Force | Out-Null
+        New-ItemProperty -Path $pxKey -Name 'ProxyServer' -Value '127.0.0.1:7890' -PropertyType String -Force | Out-Null
+        New-ItemProperty -Path $pxKey -Name 'AutoConfigURL' -Value 'http://127.0.0.1:7890/pac' -PropertyType String -Force | Out-Null
+        New-ItemProperty -Path $pxKey -Name 'AutoDetect' -Value 1 -PropertyType DWord -Force | Out-Null
+    } else {
+        New-ItemProperty -Path $pxKey -Name 'ProxyEnable' -Value 0 -PropertyType DWord -Force | Out-Null
+        New-ItemProperty -Path $pxKey -Name 'AutoDetect' -Value 0 -PropertyType DWord -Force | Out-Null
+    }
+}
+try {
+    Reset-ProxyFixture
+
+    # ① 读：夹具里是「开着 + 本机 7890 + PAC + WPAD」，命令行要一字不差地念出来
+    $pxRead = Invoke-Exe 'proxy --json' -Env $pxEnv
+    $pxObj = $null
+    try { $pxObj = $pxRead.Out.Trim() | ConvertFrom-Json } catch { $pxObj = $null }
+    Check 'D15 `proxy --json` 吐一行合法 JSON，读的是夹具（开着 / 127.0.0.1:7890 / PAC / WPAD 开）' `
+        (($pxRead.Code -eq 0) -and ($pxObj -ne $null) -and ($pxObj.enable -eq $true) -and `
+         ($pxObj.server -eq '127.0.0.1:7890') -and ($pxObj.pac -eq 'http://127.0.0.1:7890/pac') -and `
+         ($pxObj.autodetect -eq $true) -and ($pxObj.writeAllowed -eq $true) -and ($pxObj.error -eq '')) `
+        ('exit=' + $pxRead.Code + ' out=' + $pxRead.Out.Trim())
+
+    # ② 没隔离根时**拒绝**写（这条必须排在"真写"前面：证明真实机器上命令行没有写入口）
+    $pxDeny = Invoke-Exe 'proxy --off'
+    Check 'D15b 没有测试隔离根时，命令行**拒绝**关代理（退 2，并说清只能在窗口里点）' `
+        (($pxDeny.Code -eq 2) -and (($pxDeny.Err + $pxDeny.Out) -match '窗口')) `
+        ('exit=' + $pxDeny.Code + ' ' + (($pxDeny.Err + $pxDeny.Out) -replace "`r?`n", ' '))
+
+    # ③ 隔离下真关：ProxyEnable / AutoDetect 归 0、AutoConfigURL 删掉、ProxyServer 留着（恢复要用）
+    $pxOff = Invoke-Exe 'proxy --off' -Env $pxEnv
+    $pxAfter = Get-ItemProperty -Path $pxKey
+    $pxPacGone = -not ($pxAfter.PSObject.Properties.Name -contains 'AutoConfigURL')
+    $pxTsvThere = Test-Path -LiteralPath $pxTsv
+    $pxTsvText = ''
+    if ($pxTsvThere) { $pxTsvText = [System.IO.File]::ReadAllText($pxTsv, (New-Object System.Text.UTF8Encoding($false))) }
+    Check 'D15c 隔离根下 `proxy --off` 真写进去了：ProxyEnable=0、AutoDetect=0、PAC 删掉、地址还在（读回核对通过）' `
+        (($pxOff.Code -eq 0) -and ((Get-Key $pxOff.Out 'apply') -eq 'ok') -and `
+         ($pxAfter.ProxyEnable -eq 0) -and ($pxAfter.AutoDetect -eq 0) -and $pxPacGone -and `
+         ($pxAfter.ProxyServer -eq '127.0.0.1:7890')) `
+        ('exit=' + $pxOff.Code + ' enable=' + $pxAfter.ProxyEnable + ' autodetect=' + $pxAfter.AutoDetect + `
+         ' pac还在=' + (-not $pxPacGone) + ' server=' + $pxAfter.ProxyServer + ' msg=' + (Get-Key $pxOff.Out 'message'))
+    Check 'D15d 改之前那份原值真的记下来了（隔离路径里的 TSV，记的是 1 / 127.0.0.1:7890 / PAC / 1）' `
+        ($pxTsvThere -and ($pxTsvText -match 'ProxyEnable\tdword\t1') -and `
+         ($pxTsvText -match 'ProxyServer\tsz\t127\.0\.0\.1:7890') -and `
+         ($pxTsvText -match 'AutoConfigURL\tsz\thttp://127\.0\.0\.1:7890/pac') -and `
+         ($pxTsvText -match 'AutoDetect\tdword\t1')) `
+        ('有TSV=' + $pxTsvThere + ' 内容=' + ($pxTsvText -replace "`r?`n", ' | '))
+
+    # ④ 恢复：按 TSV 原样写回去（四项都要对得上）
+    $pxBack = Invoke-Exe 'proxy --restore' -Env $pxEnv
+    $pxRestored = Get-ItemProperty -Path $pxKey
+    Check 'D15e `proxy --restore` 按原值写回去了（1 / 127.0.0.1:7890 / PAC / 1，四项逐项核对）' `
+        (($pxBack.Code -eq 0) -and ((Get-Key $pxBack.Out 'apply') -eq 'ok') -and `
+         ($pxRestored.ProxyEnable -eq 1) -and ($pxRestored.ProxyServer -eq '127.0.0.1:7890') -and `
+         ($pxRestored.AutoConfigURL -eq 'http://127.0.0.1:7890/pac') -and ($pxRestored.AutoDetect -eq 1)) `
+        ('exit=' + $pxBack.Code + ' enable=' + $pxRestored.ProxyEnable + ' server=' + $pxRestored.ProxyServer + `
+         ' pac=' + $pxRestored.AutoConfigURL + ' wpad=' + $pxRestored.AutoDetect)
+
+    # ⑤ 本来就是关着的：不许瞎写、更不许凭空造一份"原值记录"（否则以后恢复会把关着的状态盖回去）
+    Reset-ProxyFixture -AlreadyOff
+    $pxNoop = Invoke-Exe 'proxy --off' -Env $pxEnv
+    Check 'D15f 本来就是关着的时候只回一句话（退 0、说「本来就是关着的」），**不写注册表、不造原值记录**' `
+        (($pxNoop.Code -eq 0) -and ((Get-Key $pxNoop.Out 'message') -match '本来就是关着的') -and `
+         (-not (Test-Path -LiteralPath $pxTsv))) `
+        ('exit=' + $pxNoop.Code + ' msg=' + (Get-Key $pxNoop.Out 'message') + ' TSV=' + (Test-Path -LiteralPath $pxTsv))
+} finally {
+    if (Test-Path -LiteralPath $pxKey) { Remove-Item -LiteralPath $pxKey -Recurse -Force }
+    if (Test-Path -LiteralPath $pxTsv) { Remove-Item -LiteralPath $pxTsv -Force }
+}
 
 
 
@@ -1308,7 +1393,7 @@ Write-Host 'H 组 · 悬停说明（用户 2026-10-04 报过「鼠标悬停的�
 # tip 命令打印的就是界面塞给 ToolTip 的那个字符串，所以这里能直接断言，不用去动真鼠标。
 $tipsAll = Invoke-Exe 'tip'
 Check 'H01 tip 退出码 0' ($tipsAll.Code -eq 0) ('exit=' + $tipsAll.Code)
-Check ('H02 tip 覆盖了每个按钮（178 + 自动 {0} 个）' -f $autoBase) ((Get-Key $tipsAll.Out 'tips') -eq [string](178 + $autoBase)) (Get-Key $tipsAll.Out 'tips')
+Check ('H02 tip 覆盖了每个按钮（179 + 自动 {0} 个）' -f $autoBase) ((Get-Key $tipsAll.Out 'tips') -eq [string](179 + $autoBase)) (Get-Key $tipsAll.Out 'tips')
 
 $blocks = @{}
 $curId = ''

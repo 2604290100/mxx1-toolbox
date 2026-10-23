@@ -262,18 +262,11 @@ namespace Mxx1Toolbox
         private void PickRoot()
         {
             if (_busy) { return; }
-            using (FolderBrowserDialog d = new FolderBrowserDialog())
-            {
-                d.Description = "要统计哪个目录（默认是 C 盘根目录）";
-                d.ShowNewFolderButton = false;
-                try
-                {
-                    if (Directory.Exists(_root)) { d.SelectedPath = _root; }
-                }
-                catch { }
-                if (d.ShowDialog(this) != DialogResult.OK) { return; }
-                _root = d.SelectedPath;
-            }
+            string picked;
+            try { picked = FolderPicker.Pick(this, "要统计哪个目录（默认是 C 盘根目录）", _root); }
+            catch { return; }
+            if (picked == null) { return; }
+            _root = picked;
             Scan();
         }
 

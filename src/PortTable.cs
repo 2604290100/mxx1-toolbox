@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Net;
 using System.Runtime.InteropServices;
+using System.Text;
 
 namespace Mxx1Toolbox
 {
@@ -38,6 +39,9 @@ namespace Mxx1Toolbox
             public string Signature = "";     // signed / unsigned / unknown / （空 = 没有路径）
             public bool Protected = false;
             public string ProtectedWhy = "";
+            /// <summary>这一行不是端口，而是一个**没开任何端口的程序**（2026-10-23 用户要的：
+            /// "没有使用端口的程序也要可以扫描出来"）。</summary>
+            public bool NoPort = false;
 
             public string SignatureText
             {
@@ -50,6 +54,15 @@ namespace Mxx1Toolbox
                 }
             }
         }
+
+        /// <summary>进程表里的一行（Toolhelp）：PID + 父 PID + 名字。父子关系用来做「结束进程树」。</summary>
+        public sealed class ProcNode
+        {
+            public int Pid;
+            public int Parent;
+            public string Name = "";
+        }
+
 
         // ------------------------------------------------------------ P/Invoke
 
@@ -146,7 +159,11 @@ namespace Mxx1Toolbox
         // ------------------------------------------------------------ 读表
 
         /// <summary>读一遍当前所有 TCP（仅 LISTEN）与 UDP 端点。error 非空 = 完全没读成。</summary>
-        public static List<Endpoint> List(out string error)
+        public static List<Endpoint> List(out string error) { return List(out error, false); }
+
+        /// <summary>同上；`includePortless` = 把**没开任何端口的程序**也一行一个列在后面
+        /// （用户 2026-10-23 要的「没有使用端口的程序也要能扫出来」）。</summary>
+        public static List<Endpoint> List(out string error, bool includePortless)
         {
             error = "";
             List<Endpoint> result = new List<Endpoint>();
@@ -166,7 +183,7 @@ namespace Mxx1Toolbox
             Dictionary<string, string> sigCache = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             foreach (Endpoint ep in result)
             {
-                FillProcess(ep, sigCache);
+                FillProcess(ep, sigCache, null);
             }
 
             result.Sort(delegate(Endpoint a, Endpoint b)
@@ -177,8 +194,33 @@ namespace Mxx1Toolbox
                 if (byProto != 0) { return byProto; }
                 return string.Compare(a.LocalAddr, b.LocalAddr, StringComparison.Ordinal);
             });
+
+            if (includePortless)
+            {
+                HashSet<int> busy = new HashSet<int>();
+                foreach (Endpoint ep in result) { busy.Add(ep.Pid); }
+                List<Endpoint> idle = new List<Endpoint>();
+                foreach (ProcNode n in ProcessList())
+                {
+                    if (n.Pid <= 4 || busy.Contains(n.Pid)) { continue; }
+                    Endpoint ep = new Endpoint();
+                    ep.NoPort = true;
+                    ep.Proto = "—";
+                    ep.LocalAddr = "—";
+                    ep.Port = 0;
+                    ep.Pid = n.Pid;
+                    FillProcess(ep, sigCache, n.Name);
+                    idle.Add(ep);
+                }
+                idle.Sort(delegate(Endpoint a, Endpoint b)
+                {
+                    return string.Compare(a.ProcName, b.ProcName, StringComparison.OrdinalIgnoreCase);
+                });
+                result.AddRange(idle);
+            }
             return result;
         }
+
 
         private static void ReadTcp4(List<Endpoint> result)
         {
@@ -326,9 +368,9 @@ namespace Mxx1Toolbox
 
         // ------------------------------------------------------------ 进程与签名
 
-        private static void FillProcess(Endpoint ep, Dictionary<string, string> sigCache)
+        private static void FillProcess(Endpoint ep, Dictionary<string, string> sigCache, string knownName)
         {
-            string name = "";
+            string name = (knownName == null) ? "" : knownName;
             string path = "";
             try
             {
@@ -336,16 +378,18 @@ namespace Mxx1Toolbox
                 else if (ep.Pid == 4) { name = "System"; }
                 else
                 {
-                    Process p = Process.GetProcessById(ep.Pid);
-                    name = p.ProcessName;
-                    try { path = p.MainModule.FileName; }
-                    catch { path = ""; }
+                    Process p = null;
+                    try { p = Process.GetProcessById(ep.Pid); }
+                    catch { p = null; }
+                    if (p != null)
+                    {
+                        if (name.Length == 0) { name = p.ProcessName; }
+                        try { path = p.MainModule.FileName; }
+                        catch { path = ""; }
+                    }
                 }
             }
-            catch
-            {
-                name = "";
-            }
+            catch { }
             ep.ProcName = name.Length > 0 ? name : ("（进程 " + ep.Pid.ToString(CultureInfo.InvariantCulture) + " 读不到名字，可能需要管理员）");
             ep.ProcPath = path;
             ep.Signature = SignatureOf(path, sigCache);
@@ -447,6 +491,181 @@ namespace Mxx1Toolbox
                 message = "没结束成：" + why;
                 return false;
             }
+        }
+        // ------------------------------------------------------------ 进程树（2026-10-23）
+
+        private const uint TH32CS_SNAPPROCESS = 0x00000002;
+
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        private struct PROCESSENTRY32
+        {
+            public uint dwSize;
+            public uint cntUsage;
+            public uint th32ProcessID;
+            public IntPtr th32DefaultHeapID;
+            public uint th32ModuleID;
+            public uint cntThreads;
+            public uint th32ParentProcessID;
+            public int pcPriClassBase;
+            public uint dwFlags;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)] public string szExeFile;
+        }
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern IntPtr CreateToolhelp32Snapshot(uint dwFlags, uint th32ProcessID);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+        private static extern bool Process32First(IntPtr hSnapshot, ref PROCESSENTRY32 lppe);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+        private static extern bool Process32Next(IntPtr hSnapshot, ref PROCESSENTRY32 lppe);
+
+        [DllImport("kernel32.dll")]
+        private static extern bool CloseHandle(IntPtr hObject);
+
+        /// <summary>整张进程表（PID + 父 PID + 名字）。父子关系只用来做「结束进程树」。</summary>
+        private static List<ProcNode> ProcessList()
+        {
+            List<ProcNode> list = new List<ProcNode>();
+            IntPtr snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+            if (snap == new IntPtr(-1)) { return list; }
+            try
+            {
+                PROCESSENTRY32 pe = new PROCESSENTRY32();
+                pe.dwSize = (uint)Marshal.SizeOf(typeof(PROCESSENTRY32));
+                if (!Process32First(snap, ref pe)) { return list; }
+                while (true)
+                {
+                    ProcNode n = new ProcNode();
+                    n.Pid = (int)pe.th32ProcessID;
+                    n.Parent = (int)pe.th32ParentProcessID;
+                    n.Name = (pe.szExeFile == null) ? "" : pe.szExeFile;
+                    if (n.Pid > 0) { list.Add(n); }
+                    pe.dwSize = (uint)Marshal.SizeOf(typeof(PROCESSENTRY32));
+                    if (!Process32Next(snap, ref pe)) { break; }
+                }
+            }
+            catch { }
+            finally { CloseHandle(snap); }
+            return list;
+        }
+
+        /// <summary>这个进程 + 它启动的所有后代，**深的在前**（结束的时候先子后父，
+        /// 不然父进程一死，子进程可能变成孤儿还挂着窗口）。</summary>
+        public static List<ProcNode> Descendants(int pid)
+        {
+            List<ProcNode> all = ProcessList();
+            Dictionary<int, List<ProcNode>> kids = new Dictionary<int, List<ProcNode>>();
+            ProcNode root = null;
+            foreach (ProcNode n in all)
+            {
+                if (n.Pid == pid) { root = n; }
+                if (!kids.ContainsKey(n.Parent)) { kids[n.Parent] = new List<ProcNode>(); }
+                kids[n.Parent].Add(n);
+            }
+
+            List<ProcNode> order = new List<ProcNode>();
+            if (root != null) { order.Add(root); }
+            List<int> level = new List<int>();
+            level.Add(pid);
+            HashSet<int> seen = new HashSet<int>();
+            seen.Add(pid);
+            while (level.Count > 0)
+            {
+                List<int> next = new List<int>();
+                foreach (int p in level)
+                {
+                    List<ProcNode> children;
+                    if (!kids.TryGetValue(p, out children)) { continue; }
+                    foreach (ProcNode k in children)
+                    {
+                        if (seen.Contains(k.Pid)) { continue; }
+                        seen.Add(k.Pid);
+                        order.Add(k);
+                        next.Add(k.Pid);
+                    }
+                }
+                level = next;
+            }
+            order.Reverse();
+            return order;
+        }
+
+        /// <summary>结束一个进程**和它启动的子进程**（用户可以只要这一个，见 `Kill`）。
+        /// 子进程也逐个过一遍底线：系统关键进程 / explorer / 工具箱自己一律不顺手带走。</summary>
+        public static bool KillTree(Endpoint ep, out string message)
+        {
+            message = "";
+            if (ep == null) { message = "没有选中一行"; return false; }
+            if (ep.Protected) { message = "这个不能结束：" + ep.ProtectedWhy; return false; }
+
+            List<ProcNode> order = Descendants(ep.Pid);
+            int selfPid = Process.GetCurrentProcess().Id;
+            int killed = 0;
+            int skipped = 0;
+            int gone = 0;
+            string failWhy = "";
+            foreach (ProcNode n in order)
+            {
+                bool isTarget = (n.Pid == ep.Pid);
+                string bare = (n.Name == null) ? "" : n.Name.ToLowerInvariant();
+                if (bare.EndsWith(".exe", StringComparison.Ordinal)) { bare = bare.Substring(0, bare.Length - 4); }
+
+                if (!isTarget && (n.Pid <= 4 || n.Pid == selfPid || bare == "explorer" || FileLock.IsProtectedName(bare)))
+                {
+                    skipped++;
+                    continue;
+                }
+
+                try
+                {
+                    Process p = Process.GetProcessById(n.Pid);
+                    p.Kill();
+                    p.WaitForExit(3000);
+                    killed++;
+                }
+                catch (ArgumentException)
+                {
+                    gone++;
+                    if (isTarget) { message = "这个进程已经不在了（PID " + ep.Pid.ToString(CultureInfo.InvariantCulture) + "）"; }
+                }
+                catch (Exception ex)
+                {
+                    if (isTarget)
+                    {
+                        failWhy = ex.Message;
+                        if (ex is UnauthorizedAccessException || ex is System.ComponentModel.Win32Exception)
+                        {
+                            failWhy = "没有权限结束它（可能属于别的账户或系统服务）—— 需要以管理员身份运行工具箱";
+                        }
+                    }
+                    else { gone++; }
+                }
+            }
+
+            if (failWhy.Length > 0)
+            {
+                message = "没结束成：" + failWhy;
+                return false;
+            }
+            if (killed == 0)
+            {
+                if (message.Length > 0) { return false; }
+                message = "一个都没结束（可能它已经退了，或者被系统保护）";
+                return false;
+            }
+
+            int kids = killed - 1;
+            StringBuilder sb = new StringBuilder();
+            sb.Append("已结束 ").Append(ep.ProcName).Append("（PID ")
+              .Append(ep.Pid.ToString(CultureInfo.InvariantCulture)).Append("）");
+            if (kids > 0) { sb.Append("和它开的 ").Append(kids.ToString(CultureInfo.InvariantCulture)).Append(" 个子进程"); }
+            else { sb.Append("（它没有开着子进程）"); }
+            if (skipped > 0) { sb.Append("；有 ").Append(skipped.ToString(CultureInfo.InvariantCulture)).Append(" 个子进程没动（系统关键程序 / 工具箱自己）"); }
+            if (gone > 0) { sb.Append("；有 ").Append(gone.ToString(CultureInfo.InvariantCulture)).Append(" 个在结束前自己退了"); }
+            sb.Append("。");
+            message = sb.ToString();
+            return true;
         }
     }
 }

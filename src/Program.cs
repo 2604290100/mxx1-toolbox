@@ -71,6 +71,14 @@ namespace Mxx1Toolbox
                     Application.Run(new UsbEjectForm(Theme.Resolve(Settings.Load().Theme)));
                     return 0;
                 }
+                // 「文件关联体检」窗口。来路同 `startup`：界面里那个按钮直接 new；需要管理员时提权重开自己（`assoc`）。
+                // ⚠️ 只有单独一个 `assoc` 参数才开窗口 —— `assoc --json` / `assoc --fix` / `assoc --restore`
+                // 仍然走命令行（只读，或者只在 MXX1_ASSOC_ROOT 隔离根下写），免得"想查一下"却弹出一个窗口。
+                if (args.Length == 1 && string.Equals(args[0], "assoc", StringComparison.OrdinalIgnoreCase))
+                {
+                    Application.Run(new FileAssocForm(Theme.Resolve(Settings.Load().Theme)));
+                    return 0;
+                }
                 // `ui log` / `ui settings`：右键「常用功能」子菜单里那几个固定入口。打开主界面，
                 // 然后替用户点一下那个界面动作（否则从资源管理器点出来会"什么都不发生"）。
                 if (string.Equals(args[0], "ui", StringComparison.OrdinalIgnoreCase))
@@ -212,6 +220,7 @@ namespace Mxx1Toolbox
                     case "proxy": return ProxyCommand(args);
                     case "startup": return StartupCommand(args);
                     case "eject": return EjectCommand(args);
+                    case "assoc": return AssocCommand(args);
                     case "dup": return DupCommand(args);
                     case "rename": return RenameCommand(args);
                     case "privacy": return PrivacyCommand(args);
@@ -1740,6 +1749,79 @@ namespace Mxx1Toolbox
             }
             if (error.Length > 0) { Console.WriteLine("error\t" + OneLine(error)); }
             return error.Length == 0 ? 0 : 1;
+        }
+
+        /// <summary>`assoc [--json]` —— 「文件关联体检」的命令行出口（2026-10-24，治「双击快捷方式说没有
+        /// 与之关联的应用」）。**默认只读**：列出 .lnk / .exe / .bat / .msi / .reg / .url / .scr / 文件夹
+        /// 这几条关联缺不缺。真正写注册表的两条（`--fix` / `--restore`）**只在 `MXX1_ASSOC_ROOT` 隔离根下
+        /// 才走** —— 同「启动项管理」「关掉系统代理」：用户自己那台机器只能在窗口里点出来。
+        /// 单独一个 `assoc`（不带别的参数）在 Program.Main 里就被拦去开窗口了，走不到这儿。</summary>
+        private static int AssocCommand(string[] args)
+        {
+            bool fix = false, restore = false, alsoWrong = false;
+            for (int i = 1; i < args.Length; i++)
+            {
+                string a = args[i];
+                if (string.Equals(a, "--fix", StringComparison.OrdinalIgnoreCase)) { fix = true; }
+                else if (string.Equals(a, "--restore", StringComparison.OrdinalIgnoreCase)) { restore = true; }
+                else if (string.Equals(a, "--also-wrong", StringComparison.OrdinalIgnoreCase)) { alsoWrong = true; }
+            }
+
+            if (fix && restore)
+            {
+                Console.Error.WriteLine("--fix 和 --restore 只能给一个。");
+                return 2;
+            }
+
+            if (fix || restore)
+            {
+                if (!FileAssoc.WriteAllowed())
+                {
+                    Console.Error.WriteLine("修复 / 还原文件关联只能在窗口里点（「文件关联体检」那颗按钮）。"
+                        + "命令行只读：assoc / assoc --json");
+                    return 2;
+                }
+                AssocFixReport rep = restore ? FileAssoc.Restore() : FileAssoc.Fix(alsoWrong);
+                Console.WriteLine("action=" + (restore ? "restore" : "fix"));
+                Console.WriteLine("root=" + FileAssoc.RootText());
+                Console.WriteLine("changed=" + rep.Changed.ToString(CultureInfo.InvariantCulture));
+                Console.WriteLine("skipped=" + rep.Skipped.ToString(CultureInfo.InvariantCulture));
+                Console.WriteLine("failed=" + rep.Failed.ToString(CultureInfo.InvariantCulture));
+                Console.WriteLine("result=" + (rep.Ok ? "ok" : "failed"));
+                Console.WriteLine("message=" + OneLine(rep.Message));
+                Console.WriteLine("record=" + FileAssoc.RecordFile());
+                Console.WriteLine("pending=" + FileAssoc.PendingRecords().ToString(CultureInfo.InvariantCulture));
+                return rep.Ok ? 0 : 1;
+            }
+
+            List<AssocItem> items = FileAssoc.Check();
+            if (HasFlag(args, "--json"))
+            {
+                Console.WriteLine(FileAssoc.JsonReport(items));
+                return 0;
+            }
+
+            int missing = 0, wrong = 0;
+            foreach (AssocItem it in items)
+            {
+                if (!it.Fixable) { continue; }
+                if (it.State == "missing") { missing++; }
+                else if (it.State != "ok") { wrong++; }
+            }
+            Console.WriteLine("root=" + FileAssoc.RootText());
+            Console.WriteLine("isolated=" + (FileAssoc.Isolated ? "yes" : "no"));
+            Console.WriteLine("count=" + items.Count.ToString(CultureInfo.InvariantCulture));
+            Console.WriteLine("missing=" + missing.ToString(CultureInfo.InvariantCulture));
+            Console.WriteLine("wrong=" + wrong.ToString(CultureInfo.InvariantCulture));
+            Console.WriteLine("pending=" + FileAssoc.PendingRecords().ToString(CultureInfo.InvariantCulture));
+            Console.WriteLine("record=" + FileAssoc.RecordFile());
+            foreach (AssocItem it in items)
+            {
+                Console.WriteLine(it.State + "\t" + (it.Fixable ? "fixable" : "report") + "\t"
+                    + OneLine(it.Key + (it.ValueName.Length > 0 ? "\\" + it.ValueName : "")) + "\t"
+                    + OneLine(it.Title));
+            }
+            return 0;
         }
 
         /// <summary>`eject [--json]` —— 「U 盘安全弹出」的命令行出口（GAP-03），**只读**：

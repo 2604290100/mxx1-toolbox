@@ -428,6 +428,7 @@ namespace Mxx1Toolbox
                         if (ua == "ports") { return "在本程序里打开「端口与进程」窗口（只读列出监听的 TCP / 绑着的 UDP；结束进程要过确认框）"; }
                         if (ua == "duplicates") { return "在本程序里打开「重复文件查找」窗口（大小 → 前 4 KB → 整个文件；删到回收站）"; }
                         if (ua == "rename") { return "在本程序里打开「批量重命名」窗口（先预览再执行，有冲突整批拒绝，可撤销）"; }
+                        if (ua == "assoc") { return "在本程序里打开「文件关联体检」窗口（先只读体检 .lnk / .exe / .bat / .msi 这些关联；点「修复缺失项」才写注册表，写前记原值、能还原）"; }
                         return "在本程序里打开的窗口: " + t.Action;
                     }
                     return "内置动作: " + t.Module + "/" + t.Action;

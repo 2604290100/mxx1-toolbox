@@ -1687,6 +1687,9 @@ namespace Mxx1Toolbox
                 case "rename":
                     OpenRename();
                     break;
+                case "assoc":
+                    OpenAssoc();
+                    break;
                 default:
                     SetStatus("未实现的界面动作：" + t.Action);
                     Logger.Write(t.Name, "未实现的界面动作：" + t.Action);
@@ -1955,6 +1958,16 @@ namespace Mxx1Toolbox
             WindowPlacement.ShowCentered(f, this);
             SetStatus("启动项管理 · 只禁用不删除；注册表原值会记下来，随时能还原");
             Logger.Write("启动项管理", "打开窗口");
+        }
+
+        /// <summary>「文件关联体检」窗口（系统工具页 · 修复与诊断段）——治「双击快捷方式说没有与之关联的应用」。
+        /// 点开只读一遍注册表（不弹确认框）；「修复 / 还原」在窗口里过条款门 + 确认框。</summary>
+        private void OpenAssoc()
+        {
+            FileAssocForm f = new FileAssocForm(_theme);
+            WindowPlacement.ShowCentered(f, this);
+            SetStatus("文件关联体检 · 先只读体检；补之前会记原值，随时能还原");
+            Logger.Write("文件关联体检", "打开窗口");
         }
 
         /// <summary>「一键换 DNS」窗口（系统工具页 · 设备与硬件段，GAP-09）——改 DNS 才写系统，窗口里过确认框。</summary>

@@ -431,6 +431,20 @@
     },
     {
       "paths": [
+        "src/FileAssoc.cs",
+        "src/FileAssocForm.cs"
+      ],
+      "cli": [
+        "A",
+        "D"
+      ],
+      "gui": [
+        "J"
+      ],
+      "note": "2026-10-24「文件关联体检」（治用户报的那个错：双击快捷方式弹「该文件没有与之关联的应用来执行该操作」——量出来是 HKLM\\SOFTWARE\\Classes\\lnkfile 的 IsShortcut 被删了）。后端 = 一张写死的关联表（.lnk/lnkfile IsShortcut、.exe、.bat/.cmd/.com、.msi、.reg、.url、.pif、.scr、Folder）+ **只补缺失** + 写前记原值（assoc-original.tsv）+ 写完读回核对 + 按记录还原（后来被别人改过的跳过）。命令行判据 D09–D09j（隔离根 MXX1_ASSOC_ROOT / MXX1_ASSOC_TSV，绝不碰真实关联；D09c 盯「没有隔离就退 2」）；界面 J23–J25 真从按钮开窗口、真点「修复缺失项」「还原成修复前」并读回注册表与记录文件"
+    },
+    {
+      "paths": [
         "src/DnsConfig.cs",
         "src/DnsForm.cs"
       ],
@@ -441,7 +455,7 @@
       "gui": [
         "J"
       ],
-      "note": "2026-10-22 GAP-09「一键换 DNS」：读走 NetworkInterface、写走 netsh（写完读回核对）。命令行只读（dns / dns --json）；写的那条路 `dns --apply=` **只在 MXX1_NETSH 指定假程序时才走**（D13b 盯着"没有隔离就退 2"；D13c 用假 netsh 断言两条命令真的发出去了、且读回核对不上时绝不报成功；D13d 验还原 DHCP 那条）。界面 J13f/J13g 只开窗、绝不点「应用」（点了会真改用户 DNS）"
+      "note": "2026-10-22 GAP-09「一键换 DNS」：读走 NetworkInterface、写走 netsh（写完读回核对）。命令行只读（dns / dns --json）；写的那条路 `dns --apply=` **只在 MXX1_NETSH 指定假程序时才走**（D13b 盯着「没有隔离就退 2」；D13c 用假 netsh 断言两条命令真的发出去了、且读回核对不上时绝不报成功；D13d 验还原 DHCP 那条）。界面 J13f/J13g 只开窗、绝不点「应用」（点了会真改用户 DNS）"
     },
     {
       "paths": [

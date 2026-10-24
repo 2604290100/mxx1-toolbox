@@ -3539,6 +3539,18 @@ $jDsEnv['MXX1_STARTUP_TSV'] = $jSuTsv
 # 「U 盘安全弹出」窗口也给它两个**假盘**（MXX1_EJECT_FAKE）：界面回归绝不真弹用户插着的盘，
 # 而"列盘 + 按钮状态"还是能断言到。
 $jDsEnv['MXX1_EJECT_FAKE'] = 'K:=测试U盘;L:=读卡器'
+# 「文件关联体检」窗口也给它一个**隔离根**（`MXX1_ASSOC_ROOT` + `MXX1_ASSOC_TSV`）：2026-10-24 这个
+# 窗口能真点「修复 / 还原」，所以必须让它的"根"是一个 HKCU 下面的测试键 —— 用户真实的
+# HKLM\SOFTWARE\Classes 一个字节都不碰。夹具故意做成"用户那台机器的形状"：.lnk 是对的、
+# 快捷方式标记 lnkfile\IsShortcut 缺着（双击快捷方式就报「该文件没有与之关联的应用」）。
+$jAsRootPs = 'HKCU:\Software\mxx1-toolbox\assoc-gui'
+try { if (Test-Path -LiteralPath $jAsRootPs) { Remove-Item -LiteralPath $jAsRootPs -Recurse -Force } } catch { }
+[void](New-Item -Path ($jAsRootPs + '\.lnk') -Force)
+Set-ItemProperty -LiteralPath ($jAsRootPs + '\.lnk') -Name '(default)' -Value 'lnkfile' -Type String
+$jAsTsv = Join-Path $tmpRoot ('mxx1-assoc-gui-' + $PID + '.tsv')
+try { if (Test-Path -LiteralPath $jAsTsv) { Remove-Item -LiteralPath $jAsTsv -Force } } catch { }
+$jDsEnv['MXX1_ASSOC_ROOT'] = 'HKCU\Software\mxx1-toolbox\assoc-gui'
+$jDsEnv['MXX1_ASSOC_TSV'] = $jAsTsv
 
 # ⚠ **必须自己起一个界面实例**：G 组（深色主题）在它结尾就把最开始的 `$main` 关掉了
 # （Test-Gui.ps1 里那句 CloseWindow($main)），H 组用的是自己的 `$procFixed`。
@@ -4214,6 +4226,139 @@ if ($pxWin -eq $null) {
     Close-JWindow $pxWin
     Start-Sleep -Milliseconds 400
 }
+
+# ---- 文件关联体检（2026-10-24，治「双击快捷方式弹出：该文件没有与之关联的应用」）--------------
+# 这一段的"根"是 MXX1_ASSOC_ROOT 指到的测试键（见上面夹具），所以「修复 / 还原」可以**真点**，
+# 而用户真实的 HKLM\SOFTWARE\Classes 一个字节都不碰。后端同一条路在命令行 D09b–D09j 验过。
+# 「请确认」是**所有**确认框共用的窗口：标题永远是「请确认」，具体问什么写在窗口里的第一行标签上
+# （PITFALLS 57）。所以这里不能按窗口标题找，得按里面那段正文找。
+function Find-JAssocDialog {
+    param([int]$ProcessId, [IntPtr]$Main, [IntPtr]$Owner, [string]$TitlePrefix)
+    foreach ($w in @(Get-Dialogs -ProcessId $ProcessId -Main $Main)) {
+        if ($w.H -eq $Owner) { continue }
+        $texts = @(Get-ChildControls -RootHandle $w.H | ForEach-Object { [string]$_.Text }) -join ' '
+        if ($texts -like ('*' + $TitlePrefix + '*')) { return $w }
+    }
+    return $null
+}
+
+$wAs = Open-JWindow '文件关联体检' '文件关联体检'
+Check 'J23 点「文件关联体检」能开窗口（系统工具页 · 修复与诊断段）' ($wAs -ne $null) ''
+if ($wAs -eq $null) {
+    Check 'J23b 窗口不卡、报告里有完整体检（隔离根 + 24 项 + 汇总；不是空框 / 死窗口）' $false '窗口没开出来'
+    Check 'J23c 还没修复时「还原成修复前」是灰的，另外四颗按钮可点' $false '窗口没开出来'
+    Check 'J24 真点「修复缺失项…」→ 确认框 → 报告出「修复结果」、隔离根里 lnkfile\IsShortcut 真被补上' $false '窗口没开出来'
+    Check 'J25 真点「还原成修复前」→ 报告出「还原结果」、那个值被删掉、记录清空' $false '窗口没开出来'
+} else {
+    $respAs = [TBGui]::Responds($wAs.H, 3000)
+    $asReport = ''
+    $asKids = @(Get-ChildControls -RootHandle $wAs.H)
+    for ($i = 0; $i -lt 80; $i++) {
+        $asKids = @(Get-ChildControls -RootHandle $wAs.H)
+        $asEdit = @($asKids | Where-Object { $_.Class -like '*EDIT*' })
+        if ($asEdit.Count -ge 1) { $asReport = [string]$asEdit[0].Text }
+        if ($asReport -match '汇总：') { break }
+        Start-Sleep -Milliseconds 250
+    }
+    $asBtns = @($asKids | Where-Object { $_.Class -like '*BUTTON*' })
+    $asTexts = @($asBtns | ForEach-Object { [string]$_.Text })
+    $asWant = @('修复缺失项…', '还原成修复前', '刷新', '复制报告', '关闭')
+    $asMiss = @($asWant | Where-Object { $asTexts -notcontains $_ })
+    Check 'J23b 窗口不卡、报告里有完整体检（测试隔离根 + 24 项 + 汇总；不是空框 / 死窗口）' `
+        ($respAs -and ($asMiss.Count -eq 0) -and ($asReport -match '测试隔离根') -and ($asReport -match '汇总：24 项里') -and ($asReport.Length -gt 200)) `
+        ('响应=' + $respAs + ' 缺按钮=' + ($asMiss -join ' ') + ' 报告长度=' + $asReport.Length)
+
+    $asRestoreBtn = @($asBtns | Where-Object { [string]$_.Text -eq '还原成修复前' })
+    $asFixBtn = @($asBtns | Where-Object { [string]$_.Text -eq '修复缺失项…' })
+    $asOtherOk = $true
+    foreach ($nm in @('修复缺失项…', '刷新', '复制报告', '关闭')) {
+        $hit = @($asBtns | Where-Object { [string]$_.Text -eq $nm })
+        if (($hit.Count -ne 1) -or (-not $hit[0].Enabled)) { $asOtherOk = $false }
+    }
+    Check 'J23c 还没修复时「还原成修复前」是灰的（没有可退的东西），另外四颗按钮都可点' `
+        (($asRestoreBtn.Count -eq 1) -and (-not $asRestoreBtn[0].Enabled) -and $asOtherOk -and `
+         ($asReport -match '没有待还原的记录')) `
+        ('还原=' + $(if ($asRestoreBtn.Count -eq 1) { $asRestoreBtn[0].Enabled } else { '没找到' }) + ' 其它可点=' + $asOtherOk)
+
+    $asIsAdmin = $false
+    try {
+        $asIsAdmin = (New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    } catch { }
+    if (($asFixBtn.Count -ne 1) -or (-not $asIsAdmin)) {
+        Skip 'J24 真点「修复缺失项…」→ 确认框 → 隔离根里 lnkfile\IsShortcut 真被补上' `
+            $(if ($asIsAdmin) { '窗口里没找到「修复缺失项…」' } else { '测试进程不是管理员：点了会弹 UAC，跳过（后端同一条路 D09e–D09j 验过）' })
+        Skip 'J25 真点「还原成修复前」→ 那个值被删掉、记录清空' '同上'
+    } else {
+        $asBefore = $false
+        try { [void](Get-ItemProperty -LiteralPath ($jAsRootPs + '\lnkfile') -Name 'IsShortcut' -ErrorAction Stop); $asBefore = $true } catch { }
+        [void][TBGui]::Click($asFixBtn[0].H)
+        $asDlg = $null
+        for ($i = 0; $i -lt 40; $i++) {
+            Start-Sleep -Milliseconds 200
+            $asDlg = Find-JAssocDialog -ProcessId $proc.Id -Main $main -Owner $wAs.H -TitlePrefix '要补这些文件关联吗'
+            if ($asDlg -ne $null) { break }
+        }
+        $asOkClicked = $false
+        if ($asDlg -ne $null) {
+            $okBtn = @(Get-ChildControls -RootHandle $asDlg.H | Where-Object { $_.Class -like '*BUTTON*' -and [string]$_.Text -eq '修复' })
+            if ($okBtn.Count -eq 1) { [void][TBGui]::Click($okBtn[0].H); $asOkClicked = $true }
+        }
+        $asFixedReport = ''
+        for ($i = 0; $i -lt 80; $i++) {
+            Start-Sleep -Milliseconds 250
+            $k = @(Get-ChildControls -RootHandle $wAs.H | Where-Object { $_.Class -like '*EDIT*' })
+            if ($k.Count -ge 1) { $asFixedReport = [string]$k[0].Text }
+            if ($asFixedReport -match '== 修复结果 ==') { break }
+        }
+        $asNow = $false
+        $asNowVal = ''
+        try {
+            $asNowVal = [string](Get-ItemProperty -LiteralPath ($jAsRootPs + '\lnkfile') -Name 'IsShortcut' -ErrorAction Stop).IsShortcut
+            $asNow = $true
+        } catch { }
+        Check 'J24 真点「修复缺失项…」→ 确认框 → 报告出「修复结果」，隔离根里 lnkfile\IsShortcut 真被补上（读回一致）' `
+            (($asDlg -ne $null) -and $asOkClicked -and (-not $asBefore) -and $asNow -and ($asNowVal -eq '') -and `
+             ($asFixedReport -match '== 修复结果 ==') -and ($asFixedReport -match '读回核对一致')) `
+            ('确认框=' + ($asDlg -ne $null) + ' 点了确认=' + $asOkClicked + ' 修前有=' + $asBefore + ' 修后有=' + $asNow + ' 值=' + $asNowVal)
+
+        $asRestoreBtn2 = @(Get-ChildControls -RootHandle $wAs.H | Where-Object { $_.Class -like '*BUTTON*' -and [string]$_.Text -eq '还原成修复前' })
+        $asEnabledAfter = (($asRestoreBtn2.Count -eq 1) -and $asRestoreBtn2[0].Enabled)
+        if (-not $asEnabledAfter) {
+            Check 'J25 真点「还原成修复前」→ 那个值被删掉、记录清空' $false '修复之后「还原」还是灰的（说明没记下原值）'
+        } else {
+            [void][TBGui]::Click($asRestoreBtn2[0].H)
+            $asDlg2 = $null
+            for ($i = 0; $i -lt 40; $i++) {
+                Start-Sleep -Milliseconds 200
+                $asDlg2 = Find-JAssocDialog -ProcessId $proc.Id -Main $main -Owner $wAs.H -TitlePrefix '要还原成修复前吗'
+                if ($asDlg2 -ne $null) { break }
+            }
+            $asOk2 = $false
+            if ($asDlg2 -ne $null) {
+                $ok2 = @(Get-ChildControls -RootHandle $asDlg2.H | Where-Object { $_.Class -like '*BUTTON*' -and [string]$_.Text -eq '还原' })
+                if ($ok2.Count -eq 1) { [void][TBGui]::Click($ok2[0].H); $asOk2 = $true }
+            }
+            $asBackReport = ''
+            for ($i = 0; $i -lt 80; $i++) {
+                Start-Sleep -Milliseconds 250
+                $k2 = @(Get-ChildControls -RootHandle $wAs.H | Where-Object { $_.Class -like '*EDIT*' })
+                if ($k2.Count -ge 1) { $asBackReport = [string]$k2[0].Text }
+                if ($asBackReport -match '== 还原结果 ==') { break }
+            }
+            $asGone = $true
+            try { [void](Get-ItemProperty -LiteralPath ($jAsRootPs + '\lnkfile') -Name 'IsShortcut' -ErrorAction Stop); $asGone = $false } catch { }
+            $asTsvGone = -not (Test-Path -LiteralPath $jAsTsv)
+            $asRestoreBtn3 = @(Get-ChildControls -RootHandle $wAs.H | Where-Object { $_.Class -like '*BUTTON*' -and [string]$_.Text -eq '还原成修复前' })
+            Check 'J25 真点「还原成修复前」→ 报告出「还原结果」、那个值被删掉、记录文件清空、「还原」又变灰' `
+                (($asDlg2 -ne $null) -and $asOk2 -and $asGone -and $asTsvGone -and ($asRestoreBtn3.Count -eq 1) -and (-not $asRestoreBtn3[0].Enabled) -and `
+                 ($asBackReport -match '== 还原结果 ==')) `
+                ('确认框=' + ($asDlg2 -ne $null) + ' 值删掉了=' + $asGone + ' 记录清空=' + $asTsvGone)
+        }
+    }
+    Close-JWindow $wAs
+    Start-Sleep -Milliseconds 400
+}
+
 [void][TBGui]::CloseWindow($main)
 Start-Sleep -Milliseconds 600
 

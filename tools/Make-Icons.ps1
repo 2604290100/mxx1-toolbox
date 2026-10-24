@@ -58,6 +58,9 @@ function Get-Shape {
         @('display-settings', 'monitor'),
         @('input-fix',        'key'),
         @('bsod-decode',      'info'),
+        # 2026-10-24「文件关联体检」：断开的链环 —— 治的就是"快捷方式、程序这些关联链断了"，
+        # 和「重复文件查找 / 无效快捷方式清理」的放大镜、垃圾桶分得开。
+        @('assoc-fix',        'linkbreak'),
         # 「右键增强」页签那 7 个按钮（v1.5.0）：装上 = 加号、撤掉 = 减号、
         # 解除占用 = 钥匙（解锁）、常用功能 = 清单、重建 = 刷新、说明 = 文档
         @('rightmenu.unlock.on',  'key'),

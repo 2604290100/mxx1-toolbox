@@ -45,6 +45,7 @@ namespace Mxx1Toolbox
         private readonly System.Windows.Forms.Timer _tick = new System.Windows.Forms.Timer();
 
         private bool _busy = false;
+        private bool _modifyArmed = false;
 
         public TimerForm(Theme theme)
         {
@@ -79,7 +80,9 @@ namespace Mxx1Toolbox
             intro.MaximumSize = new Size(710, 0);
             intro.Text = "到点自动关机、重启或者睡眠。关机和重启的倒计时交给 Windows 自己记着，"
                 + "睡眠由工具箱自己的一个后台小进程等着 —— 所以工具箱关掉、缩进托盘都不影响"
-                + "（这一页不需要管理员权限）。定错了随时点「取消定时」就能撤掉。";
+                + "（这一页不需要管理员权限）。定错了随时点「取消定时」就能撤掉；"
+                + "已经定好一条时那颗按钮会变成「改一下」：点它，上面就照着现在这条填好，"
+                + "改完再点「确认改掉」就生效（不用先取消再定一遍）。";
             intro.Margin = new Padding(2, 0, 2, 8);
             root.Controls.Add(intro, 0, 0);
             root.SetColumnSpan(intro, 2);
@@ -177,7 +180,7 @@ namespace Mxx1Toolbox
             note.AutoSize = true;
             note.MaximumSize = new Size(710, 0);
             note.Text = "提醒：关机 / 重启不会替你保存文档 —— 到点前请把手上的东西存好。"
-                + "命令行也能撤：Mxx1Toolbox.exe timer status / timer cancel（开始计时只能在界面里点）。";
+                + "命令行也能撤：Mxx1Toolbox.exe timer status / timer cancel（开始计时 / 改一下只能在界面里点）。";
             note.Margin = new Padding(2, 0, 2, 6);
             root.Controls.Add(note, 0, 6);
             root.SetColumnSpan(note, 2);
@@ -194,7 +197,7 @@ namespace Mxx1Toolbox
             buttons.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             _start.Text = "开始计时";
             StyleButton(_start, 116);
-            _start.Click += delegate { DoStart(); };
+            _start.Click += delegate { DoPrimary(); };
             _cancel.Text = "取消定时";
             StyleButton(_cancel, 100);
             _cancel.Click += delegate { DoCancel(); };
@@ -354,9 +357,13 @@ namespace Mxx1Toolbox
         private void UpdateButtons()
         {
             TimerStatus st = PowerTimer.Status();
+            // 那条定时已经没了（到点执行了 / 被取消了）：退出"改一下"模式，并且明说这次改动没做
+            if (_modifyArmed && !st.Active) { Disarm(true); }
             _cancel.Enabled = !_busy && st.Present;
             _start.Enabled = !_busy;
             _refresh.Enabled = !_busy;
+            // 一颗按钮三种说法：没有定时 =「开始计时」；有定时 =「改一下」；改一下点过一下 =「确认改掉」
+            _start.Text = _modifyArmed ? "确认改掉" : (st.Active ? "改一下" : "开始计时");
             _modeMinutes.Enabled = !_busy;
             _modeClock.Enabled = !_busy;
             _minutes.Enabled = !_busy && _modeMinutes.Checked;
@@ -409,7 +416,142 @@ namespace Mxx1Toolbox
             return PowerTimer.FromNow((int)_minutes.Value, now);
         }
 
-        // ------------------------------------------------------------------ 开始
+        // ------------------------------------------------------------------ 开始 / 改一下
+
+        /// <summary>底下那颗按钮按现在的状态分派：没有定时 =「开始计时」；有定时 =「改一下」；
+        /// 改一下已经点过一回了 =「确认改掉」。
+        /// （2026-10-24 P-7：用户原话「定时关机加个『改一下』」—— 以前想改时间 / 换动作只能
+        /// 先「取消定时」再重新定一遍，两轮确认框，很容易把原来那条撤了却忘了定新的。）</summary>
+        private void DoPrimary()
+        {
+            if (_busy) { return; }
+            TimerStatus st = PowerTimer.Status();
+            if (st.Active && _modifyArmed) { ApplyModify(st); return; }
+            if (st.Active) { ArmModify(st); return; }
+            DoStart();
+        }
+
+        /// <summary>进"改一下"模式：把现在这条（动作 / 到点时间）填回上面的控件里，按钮变成
+        /// 「确认改掉」。**这一步一个字节都不写**（只填控件 + 换文字），反悔点「取消定时」或
+        /// 直接关窗口都行。</summary>
+        private void ArmModify(TimerStatus st)
+        {
+            TimerRecord rec = st.Record;
+            if (rec == null) { return; }
+            _actShutdown.Checked = (rec.Action == PowerTimer.ActionShutdown);
+            _actRestart.Checked = (rec.Action == PowerTimer.ActionRestart);
+            _actSleep.Checked = (rec.Action == PowerTimer.ActionSleep);
+            // 记录里只存"到点的绝对时刻"（不管当初是用"多少分钟后"还是"指定时间"定的），
+            // 所以这里一律回到「指定时间」并填成那个 HH:mm；秒数**往上取整到分钟**
+            // （往下截会变成"比原来早几十秒"，说不定刚好撞进"离现在太近"那条）。
+            _modeClock.Checked = true;
+            _modeMinutes.Checked = false;
+            _clock.Value = RoundUpToMinute(rec.AtLocal);
+            int mins = (int)Math.Ceiling(st.Remaining / 60.0);
+            if (mins < 1) { mins = 1; }
+            if (mins > PowerTimer.MaxMinutes) { mins = PowerTimer.MaxMinutes; }
+            _minutes.Value = mins;
+            _modifyArmed = true;
+            UpdateModeUi();
+            UpdateButtons();
+            _result.Text = "要改的是现在这条：" + rec.Label + " · "
+                + PowerTimer.WhenText(rec.AtLocal, DateTime.Now)
+                + "（还剩 " + PowerTimer.CountdownText(st.Remaining) + "）。"
+                + Environment.NewLine + Environment.NewLine
+                + "上面「到点做什么」和「多久以后 / 指定时间」已经照着它填好了 —— 换动作 / 换时间就改上面，"
+                + "改完点「确认改掉」。" + Environment.NewLine
+                + "· 「确认改掉」还会再弹一个确认框，那里点取消就什么都不改；" + Environment.NewLine
+                + "· 想直接撤掉这条，点「取消定时」。";
+        }
+
+        /// <summary>把这条定时改成新的（动作 / 时间都能换）：先弹确认框说清"原来那条 → 新的这条"，
+        /// 确认后交给 `PowerTimer.Modify`（它和「开始计时」走同一条路：先撤旧的、再写新记录）。</summary>
+        private void ApplyModify(TimerStatus cur)
+        {
+            if (_busy || cur.Record == null) { return; }
+            string action = SelectedAction();
+            string label = PowerTimer.LabelOf(action);
+            DateTime at = ChosenAt();
+            DateTime now = DateTime.Now;
+            int seconds = (int)(PowerTimer.Epoch(at) - PowerTimer.Epoch(now));
+            if (seconds < PowerTimer.MinSeconds)
+            {
+                Flash("离现在太近了（不到 " + PowerTimer.MinSeconds + " 秒）：请把时间往后挪一点。");
+                return;
+            }
+
+            if (!Consent.EnsureAccepted(this, _theme, "要改定时" + label))
+            {
+                Flash("没有同意《免责声明与服务条款》，这个动作被拦下了。");
+                return;
+            }
+
+            StringBuilder body = new StringBuilder();
+            body.Append("原来那条：").Append(cur.Record.Label).Append(" · ")
+                .Append(cur.Record.AtLocal.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture))
+                .Append("（还剩 ").Append(PowerTimer.SpanText(cur.Remaining)).AppendLine("）");
+            body.Append("改成这条：").Append(label).Append(" · ")
+                .Append(at.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture))
+                .Append("（还有 ").Append(PowerTimer.SpanText(seconds)).AppendLine("）");
+            body.AppendLine();
+            body.AppendLine("· 会先把原来那条撤掉，再定新的 —— 不会两条同时等着。");
+            if (action == PowerTimer.ActionSleep)
+            {
+                body.AppendLine("· 到点会直接让电脑睡眠（不问你）；等着它的是工具箱自己的一个后台小进程，"
+                    + "工具箱关了、缩进托盘都不影响；到点前 60 秒会弹一张提示卡。");
+            }
+            else
+            {
+                body.AppendLine("· 到点会直接" + label + "，不会问你，也不会替你保存文档 —— 请先把手上的东西存好。");
+                body.AppendLine("· 倒计时交给 Windows 自己记着（shutdown.exe /t）：工具箱关了也不影响。");
+            }
+            body.AppendLine("· 这个框里点取消：原来那条一个字都不动。");
+
+            using (ConfirmForm f = new ConfirmForm("把这条定时改成「" + label + "」吗？", body.ToString(), "改掉", _theme))
+            {
+                if (f.ShowDialog(this) != DialogResult.OK) { return; }
+            }
+
+            SetBusy(true);
+            _status.ForeColor = _theme.BarText;
+            _status.Text = "正在改…";
+            Application.DoEvents();
+            string report;
+            int code;
+            try
+            {
+                code = PowerTimer.Modify(action, at, out report);
+            }
+            catch (Exception ex)
+            {
+                code = 1;
+                report = "改的时候出错了：" + ex.Message;
+            }
+            _modifyArmed = false;
+            SetBusy(false);
+            _result.Text = report;
+            Logger.Write("定时" + label, report.Replace(Environment.NewLine, " "));
+            if (code != 0) { _status.ForeColor = _theme.Danger; }
+            RefreshState();
+        }
+
+        /// <summary>退出"改一下"模式。`note` = 因为那条定时已经不在了而被动退出 ——
+        /// 这时候要在结果区明说"这次改动没有做"，不能让人以为改成功了。</summary>
+        private void Disarm(bool note)
+        {
+            if (!_modifyArmed) { return; }
+            _modifyArmed = false;
+            if (note)
+            {
+                _result.Text = "这条定时已经不在了（到点执行了 / 被取消了），刚才那次改动没有做。";
+            }
+        }
+
+        private static DateTime RoundUpToMinute(DateTime t)
+        {
+            DateTime floor = new DateTime(t.Year, t.Month, t.Day, t.Hour, t.Minute, 0);
+            return (t > floor) ? floor.AddMinutes(1) : floor;
+        }
 
         private void DoStart()
         {
@@ -483,6 +625,7 @@ namespace Mxx1Toolbox
                 code = 1;
                 report = "定的时候出错了：" + ex.Message;
             }
+            _modifyArmed = false;
             SetBusy(false);
             _result.Text = report;
             Logger.Write("定时" + label, report.Replace(Environment.NewLine, " "));
@@ -542,6 +685,7 @@ namespace Mxx1Toolbox
                 report = "取消的时候出错了：" + ex.Message;
             }
             SetBusy(false);
+            _modifyArmed = false;
             _result.Text = report;
             Logger.Write("定时" + cur.Record.Label, report.Replace(Environment.NewLine, " "));
             if (!ok) { _status.ForeColor = _theme.Danger; }

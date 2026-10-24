@@ -1,6 +1,6 @@
 ---
 name: mxx1-toolbox
-description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Windows button-wall launcher whose main window is a multi-row, multi-column grid of small buttons that each start another program, script, or feature. Covers its interface rules (four column compact buttons, top tabs, separator segments, light/dark theme, computed column width, grey "not wired up yet" buttons), the tools\*.json button registry, bin-tools\ auto-loaded tool buttons (tool.json), how buttons launch things (exe / script / open / builtin / macro), how the 29 系统工具 buttons open Windows components, how the 常用设置 registry switches record the original value so every change can be undone, how a run reports success or failure, the first-run consent gate (免责声明与服务条款 fingerprint), the read-only update check, Windows 7/10/11 compatibility, plus build.ps1, screenshot tool and the GUI/CLI test suites.
+description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Windows button-wall launcher whose main window is a multi-row, multi-column grid of small buttons that each start another program, script, or feature. Covers its interface rules (four column compact buttons, top tabs, separator segments, light/dark theme, computed column width, grey "not wired up yet" buttons), the tools\*.json button registry, bin-tools\ auto-loaded tool buttons (tool.json), how buttons launch things (exe / script / open / builtin / macro), how the 50 系统工具 buttons open Windows components, how the 常用设置 registry switches record the original value so every change can be undone, how a run reports success or failure, the first-run consent gate (免责声明与服务条款 fingerprint), the read-only update check, Windows 7/10/11 compatibility, plus build.ps1, screenshot tool and the GUI/CLI test suites.
 ---
 
 # 萌新工具箱（mxx1 Toolbox）
@@ -8,7 +8,7 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
 **主界面 = 多行多列的小按钮墙**，点一下按钮就启动一个已经做好的程序 / 脚本 / 功能。
 加按钮只是往 `tools\*.json` 丢配置，**不需要重新编译主程序**。
 
-- 程序名 **萌新工具箱**，标题栏 `萌新工具箱 v1.5.9`；署名 `mxx1` / `mxx1.cn`；GPL-3.0-or-later
+- 程序名 **萌新工具箱**，标题栏 `萌新工具箱 v1.6.0`；署名 `mxx1` / `mxx1.cn`；GPL-3.0-or-later
 - 工程目录 **`D:\萌新工具开发\toolbox\`**，与隔壁 `permanent-delete-menu` **互不修改**（只调它的 exe）
 - 支持范围 **Windows 7 SP1 / 10 / 11**（用户 2026-10-05 收窄的：**只考虑这三版**）；见「兼容性」一节
 - 外观参考：`C:\Users\Administrator\Pictures\Snipaste_2026-10-04_10-29-34.png`（那种紧凑按钮墙）
@@ -16,7 +16,26 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
 > **接手 / 新会话先做两件事**：读 `docs\DESIGN.md`（外观与行为的**唯一正本**）和本文件。
 > 设计一改先改 `DESIGN.md`，再同步本 skill —— 两份分叉就会出现"两套行为"。
 
-## 当前状态（2026-10-22，**豆包缺口清单 10 条功能做完并推送、未打 tag 未发版**；上一版 v1.5.9 已发布）
+## 当前状态（2026-10-24，**v1.6.0 已定版**：关掉系统代理 + 批量重命名浏览 + 端口与进程增强 + UX 六条 + 条款补齐 + 定时关机「改一下」）
+
+> **⚠️ 2026-10-24 这一轮（P-2 推送 / P-3 定 1.6.0 / P-4 发版前两件 / P-5 条款 / P-7 改一下）**：
+> ① **关掉系统代理**（`proxy-off`，`src\ProxyConfig.cs` + `src\ProxyForm.cs`：只动 WinINET 四个值，
+>   写前记原值 → 写 → 读回 → 能恢复；WinHTTP 只读；CLI `proxy status/off/restore`，
+>   写只在 `MXX1_PROXY_ROOT` 隔离根下走）；
+> ② **批量重命名**两条修复（选完文件夹立刻预览；`src\FolderPicker.cs` = `IFileOpenDialog` +
+>   `FOS_PICKFOLDERS`，粘路径进「文件夹:」回车也能跳过去）；
+> ③ **端口与进程**右键 5 项（打开所在位置 / 复制 PID / 复制程序路径 / 结束这个进程 /
+>   结束它和它开的子进程）+ 复选框「也列出没开端口的程序」；
+> ④ **UX 复查六条**（三处指路 / 端口说明 / 删除备份位置 / 电源窗口「现在」一行 /
+>   10 条系统入口「进去点哪里」/ 10 条失败文案「你还可以…」）；
+> ⑤ **条款正文补齐**（P-5）：第 1 节换成"会删东西的清单"、第 2 节新增「会改动本机设置的按钮」8 条；
+>   **同意指纹 `65e4045041b6ccab` → `847086ed4543101e`**（内嵌 16,897 → 21,659 字节）；
+> ⑥ **定时关机「改一下」**（P-7）：一颗按钮三种说法（开始计时 / 改一下 / 确认改掉），
+>   第一下只填控件**不写记录**，第二下才确认；后端 `PowerTimer.Modify` 与 `Start` 走同一条路。
+> 数字：内置按钮 / 图标 **179**（`status` 本机 **182** = 179 + 2 个自建 + 1 个自动）、系统工具 **50**、
+> 常用设置 **57**、清理 13 / 隐私 29 / 应用 6 / 右键 21、`systemTargets` 29、`systemMissing` 0。
+> 验证：命令行全量 **508 通过 + 1 项环境跳过（F03）/ 0 失败**、界面全量 **269 通过 / 0 失败 / 1 跳过**
+> （T 组托盘：屏幕上开着用户自己的实例）、编码体检 **309 文件 PASS**、内联语法 PASS。
 
 > **⚠️ 2026-10-22 这一轮（缺口清单 GAP-01…09 / GAP-11 全部落地，已推送 `b439580`，没打 tag、没发版、站点没动）**：
 > 照 `夜巡-20261021\02-缺口清单.md`（用户拍板的 10 条）逐条做：
@@ -292,12 +311,11 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
 > （原来写死 20 → 字被上下切）。正本 `docs\DESIGN.md` §12.66 ⑦、截图 `docs\ctxmenu-shot.png`。
 > 回归：界面 **C17–C19t**（换了一轮判据）+ 命令行 M49–M54。
 
-- 版本 **1.5.9**（`src\AssemblyInfo.cs` 是唯一来源，标题栏跟着变），2026-10-19 定版并发布：
-  exe **1,016,320 字节 ≈ 993 KB** + `Mxx1Toolbox-package.zip` **1,669,731 字节（230 个文件）**；
-  tag / Release 链接 / 资产 SHA256 / 站点同步与回读记录，跟着发版那一轮写进本文件与 `CHANGELOG.md` 的
-  `[1.5.9]` 段（收尾提交）。
-  再往前：`v1.5.8`（2026-10-15，图片转换 + 图标提取）、`v1.5.7`（2026-10-12）、
-  `v1.5.6`（2026-10-11：exe 904,192 字节 + zip 1,472,161 字节）。
+- 版本 **1.6.0**（`src\AssemblyInfo.cs` 是唯一来源，标题栏跟着变），2026-10-24 定版：
+  exe **1,318,400 字节 ≈ 1.26 MB**；tag / Release 链接 / 资产 SHA256 / 站点同步与回读记录
+  跟着发版那一轮写进本文件与 `CHANGELOG.md` 的 `[1.6.0]` 段（收尾提交）。
+  再往前：`v1.5.9`（2026-10-19，exe 1,016,320 字节）、`v1.5.8`（2026-10-15，图片转换 + 图标提取）、
+  `v1.5.7`（2026-10-12）、`v1.5.6`（2026-10-11：exe 904,192 字节 + zip 1,472,161 字节）。
 - 测试 **735 项** = 命令行 **478**（**477 通过 + 1 项环境跳过 F03**）+ 界面 **257**（**2026-10-20 深夜 F4 那一轮**：
   命令行全量 476 通过 / 1 条 **O15**（剪贴板被别的进程占着 → 单独复跑绿）；界面全量 254 通过 / 3 条
   （**C03c** 真鼠标点、**J17** `Wait-Buttons` 抖动、**T01** 因为用户自己开着工具箱 → 单实例把测试实例顶掉；

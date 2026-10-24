@@ -375,6 +375,19 @@ namespace Mxx1Toolbox
         /// 那样不会出现"已经定了但记录里看不见"的定时（用户根本没法取消它）。</summary>
         public static int Start(string action, DateTime at, out string report)
         {
+            return StartCore(action, at, false, out report);
+        }
+
+        /// <summary>把现在这条定时**改成新的**（动作 / 时间都能换）。和 `Start` 走的是同一条路
+        /// （先撤旧的 → 写新记录 → 再动手），区别只在说法：「改好了」而不是「定好了」。
+        /// 2026-10-24 的 P-7：界面上一颗「改一下」按钮，不用先取消再定一遍。</summary>
+        public static int Modify(string action, DateTime at, out string report)
+        {
+            return StartCore(action, at, true, out report);
+        }
+
+        private static int StartCore(string action, DateTime at, bool modify, out string report)
+        {
             string a = Normalize(action);
             if (a.Length == 0)
             {
@@ -397,7 +410,7 @@ namespace Mxx1Toolbox
             {
                 string oldReport;
                 Cancel(out oldReport);
-                sb.AppendLine("先把上一条定时撤掉了（" + old.Label + " · "
+                sb.AppendLine((modify ? "把原来那条撤掉了（" : "先把上一条定时撤掉了（") + old.Label + " · "
                     + old.AtLocal.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture) + "）。")
                     .AppendLine();
             }
@@ -450,7 +463,7 @@ namespace Mxx1Toolbox
                 }
             }
 
-            sb.Append("已经定好了：").Append(at.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture))
+            sb.Append((modify ? "已经改好了：" : "已经定好了：")).Append(at.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture))
                 .Append("（").Append(WhenText(at, now)).Append("，还有 ")
                 .Append(SpanText(seconds)).Append("）执行「").Append(LabelOf(a)).AppendLine("」。");
             if (a == ActionSleep)
@@ -469,7 +482,7 @@ namespace Mxx1Toolbox
                 sb.AppendLine().Append("（试运行：MXX1_TIMER_DRYRUN=1 —— 没有真的调 shutdown.exe / 没有真的睡，只写了这条记录。）");
             }
             report = sb.ToString();
-            Logger.Write("定时" + LabelOf(a), "定好了：" + at.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)
+            Logger.Write("定时" + LabelOf(a), (modify ? "改好了：" : "定好了：") + at.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)
                 + " · 还有 " + seconds.ToString(CultureInfo.InvariantCulture) + " 秒 · "
                 + (DryRun ? "试运行" : ("模式=" + rec.Mode)));
             return 0;

@@ -4021,6 +4021,12 @@ if ($null -eq $tmWin) {
          ' 状态行=' + $tmStatus.Count + ' 开始=' + $(if ($tmStart.Count -eq 1) { $tmStart[0].Enabled } else { '没找到' }) +
          ' 取消=' + $(if ($tmCancel.Count -eq 1) { $tmCancel[0].Enabled } else { '没找到' }))
 
+    $tmStart0 = @($tmKids | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '开始计时' })
+    $tmMod0 = @($tmKids | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '改一下' })
+    Check 'J18b 没有定时任务时那颗按钮是「开始计时」，不会冒出「改一下」' `
+        (($tmStart0.Count -eq 1) -and ($tmMod0.Count -eq 0)) `
+        ('开始=' + $tmStart0.Count + ' 改一下=' + $tmMod0.Count)
+
     # 点「开始计时」→ 确认框（标题固定是「请确认」）。正文里必须有那句"不会替你保存文档"。
     $tmDlg = $null
     if ($tmStart.Count -eq 1 -and $tmStart[0].Enabled) {
@@ -4064,6 +4070,77 @@ if ($null -eq $tmWin) {
          -and ($tmCancel2.Count -eq 1) -and $tmCancel2[0].Enabled) `
         ('记录=' + (($tmRec -split "`r?`n" | Where-Object { $_ -like 'action=*' -or $_ -like 'mode=*' }) -join ' ') +
          ' 状态行=[' + $tmStatus2 + '] 取消=' + $(if ($tmCancel2.Count -eq 1) { $tmCancel2[0].Enabled } else { '没找到' }))
+
+    # ---- 「改一下」（2026-10-24 P-7）：已经定好一条时，那颗按钮变成「改一下」-------------------
+    # 用户原话：「定时关机加个『改一下』」—— 以前想换时间 / 换动作只能先「取消定时」再定一遍。
+    # 这里真点两下：第一下只是把现在这条填回上面（一个字节都不写），第二下才弹确认框、真的改。
+    $tmAtBefore = ''
+    if (Test-Path -LiteralPath $script:TimerStateFile) {
+        $tmAtBefore = (@([System.IO.File]::ReadAllLines($script:TimerStateFile) |
+            Where-Object { $_ -like 'at=*' }) -join '')
+    }
+    $tmModBtn = @(Get-ChildControls -RootHandle $tmH | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '改一下' })
+    $tmArmBtn = @()
+    if ($tmModBtn.Count -eq 1 -and $tmModBtn[0].Enabled) {
+        [void][TBGui]::Click($tmModBtn[0].H)
+        for ($t8 = 0; $t8 -lt 20; $t8++) {
+            Start-Sleep -Milliseconds 150
+            $tmArmBtn = @(Get-ChildControls -RootHandle $tmH | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '确认改掉' })
+            if ($tmArmBtn.Count -eq 1) { break }
+        }
+    }
+    $tmAtAfterArm = ''
+    if (Test-Path -LiteralPath $script:TimerStateFile) {
+        $tmAtAfterArm = (@([System.IO.File]::ReadAllLines($script:TimerStateFile) |
+            Where-Object { $_ -like 'at=*' }) -join '')
+    }
+    Check 'J20b 有定时时按钮是「改一下」；点一下变成「确认改掉」，记录一个字都没动' `
+        (($tmModBtn.Count -eq 1) -and $tmArmBtn.Count -eq 1 -and $tmArmBtn[0].Enabled `
+         -and ($tmAtBefore.Length -gt 0) -and ($tmAtAfterArm -eq $tmAtBefore)) `
+        ('改一下=' + $tmModBtn.Count + ' 确认改掉=' + $tmArmBtn.Count +
+         ' 记录[' + $tmAtBefore + ']→[' + $tmAtAfterArm + ']')
+
+    # 换动作（点「重启」）+ 换时间（点「多少分钟以后」再点「1 小时」快选）→ 点「确认改掉」→ 确认框「改掉」
+    $tmRadioMin = @(Get-ChildControls -RootHandle $tmH | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '多少分钟以后' })
+    $tmRadioRestart = @(Get-ChildControls -RootHandle $tmH | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '重启' })
+    $tmQuick60 = @(Get-ChildControls -RootHandle $tmH | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '1 小时' })
+    if ($tmRadioMin.Count -eq 1) { [void][TBGui]::Click($tmRadioMin[0].H); Start-Sleep -Milliseconds 300 }
+    if ($tmRadioRestart.Count -eq 1) { [void][TBGui]::Click($tmRadioRestart[0].H); Start-Sleep -Milliseconds 200 }
+    if ($tmQuick60.Count -eq 1) { [void][TBGui]::Click($tmQuick60[0].H); Start-Sleep -Milliseconds 300 }
+    if ($tmArmBtn.Count -eq 1 -and $tmArmBtn[0].Enabled) { [void][TBGui]::Click($tmArmBtn[0].H) }
+    $tmDlg3 = $null
+    for ($t9 = 0; $t9 -lt 40; $t9++) {
+        Start-Sleep -Milliseconds 200
+        $tmDlg3 = @((Get-TopWindows -ProcessId $proc.Id) | Where-Object { $_.Visible -and $_.Text -eq '请确认' })
+        if ($tmDlg3.Count -gt 0) { break }
+    }
+    $tmDlg3Text = ''
+    $tmDlg3Ok = @()
+    if (@($tmDlg3).Count -gt 0) {
+        $tmDlg3H = @($tmDlg3)[0].H
+        $tmDlg3Text = (@(Get-ChildControls -RootHandle $tmDlg3H | Where-Object { $_.Class -like '*STATIC*' } |
+            ForEach-Object { $_.Text }) -join "`n")
+        $tmDlg3Ok = @(Get-ChildControls -RootHandle $tmDlg3H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '改掉' })
+    }
+    if ($tmDlg3Ok.Count -eq 1) { [void][TBGui]::Click($tmDlg3Ok[0].H) }
+    $tmRec3 = ''
+    for ($t10 = 0; $t10 -lt 40; $t10++) {
+        Start-Sleep -Milliseconds 200
+        if (Test-Path -LiteralPath $script:TimerStateFile) {
+            $tmRec3 = [System.IO.File]::ReadAllText($script:TimerStateFile)
+            if ($tmRec3 -like '*action=restart*') { break }
+        }
+    }
+    $tmAtAfter = ''
+    if ($tmRec3.Length -gt 0) {
+        $tmAtAfter = (@(($tmRec3 -split "`r?`n") | Where-Object { $_ -like 'at=*' }) -join '')
+    }
+    Check 'J20c 改成「重启 · 1 小时后」：确认框写明原来那条 / 新的这条，记录真的换成 action=restart、时刻也变了' `
+        (($tmDlg3Text -like '*原来那条*') -and ($tmDlg3Text -like '*改成这条*') -and ($tmDlg3Text -like '*不会替你保存文档*') `
+         -and ($tmDlg3Ok.Count -eq 1) -and ($tmRec3 -like '*action=restart*') -and ($tmRec3 -like '*mode=system*') `
+         -and ($tmAtAfter.Length -gt 0) -and ($tmAtAfter -ne $tmAtBefore)) `
+        ('确认框=' + @($tmDlg3).Count + ' 按钮=' + $tmDlg3Ok.Count + ' 正文长度=' + $tmDlg3Text.Length +
+         ' 记录[' + $tmAtBefore + ']→[' + $tmAtAfter + ']')
 
     # 取消 → 又一个确认框（按钮也叫「取消定时」，但在**确认框里**）
     $tmDlg2 = $null

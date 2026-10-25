@@ -581,13 +581,17 @@
     },
     {
       "paths": [
-        "src/SysReg.cs"
+        "src/SysReg.cs",
+        "src/RegEngine.cs"
       ],
       "cli": [
+        "I",
         "L"
       ],
-      "gui": [],
-      "note": "常用设置的注册表开关（记原值 / 读回核对 / 一键还原）"
+      "gui": [
+        "J"
+      ],
+      "note": "常用设置的注册表开关（记原值 / 读回核对 / 一键还原；隐私开关共用 RegEngine 这套实现）。⚠️ 2026-10-24 加了「修复图标黑块 / 还原修复前图标」那一对（独立 id `shell-icon-block`，「还原」走新的 `RegEngine.RestoreFor` 只退这一项）→ **界面 J 组也要跑**：J26–J28 真点这两颗按钮、过确认框、在 `MXX1_SHELLICONS_ROOT` 隔离根里读回「29 被删掉 / 原值记进 tsv / 还原后写回来 / 记录清空」"
     },
     {
       "paths": [

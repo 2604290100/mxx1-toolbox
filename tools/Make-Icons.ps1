@@ -178,6 +178,10 @@ function Get-Shape {
         # 跟「去掉 / 恢复小箭头」那一对同一个画法（都是"把某个提示藏掉 / 放回来"）。
         @('watermark-hide',    'minus'),
         @('watermark-restore', 'refresh'),
+        # 2026-10-24「桌面图标黑块」那一对：修复 = 扳手（修一修）、还原修复前 = 循环箭头（退回去）。
+        # ⚠ 必须排在下面那些泛匹配之前：`iconblock-*` 里没有能撞的词，但将来别让 `icon` 类规则吃掉它。
+        @('iconblock-fix',     'wrench'),
+        @('iconblock-restore', 'refresh'),
         @('appx',           'list'),
         @('uninstall-app',  'minus'),
         @('default-app',    'window'),

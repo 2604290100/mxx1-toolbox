@@ -3551,6 +3551,19 @@ $jAsTsv = Join-Path $tmpRoot ('mxx1-assoc-gui-' + $PID + '.tsv')
 try { if (Test-Path -LiteralPath $jAsTsv) { Remove-Item -LiteralPath $jAsTsv -Force } } catch { }
 $jDsEnv['MXX1_ASSOC_ROOT'] = 'HKCU\Software\mxx1-toolbox\assoc-gui'
 $jDsEnv['MXX1_ASSOC_TSV'] = $jAsTsv
+# 「修复图标黑块 / 还原修复前图标」（2026-10-24）也给它一个**隔离根**：`MXX1_SHELLICONS_ROOT`
+# 一设，两处 Shell Icons 合并成 HKCU 下面这一个测试键（壳 / 桌面都读不到它，用户真实的
+# HKLM / HKCU `Shell Icons` 一个字节都不碰，也不需要管理员）；`MXX1_SYSREG_TSV` 把原值记录
+# 挪到临时目录，别混进用户真实的 `sysreg-original.tsv`。
+# 夹具故意做成"用户那台机器的样子"：29 = `shell32.dll,-50`（就是画成黑方块的那个值）。
+$jIbRootPs = 'HKCU:\Software\mxx1-toolbox\shellicons-gui'
+try { if (Test-Path -LiteralPath $jIbRootPs) { Remove-Item -LiteralPath $jIbRootPs -Recurse -Force } } catch { }
+[void](New-Item -Path $jIbRootPs -Force)
+Set-ItemProperty -LiteralPath $jIbRootPs -Name '29' -Value '%SystemRoot%\System32\shell32.dll,-50' -Type String
+$jIbTsv = Join-Path $tmpRoot ('mxx1-sysreg-gui-' + $PID + '.tsv')
+try { if (Test-Path -LiteralPath $jIbTsv) { Remove-Item -LiteralPath $jIbTsv -Force } } catch { }
+$jDsEnv['MXX1_SHELLICONS_ROOT'] = 'Software\mxx1-toolbox\shellicons-gui'
+$jDsEnv['MXX1_SYSREG_TSV'] = $jIbTsv
 
 # ⚠ **必须自己起一个界面实例**：G 组（深色主题）在它结尾就把最开始的 `$main` 关掉了
 # （Test-Gui.ps1 里那句 CloseWindow($main)），H 组用的是自己的 `$procFixed`。
@@ -4358,6 +4371,98 @@ if ($wAs -eq $null) {
     Close-JWindow $wAs
     Start-Sleep -Milliseconds 400
 }
+
+# ---- 修复图标黑块 / 还原修复前图标（2026-10-24，治「桌面快捷方式上那块黑方块」）----------------
+# 这一对是**真写注册表**的（确认框 + 需要管理员），所以整段都跑在 `MXX1_SHELLICONS_ROOT` 隔离根上：
+# 「修复」= 把 29 删掉、写之前记原值；「还原」= 按记录把原值写回来（不是写死 -50）。
+# 后端同一条路在命令行 L02 / L04c / L04d / L06 / L12c 盯着"表里有这一项、方向没接反、
+# 只有它和另外五个会自动重启资源管理器"；这里验的是**用户真点按钮**这一条路。
+function Invoke-JConfirmBox {
+    param([IntPtr]$Owner, [string]$BodyPrefix, [string]$OkText)
+    $dlg = $null
+    for ($i = 0; $i -lt 50; $i++) {
+        Start-Sleep -Milliseconds 200
+        $dlg = Find-JAssocDialog -ProcessId $proc.Id -Main $main -Owner $Owner -TitlePrefix $BodyPrefix
+        if ($dlg -ne $null) { break }
+    }
+    $clicked = $false
+    if ($dlg -ne $null) {
+        $ok = @(Get-ChildControls -RootHandle $dlg.H | Where-Object { $_.Class -like '*BUTTON*' -and [string]$_.Text -eq $OkText })
+        if ($ok.Count -eq 1) { [void][TBGui]::Click($ok[0].H); $clicked = $true }
+    }
+    return @{ Found = ($dlg -ne $null); Clicked = $clicked }
+}
+
+function Read-JOutputBox {
+    param([string]$TitlePrefix, [int]$Tries = 80)
+    for ($i = 0; $i -lt $Tries; $i++) {
+        $w = Find-TopWindow -ProcessId $proc.Id -TextPrefix $TitlePrefix
+        if ($w -ne $null) {
+            $e = @(Get-ChildControls -RootHandle $w.H | Where-Object { $_.Class -like '*EDIT*' })
+            if (($e.Count -ge 1) -and ([string]$e[0].Text).Length -gt 0) {
+                return @{ Win = $w; Text = [string]$e[0].Text }
+            }
+        }
+        Start-Sleep -Milliseconds 250
+    }
+    return @{ Win = $null; Text = '' }
+}
+
+$ibTab = Switch-Tab -Handle $main -TabName '常用设置' -ExpectNames @('修复图标黑块', '还原修复前图标')
+$ibFixBtn = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '修复图标黑块' })
+$ibBackBtn = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '还原修复前图标' })
+Check 'J26 常用设置页有「修复图标黑块 / 还原修复前图标」两颗按钮，都可点（第 4 段 · 文件显示那一组）' `
+    ($ibTab -and ($ibFixBtn.Count -eq 1) -and $ibFixBtn[0].Enabled -and ($ibBackBtn.Count -eq 1) -and $ibBackBtn[0].Enabled) `
+    ('页签=' + $ibTab + ' 修复=' + $ibFixBtn.Count + ' 还原=' + $ibBackBtn.Count)
+
+if (($ibFixBtn.Count -ne 1) -or ($ibBackBtn.Count -ne 1)) {
+    Check 'J27 真点「修复图标黑块」→ 确认框 → 报告念出前后值、隔离根里 29 被删掉、原值记进 tsv' $false '按钮没找到'
+    Check 'J28 真点「还原修复前图标」→ 确认框 → 按记录写回 29、记录清空' $false '按钮没找到'
+} else {
+    $ibIsAdmin = $false
+    try {
+        $ibIsAdmin = (New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    } catch { }
+    if (-not $ibIsAdmin) {
+        # 这两颗是 runAsAdmin：非管理员点下去会走"提权重开一个自己"那条路，自动化验不了
+        Skip 'J27 真点「修复图标黑块」→ 确认框 → 隔离根里 29 被删掉、原值记进 tsv' '测试进程不是管理员：点了会弹 UAC，跳过'
+        Skip 'J28 真点「还原修复前图标」→ 确认框 → 按记录写回 29、记录清空' '同上'
+    } else {
+        [void][TBGui]::Click($ibFixBtn[0].H)
+        $ibDlg = Invoke-JConfirmBox -Owner $main -BodyPrefix '要执行「修复图标黑块」' -OkText '执行'
+        $ibOut = Read-JOutputBox -TitlePrefix '修复图标黑块'
+        $ibGone = $true
+        try { [void](Get-ItemProperty -LiteralPath $jIbRootPs -Name '29' -ErrorAction Stop); $ibGone = $false } catch { }
+        $ibTsvText = ''
+        if (Test-Path -LiteralPath $jIbTsv) { $ibTsvText = [System.IO.File]::ReadAllText($jIbTsv, [System.Text.Encoding]::UTF8) }
+        Check 'J27 真点「修复图标黑块」→ 确认框 → 报告念出改之前的样子与读回核对，隔离根里 29 真被删掉、原值记进 tsv' `
+            ($ibDlg.Found -and $ibDlg.Clicked -and ($ibOut.Text -match '【桌面图标黑块】修复') -and `
+             ($ibOut.Text -match '写之前的样子') -and ($ibOut.Text -match '读回核对') -and `
+             ($ibOut.Text -match '已经没有这个值了') -and $ibGone -and ($ibTsvText -match 'shell-icon-block')) `
+            ('确认框=' + $ibDlg.Found + '/' + $ibDlg.Clicked + ' 29删掉了=' + $ibGone + ' 记录=' + ($ibTsvText.Length) + '字符 报告=' + $ibOut.Text.Length + '字符')
+        Close-JWindow $ibOut.Win
+        Start-Sleep -Milliseconds 300
+
+        [void][TBGui]::Click($ibBackBtn[0].H)
+        $ibDlg2 = Invoke-JConfirmBox -Owner $main -BodyPrefix '要执行「还原修复前图标」' -OkText '执行'
+        $ibOut2 = Read-JOutputBox -TitlePrefix '还原修复前图标'
+        $ibBackVal = ''
+        $ibBackOk = $false
+        try {
+            $ibBackVal = [string](Get-ItemProperty -LiteralPath $jIbRootPs -Name '29' -ErrorAction Stop).'29'
+            $ibBackOk = $true
+        } catch { }
+        $ibTsvGone = -not (Test-Path -LiteralPath $jIbTsv)
+        Check 'J28 真点「还原修复前图标」→ 确认框 → 报告念出「按修复前记下的原值写回去」，29 变回 -50、记录清空' `
+            ($ibDlg2.Found -and $ibDlg2.Clicked -and ($ibOut2.Text -match '【桌面图标黑块】还原修复前的图标设置') -and `
+             ($ibOut2.Text -match '按修复前记下的原值写回去') -and $ibBackOk -and ($ibBackVal -match '\-50$') -and $ibTsvGone) `
+            ('确认框=' + $ibDlg2.Found + '/' + $ibDlg2.Clicked + ' 29=' + $ibBackVal + ' 记录清空=' + $ibTsvGone + ' 报告=' + $ibOut2.Text.Length + '字符')
+        Close-JWindow $ibOut2.Win
+        Start-Sleep -Milliseconds 300
+    }
+}
+try { if (Test-Path -LiteralPath $jIbRootPs) { Remove-Item -LiteralPath $jIbRootPs -Recurse -Force } } catch { }
+try { if (Test-Path -LiteralPath $jIbTsv) { Remove-Item -LiteralPath $jIbTsv -Force } } catch { }
 
 [void][TBGui]::CloseWindow($main)
 Start-Sleep -Milliseconds 600

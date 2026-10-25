@@ -1,6 +1,6 @@
 ---
 name: mxx1-toolbox
-description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Windows button-wall launcher whose main window is a multi-row, multi-column grid of small buttons that each start another program, script, or feature. Covers its interface rules (four column compact buttons, top tabs, separator segments, light/dark theme, computed column width, grey "not wired up yet" buttons), the tools\*.json button registry, bin-tools\ auto-loaded tool buttons (tool.json), how buttons launch things (exe / script / open / builtin / macro), how the 50 系统工具 buttons open Windows components, how the 常用设置 registry switches record the original value so every change can be undone, how a run reports success or failure, the first-run consent gate (免责声明与服务条款 fingerprint), the read-only update check, Windows 7/10/11 compatibility, plus build.ps1, screenshot tool and the GUI/CLI test suites.
+description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Windows button-wall launcher whose main window is a multi-row, multi-column grid of small buttons that each start another program, script, or feature. Covers its interface rules (four column compact buttons, top tabs, separator segments, light/dark theme, computed column width, grey "not wired up yet" buttons), the tools\*.json button registry, bin-tools\ auto-loaded tool buttons (tool.json), how buttons launch things (exe / script / open / builtin / macro), how the 51 系统工具 buttons open Windows components, how the 常用设置 registry switches record the original value so every change can be undone, how a run reports success or failure, the first-run consent gate (免责声明与服务条款 fingerprint), the read-only update check, Windows 7/10/11 compatibility, plus build.ps1, screenshot tool and the GUI/CLI test suites.
 ---
 
 # 萌新工具箱（mxx1 Toolbox）
@@ -16,7 +16,29 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
 > **接手 / 新会话先做两件事**：读 `docs\DESIGN.md`（外观与行为的**唯一正本**）和本文件。
 > 设计一改先改 `DESIGN.md`，再同步本 skill —— 两份分叉就会出现"两套行为"。
 
-## 当前状态（2026-10-24，**v1.6.0 已定版**：关掉系统代理 + 批量重命名浏览 + 端口与进程增强 + UX 六条 + 条款补齐 + 定时关机「改一下」+ **文件关联体检**）
+## 当前状态（2026-10-24，**v1.6.0**：关掉系统代理 + 批量重命名浏览 + 端口与进程增强 + UX 六条 + 条款补齐 + 定时关机「改一下」+ **文件关联体检** + **修复桌面图标黑块**）
+
+> **⚠️ 2026-10-24 深夜这一轮（「修复桌面图标黑块 / 还原修复前图标」；条款又改了一次）**：
+> 用户发来一张桌面截图问「看看这个可以修复不？顺便做成按键功能」—— 截图里**每颗快捷方式的角上都是同一块黑方块**。
+> ① **真因**：`Shell Icons\29` 被写成了 `%SystemRoot%\System32\shell32.dll,-50`（**正是「去掉小箭头」写进去的那个
+>   "全透明空图标"**），在这台 Win10 上它没画成透明、渲染成一块黑。`HKLM` 与 `HKCU` 两处都有 → 修复要两处一起清。
+>   `HKLM` 里还有 `77` / `179 = imageres.dll,197`（第三方美化工具留下的）→ **只报告、一个字节都不动**。
+> ② **按钮**（常用设置页段 4 末尾）：**修复图标黑块**（`iconblock-fix`，order 90，`sysreg/off`）+
+>   **还原修复前图标**（`iconblock-restore`，order 100，`sysreg/on`）；两个都 `runAsAdmin` + `confirm`，
+>   写完**自动重启一次资源管理器**。
+> ③ ⭐ **单开一项 id（`shell-icon-block`），不复用「去掉小箭头」**：这一对的「还原」要退回**点修复之前**的样子，
+>   不是"去掉小箭头之前"的出厂值。新增 **`RegEngine.RestoreFor(id)`**（只还原这一项，别的记录原样留着，
+>   全退完才删记录文件）。
+> ④ 报告：修复前逐处念「改之前的样子」→ 删值 → **读回核对** → 顺带念 77/179（不动）→ 指路「清理优化」页的
+>   「修复图标与缩略图缓存」（那是另一件事）。「查看设置改动」里这一项**不再念「开启状态」**（改成
+>   「有自定义图标值（…，这块黑方块就是它画出来的）」/「系统默认的小箭头」）。
+> ⑤ 隔离根：`MXX1_SHELLICONS_ROOT`（两处合并成 HKCU 下一个测试键，免管理员）+ `MXX1_SYSREG_TSV`。
+> ⑥ 数字：内置按钮 / 图标 **180 → 182**（`status` **183 → 185**）、常用设置 **57 → 59**（段 4 8 → 10 颗）。
+> ⑦ 回归：命令行 **L02 / L03 / L04c / L04d / L06 / L12c** + A04/A07/A09/A10/H02 计数；
+>   界面 **J26–J28**（真点两颗按钮 → 过确认框 → 隔离根里 `29` 真被删掉、原值真进 tsv → 真点还原 → 值写回来、记录清空）。
+> ⑧ ⚠️ **条款第 1/2 节补了这一对 → 同意指纹 `7a73d879b51e54c7` → `db2c1a73f510a37c`**（所有人下次打开界面要重确认一次）。
+> ⑨ ⚠️ **没验到的**：「桌面上的黑真的变回小箭头」要靠人眼看（回归只验到值删掉/写回都读回核对过）；
+>   77/179 若也是坏值本工具不动；Win7 没跑。正本 `docs\DESIGN.md` **§12.85**。
 
 > **⚠️ 2026-10-24 这一轮（P-2 推送 / P-3 定 1.6.0 / P-4 发版前两件 / P-5 条款 / P-7 改一下）**：
 > ① **关掉系统代理**（`proxy-off`，`src\ProxyConfig.cs` + `src\ProxyForm.cs`：只动 WinINET 四个值，
@@ -912,14 +934,15 @@ powershell -File tools\Make-AppIcon.ps1       # 重生成 assets\app.ico（改�
 ③ **写完读回核对**。需要写 HKLM 的开关走「把自己以管理员身份再起一遍」（`run <id> --admin`），
 结果是 winexe 没有控制台，所以写进 `last-elevated-result.txt`、父进程过几秒读出来弹窗口。
 
-## 「常用设置」怎么点（57 个；其中 30 个注册表开关都能一键还原）
+## 「常用设置」怎么点（59 个；其中 32 个注册表开关都能一键还原）
 
 **五段**：段 1 = 9 组「关 X / 开 X」成对开关（2026-10-20 追加了小组件 / Copilot / 菜单延迟三对），
 段 2 = 安全入口 / 电源 / 系统维护（**只打开官方界面，绝不代关系统防线**；另加一对
 **「隐藏 / 恢复未激活水印」**，2026-10-20 晚）、
 段 3 = **电源与笔记本（合盖 · 电池 · 唤醒）**（8 个 = 合盖动作 / 体检 / 电池报告 / 谁在阻止睡眠 /
 桌面模式 / **定时关机·重启·睡眠** + 「快速启动」那一对，2026-10-19 / 10-20 加的）、
-段 4 = **文件显示 · 快捷方式 · 时钟**（4 对 8 个）、**段 5 = 改动的记录与还原**；这一页现在 5 段 18 行，
+段 4 = **文件显示 · 快捷方式 · 时钟**（4 对 8 个 + **2026-10-24 末尾加的「修复图标黑块 / 还原修复前图标」**，
+共 10 个）、**段 5 = 改动的记录与还原**；这一页现在 5 段 18 行，
 界面 B03/B04 就是按段数行数的）。
 
 - 6 组老开关（走 `src\SysReg.cs` + `src\RegEngine.cs`，**和隐私设置共用同一份引擎**）：
@@ -932,11 +955,17 @@ powershell -File tools\Make-AppIcon.ps1       # 重生成 assets\app.ico（改�
   `menu-delay`（`MenuShowDelay` **字符串** `20` / `400`）（段 1 末尾）、
   `fast-startup`（HKLM `HiberbootEnabled` 1/0，自动算成"要管理员"，段 3）、
   `activation-watermark`（**段 2**，HKLM `...\SoftwareProtectionPlatform\NoAcrWatermark` = 1，
-  「恢复」= **删值**（`OffValue = null`）；水印是 explorer 画的 → 也带 `RestartExplorer`，
-  所以那个名单现在是**五个**）。
-  ⚠️ **小箭头 / 时钟秒 / 小组件 / Copilot / 未激活水印这五个带 `Tweak.RestartExplorer`** —— 写完
+  「恢复」= **删值**（`OffValue = null`）；水印是 explorer 画的 → 也带 `RestartExplorer`）。
+- **2026-10-24 又加了一对（段 4 末尾）：`shell-icon-block`「修复桌面图标黑块 / 还原修复前图标」** ——
+  同一个 `Shell Icons\29`，但**单开一项 id**（不复用 `shortcut-arrow`：「还原」要退回**点修复之前**的样子，
+  不是"去掉小箭头之前"的出厂值）。「修复」= 把 HKCU + HKLM 两处 `29` 删掉并记账，
+  「还原」= 按记录写回去（**不写死 `-50`**）；只还原这一项走新的 **`RegEngine.RestoreFor(id)`**。
+  报告里顺带念 `HKLM` 的 `77` / `179`（第三方美化工具留下的）但**一个字节都不动**；
+  「查看设置改动」里这一项**不念「开启状态」**（改念「有自定义图标值…这块黑方块就是它画出来的」）。
+  隔离根：`MXX1_SHELLICONS_ROOT` + `MXX1_SYSREG_TSV`。正本 `docs\DESIGN.md` §12.85。
+  ⚠️ **小箭头 / 时钟秒 / 小组件 / Copilot / 未激活水印 / 修复图标黑块这六个带 `Tweak.RestartExplorer`** —— 写完
   `SysReg.Set` 自动调一次 `src\ExplorerRestart.cs`（命令唯一来源 = common.json 的 `restart-explorer`；
-  `sysreg items` 会多打一列，`L04d` 盯着"正好这五个"）。`MXX1_NO_EXPLORER_RESTART=1` 时不真做。
+  `sysreg items` 会多打一列，`L04d` 盯着"正好这六个"）。`MXX1_NO_EXPLORER_RESTART=1` 时不真做。
 - **段 3「电源与笔记本」五颗**（`src\Power.cs` / `src\PowerForm.cs`）：
   `power-lid`（开窗设**合盖 / 按电源按钮 / 按睡眠按钮**三个动作 × 接电源·用电池；写的时候**所有方案一起写**；
   窗口里能「还原成改前的值」，还有一个「让控制面板里能看见『选择关闭盖子的功能』」的勾）、

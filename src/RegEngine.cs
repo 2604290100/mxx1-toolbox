@@ -621,8 +621,31 @@ namespace Mxx1Toolbox
         /// <summary>Writes every recorded original back; drops the record when nothing failed.</summary>
         public RegRestoreReport Restore()
         {
+            return RestoreCore(null);
+        }
+
+        /// <summary>只还原**某一项**（按 item id）的原值，别的记录原样留着。
+        /// 用在「修复」和「还原修复前的样子」各占一颗按钮的地方（桌面图标黑块那一对）：
+        /// 用户点「还原」时只想退回那一步，不想把别的开关也一起改回去。
+        /// 和 Restore() 一样：这一项全部还原成功就把它那几条记录从文件里摘掉
+        /// （别的一项的记录不动；一条都不剩就把文件删掉）。</summary>
+        public RegRestoreReport RestoreFor(string id)
+        {
+            return RestoreCore(id);
+        }
+
+        private RegRestoreReport RestoreCore(string onlyId)
+        {
             RegRestoreReport report = new RegRestoreReport();
-            List<RegRecord> backup = LoadRecords();
+            List<RegRecord> all = LoadRecords();
+            if (all.Count == 0) { return report; }
+            List<RegRecord> backup = new List<RegRecord>();
+            List<RegRecord> keep = new List<RegRecord>();
+            foreach (RegRecord r in all)
+            {
+                if (onlyId == null || string.Equals(r.Id, onlyId, StringComparison.OrdinalIgnoreCase)) { backup.Add(r); }
+                else { keep.Add(r); }
+            }
             if (backup.Count == 0) { return report; }
 
             // 先处理"整个键"的记录：本来没有这个键 → 整棵树删掉（我们建的那些子值跟着一起走），
@@ -696,8 +719,18 @@ namespace Mxx1Toolbox
 
             if (report.Failed == 0)
             {
-                try { File.Delete(_backupPath); report.Cleared = true; }
-                catch (Exception ex) { report.BackupError = ex.Message; }
+                if (keep.Count == 0)
+                {
+                    try { File.Delete(_backupPath); report.Cleared = true; }
+                    catch (Exception ex) { report.BackupError = ex.Message; }
+                }
+                else
+                {
+                    // 只还原了一项：别的记录继续留着，把文件重写成剩下的那些。
+                    string saveError = SaveRecords(keep);
+                    report.Cleared = false;
+                    if (saveError.Length > 0) { report.BackupError = saveError; }
+                }
             }
             return report;
         }

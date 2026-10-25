@@ -25,8 +25,18 @@ namespace Mxx1Toolbox
         public static string PrivacyBackupFile { get { return Path.Combine(BaseDir, "privacy-original.tsv"); } }
 
         /// <summary>同一套机制，记的是「常用设置」里那批写注册表的系统设置（任务栏合并方式 /
-        /// 开始菜单对齐 / 驱动自动安装 / 内核隔离 / 资源管理器与右键菜单的 CLSID 覆盖）。</summary>
-        public static string SysRegBackupFile { get { return Path.Combine(BaseDir, "sysreg-original.tsv"); } }
+        /// 开始菜单对齐 / 驱动自动安装 / 内核隔离 / 资源管理器与右键菜单的 CLSID 覆盖）。
+        /// `MXX1_SYSREG_TSV` 可以把这份记录挪走（界面回归点「修复桌面图标黑块」时用：
+        /// 那两颗按钮真写注册表，记录文件也得跟着隔离，别混进用户真实的原值记录里）。</summary>
+        public static string SysRegBackupFile
+        {
+            get
+            {
+                string env = (Environment.GetEnvironmentVariable("MXX1_SYSREG_TSV") ?? "").Trim();
+                if (env.Length > 0) { return env; }
+                return Path.Combine(BaseDir, "sysreg-original.tsv");
+            }
+        }
 
         /// <summary>结果交接文件。按钮需要管理员权限时工具箱会把自己以管理员身份再起一遍，而那个
         /// 子进程是 winexe（没有控制台），Console 输出等于扔掉 —— 所以它把结果写在这里，

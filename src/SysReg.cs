@@ -56,6 +56,33 @@ namespace Mxx1Toolbox
     {
         private const string Scratch = "SOFTWARE\\mxx1-toolbox\\sysreg-selftest";
 
+        /// <summary>「桌面图标黑块」那一项的 id（按钮的 options 就是它）。</summary>
+        public const string IconBlockId = "shell-icon-block";
+
+        private const string ShellIconsKey = "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Shell Icons";
+
+        /// <summary>「桌面图标黑块」写的两处值：Shell Icons\29（快捷方式左下角那个叠加图标）。
+        /// ⚠️ 测试隔离：`MXX1_SHELLICONS_ROOT` 一设，两处合并成 **HKCU 下面这一个键** ——
+        /// 界面回归就能真点「修复 / 还原」走完整条路，而用户真实的 `Shell Icons` 一个字节都不碰，
+        /// 也不需要管理员（见 tests\Test-Gui.ps1 里那两个环境变量）。</summary>
+        private static RegValueSpec[] ShellIcon29Values()
+        {
+            string env = (Environment.GetEnvironmentVariable("MXX1_SHELLICONS_ROOT") ?? "").Trim().TrimEnd('\\');
+            if (env.Length > 0)
+            {
+                // 两处合成一处：值名还是 29，写入 / 读回 / 还原整条路一样走。
+                return new RegValueSpec[]
+                {
+                    Str("HKCU", env, "29", "%SystemRoot%\\System32\\shell32.dll,-50", null)
+                };
+            }
+            return new RegValueSpec[]
+            {
+                Str("HKCU", ShellIconsKey, "29", "%SystemRoot%\\System32\\shell32.dll,-50", null),
+                Str("HKLM", ShellIconsKey, "29", "%SystemRoot%\\System32\\shell32.dll,-50", null)
+            };
+        }
+
         private static RegValueSpec Dword(string hive, string key, string name, string on, string off)
         {
             RegValueSpec v = new RegValueSpec();
@@ -348,6 +375,29 @@ namespace Mxx1Toolbox
             };
             list.Add(mark);
 
+            // ⑯ 桌面图标黑块（2026-10-24 用户报的：「桌面快捷方式变成黑方块」+ 一张截图）。
+            //    真因（本机量出来的）：Shell Icons\29 被写成了 `shell32.dll,-50` —— 这正是上面
+            //    「去掉小箭头」写进去的那个「全透明空图标」；这台 Win10 上它没画成透明，反而
+            //    渲染成一块黑。删掉 29（HKLM + HKCU）就回到系统默认的小箭头（2026-10-20 实测：
+            //    这台机器真正生效的是 HKLM 那一份，所以两处都删）。
+            //
+            //    这一对**故意不复用 shortcut-arrow**：两个 id 各记各的原值 ——
+            //    「还原修复前的图标设置」要退回的是**点修复之前**的样子（可能正是那个 -50，
+            //    也可能是美化工具写的别的值，甚至干脆没有），不是「去掉小箭头」之前的出厂值。
+            //    所以：修复 = off 方向（删值，先记原值）；还原 = RestoreFor(这一项)。
+            //    ⚠️ 只碰编号 29；77 / 179 这类别的编号只在报告里念一句，一个字节都不动。
+            Tweak blk = new Tweak();
+            blk.OnLabel = "还原修复前的图标设置";
+            blk.OffLabel = "修复桌面图标黑块";
+            blk.RestartExplorer = true;   // 桌面图标是 explorer 画的，不重启看不到变化
+            blk.Item = new RegItemSpec();
+            blk.Item.Id = IconBlockId;
+            blk.Item.Name = "桌面图标黑块";
+            blk.Item.What = "桌面 / 快捷方式图标左下角那块黑方块（Shell Icons\\29 被写成了一个在这台机器上会画成黑块的图标；"
+                + "「修复」= 把 HKCU 与 HKLM 两处的 29 都删掉、回到系统默认的小箭头；「还原修复前的图标设置」= 按修复前记下的原值写回去）";
+            blk.Item.Values = ShellIcon29Values();
+            list.Add(blk);
+
             foreach (Tweak t in list)
             {
                 foreach (RegValueSpec v in t.Item.Values)
@@ -428,9 +478,15 @@ namespace Mxx1Toolbox
 
         // ---------------------------------------------------------------- 对外动作
 
-        /// <summary>把一个系统设置开关设成 on（见 Tweak.OnLabel）或 off。</summary>
+        /// <summary>把一个系统设置开关设成 on（见 Tweak.OnLabel）或 off。
+        /// ⚠️ 「桌面图标黑块」这一项是特例：off = 修复（删值 + 记原值），
+        /// on = 按记录还原（**不是**写死一个 OnValue —— 别人的机器上原来可能是别的值、也可能没有）。</summary>
         public static string Set(string id, bool on, out bool ok)
         {
+            if (string.Equals(id, IconBlockId, StringComparison.OrdinalIgnoreCase))
+            {
+                return on ? RestoreIconBlock(out ok) : FixIconBlock(out ok);
+            }
             Tweak t = FindTweak(id);
             if (t == null) { ok = false; return "不认识这个系统设置开关：" + id; }
             string mismatch = BuildMismatch(t);
@@ -489,6 +545,195 @@ namespace Mxx1Toolbox
             return sb.ToString();
         }
 
+        // ---------------------------------------------------------------- 桌面图标黑块
+
+        private static string HiveLabel(string hive)
+        {
+            return string.Equals(hive, "HKLM", StringComparison.OrdinalIgnoreCase) ? "HKLM" : "HKCU";
+        }
+
+        /// <summary>「顺手看到」的那些编号：77 / 179 这类是第三方美化工具常写的位置。
+        /// **只念出来，不碰**。测试隔离时读的是隔离根（不把用户真实的值念进测试报告）。</summary>
+        private static string OtherShellIconValues()
+        {
+            StringBuilder sb = new StringBuilder();
+            string env = (Environment.GetEnvironmentVariable("MXX1_SHELLICONS_ROOT") ?? "").Trim().TrimEnd('\\');
+            string[] hives;
+            string[] keys;
+            if (env.Length > 0)
+            {
+                hives = new string[] { "HKCU" };
+                keys = new string[] { env };
+            }
+            else
+            {
+                hives = new string[] { "HKLM", "HKCU" };
+                keys = new string[] { ShellIconsKey, ShellIconsKey };
+            }
+            for (int i = 0; i < hives.Length; i++)
+            {
+                foreach (string name in new string[] { "77", "179" })
+                {
+                    RegValueSpec v = Str(hives[i], keys[i], name, "", null);
+                    bool exists;
+                    RegistryValueKind kind;
+                    string text;
+                    if (!Engine.TryReadRaw(v, out exists, out kind, out text) || !exists) { continue; }
+                    sb.Append("    ").Append(HiveLabel(hives[i])).Append(' ').Append(name)
+                      .Append(" = ").Append(text).AppendLine();
+                }
+            }
+            return sb.ToString();
+        }
+
+        /// <summary>「修复桌面图标黑块」：把 Shell Icons\29（HKCU + HKLM 两处）删掉，先记原值。
+        /// 和别的成对开关走同一套引擎，只是报告要更啰嗦一点 —— 这一项用户是"看图报障"来的，
+        /// 报告里得把"改之前是什么、现在是什么"逐处念清楚。</summary>
+        public static string FixIconBlock(out bool ok)
+        {
+            Tweak t = FindTweak(IconBlockId);
+            if (t == null) { ok = false; return "找不到「桌面图标黑块」这一项：" + IconBlockId; }
+
+            StringBuilder sb = new StringBuilder();
+            sb.AppendLine("【桌面图标黑块】修复：删掉 Shell Icons\\29 里那个自定义图标值，换回系统默认的小箭头");
+            sb.AppendLine();
+            sb.AppendLine("  写之前的样子：");
+            foreach (RegValueSpec v in t.Item.Values)
+            {
+                bool exists;
+                RegistryValueKind kind;
+                string text;
+                Engine.TryReadRaw(v, out exists, out kind, out text);
+                sb.Append("    ").Append(HiveLabel(v.Hive)).Append(" 29 = ")
+                  .Append(exists ? text : "（本来就没有这个值，系统默认小箭头）").AppendLine();
+            }
+            sb.AppendLine();
+
+            RegApplyReport report = Engine.Apply(t.Item, false);
+            sb.AppendLine("  改完读回核对：");
+            for (int i = 0; i < report.Outcomes.Count; i++)
+            {
+                RegOutcome o = report.Outcomes[i];
+                string hive = (i < t.Item.Values.Length) ? HiveLabel(t.Item.Values[i].Hive) : "?";
+                if (o.Ok)
+                {
+                    sb.Append("    √ ").Append(hive).Append(" 29 —— ");
+                    sb.Append(o.Now.IndexOf("没有这个值") >= 0
+                        ? "已经没有这个值了（回到系统默认的小箭头）"
+                        : ("现在是 " + o.Now));
+                    sb.AppendLine();
+                }
+                else
+                {
+                    sb.Append("    × ").Append(hive).Append(" 29 —— ")
+                      .Append(o.Error.Length > 0 ? o.Error : "没成功").AppendLine();
+                }
+            }
+            sb.AppendLine();
+
+            if (report.BackupError.Length > 0)
+            {
+                sb.Append("  原值没记下来（").Append(report.BackupError).AppendLine("）—— 「还原修复前的图标设置」会不完整，请手动记一下。");
+            }
+            if (report.Ok)
+            {
+                sb.Append("  ").Append(report.Written.ToString(CultureInfo.InvariantCulture))
+                  .Append(" 处都写进去了，读回核对过。").AppendLine();
+                string extras = OtherShellIconValues();
+                if (extras.Length > 0)
+                {
+                    sb.AppendLine("  顺手看到的（不是这个按钮写的，一个字节都没动）：");
+                    sb.Append(extras);
+                }
+                sb.AppendLine("  只动编号 29 这一个值（有的美化工具还会改 77 / 179，这里一概不碰）。");
+                sb.AppendLine("  要是重启之后还有黑块，去「清理优化」页点「修复图标与缩略图缓存」（它删的是 Windows 会自己重建的缓存文件）。");
+                if (t.RestartExplorer)
+                {
+                    string restartMsg;
+                    ExplorerRestart.Run(t.Item.Name, out restartMsg);
+                    sb.Append("  ").Append(restartMsg).AppendLine();
+                }
+                sb.Append("  反悔就点「还原修复前的图标设置」（按刚才记下的原值写回去）。");
+            }
+            else
+            {
+                sb.Append("  有地方没写成功 —— 上面带 × 的就是（多半是缺管理员权限）。");
+            }
+            ok = report.Ok;
+            return sb.ToString();
+        }
+
+        /// <summary>「还原修复前的图标设置」：只把这一项记下的原值写回去（别的开关的记录不动）。
+        /// 原值可能是那个 -50（黑块会回来）、也可能是美化工具写的别的值，还可能"原来没有" ——
+        /// 所以只能照记录写，不能写死一个值。</summary>
+        public static string RestoreIconBlock(out bool ok)
+        {
+            RegRestoreReport report = Engine.RestoreFor(IconBlockId);
+            StringBuilder sb = new StringBuilder();
+            sb.AppendLine("【桌面图标黑块】还原修复前的图标设置：按修复前记下的原值写回去");
+            sb.AppendLine();
+            if (report.Outcomes.Count == 0)
+            {
+                ok = true;
+                sb.AppendLine("  没有要还原的东西：还没点过「修复桌面图标黑块」。");
+                sb.Append("  （原值记录应该在 ").Append(BackupPath).Append("）");
+                return sb.ToString();
+            }
+            foreach (RegOutcome o in report.Outcomes)
+            {
+                if (o.Ok)
+                {
+                    sb.Append("  √ ").Append(o.Label);
+                    if (o.Note.Length > 0) { sb.Append("  ").Append(o.Note); }
+                    sb.AppendLine();
+                }
+                else
+                {
+                    sb.Append("  × ").Append(o.Label).Append("  还原失败：").Append(o.Error).AppendLine();
+                }
+            }
+            sb.AppendLine();
+            if (report.Failed == 0)
+            {
+                sb.Append("  ").Append(report.Done.ToString(CultureInfo.InvariantCulture)).Append(" 处都写回去了");
+                if (report.Cleared) { sb.Append("；这一项的原值记录已经清空（别的开关的记录没动）"); }
+                sb.AppendLine();
+                sb.Append("  桌面图标要重启资源管理器才重画 —— 这一步工具箱替你做了（见下一行）。").AppendLine();
+                string restartMsg;
+                ExplorerRestart.Run("还原修复前的图标设置", out restartMsg);
+                sb.Append("  ").Append(restartMsg);
+            }
+            else
+            {
+                sb.Append("  有 ").Append(report.Failed.ToString(CultureInfo.InvariantCulture))
+                  .Append(" 处没还原成功（多半是缺管理员权限），原值记录先留着。");
+            }
+            ok = (report.Failed == 0);
+            return sb.ToString();
+        }
+
+        /// <summary>「桌面图标黑块」在「查看设置改动」里念的那句话。
+        /// 不能沿用通用的「开启状态」—— 用户读到「开启状态」会以为黑块是某个自己打开的功能，
+        /// 实际含义只是"29 里有个自定义图标值"。</summary>
+        private static string IconBlockStateText(RegItemSpec item)
+        {
+            int have = 0;
+            string first = "";
+            foreach (RegValueSpec v in item.Values)
+            {
+                bool exists;
+                RegistryValueKind kind;
+                string text;
+                if (Engine.TryReadRaw(v, out exists, out kind, out text) && exists)
+                {
+                    have++;
+                    if (first.Length == 0) { first = text; }
+                }
+            }
+            if (have == 0) { return "系统默认的小箭头（没有自定义的 29 值）"; }
+            return "有自定义图标值（" + first + "，这块黑方块就是它画出来的）";
+        }
+
         /// <summary>只读：每个开关现在是什么状态 + 记了哪些原值。</summary>
         public static string Status()
         {
@@ -497,7 +742,8 @@ namespace Mxx1Toolbox
             sb.AppendLine();
             foreach (Tweak t in Table)
             {
-                sb.Append("  ").Append(RegEngine.PadCjk(t.Item.Name, 24)).Append(Engine.StateText(t.Item));
+                string state = (t.Item.Id == IconBlockId) ? IconBlockStateText(t.Item) : Engine.StateText(t.Item);
+                sb.Append("  ").Append(RegEngine.PadCjk(t.Item.Name, 24)).Append(state);
                 if (t.Item.Admin) { sb.Append("　[要管理员]"); }
                 sb.AppendLine();
                 List<RegRecord> mine = Engine.RecordsFor(t.Id);

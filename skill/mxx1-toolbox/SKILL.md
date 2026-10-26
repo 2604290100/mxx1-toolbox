@@ -16,9 +16,31 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
 > **接手 / 新会话先做两件事**：读 `docs\DESIGN.md`（外观与行为的**唯一正本**）和本文件。
 > 设计一改先改 `DESIGN.md`，再同步本 skill —— 两份分叉就会出现"两套行为"。
 
-## 当前状态（2026-10-26，**未发布**：在 v1.6.0 之上修两个用户报的 bug —— 「去掉小箭头」不再画成黑块 + 「还原修复前图标」不再念错自己是谁）
+## 当前状态（2026-10-26，**未发布**：在 v1.6.0 之上 —— 修两个用户报的 bug（小箭头画成黑块 / 还原提示串台）+ 把「修复图标黑块」改成两种修法）
 
-> **⚠️ 2026-10-26 这一轮（`DESIGN.md` §12.86；条款正文没改 → 同意指纹不变 `db2c1a73f510a37c`）**：
+> **⚠️ 2026-10-26 第二轮（`DESIGN.md` §12.87；条款正文没改 → 同意指纹不变 `db2c1a73f510a37c`）**：
+> 用户原话「**修改【修复桌面图标黑块】不能只是换回箭头，而是要兼容一下，要 2 种方法
+> 一个去图标后的修复方法一个修改回箭头的方法**」。
+> ① **交互**：点「修复图标黑块」不再直接删值，**开一个小窗口**（新文件 `src\IconBlockForm.cs`，仿 `FileAssocForm`）：
+>   上面一块只读的「现在的样子」（`SysReg.IconBlockReport()` 念两处 `29` 各是什么 + 一句判断），
+>   下面**两颗修法按钮** —— 「**保持无箭头 · 只治黑块**」（`FixIconBlock(keepHidden:true)`：两处 29 换成
+>   自己生成的空白图，小箭头继续不显示）/「**恢复系统默认小箭头**」（`FixIconBlock(keepHidden:false)`：两处都删掉）。
+>   两条都记原值 + 逐处读回核对 + 自动重启一次 explorer；「还原修复前图标」**两种修法共用同一份记录**。
+> ② **接线**：`tools\common.json` 的 `iconblock-fix` 由 `sysreg/off` → **`sysreg/iconfix`**，去掉 `runAsAdmin`/`confirm`
+>   （点了它本身什么都不改）；`Launcher.RunSysreg` 走 `UiAction`（同 `power/lid`）；`MainForm` 直接开窗口；
+>   新增单独一条开窗口命令 **`Mxx1Toolbox.exe iconfix`**（提权重开自己用）；`--dry` 报 `kind=window`
+>   —— **命令行仍然没有"带动作"的写入口**（L07 那条照旧）。
+> ③ 窗口里每一次修复才过条款门 + 确认框；不是管理员 → 弹说明 → UAC 重开窗口 → **重开之后要再点一次**。
+> ④ **数字一个都没变**（内置 182 / `status` 185 / 常用设置 59）。
+> ⑤ **回归**：命令行 **L03 / L04**（16 on + 15 off + 1 `iconfix` = 32）、**L12c**（`kind=window` + 两句不串台）；
+>   界面 **J27 / J27b / J27c / J28** 重写（开窗口不动值 → 恢复箭头删值+原值进 tsv → 保持无箭头写空白图完整路径 →
+>   还原写回 `-50` + 记录清空）。实测 `-Only A,L` **44/0**、`-Only J` **66/0**、编码体检 **315 文件 PASS**、
+>   内联体检 PASS；exe **1,373,184 字节**。
+> ⑥ 新坑 **102**（`--dry` 的 `hint=` 只在 `exists=no` 时才打印；窗口标题前缀要写全，少两个字就找不到窗口）。
+> ⑦ ⚠️ **没验到的**：「保持无箭头」时桌面黑块是不是真没了仍要人眼看；Win7 未跑。
+>   **本地提交，没推送、没发版；站点一个字没动**（用户上传完网盘再单独叫）。
+
+> **⚠️ 2026-10-26 第一轮（`DESIGN.md` §12.86；条款正文没改 → 同意指纹不变 `db2c1a73f510a37c`）**：
 > 用户原话「**点击去掉小箭头后会变成图标黑块**，**点击还原修复前图标提示修复桌面图标黑块**，修复这两个问题」。
 > ① **黑块的真因**：`Shell Icons\29` 里的 `%SystemRoot%\System32\shell32.dll,-50` **就是「去掉小箭头」自己写的**
 >   —— 它是 Windows 自带"全透明空图标"（本机量的不透明像素 0），但靠的是像素 alpha；Shell 画**叠加图标**时走
@@ -987,6 +1009,12 @@ powershell -File tools\Make-AppIcon.ps1       # 重生成 assets\app.ico（改�
   `%LOCALAPPDATA%\mxx1-toolbox\blank-arrow.ico`（`MXX1_BLANK_ICON` 可覆盖），注册表里写**文件完整路径**；
   `SysReg.Set()` 写前先 `BlankIcon.Ensure`，生成不出来就**一个字节都不写**。只读出口 `sysreg blankicon`。
   正本 `docs\DESIGN.md` §12.86；坑 101。
+  ⚠️ **2026-10-26 第二轮：「修复图标黑块」不再直接删值，改成开窗口让用户挑两种修法** ——
+  `iconblock-fix` 的 action = `sysreg/iconfix`（去掉了 `runAsAdmin` / `confirm`，点了本身什么都不改），
+  窗口是 `src\IconBlockForm.cs`：「保持无箭头 · 只治黑块」= `FixIconBlock(true)` 写空白图 /
+  「恢复系统默认小箭头」= `FixIconBlock(false)` 删两处 `29`；两条都记原值 + 读回核对 + 自动重启 explorer，
+  「还原修复前图标」两种修法共用同一份记录。提权重开用 `Mxx1Toolbox.exe iconfix`（同 `power` / `dns`）。
+  正本 `docs\DESIGN.md` §12.87；坑 102。
   ⚠️ **小箭头 / 时钟秒 / 小组件 / Copilot / 未激活水印 / 修复图标黑块这六个带 `Tweak.RestartExplorer`** —— 写完
   `SysReg.Set` 自动调一次 `src\ExplorerRestart.cs`（命令唯一来源 = common.json 的 `restart-explorer`；
   `sysreg items` 会多打一列，`L04d` 盯着"正好这六个"）。`MXX1_NO_EXPLORER_RESTART=1` 时不真做。

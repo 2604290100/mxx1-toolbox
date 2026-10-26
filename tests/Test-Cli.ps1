@@ -1853,14 +1853,21 @@ Check 'L01 sysreg items 退出码 0' ($srItems.Code -eq 0) ('exit=' + $srItems.C
 $srLines = @($srItems.Out -split "`r?`n" | Where-Object { $_ -match "`t" })
 Check 'L02 16 个系统设置开关都在表里（任务栏/开始菜单/驱动/内核隔离/资源管理器/右键菜单 + 扩展名/隐藏文件/小箭头/时钟秒 + 小组件/Copilot/菜单延迟/快速启动 + 未激活水印 + 桌面图标黑块）' ($srLines.Count -eq 16) ('数=' + $srLines.Count)
 
-# 每一对都必须是「一个 off 按钮 + 一个 on 按钮」；按钮的 options 不在 list 输出里，所以按
-# 方向数数：两个方向的按钮数必须一样多，而且加起来就是这一页那 32 个成对按钮。
+# 每一对都必须是「一个 off 按钮 + 一个 on 按钮」—— 唯一的例外是「修复图标黑块」：
+# 2026-10-26 起它改成**开窗口**（两种修法在窗口里挑），所以它是 `sysreg/iconfix`。
+# 于是：16 个 on + 15 个 off + 1 个开窗口 = 32 颗按钮（总数没变，只是那一颗换了条腿）。
 $srList = Invoke-Exe 'list --tab common'
 $srOn = @($srList.Out -split "`r?`n" | Where-Object { $_ -match 'sysreg/on' })
 $srOff = @($srList.Out -split "`r?`n" | Where-Object { $_ -match 'sysreg/off' })
-Check 'L03 16 对开关 = 32 个按钮' `
-    (($srOn.Count -eq 16) -and ($srOff.Count -eq 16)) ('on=' + $srOn.Count + ' off=' + $srOff.Count)
-Check 'L04 on / off 两个方向的按钮数一样多（成对）' ($srOn.Count -eq $srOff.Count) ('on=' + $srOn.Count + ' off=' + $srOff.Count)
+$srWin = @($srList.Out -split "`r?`n" | Where-Object { $_ -match 'sysreg/iconfix' })
+Check 'L03 16 个 on + 15 个 off + 1 个开窗口（修复图标黑块）= 32 颗按钮' `
+    (($srOn.Count -eq 16) -and ($srOff.Count -eq 15) -and ($srWin.Count -eq 1) -and `
+     (($srOn.Count + $srOff.Count + $srWin.Count) -eq 32)) `
+    ('on=' + $srOn.Count + ' off=' + $srOff.Count + ' 开窗口=' + $srWin.Count)
+Check 'L04 off 方向比 on 方向少的那一颗正是「修复图标黑块」（改成开窗口让用户挑两种修法了）' `
+    (($srOn.Count -eq 16) -and ($srOff.Count -eq 15) -and ($srWin.Count -eq 1) -and `
+     ($srWin[0] -match '^iconblock-fix')) `
+    ('on=' + $srOn.Count + ' off=' + $srOff.Count + ' 开窗口=' + $srWin[0])
 $srExtra = @($srList.Out -split "`r?`n" | Where-Object { $_ -match 'sysreg/(status|restore)' })
 Check 'L04b 另有「查看设置改动 / 还原设置改动」两个入口按钮' ($srExtra.Count -eq 2) ('找到=' + $srExtra.Count)
 
@@ -1953,21 +1960,21 @@ Check 'L12b 「隐藏未激活水印 / 恢复未激活水印」两个按钮各�
      ((Get-Key $srWmOn.Out 'target') -match '隐藏未激活水印') -and ((Get-Key $srWmOff.Out 'target') -match '恢复未激活水印')) `
     ('on=' + (Get-Key $srWmOn.Out 'target') + ' off=' + (Get-Key $srWmOff.Out 'target'))
 
-# 2026-10-24 的「修复桌面图标黑块 / 还原修复前图标」：和上一对同一个套路 ——
-# 「修复」接 off 方向（删值 + 记原值）、「还原」接 on 方向（**按记录**写回去，不是写死 -50）。
-# 这条也顺手钉住"两个按钮不会都接到同一个方向"（接反了 = 点还原反而把黑块写回去）。
-# ⚠️ 2026-10-26：这一对的两句话都重写过（用户报「点还原修复前图标，提示却在讲修复桌面图标黑块」）——
-# 修复方向的说明里必须出现"回到系统默认的小箭头"，还原方向的说明里必须出现"按……当时记下的原值"，
-# 而且两句不能一样。
+# 2026-10-24 的「修复图标黑块 / 还原修复前图标」：
+# ⚠️ 2026-10-26 用户要求「不能只是换回箭头，要 2 种方法」→ 这颗按钮不再直接删值，
+#    改成 `sysreg/iconfix` = **开窗口**（保持无箭头只治黑块 / 恢复系统默认小箭头，在窗口里挑）；
+#    「还原修复前图标」照旧是 `sysreg/on`（按记录写回，不是写死 -50）。
+# 这条顺手钉住两件事：① 修复那颗真的走"窗口"这条腿、不再冒充注册表；② 两句说明不串台。
 $srIbFix = Invoke-Exe 'run iconblock-fix --dry'
 $srIbBack = Invoke-Exe 'run iconblock-restore --dry'
-Check 'L12c 「修复图标黑块 / 还原修复前图标」两个按钮各自接到同一项的 off / on 方向（修复 = 删值、还原 = 按记录写回，两句话不串台）' `
-    (((Get-Key $srIbFix.Out 'kind') -eq 'registry') -and ((Get-Key $srIbBack.Out 'kind') -eq 'registry') -and `
-     ((Get-Key $srIbFix.Out 'target') -match '回到系统默认的小箭头') -and `
+Check 'L12c 「修复图标黑块」= 开窗口（两种修法），「还原修复前图标」= 按记录写回 29；两句话不串台' `
+    (((Get-Key $srIbFix.Out 'kind') -eq 'window') -and ((Get-Key $srIbBack.Out 'kind') -eq 'registry') -and `
+     ((Get-Key $srIbFix.Out 'target') -match '本程序内的窗口') -and `
+     ((Get-Key $srIbFix.Out 'command') -match '保持无箭头') -and ((Get-Key $srIbFix.Out 'command') -match '恢复系统默认小箭头') -and `
      ((Get-Key $srIbBack.Out 'target') -match '按「修复桌面图标黑块」当时记下的原值') -and `
-     ((Get-Key $srIbFix.Out 'target') -notmatch '当时记下的原值') -and `
+     ((Get-Key $srIbBack.Out 'target') -notmatch '两种修法') -and `
      ((Get-Key $srIbFix.Out 'target') -ne (Get-Key $srIbBack.Out 'target'))) `
-    ('fix=' + (Get-Key $srIbFix.Out 'target') + ' back=' + (Get-Key $srIbBack.Out 'target'))
+    ('fix=' + (Get-Key $srIbFix.Out 'kind') + '/' + (Get-Key $srIbFix.Out 'command') + ' back=' + (Get-Key $srIbBack.Out 'target'))
 
 # 「去掉小箭头」写的不再是 shell32.dll,-50（2026-10-26）：那一串是 Windows 自带的"全透明空图标"，
 # 在用户的机器上被 Shell 画成了一块黑方块。现在写的是**工具箱自己生成的一张空白 ICO**

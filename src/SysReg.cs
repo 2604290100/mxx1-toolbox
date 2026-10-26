@@ -638,16 +638,80 @@ namespace Mxx1Toolbox
             return sb.ToString();
         }
 
-        /// <summary>「修复桌面图标黑块」：把 Shell Icons\29（HKCU + HKLM 两处）删掉，先记原值。
-        /// 和别的成对开关走同一套引擎，只是报告要更啰嗦一点 —— 这一项用户是"看图报障"来的，
-        /// 报告里得把"改之前是什么、现在是什么"逐处念清楚。</summary>
-        public static string FixIconBlock(out bool ok)
+        /// <summary>只读：把 `Shell Icons\29` 两处现在的样子念一遍 + 两种修法各自会做什么。
+        /// 「修复图标黑块」那颗按钮点开的小窗口就是拿它当正文 —— 点开这个窗口**什么都不改**。</summary>
+        public static string IconBlockReport()
+        {
+            Tweak t = FindTweak(IconBlockId);
+            if (t == null) { return "找不到「桌面图标黑块」这一项：" + IconBlockId; }
+            StringBuilder sb = new StringBuilder();
+            sb.AppendLine("桌面图标左下角那块黑方块，来自「Shell Icons\\29」里那个自定义图标值。");
+            sb.AppendLine();
+            sb.AppendLine("  现在的样子：");
+            bool any = false;
+            string first = "";
+            foreach (RegValueSpec v in t.Item.Values)
+            {
+                bool exists;
+                RegistryValueKind kind;
+                string text;
+                Engine.TryReadRaw(v, out exists, out kind, out text);
+                if (exists && first.Length == 0) { first = text; }
+                any = any || exists;
+                sb.Append("    ").Append(HiveLabel(v.Hive)).Append(" 29 = ")
+                  .Append(exists ? text : "（没有这个值，系统默认的小箭头）").AppendLine();
+            }
+            sb.Append("    → ").AppendLine(IconBlockNote(any ? first : ""));
+            sb.AppendLine();
+            sb.AppendLine("  两种修法（两种都会先把原值记下来，随时能点「还原修复前图标」退回）：");
+            sb.AppendLine("    ·「保持无箭头 · 只治黑块」：小箭头继续不显示，只把 29 换成工具箱自己生成的空白图标"
+                + "（1 位色 + 掩码，一个像素都不画）。要管理员，写完自动重启一次资源管理器。");
+            sb.AppendLine("    ·「恢复系统默认小箭头」：把 HKCU 与 HKLM 两处的 29 删掉，小箭头回到系统默认样子。"
+                + "要管理员，写完自动重启一次资源管理器。");
+            sb.AppendLine();
+            string extras = OtherShellIconValues();
+            if (extras.Length > 0)
+            {
+                sb.AppendLine("  顺手看到的（不是这个窗口写的，一个字节都不动）：");
+                sb.Append(extras);
+            }
+            sb.AppendLine("  只动编号 29 这一个值（有的美化工具还会改 77 / 179，这里一概不碰）。");
+            sb.Append("  要是两种修法都试过还有黑块，去「清理优化」页点「修复图标与缩略图缓存」。");
+            return sb.ToString();
+        }
+
+        /// <summary>`29` 里那个值到底是什么东西 —— 一句人话（报告区那行 → 后面用它）。</summary>
+        private static string IconBlockNote(string text)
+        {
+            if (text.Length == 0) { return "系统默认的小箭头（没有自定义图标值，本来不该有黑块）"; }
+            if (BlankIcon.IsOurs(text))
+            {
+                return "工具箱自己生成的全透明空白图标 —— 小箭头是隐藏的；要是还有黑块，多半是图标缓存（见最后一行）";
+            }
+            if (text.IndexOf("shell32.dll,-50", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return "Windows 自带的那个「全透明空图标」—— 这台机器上 Shell 把它画成了黑方块；点上面任何一条都能修掉";
+            }
+            return "一个自定义图标值 —— 这块黑方块就是它画出来的；点上面任何一条都能修掉";
+        }
+
+        /// <summary>「修复桌面图标黑块」：用户 2026-10-26 要求「不能只是换回箭头，要兼容一下，
+        /// 要 2 种方法：一个去图标后的修复方法、一个修改回箭头的方法」。
+        ///   · keepHidden = true  → 小箭头**继续不显示**，只把 `29` 换成工具箱自己生成的那张空白图标
+        ///     （以前那个 `shell32.dll,-50` 在这台机器上会被画成黑块，换掉它黑块就没了）；
+        ///   · keepHidden = false → 把 `29` 删掉，小箭头回到系统默认的样子。
+        /// 两种都先记原值、写完读回核对、自动重启一次资源管理器；
+        /// 「还原修复前图标」按这一次记下的原值退回（两种修法共用同一份记录）。
+        /// ⚠️ 只碰编号 29；77 / 179 这类别的编号只在报告里念一句，一个字节都不动。</summary>
+        public static string FixIconBlock(bool keepHidden, out bool ok)
         {
             Tweak t = FindTweak(IconBlockId);
             if (t == null) { ok = false; return "找不到「桌面图标黑块」这一项：" + IconBlockId; }
 
             StringBuilder sb = new StringBuilder();
-            sb.AppendLine("【修复桌面图标黑块】删掉 Shell Icons\\29 里那个自定义图标值，换回系统默认的小箭头");
+            sb.AppendLine(keepHidden
+                ? "【修复桌面图标黑块】保持小箭头隐藏，只把那个会画成黑块的图标换成工具箱自己生成的空白图标"
+                : "【修复桌面图标黑块】删掉 Shell Icons\\29 里那个自定义图标值，恢复系统默认的小箭头");
             sb.AppendLine();
             sb.AppendLine("  写之前的样子：");
             foreach (RegValueSpec v in t.Item.Values)
@@ -660,12 +724,32 @@ namespace Mxx1Toolbox
                   .Append(exists ? text : "（本来就没有这个值，系统默认小箭头）").AppendLine();
                 if (exists && BlankIcon.IsOurs(text))
                 {
-                    sb.AppendLine("      ↑ 这是「去掉小箭头」写进去的那张全透明空白图标 —— 点这个修复会把这个设置一起撤掉，小箭头会回来。");
+                    sb.AppendLine(keepHidden
+                        ? "      ↑ 这是「去掉小箭头」写进去的那张全透明空白图标 —— 小箭头会继续不显示，只把这张图换成工具箱这次的空白图。"
+                        : "      ↑ 这是「去掉小箭头」写进去的那张全透明空白图标 —— 点这个修复会把这个设置一起撤掉，小箭头会回来。");
                 }
             }
             sb.AppendLine();
 
-            RegApplyReport report = Engine.Apply(t.Item, false);
+            // 「保持无箭头」这条要先确保那张空白图真在硬盘上：弄不出来就**一个字节都不写**
+            // （往注册表里塞一个指向不存在文件的路径，桌面只会更难看），同「去掉小箭头」那条。
+            if (keepHidden)
+            {
+                string iconPath;
+                string iconError;
+                if (!BlankIcon.Ensure(out iconPath, out iconError))
+                {
+                    ok = false;
+                    sb.AppendLine("  这次一个字都没写：要先把工具箱那张「全透明空白图标」放到硬盘上，这一步没成功");
+                    sb.Append("  （").Append(iconError).AppendLine("）。");
+                    sb.Append("  位置：").AppendLine(iconPath);
+                    sb.AppendLine("  没有那张图就往注册表里写，桌面图标只会更难看 —— 所以这里宁愿不写。");
+                    sb.AppendLine("  你还可以：点「恢复系统默认小箭头」那条路（它不生成任何文件）；或者把上面那个文件夹建出来、再点一次。");
+                    return sb.ToString();
+                }
+            }
+
+            RegApplyReport report = Engine.Apply(t.Item, keepHidden);
             sb.AppendLine("  改完读回核对：");
             for (int i = 0; i < report.Outcomes.Count; i++)
             {
@@ -674,9 +758,13 @@ namespace Mxx1Toolbox
                 if (o.Ok)
                 {
                     sb.Append("    √ ").Append(hive).Append(" 29 —— ");
-                    sb.Append(o.Now.IndexOf("没有这个值") >= 0
-                        ? "已经没有这个值了（回到系统默认的小箭头）"
-                        : ("现在是 " + o.Now));
+                    if (keepHidden) { sb.Append("现在是 ").Append(o.Now); }
+                    else
+                    {
+                        sb.Append(o.Now.IndexOf("没有这个值") >= 0
+                            ? "已经没有这个值了（回到系统默认的小箭头）"
+                            : ("现在是 " + o.Now));
+                    }
                     sb.AppendLine();
                 }
                 else
@@ -695,6 +783,9 @@ namespace Mxx1Toolbox
             {
                 sb.Append("  ").Append(report.Written.ToString(CultureInfo.InvariantCulture))
                   .Append(" 处都写进去了，读回核对过。").AppendLine();
+                sb.AppendLine(keepHidden
+                    ? "  小箭头照旧不显示，只是换了一张「靠掩码透明」的空白图 —— 黑块应该就没了。"
+                    : "  小箭头回到系统默认样子，黑块也没了。");
                 string extras = OtherShellIconValues();
                 if (extras.Length > 0)
                 {
@@ -717,6 +808,12 @@ namespace Mxx1Toolbox
             }
             ok = report.Ok;
             return sb.ToString();
+        }
+
+        /// <summary>老的那个入口（=「恢复系统默认小箭头」）：命令行 / 旧调用点还用得到。</summary>
+        public static string FixIconBlock(out bool ok)
+        {
+            return FixIconBlock(false, out ok);
         }
 
         /// <summary>「还原修复前图标」：只把这一项记下的原值写回去（别的开关的记录不动）。

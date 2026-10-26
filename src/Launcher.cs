@@ -367,6 +367,11 @@ namespace Mxx1Toolbox
                         // 同样写成一句人话：悬停说明里附的就是这一行
                         if (string.Equals(t.Action, "restore", StringComparison.OrdinalIgnoreCase)) { return "按改动前的原值写回去（可重复还原）"; }
                         if (string.Equals(t.Action, "status", StringComparison.OrdinalIgnoreCase)) { return "只读：列出每个系统设置开关现在的状态和记下的原值"; }
+                        if (string.Equals(t.Action, "iconfix", StringComparison.OrdinalIgnoreCase))
+                        {
+                            // 2026-10-26：用户要「两种修法」，所以这颗按钮改成开窗口让他挑
+                            return "在本程序里打开「修复桌面图标黑块」窗口（两种修法：保持无箭头只治黑块 / 恢复系统默认小箭头）";
+                        }
                         bool on = string.Equals(t.Action, "on", StringComparison.OrdinalIgnoreCase);
                         if (string.Equals(t.Action, "off", StringComparison.OrdinalIgnoreCase) || on)
                         {
@@ -743,6 +748,17 @@ namespace Mxx1Toolbox
         private static LaunchResult RunSysreg(ToolItem t, bool asAdmin, bool showResult)
         {
             LaunchResult r = new LaunchResult();
+            if (string.Equals(t.Action, "iconfix", StringComparison.OrdinalIgnoreCase))
+            {
+                // 「修复桌面图标黑块」：2026-10-26 起是**程序自己的窗口**（两种修法让用户挑）。
+                // 同「合盖与电源键动作」：界面里点 = MainForm 直接开窗，这里只报一句、不改任何东西；
+                // 两种修法各自在窗口里点出来，每一步过条款门 + 确认框 + 读回核对。
+                r.UiAction = true;
+                r.UiActionName = "iconfix";
+                r.Ok = true;
+                r.Message = "这是界面动作：两种修法都要在窗口里点（命令行没有改 Shell Icons 的入口）";
+                return r;
+            }
             // 「还原设置改动」要把 HKLM 的原值写回去，所以它自己也要管理员；它的 options 是空的，
             // 问不出开关是谁，只能按 action 判断。
             bool needAdmin = SysReg.NeedsAdmin(t.Options)

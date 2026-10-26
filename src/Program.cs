@@ -43,6 +43,14 @@ namespace Mxx1Toolbox
                     Application.Run(new PowerForm(Theme.Resolve(Settings.Load().Theme)));
                     return 0;
                 }
+                // 「修复桌面图标黑块」窗口（2026-10-26：用户要两种修法）。来路同 `power`：
+                // 界面里那个按钮直接 new；需要管理员时提权重开自己（`iconfix`）。
+                // ⚠️ 这条命令行**只开窗口**：不接受任何"要改什么"的参数 —— 两种修法都只能在窗口里点出来。
+                if (string.Equals(args[0], "iconfix", StringComparison.OrdinalIgnoreCase))
+                {
+                    Application.Run(new IconBlockForm(Theme.Resolve(Settings.Load().Theme)));
+                    return 0;
+                }
                 // 「一键换 DNS」窗口。来路同 `power`：界面里那个按钮直接 new；需要管理员时提权重开自己（`dns`）。
                 // ⚠️ **只有单独一个 `dns` 参数才开窗口** —— 带参数的 `dns --json` / `dns --apply=…`
                 // 仍然走命令行（只读，或者在 MXX1_NETSH 隔离下写），免得"想查一下"却弹出一个窗口。
@@ -362,6 +370,7 @@ namespace Mxx1Toolbox
             Console.WriteLine("  Mxx1Toolbox.exe rightmenu manage     打开「右键菜单管理」窗口（禁用 / 恢复 / 删除都在界面里点）");
             Console.WriteLine("  Mxx1Toolbox.exe rightmenu help       右键增强的说明（怎么卸干净 / 菜单没出现怎么办）");
             Console.WriteLine("  Mxx1Toolbox.exe power                打开「合盖与电源键动作」窗口（改的是所有电源方案；合盖设置只能在窗口里点）");
+            Console.WriteLine("  Mxx1Toolbox.exe iconfix              打开「修复桌面图标黑块」窗口（两种修法：保持无箭头只治黑块 / 恢复系统默认小箭头）");
             Console.WriteLine("  Mxx1Toolbox.exe timer status         只读：现在有没有定时关机 / 重启 / 睡眠，还剩多久");
             Console.WriteLine("  Mxx1Toolbox.exe timer plan --action=<shutdown|restart|sleep> --after=<秒>   只读：真跑时会执行的那条命令");
             Console.WriteLine("  Mxx1Toolbox.exe timer cancel         撤掉现在这条定时（睡眠 = 结束后台进程；关机 / 重启 = shutdown /a）");
@@ -2488,18 +2497,28 @@ namespace Mxx1Toolbox
             }
             else if (t.Kind == "builtin" && t.Module == Launcher.ModuleSysreg)
             {
-                // 系统设置开关也是注册表值（CLSID 覆盖那几条是"整个键"）：kind=registry
-                kind = "registry";
-                target = Launcher.DescribeCommand(t, settings, false);
-                Tweak tw = SysReg.FindTweak(t.Options);
-                if (tw == null && (t.Action == "off" || t.Action == "on"))
+                if (string.Equals(t.Action, "iconfix", StringComparison.OrdinalIgnoreCase))
                 {
-                    kind = "unknown";
-                    target = "";
-                    exists = false;
-                    hint = "系统设置里没有这个开关: " + t.Options;
+                    // 2026-10-26：这颗按钮改成开窗口（两种修法让用户挑），所以它不再是"直接改注册表"。
+                    kind = "window";
+                    target = "（本程序内的窗口）";
+                    hint = "窗口里挑一种修法（保持无箭头只治黑块 / 恢复系统默认小箭头），点下去才会改；命令行只负责带管理员重开这个窗口";
                 }
-                else { hint = tw != null ? tw.Item.What : ""; }
+                else
+                {
+                    // 系统设置开关也是注册表值（CLSID 覆盖那几条是"整个键"）：kind=registry
+                    kind = "registry";
+                    target = Launcher.DescribeCommand(t, settings, false);
+                    Tweak tw = SysReg.FindTweak(t.Options);
+                    if (tw == null && (t.Action == "off" || t.Action == "on"))
+                    {
+                        kind = "unknown";
+                        target = "";
+                        exists = false;
+                        hint = "系统设置里没有这个开关: " + t.Options;
+                    }
+                    else { hint = tw != null ? tw.Item.What : ""; }
+                }
             }
             else if (t.Kind == "builtin" && t.Module == Launcher.ModuleRightMenu)
             {

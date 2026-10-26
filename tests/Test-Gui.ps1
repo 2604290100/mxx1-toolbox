@@ -4422,7 +4422,9 @@ Check 'J26 常用设置页有「修复图标黑块 / 还原修复前图标」两
     ('页签=' + $ibTab + ' 修复=' + $ibFixBtn.Count + ' 还原=' + $ibBackBtn.Count)
 
 if (($ibFixBtn.Count -ne 1) -or ($ibBackBtn.Count -ne 1)) {
-    Check 'J27 真点「修复图标黑块」→ 确认框 → 报告念出前后值、隔离根里 29 被删掉、原值记进 tsv' $false '按钮没找到'
+    Check 'J27 真点「修复图标黑块」→ 开出一个窗口：现状报告 + 两种修法都在，而且点开这一个动作什么都没改' $false '按钮没找到'
+    Check 'J27b 窗口里真点「恢复系统默认小箭头」→ 确认框 → 隔离根里 29 被删掉、原值记进 tsv' $false '按钮没找到'
+    Check 'J27c 窗口里真点「保持无箭头 · 只治黑块」→ 确认框 → 29 变成那张空白图标的完整路径' $false '按钮没找到'
     Check 'J28 真点「还原修复前图标」→ 确认框 → 按记录写回 29、记录清空' $false '按钮没找到'
 } else {
     $ibIsAdmin = $false
@@ -4430,28 +4432,89 @@ if (($ibFixBtn.Count -ne 1) -or ($ibBackBtn.Count -ne 1)) {
         $ibIsAdmin = (New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
     } catch { }
     if (-not $ibIsAdmin) {
-        # 这两颗是 runAsAdmin：非管理员点下去会走"提权重开一个自己"那条路，自动化验不了
-        Skip 'J27 真点「修复图标黑块」→ 确认框 → 隔离根里 29 被删掉、原值记进 tsv' '测试进程不是管理员：点了会弹 UAC，跳过'
-        Skip 'J28 真点「还原修复前图标」→ 确认框 → 按记录写回 29、记录清空' '同上'
+        # 窗口里那两条修法都要写 HKLM，非管理员点下去会走"提权重开一个自己"那条路，自动化验不了
+        Skip 'J27 真点「修复图标黑块」→ 开出一个窗口：现状报告 + 两种修法都在' '测试进程不是管理员：窗口里的修法会弹 UAC，跳过'
+        Skip 'J27b 窗口里真点「恢复系统默认小箭头」→ 隔离根里 29 被删掉、原值记进 tsv' '同上'
+        Skip 'J27c 窗口里真点「保持无箭头 · 只治黑块」→ 29 变成那张空白图标的完整路径' '同上'
+        Skip 'J28 真点「还原修复前图标」→ 按记录写回 29、记录清空' '同上'
     } else {
+        # ① 点「修复图标黑块」→ 2026-10-26 起它开的是**窗口**（两种修法让用户挑）。
+        #    先钉住"点开这个窗口什么都不改"：29 还是夹具里那个 shell32.dll,-50。
         [void][TBGui]::Click($ibFixBtn[0].H)
-        $ibDlg = Invoke-JConfirmBox -Owner $main -BodyPrefix '要执行「修复图标黑块」' -OkText '执行'
-        $ibOut = Read-JOutputBox -TitlePrefix '修复图标黑块'
+        $ibWin = $null
+        for ($i = 0; $i -lt 60; $i++) {
+            Start-Sleep -Milliseconds 200
+            $ibWin = Find-TopWindow -ProcessId $proc.Id -TextPrefix '修复桌面图标黑块'
+            if ($ibWin -ne $null) { break }
+        }
+        $ibValBefore = ''
+        try { $ibValBefore = [string](Get-ItemProperty -LiteralPath $jIbRootPs -Name '29' -ErrorAction Stop).'29' } catch { }
+        $ibKeepBtn = @()
+        $ibArrowBtn = @()
+        $ibRepText = ''
+        if ($ibWin -ne $null) {
+            Start-Sleep -Milliseconds 600
+            $ibKeepBtn = @(Get-ChildControls -RootHandle $ibWin.H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '保持无箭头 · 只治黑块' })
+            $ibArrowBtn = @(Get-ChildControls -RootHandle $ibWin.H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '恢复系统默认小箭头' })
+            $ibEd = @(Get-ChildControls -RootHandle $ibWin.H | Where-Object { $_.Class -like '*EDIT*' })
+            if ($ibEd.Count -ge 1) { $ibRepText = [string]$ibEd[0].Text }
+        }
+        Check 'J27 真点「修复图标黑块」→ 开出一个窗口：现状报告念出 29 = shell32.dll,-50 与两种修法，两颗修法按钮都可点，点开什么都没改（29 还是原值）' `
+            (($ibWin -ne $null) -and ($ibKeepBtn.Count -eq 1) -and $ibKeepBtn[0].Enabled -and `
+             ($ibArrowBtn.Count -eq 1) -and $ibArrowBtn[0].Enabled -and `
+             ($ibRepText -match '现在的样子') -and ($ibRepText -match 'shell32\.dll,-50') -and `
+             ($ibRepText -match '保持无箭头') -and ($ibRepText -match '恢复系统默认小箭头') -and `
+             ($ibValBefore -match '\-50$')) `
+            ('窗口=' + ($ibWin -ne $null) + ' 保持=' + $ibKeepBtn.Count + ' 恢复=' + $ibArrowBtn.Count + ' 报告=' + $ibRepText.Length + '字符 29=' + $ibValBefore)
+
+        # ② 窗口里真点「恢复系统默认小箭头」→ 确认框 → 隔离根里的 29 真被删掉、原值真进了 tsv
+        $ibDlg = @{ Found = $false; Clicked = $false }
+        $ibOut = @{ Win = $null; Text = '' }
+        if ($ibWin -ne $null) {
+            if ($ibArrowBtn.Count -eq 1) { [void][TBGui]::Click($ibArrowBtn[0].H) }
+            $ibDlg = Invoke-JConfirmBox -Owner $ibWin.H -BodyPrefix '会把 HKCU 与 HKLM 两处的 Shell Icons\29 删掉' -OkText '开始修复'
+            for ($i = 0; $i -lt 60; $i++) {
+                Start-Sleep -Milliseconds 250
+                $ibEd2 = @(Get-ChildControls -RootHandle $ibWin.H | Where-Object { $_.Class -like '*EDIT*' })
+                if (($ibEd2.Count -ge 1) -and ([string]$ibEd2[0].Text -match '读回核对')) { $ibOut.Text = [string]$ibEd2[0].Text; break }
+            }
+        }
         $ibGone = $true
         try { [void](Get-ItemProperty -LiteralPath $jIbRootPs -Name '29' -ErrorAction Stop); $ibGone = $false } catch { }
         $ibTsvText = ''
         if (Test-Path -LiteralPath $jIbTsv) { $ibTsvText = [System.IO.File]::ReadAllText($jIbTsv, [System.Text.Encoding]::UTF8) }
-        Check 'J27 真点「修复图标黑块」→ 确认框 → 报告念出改之前的样子与读回核对，隔离根里 29 真被删掉、原值记进 tsv' `
+        Check 'J27b 窗口里真点「恢复系统默认小箭头」→ 确认框 → 报告念出前后值与读回核对，隔离根里 29 真被删掉、原值记进 tsv' `
             ($ibDlg.Found -and $ibDlg.Clicked -and ($ibOut.Text -match '【修复桌面图标黑块】') -and `
              ($ibOut.Text -match '写之前的样子') -and ($ibOut.Text -match '读回核对') -and `
              ($ibOut.Text -match '已经没有这个值了') -and $ibGone -and ($ibTsvText -match 'shell-icon-block')) `
             ('确认框=' + $ibDlg.Found + '/' + $ibDlg.Clicked + ' 29删掉了=' + $ibGone + ' 记录=' + ($ibTsvText.Length) + '字符 报告=' + $ibOut.Text.Length + '字符')
-        Close-JWindow $ibOut.Win
+
+        # ③ 再点另一条修法「保持无箭头 · 只治黑块」：29 要变成那张空白图标的**完整路径**、文件真在
+        if ($ibWin -ne $null) {
+            if ($ibKeepBtn.Count -eq 1) { [void][TBGui]::Click($ibKeepBtn[0].H) }
+            $ibDlg2 = Invoke-JConfirmBox -Owner $ibWin.H -BodyPrefix '换成工具箱自己生成的那张空白图标' -OkText '开始修复'
+            for ($i = 0; $i -lt 60; $i++) {
+                Start-Sleep -Milliseconds 250
+                $ibEd3 = @(Get-ChildControls -RootHandle $ibWin.H | Where-Object { $_.Class -like '*EDIT*' })
+                if (($ibEd3.Count -ge 1) -and ([string]$ibEd3[0].Text -match '读回核对')) { $ibOut2 = [string]$ibEd3[0].Text; break }
+            }
+        }
+        $ibDlg2Ok = $ibDlg2.Found -and $ibDlg2.Clicked
+        $ibKeepVal = ''
+        try { $ibKeepVal = [string](Get-ItemProperty -LiteralPath $jIbRootPs -Name '29' -ErrorAction Stop).'29' } catch { }
+        $ibKeepSame = $false
+        try { $ibKeepSame = [string]::Equals($ibKeepVal.Trim(), $jBlankIco.Trim(), [StringComparison]::OrdinalIgnoreCase) } catch { }
+        Check 'J27c 窗口里真点「保持无箭头 · 只治黑块」→ 29 换成那张空白图标的完整路径（小箭头继续不显示、黑块没了）' `
+            ($ibDlg2Ok -and $ibKeepSame -and ($ibKeepVal.IndexOf('shell32.dll') -lt 0) -and (Test-Path -LiteralPath $jBlankIco) -and `
+             ($ibOut2 -match '保持小箭头隐藏') -and ($ibOut2 -match '读回核对') -and ($ibOut2 -match '现在是')) `
+            ('确认框=' + $ibDlg2Ok + ' 29=' + $ibKeepVal + ' 同一路径=' + $ibKeepSame + ' 报告=' + $ibOut2.Length + '字符')
+        Close-JWindow $ibWin
         Start-Sleep -Milliseconds 300
 
+        # ④ 外面那颗「还原修复前图标」：按第一次修复前记下的原值写回（-50），记录清空
         [void][TBGui]::Click($ibBackBtn[0].H)
-        $ibDlg2 = Invoke-JConfirmBox -Owner $main -BodyPrefix '要执行「还原修复前图标」' -OkText '执行'
-        $ibOut2 = Read-JOutputBox -TitlePrefix '还原修复前图标'
+        $ibDlg3 = Invoke-JConfirmBox -Owner $main -BodyPrefix '要执行「还原修复前图标」' -OkText '执行'
+        $ibOut3 = Read-JOutputBox -TitlePrefix '还原修复前图标'
         $ibBackVal = ''
         $ibBackOk = $false
         try {
@@ -4460,11 +4523,11 @@ if (($ibFixBtn.Count -ne 1) -or ($ibBackBtn.Count -ne 1)) {
         } catch { }
         $ibTsvGone = -not (Test-Path -LiteralPath $jIbTsv)
         Check 'J28 真点「还原修复前图标」→ 确认框 → 报告按记录写回原值，29 变回 -50、记录清空' `
-            ($ibDlg2.Found -and $ibDlg2.Clicked -and ($ibOut2.Text -match '【还原修复前图标】') -and `
-             ($ibOut2.Text -match '按「修复桌面图标黑块」当时记下的原值') -and `
-             ($ibOut2.Text -notmatch '【桌面图标黑块】') -and $ibBackOk -and ($ibBackVal -match '\-50$') -and $ibTsvGone) `
-            ('确认框=' + $ibDlg2.Found + '/' + $ibDlg2.Clicked + ' 29=' + $ibBackVal + ' 记录清空=' + $ibTsvGone + ' 报告=' + $ibOut2.Text.Length + '字符')
-        Close-JWindow $ibOut2.Win
+            ($ibDlg3.Found -and $ibDlg3.Clicked -and ($ibOut3.Text -match '【还原修复前图标】') -and `
+             ($ibOut3.Text -match '按「修复桌面图标黑块」当时记下的原值') -and `
+             ($ibOut3.Text -notmatch '【桌面图标黑块】') -and $ibBackOk -and ($ibBackVal -match '\-50$') -and $ibTsvGone) `
+            ('确认框=' + $ibDlg3.Found + '/' + $ibDlg3.Clicked + ' 29=' + $ibBackVal + ' 记录清空=' + $ibTsvGone + ' 报告=' + $ibOut3.Text.Length + '字符')
+        Close-JWindow $ibOut3.Win
         Start-Sleep -Milliseconds 300
     }
 }

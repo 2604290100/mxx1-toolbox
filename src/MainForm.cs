@@ -1463,6 +1463,16 @@ namespace Mxx1Toolbox
                 Logger.Write(t.Name, "打开右键菜单管理窗口");
                 return;
             }
+            if (t.Kind == "builtin" && t.Module == Launcher.ModuleSysreg && t.Action == "iconfix")
+            {
+                // 「修复桌面图标黑块」：程序自己的窗口（两种修法让用户挑：保持无箭头只治黑块 / 恢复系统默认小箭头）。
+                // 同「合盖与电源键动作」的口径：这里不弹确认框（点了它本身什么都不改），
+                // 窗口里每一次「开始修复」才过条款门 + 确认框 + 读回核对。
+                OpenIconBlockForm();
+                SetStatus(t.Name + " · 已打开「修复桌面图标黑块」窗口（两种修法都在里面）");
+                Logger.Write(t.Name, "打开修复桌面图标黑块窗口");
+                return;
+            }
             if (t.Kind == "builtin" && t.Module == Launcher.ModulePower && t.Action == "lid")
             {
                 // 「合盖与电源键动作」：程序自己的窗口（三个动作 + 体检 + 还原）。
@@ -1868,6 +1878,15 @@ namespace Mxx1Toolbox
         private void OpenCtxMenuManager(string focus)
         {
             CtxMenuForm f = new CtxMenuForm(focus);
+            WindowPlacement.ShowCentered(f, this);
+        }
+
+        /// <summary>「修复桌面图标黑块」窗口（常用设置页那个按钮）。窗口自己就是后端 `src\SysReg.cs`
+        /// 的界面 —— 上面一块只读的现状报告 + 两种修法各一颗按钮（保持无箭头只治黑块 / 恢复系统默认小箭头），
+        /// 每一步过确认框；会改动系统的动作只从界面里写（命令行那条 `iconfix` 只开窗口）。</summary>
+        private void OpenIconBlockForm()
+        {
+            IconBlockForm f = new IconBlockForm(_theme);
             WindowPlacement.ShowCentered(f, this);
         }
 

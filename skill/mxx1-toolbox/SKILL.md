@@ -1,6 +1,6 @@
 ---
 name: mxx1-toolbox
-description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Windows button-wall launcher whose main window is a multi-row, multi-column grid of small buttons that each start another program, script, or feature. Covers its interface rules (four column compact buttons, top tabs, separator segments, light/dark theme, computed column width, grey "not wired up yet" buttons), the tools\*.json button registry, bin-tools\ auto-loaded tool buttons (tool.json), how buttons launch things (exe / script / open / builtin / macro), how the 51 系统工具 buttons open Windows components, how the 常用设置 registry switches record the original value so every change can be undone, how a run reports success or failure, the first-run consent gate (免责声明与服务条款 fingerprint), the read-only update check, Windows 7/10/11 compatibility, plus build.ps1, screenshot tool and the GUI/CLI test suites.
+description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Windows button-wall launcher whose main window is a multi-row, multi-column grid of small buttons that each start another program, script, or feature. Covers its interface rules (four column compact buttons, top tabs, separator segments, light/dark theme, computed column width, grey "not wired up yet" buttons), the tools\*.json button registry, bin-tools\ auto-loaded tool buttons (tool.json), how buttons launch things (exe / script / open / builtin / macro), how the 52 系统工具 buttons open Windows components, how the 常用设置 registry switches record the original value so every change can be undone, how a run reports success or failure, the first-run consent gate (免责声明与服务条款 fingerprint), the read-only update check, Windows 7/10/11 compatibility, plus build.ps1, screenshot tool and the GUI/CLI test suites.
 ---
 
 # 萌新工具箱（mxx1 Toolbox）
@@ -8,7 +8,7 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
 **主界面 = 多行多列的小按钮墙**，点一下按钮就启动一个已经做好的程序 / 脚本 / 功能。
 加按钮只是往 `tools\*.json` 丢配置，**不需要重新编译主程序**。
 
-- 程序名 **萌新工具箱**，标题栏 `萌新工具箱 v1.6.0`；署名 `mxx1` / `mxx1.cn`；GPL-3.0-or-later
+- 程序名 **萌新工具箱**，标题栏 `萌新工具箱 v1.6.1`；署名 `mxx1` / `mxx1.cn`；GPL-3.0-or-later
 - 工程目录 **`D:\萌新工具开发\toolbox\`**，与隔壁 `permanent-delete-menu` **互不修改**（只调它的 exe）
 - 支持范围 **Windows 7 SP1 / 10 / 11**（用户 2026-10-05 收窄的：**只考虑这三版**）；见「兼容性」一节
 - 外观参考：`C:\Users\Administrator\Pictures\Snipaste_2026-10-04_10-29-34.png`（那种紧凑按钮墙）
@@ -16,7 +16,34 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
 > **接手 / 新会话先做两件事**：读 `docs\DESIGN.md`（外观与行为的**唯一正本**）和本文件。
 > 设计一改先改 `DESIGN.md`，再同步本 skill —— 两份分叉就会出现"两套行为"。
 
-## 当前状态（2026-10-27，**未发布**：在 v1.6.0 之上 —— 「去掉小箭头」改用系统 `imageres.dll,197` 实机钉死 + 「修复图标黑块」两种修法）
+## 当前状态（2026-10-26，**v1.6.1 已发布**：内置按钮 / 图标 **183**、`status` **186**、系统工具 **52** —— 「此电脑多余图标」管理窗口 + 主副窗口关联（副窗口统一带最小化按钮、跟着主窗口走）；站点一个字没动）
+
+> **⚠️ 2026-10-26 第四轮（`DESIGN.md` §12.89 + §12.90；条款正文没改 → 同意指纹不变 `db2c1a73f510a37c`）**：
+> 用户报装完百度网盘后「此电脑 → 设备和驱动器」多图标 → 做成**管理窗口**（列表 + 图标 + 单行操作，
+> 参考端口与进程）；随后要**主副窗口关联**（先给效果、样板验收「没问题」后推广全部）。
+> ① **机制**：软件自己加的图标 = `MyComputer\NameSpace\{GUID}` 挂载点（HKCU + HKLM 两处），
+>   显示名 / 图标 / 命令在 `Classes\CLSID\{GUID}`；真实磁盘不进 NameSpace → **不会误删任何盘**。
+> ② **`src\PcIcons.cs`**：只读扫两处 + HKCU Classes 优先解析；写死系统保护名单（`DelegateFolders` + 11 GUID）
+>   只报告；「移除」= 记原值 tsv → 删两处同名 GUID → **逐处读回核对**；「还原」按记录重建、被软件
+>   加回的跳过；隔离根 `MXX1_PCICONS_HKCU` + `MXX1_PCICONS_HKLM`（两个都设才允许写）+ `MXX1_PCICONS_TSV`。
+>   `pc-icons --json` 只读，`--remove/--restore` 非隔离退 2；`pcicons` = 开窗口。
+> ③ **`src\PcIconsForm.cs`**：ListView 六列 + ImageList（32-bit 16×16，`.ico` 直接加载 / `dll,-N` 走
+>   `ExtractIconEx`）+ 过滤 + 状态行；系统条目标红不给移除；单颗移除走条款门 + 确认框 + UAC 提权重开；
+>   右键「移除这颗… / 复制 GUID」。接线 `system.json` 段 4 order 95（module=app）、`Make-Icons.ps1` `'pc'`
+>   画法 → **内置 182 → 183**、`status` 185 → **186**、系统工具 51 → **52**（`systemTargets=29` 没变）。
+> ④ **主副窗口关联**：基类 `Mxx1Form`（`src\AppIcon.cs`）`MinimizeBox = true` + `Resize` 联动
+>   （副窗口最小化 → `Owner.WindowState = Minimized`，任务栏只剩主窗口一个按钮；`!ShowInTaskbar` 才联动）
+>   —— 22 个功能窗口全覆盖；主窗口 `_trayOwned`（缩托盘副窗口一起 Hide、回来一起 Show、退出一起关）。
+>   对话框（确认框 / 条款框 / 设置窗 / 关于 / 帮助）保持无最小化；右键菜单管理 / 解除文件占用
+>   （ShowInTaskbar=true）不联动。
+> ⑤ **回归**：命令行 **D10–D10i**（pc-icons 十条，隔离根 end-to-end）、界面 **J30–J30d**（列表形态）
+>   + 探针实测（端口与进程窗口：有 WS_MINIMIZEBOX、发 SC_MINIMIZE 主窗口一起收、还原一起回）。
+>   实测命令行 `-Only A,D` 全绿、界面 `-Only J` **70/0**；exe **1,402,880 字节**。
+> ⑥ 新坑 **104**（副窗口最小化联动：基类 Resize 里 `!ShowInTaskbar` 才动 owner ——
+>   自己有任务栏按钮的窗口别拖主窗口；改窗口先查它 `ShowInTaskbar`）。
+> ⑦ ⚠️ **没验到**：真机从未实际写过 NameSpace（只读 + 隔离根）——「移除后图标消失」用户实机验收；
+>   **防写回用户拍板不做**（「不管他了，就这样了」）；Win7 未跑。
+>   发布纪律：**v1.6.1 已发**（本仓库 push + tag + Release），**站点一个字没动**（等用户上传完网盘）。
 
 > **⚠️ 2026-10-27 第三轮（`DESIGN.md` §12.88；条款正文没改 → 同意指纹不变 `db2c1a73f510a37c`）**：
 > 用户报「点了去掉小箭头出现黑块」→ 上两轮的自生成空白 ICO（1bpp 掩码 / 1×1 / PNG）在用户这台

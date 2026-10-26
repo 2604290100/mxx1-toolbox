@@ -1,9 +1,15 @@
-# 萌新工具箱 · 踩坑清单（102 条）
+# 萌新工具箱 · 踩坑清单（104 条）
 
 > 这是 skill 的**按需**文件：改测试 / 改界面探针 / 改用户可见文案之前读一次。
 > 每一条都是真踩过的，写着"根因 + 判据 + 哪个回归盯着"。序号在 `SKILL.md` 与提交信息里会被引用
 > （比如"坑 29"= 进程归属那条），所以**别重排、别删号**。
-> 最近更新：2026-10-26（坑 102：同一颗按钮有"两种修法"时**别并排加按钮、开窗口让用户挑**；
+> 最近更新：2026-10-26（坑 104：副窗口「最小化跟随主窗口」的联动放**基类 `Mxx1Form`**、
+> 带 `!ShowInTaskbar` 条件 —— 自己有任务栏按钮的窗口别拖主窗口；对话框子类显式 `MinimizeBox=false`
+> 覆盖；主窗口缩托盘用 `_trayOwned` 一起收。顺手记 `MyComputer\NameSpace` 挂载点机制：
+> 软件自己加的「此电脑」图标 = 注册表挂载点，真实磁盘不进 NameSpace → 只清挂载点不会误删盘；
+> 隔离根 `MXX1_PCICONS_HKCU` + `MXX1_PCICONS_HKLM` 两个都设才允许写）。
+> 坑 103 是同日第二轮的 imageres 正解（四条死路 + 正解，别重复试）。
+> 坑 102 是同日第一轮：同一颗按钮有"两种修法"时**别并排加按钮、开窗口让用户挑**；
 > 顺手记两个判据坑 —— `--dry` 的 `hint=` 只在 `exists=no` 时才打印（要验文案看 `command=`），
 > 以及 `Find-TopWindow -TextPrefix` 是前缀匹配、窗口标题要照 `Text =` 原样抄。
 > 坑 101 是同一天第一轮：「全透明图标」不能靠像素 alpha —— Shell 画叠加图标走 GDI 掩码那条路，
@@ -937,3 +943,19 @@
           `MXX1_BLANK_ICON` 只服务那条自检。`MXX1_SHELLICONS_ROOT` 隔离根机制照旧。
         - **边界**：Win7 / Win11 上 `imageres.dll,197` 是否空白**没验过**（只在这台 Win10 22H2 验）——
           值仍写 197，别的版本最多显示成某个具体图标，不会变黑块，如实标注即可。
+
+    104. **副窗口"最小化跟随主窗口"的联动要放基类、且带 `!ShowInTaskbar` 条件**（2026-10-26）：
+        - 用户要「点开按钮弹的窗口都有最小化按钮，主窗口和副窗口的关联做好」。统一做在基类
+          `Mxx1Form`（`src\AppIcon.cs`）构造里：`MinimizeBox = true` + `Resize` 事件里
+          `!ShowInTaskbar && WindowState==Minimized && Owner!=null` → `Owner.WindowState = Minimized`。
+          以后新窗口自然继承，不用逐个记。
+        - **为什么带 `!ShowInTaskbar`**：`ShowInTaskbar = true` 的窗口（右键菜单管理 /
+          解除文件占用）**自己有任务栏按钮**，点最小化收进自己的按钮就行；若也联动，用户点它最小化
+          连主窗口一起缩走，反而不对。
+        - **对话框别跟着开最小化**：确认框 / 条款框 / 设置窗 / 关于 / 帮助是模态 `ShowDialog`，
+          子类构造里显式 `MinimizeBox = false` 覆盖基类（基类构造先跑、子类后覆盖）。
+        - **主窗口侧**：`MainForm` 的 `HideToTray()` 只藏主窗口自己 → 副窗口会孤零零留在屏幕上；
+          要一起收用 `_trayOwned`（收进列表 + `Hide`，`RestoreFromTray` 里 `Show` 回来）。
+        - **判据**（探针）：`GetWindowLong(hwnd, -16) & 0x20000` 有 `WS_MINIMIZEBOX`；
+          给副窗口发 `WM_SYSCOMMAND` + `SC_MINIMIZE`（0x0112 / 0xF020）后主窗口 `IsIconic()=true`，
+          还原主窗口后副窗口 `IsIconic()=false`。取副窗口句柄注意标题**前缀匹配**（坑 102 判据 B）。

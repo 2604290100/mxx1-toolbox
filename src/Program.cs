@@ -87,6 +87,15 @@ namespace Mxx1Toolbox
                     Application.Run(new FileAssocForm(Theme.Resolve(Settings.Load().Theme)));
                     return 0;
                 }
+                // 「此电脑多余图标」窗口。来路同 `assoc`：界面里那个按钮直接 new；需要管理员时提权重开自己（`pcicons`）。
+                // ⚠️ 只有单独一个 `pcicons` 参数才开窗口 —— `pcicons --json` / `pcicons --remove=…` /
+                // `pcicons --restore` 仍然走命令行（只读，或者只在两个隔离根都设好的情况下写），
+                // 免得"想查一下"却弹出一个窗口。
+                if (args.Length == 1 && string.Equals(args[0], "pcicons", StringComparison.OrdinalIgnoreCase))
+                {
+                    Application.Run(new PcIconsForm(Theme.Resolve(Settings.Load().Theme)));
+                    return 0;
+                }
                 // `ui log` / `ui settings`：右键「常用功能」子菜单里那几个固定入口。打开主界面，
                 // 然后替用户点一下那个界面动作（否则从资源管理器点出来会"什么都不发生"）。
                 if (string.Equals(args[0], "ui", StringComparison.OrdinalIgnoreCase))
@@ -229,6 +238,7 @@ namespace Mxx1Toolbox
                     case "startup": return StartupCommand(args);
                     case "eject": return EjectCommand(args);
                     case "assoc": return AssocCommand(args);
+                    case "pcicons": return PcIconsCommand(args);
                     case "dup": return DupCommand(args);
                     case "rename": return RenameCommand(args);
                     case "privacy": return PrivacyCommand(args);
@@ -408,6 +418,7 @@ namespace Mxx1Toolbox
             Console.WriteLine("  Mxx1Toolbox.exe proxy [--json]      只读看系统代理（浏览器用的那一层）开没开、地址 / PAC / WPAD（关掉只能在窗口里点：单独敲 proxy 开窗口）");
             Console.WriteLine("  Mxx1Toolbox.exe startup [--json]    只读列出开机自启项（禁用 / 还原只能在窗口里点：单独敲 startup 开窗口）");
             Console.WriteLine("  Mxx1Toolbox.exe eject [--json]      只读列出可移动磁盘（U 盘 / 读卡器；安全弹出只能在窗口里点：单独敲 eject 开窗口）");
+            Console.WriteLine("  Mxx1Toolbox.exe pcicons [--json]    只读列出「此电脑 → 设备和驱动器」里被软件塞的图标（百度网盘这类；移除 / 还原只能在窗口里点：单独敲 pcicons 开窗口）");
             Console.WriteLine("  Mxx1Toolbox.exe dup <目录…> [--min-size=1MB] [--full] [--keep=oldest|shortest|first]   找内容完全相同的文件");
             Console.WriteLine("                                                        默认只读；--delete 才删（进回收站，每组留 --keep 指定的那一个；硬链接不删）");
             Console.WriteLine("  Mxx1Toolbox.exe rename <目录> [--prefix=] [--suffix=] [--find=] [--replace=] [--index-start=N] [--index-digits=N] [--ext=lower|upper]");
@@ -1864,6 +1875,99 @@ namespace Mxx1Toolbox
                     + OneLine(it.Key + (it.ValueName.Length > 0 ? "\\" + it.ValueName : "")) + "\t"
                     + OneLine(it.Title));
             }
+            return 0;
+        }
+
+        /// <summary>`pcicons [--json]` —— 「此电脑多余图标」的命令行出口（2026-10-26，用户报装完百度网盘
+        /// 「此电脑」里多了一颗「双击运行百度网盘」），**默认只读**：扫 `MyComputer\NameSpace` 两个挂载点
+        /// （HKCU 每用户 + HKLM 这台机器所有用户），列出每颗图标的 GUID / 显示名 / 来源 / 双击命令，
+        /// 系统自带条目标 system、只报告。真正写注册表的两条（`--remove=<guid,…>` / `--restore`）
+        /// **只在两个隔离根都设好的情况下才走**（`MXX1_PCICONS_HKCU` / `MXX1_PCICONS_HKLM` /
+        /// `MXX1_PCICONS_TSV`）—— 同「文件关联体检」：用户自己那台机器只能在窗口里点出来。
+        /// 单独一个 `pcicons`（不带别的参数）在 Program.Main 里就被拦去开窗口了，走不到这儿。</summary>
+        private static int PcIconsCommand(string[] args)
+        {
+            bool restore = false;
+            string remove = "";
+            for (int i = 1; i < args.Length; i++)
+            {
+                string a = args[i];
+                if (string.Equals(a, "--restore", StringComparison.OrdinalIgnoreCase)) { restore = true; }
+                else if (a.StartsWith("--remove=", StringComparison.OrdinalIgnoreCase))
+                {
+                    remove = a.Substring("--remove=".Length).Trim();
+                }
+            }
+
+            if (restore && remove.Length > 0)
+            {
+                Console.Error.WriteLine("--restore 和 --remove 只能给一个。");
+                return 2;
+            }
+
+            if (restore || remove.Length > 0)
+            {
+                if (!PcIcons.WriteAllowed())
+                {
+                    Console.Error.WriteLine("移除 / 还原「此电脑」图标只能在窗口里点（「此电脑多余图标」那颗按钮）。"
+                        + "命令行只读：pcicons / pcicons --json");
+                    return 2;
+                }
+                if (restore)
+                {
+                    PcIconsReport rep = PcIcons.Restore();
+                    Console.WriteLine("action=restore");
+                    Console.WriteLine("root=" + PcIcons.RootText());
+                    Console.WriteLine("changed=" + rep.Changed.ToString(CultureInfo.InvariantCulture));
+                    Console.WriteLine("skipped=" + rep.Skipped.ToString(CultureInfo.InvariantCulture));
+                    Console.WriteLine("failed=" + rep.Failed.ToString(CultureInfo.InvariantCulture));
+                    Console.WriteLine("result=" + (rep.Ok ? "ok" : "failed"));
+                    Console.WriteLine("message=" + OneLine(rep.Message));
+                    Console.WriteLine("record=" + PcIcons.RecordFile());
+                    Console.WriteLine("pending=" + PcIcons.PendingRecords().ToString(CultureInfo.InvariantCulture));
+                    return rep.Ok ? 0 : 1;
+                }
+                // --remove=<guid,…>
+                List<PcIconItem> items = PcIcons.Scan();
+                List<PcIconItem> targets = new List<PcIconItem>();
+                foreach (string g in remove.Split(new char[] { ',', ';', ' ' },
+                    StringSplitOptions.RemoveEmptyEntries))
+                {
+                    string wanted = g.Trim();
+                    foreach (PcIconItem it in items)
+                    {
+                        if (string.Equals(it.Guid, wanted, StringComparison.OrdinalIgnoreCase))
+                        {
+                            targets.Add(it);
+                            break;
+                        }
+                    }
+                }
+                if (targets.Count == 0)
+                {
+                    Console.Error.WriteLine("这些 GUID 在当前扫描里一颗都没找到，没删任何东西：" + remove);
+                    return 1;
+                }
+                PcIconsReport rep2 = PcIcons.Remove(targets);
+                Console.WriteLine("action=remove");
+                Console.WriteLine("root=" + PcIcons.RootText());
+                Console.WriteLine("changed=" + rep2.Changed.ToString(CultureInfo.InvariantCulture));
+                Console.WriteLine("skipped=" + rep2.Skipped.ToString(CultureInfo.InvariantCulture));
+                Console.WriteLine("failed=" + rep2.Failed.ToString(CultureInfo.InvariantCulture));
+                Console.WriteLine("result=" + (rep2.Ok ? "ok" : "failed"));
+                Console.WriteLine("message=" + OneLine(rep2.Message));
+                Console.WriteLine("record=" + PcIcons.RecordFile());
+                Console.WriteLine("pending=" + PcIcons.PendingRecords().ToString(CultureInfo.InvariantCulture));
+                return rep2.Ok ? 0 : 1;
+            }
+
+            List<PcIconItem> scan = PcIcons.Scan();
+            if (HasFlag(args, "--json"))
+            {
+                Console.WriteLine(PcIcons.JsonReport(scan));
+                return 0;
+            }
+            Console.WriteLine(PcIcons.ReportText(scan));
             return 0;
         }
 

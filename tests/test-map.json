@@ -445,6 +445,20 @@
     },
     {
       "paths": [
+        "src/PcIcons.cs",
+        "src/PcIconsForm.cs"
+      ],
+      "cli": [
+        "A",
+        "D"
+      ],
+      "gui": [
+        "J"
+      ],
+      "note": "2026-10-26「此电脑多余图标」（治装完百度网盘这类软件后「此电脑 → 设备和驱动器」里多一颗「双击运行百度网盘」图标——量出来是软件往 HKCU/HKLM 的 Explorer\\MyComputer\\NameSpace 写挂载子键；本机百度网盘 {679F137C-3162-45da-BE3C-2F9C3D093F64} 两层都有）。后端 = 只读扫两处挂载点 + 解析 CLSID（显示名/图标/双击命令）+ 写死系统名单（含 DelegateFolders，只报告）+ 移除只删挂载点（不删 CLSID/软件本体）、写前记原值（pc-icons-original.tsv）、逐处读回核对、按记录还原（软件重装加回来的跳过）。命令行判据 D10–D10i（隔离根 MXX1_PCICONS_HKCU + MXX1_PCICONS_HKLM + MXX1_PCICONS_TSV，绝不碰真实 NameSpace；D10c 盯「没有隔离就退 2」；D10d 验两层同名合成一颗 both；D10f 验移除后两层都读回核对过、系统条目原样；D10i 验「软件重装加回来」时还原跳过）；界面 J30–J30d 真从按钮开窗口、真点「移除全部第三方图标…」「还原成移除前」并读回注册表与记录文件"
+    },
+    {
+      "paths": [
         "src/DnsConfig.cs",
         "src/DnsForm.cs"
       ],

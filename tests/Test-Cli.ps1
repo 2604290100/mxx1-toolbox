@@ -444,7 +444,7 @@ Write-Host 'A 组 · status 与 list'
 $status = Invoke-Exe 'status'
 Check 'A01 status 退出码 0' ($status.Code -eq 0) ('exit=' + $status.Code)
 Check 'A02 中文输出没有乱码（UTF-8）' ($status.Out -match 'name=萌新工具箱') ('name=' + (Get-Key $status.Out 'name'))
-Check 'A03 版本号 1.6.0' ((Get-Key $status.Out 'version') -eq '1.6.0') (Get-Key $status.Out 'version')
+Check 'A03 版本号 1.6.1' ((Get-Key $status.Out 'version') -eq '1.6.1') (Get-Key $status.Out 'version')
 
 # 自我看门狗（2026-10-09 加，见文件开头 $tmpRoot 那段）：套件里**不许**直接拿 %TEMP% 拼夹具路径。
 # CI 的 %TEMP% 是 8.3 短名，程序报的是规范长名 → 拼出来的路径和程序报的对不上，四条断言假红。
@@ -485,13 +485,13 @@ foreach ($line in ($status.Out -split "`r?`n")) {
     }
 }
 
-Check ('A04 按钮总数 182 + 工具目录里自动加载的 {0} 个（测试期间用户层的按钮会暂停：常用 59 + 系统工具 51 + 隐私 29 + 应用 6 + 清理 13 + 右键 21 + 我的 3）' -f $autoBase) `
-    ((Get-Key $status.Out 'buttons') -eq [string](182 + $autoBase)) (Get-Key $status.Out 'buttons')
+Check ('A04 按钮总数 183 + 工具目录里自动加载的 {0} 个（测试期间用户层的按钮会暂停：常用 59 + 系统工具 52 + 隐私 29 + 应用 6 + 清理 13 + 右键 21 + 我的 3）' -f $autoBase) `
+    ((Get-Key $status.Out 'buttons') -eq [string](183 + $autoBase)) (Get-Key $status.Out 'buttons')
 Check 'A05 内置清单里没有灰色占位按钮了（两个「资源管理器」也接上了真功能；灰规则改由 B 组注入验证）' ((Get-Key $status.Out 'placeholders') -eq '0') (Get-Key $status.Out 'placeholders')
 Check 'A06 危险按钮 3 个' ((Get-Key $status.Out 'dangerous') -eq '3') (Get-Key $status.Out 'dangerous')
 
 # 「常用」页签是合成的（置顶 + 最近使用），清单里没有它的按钮，所以是 0
-$tabExpect = @{ 'recent' = 0; 'common' = 59; 'mine' = 3; 'system' = 51; 'cleanup' = 13; 'privacy' = 29; 'apps' = 6; 'rightmenu' = 21 }
+$tabExpect = @{ 'recent' = 0; 'common' = 59; 'mine' = 3; 'system' = 52; 'cleanup' = 13; 'privacy' = 29; 'apps' = 6; 'rightmenu' = 21 }
 $tabOk = $true
 $tabDetail = @()
 foreach ($k in $tabExpect.Keys) {
@@ -499,13 +499,13 @@ foreach ($k in $tabExpect.Keys) {
     $tabDetail += ($k + '=' + $v)
     if ($v -ne [string]([int]$tabExpect[$k] + [int]$autoByTab[$k])) { $tabOk = $false }
 }
-Check 'A07 八个页签的按钮数正确（0/59/3/51/13/29/6/21，加上自动按钮）' $tabOk ($tabDetail -join ' ')
+Check 'A07 八个页签的按钮数正确（0/59/3/52/13/29/6/21，加上自动按钮）' $tabOk ($tabDetail -join ' ')
 
 $list = Invoke-Exe 'list'
 Check 'A08 list 退出码 0' ($list.Code -eq 0) ('exit=' + $list.Code)
-Check 'A09 list 报的按钮数一致' ((Get-Key $list.Out 'buttons') -eq [string](182 + $autoBase)) (Get-Key $list.Out 'buttons')
+Check 'A09 list 报的按钮数一致' ((Get-Key $list.Out 'buttons') -eq [string](183 + $autoBase)) (Get-Key $list.Out 'buttons')
 $lines = @($list.Out -split "`r?`n" | Where-Object { $_ -match "`t" })
-Check ('A10 list 打出 {0} 行按钮' -f (182 + $autoBase)) ($lines.Count -eq (182 + $autoBase)) ('lines=' + $lines.Count)
+Check ('A10 list 打出 {0} 行按钮' -f (183 + $autoBase)) ($lines.Count -eq (183 + $autoBase)) ('lines=' + $lines.Count)
 
 $rmList = Invoke-Exe 'list --tab rightmenu'
 Check 'A11 右键增强 21 个按钮（20 个右键菜单功能 + 隔壁永久删除工具）' ((Get-Key $rmList.Out 'shown') -eq [string](21 + [int]$autoByTab['rightmenu'])) (Get-Key $rmList.Out 'shown')
@@ -687,24 +687,24 @@ if ($permdel -eq '(未找到)' -or $permdel.Length -eq 0) {
 # ---------------------------------------------------------------- D 组：系统工具
 if (Test-GroupSelected 'D') {
 Write-Host ''
-Write-Host 'D 组 · 「系统工具」50 个按钮（Windows 自带组件 + 修复/诊断 + 文件哈希校验 / 屏幕取色器 / 端口与进程 / 关掉系统代理，--dry 只解析不启动）'
+Write-Host 'D 组 · 「系统工具」52 个按钮（Windows 自带组件 + 修复/诊断 + 文件哈希校验 / 屏幕取色器 / 端口与进程 / 关掉系统代理 / 文件关联体检 / 此电脑多余图标，--dry 只解析不启动）'
 
 # 缺组件的口径按系统版本分叉：Win7 上那 7 个 ms-settings: 按钮天生打不开（算"没有"），
 # Win10/11 上一个都不该缺。这样才能在两种机器上跑同一套测试。
 $missOk = if ($winName -eq 'Windows 7') { $sysMissing -ge 7 } else { $sysMissing -eq 0 }
 $d01detail = 'targets=' + (Get-Key $status.Out 'systemTargets') + ' missing=' + (Get-Key $status.Out 'systemMissing') + ' windows=' + $winName
-Check 'D01 status 报 29 个系统工具动作（21 组件 + 2 诊断 + 4 权限页 + 2 应用页）、该有的都在' `
+Check 'D01 status 报 29 个系统工具动作（21 组件 + 2 诊断 + 4 权限页 + 2 应用页；窗口动作如「文件关联体检」「此电脑多余图标」是 module=app，不占这个数）、该有的都在' `
     (((Get-Key $status.Out 'systemTargets') -eq '29') -and $missOk) $d01detail
 
 $sysList = Invoke-Exe 'list --tab system'
-Check 'D02 系统工具页签 51 个按钮（33 + 文件哈希校验 + 屏幕取色器 + 端口与进程 + 系统体检 + 打印卡住了 + 声音问题体检 + 网络体检 + 显示设置 + 打印机显示脱机 + 输入法打不出字 + 蓝屏原因解读 + 输出设备体检 + 进程占用体检 + C 盘空间体检 + 一键换 DNS + U 盘安全弹出 + 关掉系统代理 + 文件关联体检）、没有 placeholder' `
-    (((Get-Key $sysList.Out 'shown') -eq '51') -and (-not ($sysList.Out -match 'placeholder'))) ''
+Check 'D02 系统工具页签 52 个按钮（33 + 文件哈希校验 + 屏幕取色器 + 端口与进程 + 系统体检 + 打印卡住了 + 声音问题体检 + 网络体检 + 显示设置 + 打印机显示脱机 + 输入法打不出字 + 蓝屏原因解读 + 输出设备体检 + 进程占用体检 + C 盘空间体检 + 一键换 DNS + U 盘安全弹出 + 关掉系统代理 + 文件关联体检 + 此电脑多余图标）、没有 placeholder' `
+    (((Get-Key $sysList.Out 'shown') -eq '52') -and (-not ($sysList.Out -match 'placeholder'))) ''
 
 $sysIds = @()
 foreach ($line in ($sysList.Out -split "`r?`n")) {
     if ($line -match "`t") { $sysIds += ($line -split "`t")[0] }
 }
-Check 'D03 读到 51 个系统工具 id' ($sysIds.Count -eq 51) ($sysIds -join ' ')
+Check 'D03 读到 52 个系统工具 id' ($sysIds.Count -eq 52) ($sysIds -join ' ')
 
 $bad = @()
 $detail = @()
@@ -717,7 +717,7 @@ foreach ($id in $sysIds) {    $d = Invoke-Exe ('run ' + $id + ' --dry')
     if ($exists -ne 'yes' -and $hint.Length -eq 0) { $bad += ($id + ':没有解释'); continue }
     $detail += ($id + '=' + (Get-Key $d.Out 'kind'))
 }
-Check 'D04 50 个系统工具都有目标、且缺了就说明了原因' ($bad.Count -eq 0) (($bad -join ' ') + ' ' + ($detail -join ' '))
+Check 'D04 51 个系统工具都有目标、且缺了就说明了原因' ($bad.Count -eq 0) (($bad -join ' ') + ' ' + ($detail -join ' '))
 
 # 2026-10-20 加的 8 个「系统工具页入口」（A 组）—— 按 id 点名，免得哪天清单被改坏一条也没人发现。
 # （原计划里还有「Internet 选项 inetcpl.cpl」，量出来这台机器的精简版 Windows 里根本没这个文件，
@@ -1162,6 +1162,97 @@ Check 'D09j 还原时"后来被人改过"的那条跳过（不冲掉用户的改
 try { if (Test-Path -LiteralPath $asRootPs) { Remove-Item -LiteralPath $asRootPs -Recurse -Force } } catch { }
 try { if (Test-Path -LiteralPath $asTsv) { Remove-Item -LiteralPath $asTsv -Force } } catch { }
 
+# ---- D10（2026-10-26）「此电脑多余图标」（治装完百度网盘「此电脑 → 设备和驱动器」里多一颗图标）--------
+# 机制：软件往 HKCU + HKLM 的 MyComputer\NameSpace 写挂载子键，资源管理器枚举它就成了「设备和驱动器」
+# 里的图标（本机实测百度网盘 = {679F137C-…}，两层都有）。移除 = 只删挂载点、不删 CLSID / 软件本体；
+# 系统自带条目（含 DelegateFolders）只报告。这里验四件事：
+# ① 真机只读扫描（认出百度网盘第三方 / 系统条目只报告）；② 非隔离下 --remove / --restore 被拦；
+# ③ 隔离根里 扫描 → 移除 → 读回 → 还原 → 读回 整条链；④「软件重装加回来了」时还原跳过。
+$pcBtn = Invoke-Exe 'list'
+Check 'D10 「此电脑多余图标」在系统工具页，是界面动作（builtin:app/pcicons）' `
+    (($pcBtn.Out -match '(?m)^pc-icons\t') -and ($pcBtn.Out -match 'builtin:app/pcicons')) ''
+
+$pcReal = Invoke-Exe 'pcicons --json'
+$pcRealJson = $null
+try { $pcRealJson = $pcReal.Out | ConvertFrom-Json } catch { }
+$pcRealBaidu = $false
+if ($pcRealJson -ne $null) {
+    $pcRealBaidu = (@($pcRealJson.items | Where-Object {
+        [string]$_.guid -eq '{679F137C-3162-45da-BE3C-2F9C3D093F64}' -and [string]$_.kind -eq 'third' -and [bool]$_.removable }).Count -eq 1)
+}
+Check 'D10b 真机上 pcicons --json 只读跑得通（认出百度网盘是第三方、系统条目只报告、没进入隔离模式）' `
+    (($pcReal.Code -eq 0) -and ($pcRealJson -ne $null) -and (-not [bool]$pcRealJson.isolated) `
+        -and ([int]$pcRealJson.system -ge 1) -and $pcRealBaidu) `
+    ('exit=' + $pcReal.Code + ' count=' + $(if ($pcRealJson) { $pcRealJson.count } else { '解析失败' }))
+
+$pcGuard = Invoke-Exe 'pcicons --remove={11111111-1111-1111-1111-111111111111}'
+Check 'D10c 不在隔离根下时 pcicons --remove 被拦住（退出码 2，并且说清"只能在窗口里点"）' `
+    (($pcGuard.Code -eq 2) -and ($pcGuard.Err -match '窗口')) ('exit=' + $pcGuard.Code)
+$pcGuard2 = Invoke-Exe 'pcicons --restore'
+Check 'D10c2 --restore 同样被拦（退出码 2）' ($pcGuard2.Code -eq 2) ('exit=' + $pcGuard2.Code)
+
+$pcRootU = 'HKCU\Software\mxx1-toolbox\pcicons-test-u'
+$pcRootM = 'HKCU\Software\mxx1-toolbox\pcicons-test-m'
+$pcRootUPs = 'HKCU:\Software\mxx1-toolbox\pcicons-test-u'
+$pcRootMPs = 'HKCU:\Software\mxx1-toolbox\pcicons-test-m'
+$pcTsv = Join-Path $tmpRoot ('mxx1-pcicons-' + $PID + '.tsv')
+try { if (Test-Path -LiteralPath $pcRootUPs) { Remove-Item -LiteralPath $pcRootUPs -Recurse -Force } } catch { }
+try { if (Test-Path -LiteralPath $pcRootMPs) { Remove-Item -LiteralPath $pcRootMPs -Recurse -Force } } catch { }
+try { if (Test-Path -LiteralPath $pcTsv) { Remove-Item -LiteralPath $pcTsv -Force } } catch { }
+# 夹具：{11111111-…} = 一颗"第三方"图标，两层都有（模拟百度网盘 both）；{088e3905-…} = 系统名单里的
+[void](New-Item -Path ($pcRootUPs + '\{11111111-1111-1111-1111-111111111111}') -Force)
+[void](New-Item -Path ($pcRootMPs + '\{11111111-1111-1111-1111-111111111111}') -Force)
+[void](New-Item -Path ($pcRootUPs + '\{088e3905-0323-4b02-9826-5d99428e115f}') -Force)
+$pcEnv = @{ MXX1_PCICONS_HKCU = $pcRootU; MXX1_PCICONS_HKLM = $pcRootM; MXX1_PCICONS_TSV = $pcTsv }
+
+$pcIso = Invoke-Exe 'pcicons --json' -Env $pcEnv
+$pcIsoJson = $null
+try { $pcIsoJson = $pcIso.Out | ConvertFrom-Json } catch { }
+Check 'D10d 隔离根里体检：两层的同名第三方合成一颗（source=both、可移除），系统条目 removable=false' `
+    (($pcIsoJson -ne $null) -and ([bool]$pcIsoJson.isolated) -and ([int]$pcIsoJson.count -eq 2) -and `
+        (@($pcIsoJson.items | Where-Object { [string]$_.guid -eq '{11111111-1111-1111-1111-111111111111}' -and [string]$_.source -eq 'both' -and [bool]$_.removable }).Count -eq 1) -and `
+        (@($pcIsoJson.items | Where-Object { [string]$_.guid -eq '{088e3905-0323-4b02-9826-5d99428e115f}' -and [bool]$_.removable -eq $false }).Count -eq 1)) `
+    ('count=' + $(if ($pcIsoJson) { $pcIsoJson.count } else { '?' }))
+
+$pcRm = Invoke-Exe 'pcicons --remove={11111111-1111-1111-1111-111111111111}' -Env $pcEnv
+Check 'D10e 移除：result=ok、changed=1（两层同名一起删，系统条目一颗没动）' `
+    (($pcRm.Code -eq 0) -and ((Get-Key $pcRm.Out 'result') -eq 'ok') -and ([int](Get-Key $pcRm.Out 'changed') -eq 1) -and ([int](Get-Key $pcRm.Out 'skipped') -eq 0)) `
+    (($pcRm.Out -split "`r?`n" | Where-Object { $_ -match '^(changed|skipped|failed|message)=' }) -join ' ')
+
+$pcGoneU = Test-Path -LiteralPath ($pcRootUPs + '\{11111111-1111-1111-1111-111111111111}')
+$pcGoneM = Test-Path -LiteralPath ($pcRootMPs + '\{11111111-1111-1111-1111-111111111111}')
+$pcSysStill = Test-Path -LiteralPath ($pcRootUPs + '\{088e3905-0323-4b02-9826-5d99428e115f}')
+Check 'D10f 读回核对：HKCU 和 HKLM 两层的挂载点都没了，系统条目原样还在（一个字节没动）' `
+    ((-not $pcGoneU) -and (-not $pcGoneM) -and $pcSysStill) `
+    ('u=' + (-not $pcGoneU) + ' m=' + (-not $pcGoneM) + ' 系统=' + $pcSysStill)
+
+$pcTsvText = ''
+try { $pcTsvText = [System.IO.File]::ReadAllText($pcTsv, [System.Text.Encoding]::UTF8) } catch { }
+Check 'D10g 原值记录写下来了：有表头 + both 行（GUID、两个完整键路径都在）' `
+    (($pcTsvText -match '此电脑多余图标') -and ($pcTsvText -match '(?m)^\d{4}-\d\d-\d\d .*\t\{11111111-1111-1111-1111-111111111111\}\tboth\tHKCU\\Software\\mxx1-toolbox\\pcicons-test-u\\\{11111111-1111-1111-1111-111111111111\}\tHKCU\\Software\\mxx1-toolbox\\pcicons-test-m\\\{11111111-1111-1111-1111-111111111111\}')) ''
+
+$pcRestore = Invoke-Exe 'pcicons --restore' -Env $pcEnv
+$pcBackU = Test-Path -LiteralPath ($pcRootUPs + '\{11111111-1111-1111-1111-111111111111}')
+$pcBackM = Test-Path -LiteralPath ($pcRootMPs + '\{11111111-1111-1111-1111-111111111111}')
+Check 'D10h 还原：两层挂载点都重建回来了（读回核对在）、记录文件清空' `
+    (($pcRestore.Code -eq 0) -and ((Get-Key $pcRestore.Out 'result') -eq 'ok') -and ((Get-Key $pcRestore.Out 'pending') -eq '0') `
+        -and $pcBackU -and $pcBackM -and (-not (Test-Path -LiteralPath $pcTsv))) `
+    ('u=' + $pcBackU + ' m=' + $pcBackM + ' pending=' + (Get-Key $pcRestore.Out 'pending'))
+
+# 「软件重装加回来了」就跳过：先移除，再手动把挂载点重建（模拟软件又写了），然后还原 —— 那条必须跳过、留在记录里
+[void](Invoke-Exe 'pcicons --remove={11111111-1111-1111-1111-111111111111}' -Env $pcEnv)
+[void](New-Item -Path ($pcRootUPs + '\{11111111-1111-1111-1111-111111111111}') -Force)
+$pcRestore2 = Invoke-Exe 'pcicons --restore' -Env $pcEnv
+$pcKeep = $false
+try { $pcKeep = ([System.IO.File]::ReadAllText($pcTsv, [System.Text.Encoding]::UTF8) -match '11111111-1111-1111-1111-111111111111') } catch { }
+Check 'D10i 还原时"软件重装加回来了"的那颗跳过（不覆盖它），那行还留在记录里' `
+    (($pcRestore2.Code -eq 1) -and ([int](Get-Key $pcRestore2.Out 'skipped') -ge 1) -and $pcKeep) `
+    ('exit=' + $pcRestore2.Code + ' skipped=' + (Get-Key $pcRestore2.Out 'skipped'))
+
+try { if (Test-Path -LiteralPath $pcRootUPs) { Remove-Item -LiteralPath $pcRootUPs -Recurse -Force } } catch { }
+try { if (Test-Path -LiteralPath $pcRootMPs) { Remove-Item -LiteralPath $pcRootMPs -Recurse -Force } } catch { }
+try { if (Test-Path -LiteralPath $pcTsv) { Remove-Item -LiteralPath $pcTsv -Force } } catch { }
+
 }
 
 # ---------------------------------------------------------------- F 组：工具目录（bin-tools）
@@ -1489,7 +1580,7 @@ Write-Host 'H 组 · 悬停说明（用户 2026-10-04 报过「鼠标悬停的�
 # tip 命令打印的就是界面塞给 ToolTip 的那个字符串，所以这里能直接断言，不用去动真鼠标。
 $tipsAll = Invoke-Exe 'tip'
 Check 'H01 tip 退出码 0' ($tipsAll.Code -eq 0) ('exit=' + $tipsAll.Code)
-Check ('H02 tip 覆盖了每个按钮（182 + 自动 {0} 个）' -f $autoBase) ((Get-Key $tipsAll.Out 'tips') -eq [string](182 + $autoBase)) (Get-Key $tipsAll.Out 'tips')
+Check ('H02 tip 覆盖了每个按钮（183 + 自动 {0} 个）' -f $autoBase) ((Get-Key $tipsAll.Out 'tips') -eq [string](183 + $autoBase)) (Get-Key $tipsAll.Out 'tips')
 
 $blocks = @{}
 $curId = ''
@@ -3832,7 +3923,7 @@ Check 'S09 help 里能查到 checkupdate / disclaimer / consent 三个命令' `
 $cuOff = Invoke-Exe 'checkupdate' 60 $Exe @{ MXX1_NO_UPDATE = '1' }
 Check 'S10 MXX1_NO_UPDATE=1 时一个字节都不发（update=disabled，退出码 1 = 这次没结论）' `
     (($cuOff.Code -eq 1) -and ($cuOff.Out -match '(?m)^update=disabled\r?$')) (Get-Key $cuOff.Out 'update')
-Check 'S11 关掉时也报版本号（脚本据此判断）' ((Get-Key $cuOff.Out 'version') -eq '1.6.0') (Get-Key $cuOff.Out 'version')
+Check 'S11 关掉时也报版本号（脚本据此判断）' ((Get-Key $cuOff.Out 'version') -eq '1.6.1') (Get-Key $cuOff.Out 'version')
 
 $cuBad = Invoke-Exe 'checkupdate' 60 $Exe @{
     MXX1_RESOURCE_URL = 'http://127.0.0.1:9/apis/resources'

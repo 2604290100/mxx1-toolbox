@@ -4,6 +4,31 @@
 
 ## [未发布]
 
+### 「去掉小箭头」的空白图标改为系统自带的 `imageres.dll,197`（2026-10-27，实机钉死）
+
+上一轮（2026-10-26）自生成的空白 ICO 在**用户这台 Win10 22H2 上还是黑块** —— 同一个下午
+`shell32.dll,-50`、1bpp 掩码 ICO、1×1 透明 ICO、PNG-ICO 四种全失败；删掉 29 = 正常小箭头（决定性对照）。
+用户贴来一条 reg 命令（`%SystemRoot%\System32\imageres.dll,197`）实机试，回「**完美了**」：无黑块、无小箭头。
+
+- **正解**：`Shell Icons\29` 的"隐藏小箭头"值 = **系统 dll 资源索引 `imageres.dll,197`**
+  （新常量 `SysReg.BlankArrowValue`）。这台机器**只认 dll 资源索引、不认裸 .ico 文件路径**。
+- **`BlankIcon.cs` 退役**：不再被「去掉小箭头」/「修复图标黑块」使用；生成器保留给
+  `sysreg blankicon` 只读自检（命令行回归 L12d–L12f 继续验字节结构）。
+- **写前校验**：`Set()` / `FixIconBlock(keepHidden:true)` 改为确认 `imageres.dll` 存在（不在就
+  **一个字节都不写** + 「你还可以…」）。
+- **判断改口**：`IconBlockNote` / `FixIconBlock` / `IconBlockStateText` 里"这是不是我们写的隐藏值"
+  全部改用 `IsBlankArrowValue`（认字面 `%SystemRoot%…` / 展开后的 `C:\Windows…` / 只含 `imageres.dll,197`）。
+- **文案同步**：「修复桌面图标黑块」窗口确认框（换成系统自带的空白图标 imageres.dll,197）、
+  `common.json` 三条 hint（≤120 字）、`Program.cs` help。
+- **回归**：命令行 **L03 / L04c / L12c** 判据不变（结构没变），**L12d–L12f** 照旧验生成器；
+  界面 **J27c / J29b** 判据改为"29 == imageres.dll,197（%SystemRoot% 展开与否都认、不含 shell32.dll）"。
+  实测：命令行 `-Only A,L` **44 通过 / 0 失败**、界面 `-Only J` **66 通过 / 0 失败**、编码体检 315 PASS、
+  内联体检 PASS；exe **1,373,696 字节**；按钮 / 图标 / `status` / 常用设置 59 **一个都没变**。
+  ⚠️ **全套没跑**（命令行只 A,L；界面只 J）—— 发版前要清欠账。
+- **没验到**：Win7 / Win11 上 `imageres.dll` 的 `197` 索引是否空白（只在 Win10 22H2 实机验证）；
+  "保持无箭头"后桌面黑块真没了 = 用户实机直接写 HKLM 验收过，工具箱窗口那条路只验到值写对。
+- 正本：`docs\DESIGN.md` **§12.88**；坑 **103**（`imageres.dll,197` 正解与四条死路，别重复试）。
+
 ### 「去掉小箭头」不再写黑块 + 「还原修复前图标」不再念错自己是谁（2026-10-26，用户报的两个 bug）
 
 用户原话：「点击去掉小箭头后会变成图标黑块，点击还原修复前图标提示修复桌面图标黑块，修复这两个问题」。

@@ -4228,6 +4228,59 @@ J28 真点「还原」→ 报告念出「按修复前记下的原值写回去」
 - 「保持无箭头」这条路**桌面上的黑块是不是真没了**仍要人眼看（回归只验到值写对、文件真在、ICO 字节对）。
 - Win7 未跑；非管理员跑 J 组时 J27–J28 走 `[SKIP]`（要 HKLM）。
 
+### 12.88 「去掉小箭头」的正解：系统 dll 资源索引 `imageres.dll,197`（2026-10-26 实机钉死）
+
+用户报「**点了去掉小箭头以后出现一个黑块**」，先定位 → 换 1×1 透明 → 换 PNG-ICO → 全失败 → 删掉 29
+回到默认小箭头（决定性对照）→ 用户贴来一条 reg 命令（`imageres.dll,197`）→ 实机执行后回「**完美了**」。
+本节把过程与最终落地方案记全，免得以后有人（包括新会话）再走一遍死路。
+
+#### ① 实验记录（这台 Win10 22H2 / 19045，快捷方式左下角叠加图标 = `Shell Icons\29`）
+
+| 写进 `29` 的东西 | 真机结果 | 结论 |
+| --- | --- | --- |
+| `%SystemRoot%\System32\shell32.dll,-50`（系统自带"全透明空图标"，2026-10-24 就栽在这） | **黑块** | 像素 alpha 全 0 没用 —— Shell 画叠加图标走的是掩码那条路，不看 alpha（坑 101） |
+| 自生成 1bpp + AND 掩码全 `0xFF` 的空白 ICO（§12.85/86 的方案，1350 字节） | **黑块** | System.Drawing（GDI）画它 0 个非透明像素，真机照样黑 —— Shell 与 GDI 渲染路径行为不一致 |
+| 1×1 32bpp 全透明 ICO（70 字节，A=0） | **黑块** | 同上 |
+| PNG 压缩 32bpp 全透明 ICO（451 字节，16/32/48 三档） | **黑块** | 同上 |
+| **删除 29（回到默认）** | **正常小箭头** | 决定性对照：黑块 100% 是 `29` 的值造成的 |
+| **`%SystemRoot%\System32\imageres.dll,197`**（用户提供的系统 dll 资源索引） | **无黑块、无小箭头，用户验收"完美"** | ✅ 唯一正解：这台机器**只认 dll 资源索引（路径,索引）、不认裸 .ico 文件路径** |
+
+#### ② 落地（工具箱代码，2026-10-27 凌晨改完）
+
+- **新常量 `SysReg.BlankArrowValue = "%SystemRoot%\\System32\\imageres.dll,197"`** ——
+  `shortcut-arrow` 与 `shell-icon-block` 两项的 on 值（`ShellIcon29Values(BlankArrowValue)`），
+  原来都是 `BlankIcon.Path`（自生成 ico 文件路径）。
+- **`IsBlankArrowValue(value)`** 识别三种形态：字面 `%SystemRoot%…` / `Environment.ExpandEnvironmentVariables`
+  展开后的 `C:\Windows…` / 只含 `imageres.dll,197` 后缀 —— `IconBlockNote` / `FixIconBlock` /
+  `IconBlockStateText` 的"这是不是我们写的隐藏值"判断全部改用它（替换 `BlankIcon.IsOurs`）。
+- **写之前校验**：`Set()` 与 `FixIconBlock(keepHidden:true)` 里的 `BlankIcon.Ensure` 闸门 → 改为
+  **`imageres.dll` 存在性校验**（`%SystemRoot%\System32\imageres.dll`，系统文件，正常都在；不在就
+  **一个字节都不写** + "你还可以…"）。
+- **`BlankIcon.cs` 退役**：不再被任何按钮使用；保留生成器本身给 `sysreg blankicon` 只读自检
+  （命令行回归 L12d–L12f 继续验它的字节结构）。`MXX1_BLANK_ICON` 环境变量只服务那条自检。
+- 文案同步：`IconBlockForm` 确认框（"换成系统自带的空白图标（imageres.dll,197）"）、窗口 intro、
+  `common.json` 三条 hint（arrow-hide / arrow-restore / iconblock-fix，都 ≤120 字）、`Program.cs` help 里
+  blankicon 那行（标明"已不再用于去掉小箭头"）。
+- 界面回归 **J27c / J29b** 判据从"29 == ico 文件完整路径 + 文件真在"改成
+  **"29 == imageres.dll,197（%SystemRoot% 展开与否都认、不含 shell32.dll）"**；J 组不再需要
+  `MXX1_BLANK_ICON` / 图标文件夹具。
+
+#### ③ 回归数字（改完这一轮）
+
+命令行 `-Only A,L` **44 通过 / 0 失败**；界面 `-Only J` **66 通过 / 0 失败**（J27c / J29b 都真点出
+`29 = %SystemRoot%\System32\imageres.dll,197`）；编码体检 **315 PASS**；内联体检 PASS；
+exe **1,373,696 字节**；内置按钮 / 图标 / `status` / 常用设置 59 **一个都没变**。
+**没跑全套**（命令行只跑了 A,L；界面只跑了 J）—— 发版前要清这份欠账。
+
+#### ④ 没验到的
+
+- **Win7 / Win11 上 `imageres.dll` 的 `197` 索引是不是同样空白没验过**（只在这台 Win10 22H2 实机验证）。
+  值仍写 `197`：真机上它是"空白图标"，别的版本上最多是显示成某个具体图标，不会变成黑块。
+- 「保持无箭头」后桌面黑块真的没了 = **用户实机直接写入 HKLM 验收过**（就是这条命令），
+  但工具箱窗口那条路（J27c）只验到"值写对"，没有单独人眼截图。
+- 用户真机注册表**当前就是** HKLM 29 = `imageres.dll,197`（当时直接按用户命令写入，非工具箱记录）；
+  改版后用户重新在窗口里点一次才会走"记原值 → 还原"那条链。
+
 ### 15.1 分层：不是每次都要全量（2026-10-06 定的）
 
 用户 2026-10-06 的原话：「**单独改一个功能或者添加一个功能不应该影响到其他功能，那其他功能就不用测试**」。

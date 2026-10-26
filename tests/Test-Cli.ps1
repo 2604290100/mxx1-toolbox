@@ -1882,7 +1882,9 @@ $srNew = @(
     # 2026-10-24 的「桌面图标黑块」（Shell Icons\29 被写成了一个会画成黑块的图标）：
     # 修复 = off 方向（删 HKCU + HKLM 两处）、还原 = on 方向（按记录写回去），两处都要管理员，
     # 图标是 explorer 画的 → 写完自动重启一次。
-    @{ Id = 'shell-icon-block'; Name = '桌面图标黑块'; Labels = '还原修复前的图标设置 / 修复桌面图标黑块'; Admin = $true; Values = 2; Restart = $true }
+    # ⚠️ 2026-10-26：on 方向的名字从「还原修复前的图标设置」改成**和按钮同名**的「还原修复前图标」
+    #    （用户报「点还原修复前图标，提示却在讲『修复桌面图标黑块』」，名字对不上是其中一半原因）。
+    @{ Id = 'shell-icon-block'; Name = '桌面图标黑块'; Labels = '还原修复前图标 / 修复桌面图标黑块'; Admin = $true; Values = 2; Restart = $true }
 )
 $srNewBad = @()
 foreach ($n in $srNew) {
@@ -1954,13 +1956,99 @@ Check 'L12b 「隐藏未激活水印 / 恢复未激活水印」两个按钮各�
 # 2026-10-24 的「修复桌面图标黑块 / 还原修复前图标」：和上一对同一个套路 ——
 # 「修复」接 off 方向（删值 + 记原值）、「还原」接 on 方向（**按记录**写回去，不是写死 -50）。
 # 这条也顺手钉住"两个按钮不会都接到同一个方向"（接反了 = 点还原反而把黑块写回去）。
+# ⚠️ 2026-10-26：这一对的两句话都重写过（用户报「点还原修复前图标，提示却在讲修复桌面图标黑块」）——
+# 修复方向的说明里必须出现"回到系统默认的小箭头"，还原方向的说明里必须出现"按……当时记下的原值"，
+# 而且两句不能一样。
 $srIbFix = Invoke-Exe 'run iconblock-fix --dry'
 $srIbBack = Invoke-Exe 'run iconblock-restore --dry'
-Check 'L12c 「修复图标黑块 / 还原修复前图标」两个按钮各自接到同一项的 off / on 方向（修复 = 删值、还原 = 按记录写回）' `
+Check 'L12c 「修复图标黑块 / 还原修复前图标」两个按钮各自接到同一项的 off / on 方向（修复 = 删值、还原 = 按记录写回，两句话不串台）' `
     (((Get-Key $srIbFix.Out 'kind') -eq 'registry') -and ((Get-Key $srIbBack.Out 'kind') -eq 'registry') -and `
-     ((Get-Key $srIbFix.Out 'target') -match '修复桌面图标黑块') -and ((Get-Key $srIbBack.Out 'target') -match '还原修复前的图标设置') -and `
+     ((Get-Key $srIbFix.Out 'target') -match '回到系统默认的小箭头') -and `
+     ((Get-Key $srIbBack.Out 'target') -match '按「修复桌面图标黑块」当时记下的原值') -and `
+     ((Get-Key $srIbFix.Out 'target') -notmatch '当时记下的原值') -and `
      ((Get-Key $srIbFix.Out 'target') -ne (Get-Key $srIbBack.Out 'target'))) `
     ('fix=' + (Get-Key $srIbFix.Out 'target') + ' back=' + (Get-Key $srIbBack.Out 'target'))
+
+# 「去掉小箭头」写的不再是 shell32.dll,-50（2026-10-26）：那一串是 Windows 自带的"全透明空图标"，
+# 在用户的机器上被 Shell 画成了一块黑方块。现在写的是**工具箱自己生成的一张空白 ICO**
+# （1 位色 + AND 掩码全 0xFF：掩码位 = 1 表示"这块保持屏幕原样"，所以一个像素都不画）。
+# 命令行这条腿（`sysreg blankicon`）只生成 / 校验那个文件，**一个注册表值都不写**；
+# "点了按钮之后注册表里到底写了什么"由界面回归 J29 真点按钮验。
+$biPath = Join-Path $tmpRoot ('mxx1-blank-icon-' + $PID + '.ico')
+try { if (Test-Path -LiteralPath $biPath) { Remove-Item -LiteralPath $biPath -Force } } catch { }
+$bi = Invoke-Exe 'sysreg blankicon' 120 $Exe @{ MXX1_BLANK_ICON = $biPath }
+Check 'L12d sysreg blankicon 退出码 0，报出 16/32/48 三个尺寸、1 位色、掩码全 1、结构合格' `
+    (($bi.Code -eq 0) -and ((Get-Key $bi.Out 'valid') -eq '1') -and ((Get-Key $bi.Out 'sizes') -eq '16/32/48') -and `
+     ((Get-Key $bi.Out 'bpp') -eq '1') -and ((Get-Key $bi.Out 'mask') -eq 'ff') -and `
+     ((Get-Key $bi.Out 'exists') -eq '1') -and ((Get-Key $bi.Out 'path') -eq $biPath)) `
+    ('exit=' + $bi.Code + ' valid=' + (Get-Key $bi.Out 'valid') + ' sizes=' + (Get-Key $bi.Out 'sizes') + ' path=' + (Get-Key $bi.Out 'path'))
+
+# 不信程序自己的报告：把文件逐字节拆一遍（ICO 目录 + BITMAPINFOHEADER + XOR / AND 两半）。
+$biBad = ''
+$biBytes = $null
+try { if (Test-Path -LiteralPath $biPath) { $biBytes = [System.IO.File]::ReadAllBytes($biPath) } } catch { }
+if ($biBytes -eq $null) { $biBad = '文件没生成' }
+else {
+    $biCount = $biBytes[4] + ($biBytes[5] -shl 8)
+    $biWant = @(16, 32, 48)
+    if (($biBytes[0] -ne 0) -or ($biBytes[2] -ne 1)) { $biBad += 'ICO 头不对 ' }
+    if ($biCount -ne 3) { $biBad += ('目录里不是 3 张图（' + $biCount + '） ') }
+    else {
+        for ($i = 0; $i -lt 3; $i++) {
+            $e = 6 + 16 * $i
+            $w = [int]$biBytes[$e]
+            $h = [int]$biBytes[$e + 1]
+            $planes = $biBytes[$e + 4] + ($biBytes[$e + 5] -shl 8)
+            $bpp = $biBytes[$e + 6] + ($biBytes[$e + 7] -shl 8)
+            $size = [BitConverter]::ToInt32($biBytes, $e + 8)
+            $off = [BitConverter]::ToInt32($biBytes, $e + 12)
+            if (($w -ne $biWant[$i]) -or ($h -ne $biWant[$i])) { $biBad += ('第' + ($i + 1) + '张尺寸不对 ') }
+            if ($planes -ne 1) { $biBad += ('第' + ($i + 1) + '张 planes 不对 ') }
+            if ($bpp -ne 1) { $biBad += ('第' + ($i + 1) + '张不是 1 位色 ') }
+            $stride = [int]([math]::Floor(($w + 31) / 32) * 4)
+            $xorLen = $stride * $h
+            if ([BitConverter]::ToInt32($biBytes, $off) -ne 40) { $biBad += ('第' + ($i + 1) + '张头不是 40 字节 ') }
+            if ([BitConverter]::ToInt32($biBytes, $off + 4) -ne $w) { $biBad += ('第' + ($i + 1) + '张头里宽度不对 ') }
+            if ([BitConverter]::ToInt32($biBytes, $off + 8) -ne ($h * 2)) { $biBad += ('第' + ($i + 1) + '张头里高度不是两倍 ') }
+            if ($off + $size -gt $biBytes.Length) { $biBad += ('第' + ($i + 1) + '张越界 ') ; continue }
+            for ($k = 0; $k -lt $xorLen; $k++) {
+                if ($biBytes[$off + 48 + $k] -ne 0) { $biBad += ('第' + ($i + 1) + '张像素不是全 0 ') ; break }
+            }
+            for ($k = 0; $k -lt $xorLen; $k++) {
+                if ($biBytes[$off + 48 + $xorLen + $k] -ne 255) { $biBad += ('第' + ($i + 1) + '张掩码不是全 1 ') ; break }
+            }
+        }
+    }
+}
+Check 'L12e 那张 ICO 逐字节拆开看：16/32/48 三个尺寸、1 位色、像素全 0、AND 掩码全 0xFF（一个像素都不画）' `
+    ($biBad -eq '') $biBad
+
+# 再让 Windows 自己读一次：System.Drawing 走的是"认掩码"那条 GDI 路（用户桌面上的黑块正是
+# 因为有一条路不认 alpha）—— 它读得出来，说明这个文件在系统那边是合法的图标。
+$biLoadOk = $false
+$biDrawNote = ''
+try {
+    Add-Type -AssemblyName System.Drawing -ErrorAction Stop
+    $biIcon = New-Object System.Drawing.Icon($biPath)
+    $biBmp = New-Object System.Drawing.Bitmap(64, 64)
+    $biG = [System.Drawing.Graphics]::FromImage($biBmp)
+    $biG.Clear([System.Drawing.Color]::FromArgb(255, 255, 0, 0))
+    $biG.DrawIcon($biIcon, (New-Object System.Drawing.Rectangle(0, 0, 64, 64)))
+    $biG.Dispose()
+    $biChanged = 0
+    for ($y = 0; $y -lt 64; $y += 4) {
+        for ($x = 0; $x -lt 64; $x += 4) {
+            $c = $biBmp.GetPixel($x, $y)
+            if (-not (($c.R -eq 255) -and ($c.G -eq 0) -and ($c.B -eq 0))) { $biChanged++ }
+        }
+    }
+    $biBmp.Dispose()
+    $biDrawNote = ('icon=' + $biIcon.Width + 'x' + $biIcon.Height + ' changed=' + $biChanged)
+    $biIcon.Dispose()
+    $biLoadOk = ($biChanged -eq 0)
+} catch { $biDrawNote = $_.Exception.Message }
+Check 'L12f 那张 ICO 能被 Windows 读成图标，而且画在红底上改不动任何一个像素（真·全透明）' $biLoadOk $biDrawNote
+try { if (Test-Path -LiteralPath $biPath) { Remove-Item -LiteralPath $biPath -Force } } catch { }
 
 }
 

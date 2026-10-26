@@ -16,7 +16,26 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
 > **接手 / 新会话先做两件事**：读 `docs\DESIGN.md`（外观与行为的**唯一正本**）和本文件。
 > 设计一改先改 `DESIGN.md`，再同步本 skill —— 两份分叉就会出现"两套行为"。
 
-## 当前状态（2026-10-24，**v1.6.0**：关掉系统代理 + 批量重命名浏览 + 端口与进程增强 + UX 六条 + 条款补齐 + 定时关机「改一下」+ **文件关联体检** + **修复桌面图标黑块**）
+## 当前状态（2026-10-26，**未发布**：在 v1.6.0 之上修两个用户报的 bug —— 「去掉小箭头」不再画成黑块 + 「还原修复前图标」不再念错自己是谁）
+
+> **⚠️ 2026-10-26 这一轮（`DESIGN.md` §12.86；条款正文没改 → 同意指纹不变 `db2c1a73f510a37c`）**：
+> 用户原话「**点击去掉小箭头后会变成图标黑块**，**点击还原修复前图标提示修复桌面图标黑块**，修复这两个问题」。
+> ① **黑块的真因**：`Shell Icons\29` 里的 `%SystemRoot%\System32\shell32.dll,-50` **就是「去掉小箭头」自己写的**
+>   —— 它是 Windows 自带"全透明空图标"（本机量的不透明像素 0），但靠的是像素 alpha；Shell 画**叠加图标**时走
+>   GDI 掩码那条路，**不认 alpha**：掩码 0 + XOR 全 0 = **涂黑**。
+> ② **改法**：新文件 **`src\BlankIcon.cs`** —— 自己生成空白 ICO（16 / 32 / 48 三档，**1 位色 + AND 掩码全 `0xFF`**，
+>   不靠 alpha）；注册表里写**文件完整路径**（`%LOCALAPPDATA%\mxx1-toolbox\blank-arrow.ico`，
+>   `MXX1_BLANK_ICON` 可覆盖），HKCU + HKLM 照旧一起写。`SysReg.Set()` 写之前先 `Ensure`，**生成不出来就一个字节都不写**。
+> ③ **新只读命令** `sysreg blankicon`（生成 + 校验那张图，打印 `path/exists/bytes/sizes/bpp/mask/valid`，**不碰注册表**）。
+> ④ **第二个 bug**：报头改用**按钮名** `【还原修复前图标】` / `【修复桌面图标黑块】`；空记录时先说「这次没有写任何东西」
+>   再指路三颗按钮；`OnLabel` 改成 `还原修复前图标`；`Describe()` 给 `shell-icon-block` 单开两句；
+>   修复前若发现 29 指向我们那张空白图，追加一句「点了小箭头会回来」。
+> ⑤ **数字一个都没变**（内置 182 / `status` 185 / 常用设置 59）；改的是实现与文案（四条 hint 压到 ≤120 字）。
+> ⑥ **回归**：命令行新增 **L12d / L12e / L12f**（拆 ICO 字节 + 真画到红底上 0 个像素变化）、**L12c** 改判据（两句不许串台）；
+>   界面新增 **J29 / J29b / J29c**（真点「去掉小箭头」→ 隔离根里 29 变成那张图的完整路径、文件真在；再点「恢复小箭头」→ 值被删）。
+>   实测：命令行 `-Only A,L` **44 通过 / 0 失败**、界面 `-Only J` **64 通过 / 0 失败**、编码体检 **314 文件 PASS**、内联体检 PASS。
+> ⑦ ⚠️ **没验到的**：「桌面上的黑块真的变回小箭头 / 小箭头真的消失」还要人眼看；没在真机 HKLM 上做"临时换值量叠加像素"；
+>   Win7 未跑。**本地提交，没推送、没发版；站点一个字没动**（用户上传完网盘再单独叫）。
 
 > **⚠️ 2026-10-24 深夜这一轮（「修复桌面图标黑块 / 还原修复前图标」；条款又改了一次）**：
 > 用户发来一张桌面截图问「看看这个可以修复不？顺便做成按键功能」—— 截图里**每颗快捷方式的角上都是同一块黑方块**。
@@ -963,6 +982,11 @@ powershell -File tools\Make-AppIcon.ps1       # 重生成 assets\app.ico（改�
   报告里顺带念 `HKLM` 的 `77` / `179`（第三方美化工具留下的）但**一个字节都不动**；
   「查看设置改动」里这一项**不念「开启状态」**（改念「有自定义图标值…这块黑方块就是它画出来的」）。
   隔离根：`MXX1_SHELLICONS_ROOT` + `MXX1_SYSREG_TSV`。正本 `docs\DESIGN.md` §12.85。
+  ⚠️ **2026-10-26：「去掉小箭头」不再写 `shell32.dll,-50`**（它在用户的 Win10 上被 Shell 画成一块黑方块）——
+  改成 `src\BlankIcon.cs` 自己生成的空白 ICO（16/32/48、**1 位色 + AND 掩码全 `0xFF`**，不靠 alpha）：
+  `%LOCALAPPDATA%\mxx1-toolbox\blank-arrow.ico`（`MXX1_BLANK_ICON` 可覆盖），注册表里写**文件完整路径**；
+  `SysReg.Set()` 写前先 `BlankIcon.Ensure`，生成不出来就**一个字节都不写**。只读出口 `sysreg blankicon`。
+  正本 `docs\DESIGN.md` §12.86；坑 101。
   ⚠️ **小箭头 / 时钟秒 / 小组件 / Copilot / 未激活水印 / 修复图标黑块这六个带 `Tweak.RestartExplorer`** —— 写完
   `SysReg.Set` 自动调一次 `src\ExplorerRestart.cs`（命令唯一来源 = common.json 的 `restart-explorer`；
   `sysreg items` 会多打一列，`L04d` 盯着"正好这六个"）。`MXX1_NO_EXPLORER_RESTART=1` 时不真做。
@@ -981,8 +1005,9 @@ powershell -File tools\Make-AppIcon.ps1       # 重生成 assets\app.ico（改�
 - 三条底线和隐私设置一样：**写之前记原值**（`sysreg-original.tsv`，只记第一次）→ 写入 → **读回核对**
   → 「还原设置改动」按记录逐条写回（记录里"原来整个键都不存在"的，还原时连键一起删掉）。
   **不碰 Defender / 防火墙 / UAC / SmartScreen / 实时防护 / 篡改保护**（Test-Cli 的 L11 盯着）。
-- **命令行故意没有写入口**：只有 `sysreg status` / `items` / `selftest` 三个只读（自检在临时键里
-  走完"记原值 → 写入 → 读回 → 还原"），L07 盯着这条。**电源那两个写按钮同理** ——
+- **命令行故意没有写入口**：只有 `sysreg status` / `items` / `selftest` / `blankicon` 四个只读
+  （自检在临时键里走完"记原值 → 写入 → 读回 → 还原"；`blankicon` 只把「去掉小箭头」那张空白 ICO
+  生成 / 校验一遍，注册表一个字都不改），L07 盯着这条。**电源那两个写按钮同理** ——
   没有专门的 `power` 子命令，V 组的写路径都是走通用的 `run <id>`（加上三个隔离根）。
 - 加一个开关：`SysReg.cs` 的表里加一行 + `tools\common.json` 里加两条同 `options` 的按钮（on / off）
   + 两个图标（`tools\Make-Icons.ps1`），然后 `build.ps1` → `Make-Icons.ps1` → `build.ps1`。

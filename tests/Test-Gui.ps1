@@ -3564,6 +3564,12 @@ $jIbTsv = Join-Path $tmpRoot ('mxx1-sysreg-gui-' + $PID + '.tsv')
 try { if (Test-Path -LiteralPath $jIbTsv) { Remove-Item -LiteralPath $jIbTsv -Force } } catch { }
 $jDsEnv['MXX1_SHELLICONS_ROOT'] = 'Software\mxx1-toolbox\shellicons-gui'
 $jDsEnv['MXX1_SYSREG_TSV'] = $jIbTsv
+# 「去掉小箭头」现在写的是工具箱自己生成的那张空白 ICO（2026-10-26）：`MXX1_BLANK_ICON` 把它
+# 生成到临时目录 —— 用户真实的 %LOCALAPPDATA%\mxx1-toolbox\blank-arrow.ico 一个字节都不碰，
+# 而 J29 又能真点按钮、真看注册表里写进去的是什么。
+$jBlankIco = Join-Path $tmpRoot ('mxx1-blank-gui-' + $PID + '.ico')
+try { if (Test-Path -LiteralPath $jBlankIco) { Remove-Item -LiteralPath $jBlankIco -Force } } catch { }
+$jDsEnv['MXX1_BLANK_ICON'] = $jBlankIco
 
 # ⚠ **必须自己起一个界面实例**：G 组（深色主题）在它结尾就把最开始的 `$main` 关掉了
 # （Test-Gui.ps1 里那句 CloseWindow($main)），H 组用的是自己的 `$procFixed`。
@@ -4436,7 +4442,7 @@ if (($ibFixBtn.Count -ne 1) -or ($ibBackBtn.Count -ne 1)) {
         $ibTsvText = ''
         if (Test-Path -LiteralPath $jIbTsv) { $ibTsvText = [System.IO.File]::ReadAllText($jIbTsv, [System.Text.Encoding]::UTF8) }
         Check 'J27 真点「修复图标黑块」→ 确认框 → 报告念出改之前的样子与读回核对，隔离根里 29 真被删掉、原值记进 tsv' `
-            ($ibDlg.Found -and $ibDlg.Clicked -and ($ibOut.Text -match '【桌面图标黑块】修复') -and `
+            ($ibDlg.Found -and $ibDlg.Clicked -and ($ibOut.Text -match '【修复桌面图标黑块】') -and `
              ($ibOut.Text -match '写之前的样子') -and ($ibOut.Text -match '读回核对') -and `
              ($ibOut.Text -match '已经没有这个值了') -and $ibGone -and ($ibTsvText -match 'shell-icon-block')) `
             ('确认框=' + $ibDlg.Found + '/' + $ibDlg.Clicked + ' 29删掉了=' + $ibGone + ' 记录=' + ($ibTsvText.Length) + '字符 报告=' + $ibOut.Text.Length + '字符')
@@ -4453,14 +4459,70 @@ if (($ibFixBtn.Count -ne 1) -or ($ibBackBtn.Count -ne 1)) {
             $ibBackOk = $true
         } catch { }
         $ibTsvGone = -not (Test-Path -LiteralPath $jIbTsv)
-        Check 'J28 真点「还原修复前图标」→ 确认框 → 报告念出「按修复前记下的原值写回去」，29 变回 -50、记录清空' `
-            ($ibDlg2.Found -and $ibDlg2.Clicked -and ($ibOut2.Text -match '【桌面图标黑块】还原修复前的图标设置') -and `
-             ($ibOut2.Text -match '按修复前记下的原值写回去') -and $ibBackOk -and ($ibBackVal -match '\-50$') -and $ibTsvGone) `
+        Check 'J28 真点「还原修复前图标」→ 确认框 → 报告按记录写回原值，29 变回 -50、记录清空' `
+            ($ibDlg2.Found -and $ibDlg2.Clicked -and ($ibOut2.Text -match '【还原修复前图标】') -and `
+             ($ibOut2.Text -match '按「修复桌面图标黑块」当时记下的原值') -and `
+             ($ibOut2.Text -notmatch '【桌面图标黑块】') -and $ibBackOk -and ($ibBackVal -match '\-50$') -and $ibTsvGone) `
             ('确认框=' + $ibDlg2.Found + '/' + $ibDlg2.Clicked + ' 29=' + $ibBackVal + ' 记录清空=' + $ibTsvGone + ' 报告=' + $ibOut2.Text.Length + '字符')
         Close-JWindow $ibOut2.Win
         Start-Sleep -Milliseconds 300
     }
 }
+# ---- 2026-10-26：用户报的另一半 ——「点了『去掉小箭头』之后桌面图标全变成黑块」----------------
+# 真因：以前写进 Shell Icons\29 的是 `shell32.dll,-50`（Windows 自带的那个"全透明空图标"），
+# 它的像素确实全透明，可 Shell 画叠加图标时把它画成了一块黑。现在写的是工具箱**自己生成**的
+# 那张空白 ICO（1 位色 + AND 掩码全 0xFF）。这里真点两颗按钮（都走 sysreg，所以也要管理员）：
+#   ① 「去掉小箭头」→ 隔离根里的 29 变成那张图标文件的**完整路径**、不含 shell32.dll、文件真在；
+#   ② 「恢复小箭头」→ 那个值被删掉（小箭头回到系统默认）。
+$ibArrowBtn = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '去掉小箭头' })
+$ibArrowBackBtn = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '恢复小箭头' })
+Check 'J29 常用设置页有「去掉小箭头 / 恢复小箭头」两颗按钮，都可点（第 4 段 · 文件显示那一组）' `
+    (($ibArrowBtn.Count -eq 1) -and $ibArrowBtn[0].Enabled -and ($ibArrowBackBtn.Count -eq 1) -and $ibArrowBackBtn[0].Enabled) `
+    ('去掉=' + $ibArrowBtn.Count + ' 恢复=' + $ibArrowBackBtn.Count)
+
+if (($ibArrowBtn.Count -ne 1) -or ($ibArrowBackBtn.Count -ne 1)) {
+    Check 'J29b 真点「去掉小箭头」→ 29 变成那张空白图标的完整路径（不含 shell32.dll、文件真在）' $false '按钮没找到'
+    Check 'J29c 真点「恢复小箭头」→ 29 被删掉、回到系统默认的小箭头' $false '按钮没找到'
+} else {
+    $ibIsAdmin = $false
+    try {
+        $ibIsAdmin = (New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    } catch { }
+    if (-not $ibIsAdmin) {
+        Skip 'J29b 真点「去掉小箭头」→ 29 变成那张空白图标的完整路径' '测试进程不是管理员：点了会弹 UAC，跳过'
+        Skip 'J29c 真点「恢复小箭头」→ 29 被删掉' '同上'
+    } else {
+        [void][TBGui]::Click($ibArrowBtn[0].H)
+        $ibOut3 = Read-JOutputBox -TitlePrefix '去掉小箭头'
+        $ibArrowVal = ''
+        $ibArrowRead = $false
+        try {
+            $ibArrowVal = [string](Get-ItemProperty -LiteralPath $jIbRootPs -Name '29' -ErrorAction Stop).'29'
+            $ibArrowRead = $true
+        } catch { }
+        $ibIcoThere = Test-Path -LiteralPath $jBlankIco
+        $ibSamePath = $false
+        try { $ibSamePath = [string]::Equals($ibArrowVal.Trim(), $jBlankIco.Trim(), [StringComparison]::OrdinalIgnoreCase) } catch { }
+        Check 'J29b 真点「去掉小箭头」→ 29 变成那张空白图标的完整路径（不含 shell32.dll、文件真在）' `
+            ($ibArrowRead -and $ibSamePath -and ($ibArrowVal.IndexOf('shell32.dll') -lt 0) -and $ibIcoThere -and `
+             ($ibOut3.Text -match '【快捷方式小箭头】') -and ($ibOut3.Text -match '读回核对')) `
+            ('29=' + $ibArrowVal + ' 同一路径=' + $ibSamePath + ' 图标文件=' + $ibIcoThere + ' 报告=' + $ibOut3.Text.Length + '字符')
+        Close-JWindow $ibOut3.Win
+        Start-Sleep -Milliseconds 300
+
+        [void][TBGui]::Click($ibArrowBackBtn[0].H)
+        $ibOut4 = Read-JOutputBox -TitlePrefix '恢复小箭头'
+        $ibArrowGone = $true
+        try { [void](Get-ItemProperty -LiteralPath $jIbRootPs -Name '29' -ErrorAction Stop); $ibArrowGone = $false } catch { }
+        Check 'J29c 真点「恢复小箭头」→ 29 被删掉、回到系统默认的小箭头' `
+            ($ibArrowGone -and ($ibOut4.Text -match '【快捷方式小箭头】') -and ($ibOut4.Text -match '没有这个值')) `
+            ('29 删掉了=' + $ibArrowGone + ' 报告=' + $ibOut4.Text.Length + '字符')
+        Close-JWindow $ibOut4.Win
+        Start-Sleep -Milliseconds 300
+    }
+}
+try { if (Test-Path -LiteralPath $jBlankIco) { Remove-Item -LiteralPath $jBlankIco -Force } } catch { }
+
 try { if (Test-Path -LiteralPath $jIbRootPs) { Remove-Item -LiteralPath $jIbRootPs -Recurse -Force } } catch { }
 try { if (Test-Path -LiteralPath $jIbTsv) { Remove-Item -LiteralPath $jIbTsv -Force } } catch { }
 

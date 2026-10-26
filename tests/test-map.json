@@ -582,7 +582,8 @@
     {
       "paths": [
         "src/SysReg.cs",
-        "src/RegEngine.cs"
+        "src/RegEngine.cs",
+        "src/BlankIcon.cs"
       ],
       "cli": [
         "I",
@@ -591,7 +592,7 @@
       "gui": [
         "J"
       ],
-      "note": "常用设置的注册表开关（记原值 / 读回核对 / 一键还原；隐私开关共用 RegEngine 这套实现）。⚠️ 2026-10-24 加了「修复图标黑块 / 还原修复前图标」那一对（独立 id `shell-icon-block`，「还原」走新的 `RegEngine.RestoreFor` 只退这一项）→ **界面 J 组也要跑**：J26–J28 真点这两颗按钮、过确认框、在 `MXX1_SHELLICONS_ROOT` 隔离根里读回「29 被删掉 / 原值记进 tsv / 还原后写回来 / 记录清空」"
+      "note": "常用设置的注册表开关（记原值 / 读回核对 / 一键还原；隐私开关共用 RegEngine 这套实现）。⚠️ 2026-10-24 加了「修复图标黑块 / 还原修复前图标」那一对（独立 id `shell-icon-block`，「还原」走新的 `RegEngine.RestoreFor` 只退这一项）→ **界面 J 组也要跑**：J26–J28 真点这两颗按钮、过确认框、在 `MXX1_SHELLICONS_ROOT` 隔离根里读回「29 被删掉 / 原值记进 tsv / 还原后写回来 / 记录清空」。⚠️ 2026-10-26 起「去掉小箭头」不再写 shell32.dll,-50，改成 `BlankIcon` 自己生成的那张空白 ICO（1 位色 + AND 掩码全 0xFF —— 原来是 Windows 自带的全透明空图标，被 Shell 画成了黑块）→ 命令行 L12d–L12f 拆 ICO 字节（尺寸 / 位深 / 掩码 / 画在红底上 0 个像素变），界面 J29 真点「去掉小箭头」看 29 变成那张图的完整路径、再点「恢复小箭头」看它被删掉"
     },
     {
       "paths": [

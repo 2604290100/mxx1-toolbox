@@ -38,6 +38,20 @@ namespace Mxx1Toolbox
             }
         }
 
+        /// <summary>「去掉小箭头」写进 `Shell Icons\29` 的那张空白图标（工具箱自己生成，见 BlankIcon）。
+        /// ⚠️ 别再把它指回 `shell32.dll,-50` —— 那个在部分 Win10 上会被画成一块黑方块
+        /// （用户 2026-10-24 报的正是这个）。`MXX1_BLANK_ICON` 可以换掉这个位置：界面回归拿它把
+        /// 图标生成到临时目录，用户真实的那个文件一个字节都不碰。</summary>
+        public static string BlankIconFile
+        {
+            get
+            {
+                string env = (Environment.GetEnvironmentVariable("MXX1_BLANK_ICON") ?? "").Trim();
+                if (env.Length > 0) { return env; }
+                return Path.Combine(BaseDir, "blank-arrow.ico");
+            }
+        }
+
         /// <summary>结果交接文件。按钮需要管理员权限时工具箱会把自己以管理员身份再起一遍，而那个
         /// 子进程是 winexe（没有控制台），Console 输出等于扔掉 —— 所以它把结果写在这里，
         /// 父进程过几秒读出来，照常弹结果窗口（否则用户只看到一句"已请求管理员权限"就没了下文）。</summary>

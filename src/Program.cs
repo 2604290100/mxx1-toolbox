@@ -355,6 +355,7 @@ namespace Mxx1Toolbox
             Console.WriteLine("  Mxx1Toolbox.exe privacy selftest     用工具箱自己的测试键自检「原值 → 写入 → 还原」链路");
             Console.WriteLine("  Mxx1Toolbox.exe sysreg status        只读列出系统设置开关（任务栏/开始菜单/内核隔离…）的状态与原值");
             Console.WriteLine("  Mxx1Toolbox.exe sysreg selftest      自检系统设置那条链路（DWORD / 字符串 / 整棵键三种值）");
+            Console.WriteLine("  Mxx1Toolbox.exe sysreg blankicon     生成并校验「去掉小箭头」用的那张空白图标（不碰注册表）");
             Console.WriteLine("  Mxx1Toolbox.exe rightmenu status     只读列出右键菜单里装了什么（装 / 卸只在界面里点）");
             Console.WriteLine("  Mxx1Toolbox.exe rightmenu list       只读列出五个位置里真实存在的菜单项（含别人的软件装的 / DLL 扩展）");
             Console.WriteLine("                                                       选项：--zone=files|folder|folderbg|desktop|drive");
@@ -642,9 +643,10 @@ namespace Mxx1Toolbox
             return 2;
         }
 
-        /// <summary>`sysreg status | items | selftest`：「常用设置」里那批写注册表的按钮用的后端。
+        /// <summary>`sysreg status | items | selftest | blankicon`：「常用设置」里那批写注册表的按钮用的后端。
         /// 和隐私开关一样，命令行**故意不提供**"真的去改系统设置"的入口 —— 那只能从界面点
-        /// （成对按钮 + 可一键还原），自检只碰 HKCU\Software\mxx1-toolbox\sysreg-selftest。</summary>
+        /// （成对按钮 + 可一键还原），自检只碰 HKCU\Software\mxx1-toolbox\sysreg-selftest。
+        /// `blankicon` 只是把「去掉小箭头」那张空白 ICO 生成 / 校验一遍，注册表一个字都不改。</summary>
         private static int SysRegCommand(string[] args)
         {
             string what = (args.Length > 1) ? args[1].ToLowerInvariant() : "status";
@@ -672,7 +674,36 @@ namespace Mxx1Toolbox
                 Console.WriteLine("selftest=" + (ok ? "pass" : "fail"));
                 return ok ? 0 : 1;
             }
-            Console.Error.WriteLine("用法: sysreg status | items | selftest");
+            if (what == "blankicon")
+            {
+                // 只读 + 顺手把那张图生成出来（它本来就是工具箱自己的文件，写在 BaseDir 里）。
+                // **不碰注册表**：命令行照旧没有"改系统设置"的入口（L07 钉着这条）。
+                // 回归测试用 MXX1_BLANK_ICON 把它挪到临时目录，再逐字节验结构。
+                string path;
+                string error;
+                bool ok = BlankIcon.Ensure(out path, out error);
+                byte[] data = null;
+                if (ok)
+                {
+                    try { data = System.IO.File.ReadAllBytes(path); }
+                    catch (Exception ex) { error = ex.Message; ok = false; }
+                }
+                string sizes = "";
+                string bad = "";
+                bool structOk = false;
+                if (data != null) { structOk = BlankIcon.Validate(data, out sizes, out bad); }
+                Console.WriteLine("path=" + path);
+                Console.WriteLine("exists=" + (System.IO.File.Exists(path) ? "1" : "0"));
+                Console.WriteLine("bytes=" + (data != null ? data.Length.ToString() : "0"));
+                Console.WriteLine("sizes=" + sizes);
+                Console.WriteLine("bpp=1");
+                Console.WriteLine("mask=ff");
+                Console.WriteLine("valid=" + (ok && structOk ? "1" : "0"));
+                if (error.Length > 0) { Console.WriteLine("error=" + error); }
+                if (bad.Length > 0) { Console.WriteLine("bad=" + bad); }
+                return (ok && structOk) ? 0 : 1;
+            }
+            Console.Error.WriteLine("用法: sysreg status | items | selftest | blankicon");
             return 2;
         }
 

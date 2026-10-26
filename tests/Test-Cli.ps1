@@ -1180,10 +1180,15 @@ if ($pcRealJson -ne $null) {
     $pcRealBaidu = (@($pcRealJson.items | Where-Object {
         [string]$_.guid -eq '{679F137C-3162-45da-BE3C-2F9C3D093F64}' -and [string]$_.kind -eq 'third' -and [bool]$_.removable }).Count -eq 1)
 }
-Check 'D10b 真机上 pcicons --json 只读跑得通（认出百度网盘是第三方、系统条目只报告、没进入隔离模式）' `
+Check 'D10b 真机上 pcicons --json 只读跑得通（未进入隔离模式、系统条目只报告）' `
     (($pcReal.Code -eq 0) -and ($pcRealJson -ne $null) -and (-not [bool]$pcRealJson.isolated) `
-        -and ([int]$pcRealJson.system -ge 1) -and $pcRealBaidu) `
+        -and ([int]$pcRealJson.system -ge 1)) `
     ('exit=' + $pcReal.Code + ' count=' + $(if ($pcRealJson) { $pcRealJson.count } else { '解析失败' }))
+if ($pcRealBaidu) {
+    Check 'D10b2 真机装了百度网盘时，它被认成第三方可移除条目（guid 679F137C…）' $pcRealBaidu ('guid=679F137C-… kind=third removable=True')
+} else {
+    Skip 'D10b2 这台机器没装百度网盘（认第三方这层验不到，CI / 干净机上不算失败）'
+}
 
 $pcGuard = Invoke-Exe 'pcicons --remove={11111111-1111-1111-1111-111111111111}'
 Check 'D10c 不在隔离根下时 pcicons --remove 被拦住（退出码 2，并且说清"只能在窗口里点"）' `

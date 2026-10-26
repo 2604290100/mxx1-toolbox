@@ -3564,6 +3564,22 @@ $jIbTsv = Join-Path $tmpRoot ('mxx1-sysreg-gui-' + $PID + '.tsv')
 try { if (Test-Path -LiteralPath $jIbTsv) { Remove-Item -LiteralPath $jIbTsv -Force } } catch { }
 $jDsEnv['MXX1_SHELLICONS_ROOT'] = 'Software\mxx1-toolbox\shellicons-gui'
 $jDsEnv['MXX1_SYSREG_TSV'] = $jIbTsv
+# 「此电脑多余图标」（2026-10-26）也给它一对**隔离根**：`MXX1_PCICONS_HKCU` + `MXX1_PCICONS_HKLM`
+# 一设，扫描 / 移除 / 还原全部跑在这两个 HKCU 测试键上（用户真实的 NameSpace 一个字节都不碰）。
+# 夹具做成"用户那台机器的样子"：一颗第三方图标 {11111111-…} 两层都有（模拟百度网盘），
+# 一颗系统名单里的 {088e3905-…}（永远不动）。
+$jPcRootPsU = 'HKCU:\Software\mxx1-toolbox\pcicons-gui-u'
+$jPcRootPsM = 'HKCU:\Software\mxx1-toolbox\pcicons-gui-m'
+try { if (Test-Path -LiteralPath $jPcRootPsU) { Remove-Item -LiteralPath $jPcRootPsU -Recurse -Force } } catch { }
+try { if (Test-Path -LiteralPath $jPcRootPsM) { Remove-Item -LiteralPath $jPcRootPsM -Recurse -Force } } catch { }
+[void](New-Item -Path ($jPcRootPsU + '\{11111111-1111-1111-1111-111111111111}') -Force)
+[void](New-Item -Path ($jPcRootPsM + '\{11111111-1111-1111-1111-111111111111}') -Force)
+[void](New-Item -Path ($jPcRootPsU + '\{088e3905-0323-4b02-9826-5d99428e115f}') -Force)
+$jPcTsv = Join-Path $tmpRoot ('mxx1-pcicons-gui-' + $PID + '.tsv')
+try { if (Test-Path -LiteralPath $jPcTsv) { Remove-Item -LiteralPath $jPcTsv -Force } } catch { }
+$jDsEnv['MXX1_PCICONS_HKCU'] = 'HKCU\Software\mxx1-toolbox\pcicons-gui-u'
+$jDsEnv['MXX1_PCICONS_HKLM'] = 'HKCU\Software\mxx1-toolbox\pcicons-gui-m'
+$jDsEnv['MXX1_PCICONS_TSV'] = $jPcTsv
 # 「去掉小箭头」现在写的是**系统自带的空白图标 imageres.dll,197**（2026-10-26 实机钉死：
 # 这台 Win10 只认 dll 资源索引、不认裸 .ico 文件路径，之前试过的自生成透明 ico / shell32.dll,-50
 # 真机全是黑块）—— 所以 J 组不需要再生成 / 验证任何图标文件，J27c / J29b 只验注册表里
@@ -4592,6 +4608,141 @@ if (($ibArrowBtn.Count -ne 1) -or ($ibArrowBackBtn.Count -ne 1)) {
 }
 try { if (Test-Path -LiteralPath $jIbRootPs) { Remove-Item -LiteralPath $jIbRootPs -Recurse -Force } } catch { }
 try { if (Test-Path -LiteralPath $jIbTsv) { Remove-Item -LiteralPath $jIbTsv -Force } } catch { }
+
+# ---- 「此电脑多余图标」窗口（2026-10-26，治装完百度网盘「此电脑 → 设备和驱动器」里多一颗图标）-----
+# 这一段的"根"是 MXX1_PCICONS_HKCU + MXX1_PCICONS_HKLM 指到的两个测试键（见上面夹具），
+# 所以窗口里的「移除 / 还原」可以**真点**；用户真实的 NameSpace 一个字节都不碰。
+# 后端同一条路在命令行 D10 组盯着（只读 / 拦截 / 隔离端到端）；这里验的是**用户真点按钮**这条：
+# ① 点按钮开窗口 → 扫成一张列表（ListView + 状态行点数），没选中行时「移除这颗…」是灰的，点开这个动作什么都没改；
+# ② 点选列表里那颗第三方图标（可移除的排最上面）→「移除这颗…」亮 → 确认框 → 隔离根里两层真没了、系统条目还在、原值进 tsv；
+# ③ 窗口里真点「还原成移除前」→ 按记录重建、记录清空。
+$jPcTab = Switch-Tab -Handle $main -TabName '系统工具' -ExpectNames @('此电脑多余图标')
+$jPcBtn = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '此电脑多余图标' })
+Check 'J30 系统工具页有「此电脑多余图标」按钮，可点（修复与诊断段，挨着「文件关联体检」）' `
+    ($jPcTab -and ($jPcBtn.Count -eq 1) -and $jPcBtn[0].Enabled) `
+    ('页签=' + $jPcTab + ' 按钮=' + $jPcBtn.Count)
+
+if ($jPcBtn.Count -ne 1) {
+    Check 'J30b 真点「此电脑多余图标」→ 开出一个列表窗口：ListView 有行、状态行报出系统/可移除颗数、没选中时「移除这颗…」是灰的，点开什么都没改' $false '按钮没找到'
+    Check 'J30c 列表里真点选那颗第三方图标 →「移除这颗…」→ 确认框 → 隔离根里两层第三方挂载点真没了、系统条目还在' $false '按钮没找到'
+    Check 'J30d 窗口里真点「还原成移除前」→ 按记录重建、记录清空' $false '按钮没找到'
+} else {
+    # ① 点开窗口（仿「文件关联体检」：先找窗口，不真点移除）。窗口标题 = 「此电脑多余图标（设备和驱动器里被软件加的）」，
+    #    前缀匹配只写到「此电脑多余图标」这一段（坑 102：前缀匹配，别少写）。
+    [void][TBGui]::Click($jPcBtn[0].H)
+    $jPcWin = $null
+    for ($i = 0; $i -lt 60; $i++) {
+        Start-Sleep -Milliseconds 200
+        $jPcWin = Find-TopWindow -ProcessId $proc.Id -TextPrefix '此电脑多余图标'
+        if ($jPcWin -ne $null) { break }
+    }
+    $jPcLv = @()
+    $jPcRemBtn = @()
+    $jPcStatus = ''
+    if ($jPcWin -ne $null) {
+        Start-Sleep -Milliseconds 600
+        $jPcCtrls = Get-ChildControls -RootHandle $jPcWin.H
+        $jPcLv = @($jPcCtrls | Where-Object { $_.Class -like '*SysListView*' })
+        $jPcRemBtn = @($jPcCtrls | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '移除这颗…' })
+        $jPcStatus = Find-JStatus $jPcWin.H '^共 \d+ 颗：系统 \d+ 颗（不动）、第三方 / 来历不明 \d+ 颗（可移除）'
+    }
+    $jPcBefore = (Test-Path -LiteralPath ($jPcRootPsU + '\{11111111-1111-1111-1111-111111111111}'))
+    $jPcSysBefore = (Test-Path -LiteralPath ($jPcRootPsU + '\{088e3905-0323-4b02-9826-5d99428e115f}'))
+    Check 'J30b 真点「此电脑多余图标」→ 开出一个列表窗口：ListView 有行、状态行报出系统/可移除颗数、没选中时「移除这颗…」是灰的，点开这个动作什么都没改' `
+        (($jPcWin -ne $null) -and ($jPcLv.Count -ge 1) -and ($jPcStatus.Length -gt 0) -and `
+         ($jPcRemBtn.Count -eq 1) -and (-not $jPcRemBtn[0].Enabled) -and $jPcBefore -and $jPcSysBefore) `
+        ('窗口=' + ($jPcWin -ne $null) + ' 列表=' + $jPcLv.Count + ' 状态="' + $jPcStatus + '" 点开后第三方还在=' + $jPcBefore)
+
+    $jPcIsAdmin = $false
+    try {
+        $jPcIsAdmin = (New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    } catch { }
+    if (-not $jPcIsAdmin) {
+        # 窗口里的移除 / 还原要写 HKLM（哪怕隔离根指到 HKCU，窗口逻辑也照常过"要管理员"那道门），
+        # 非管理员点下去会走"提权重开一个自己"那条路，自动化验不了 —— 同 J27/J29 的口径。
+        Skip 'J30c 列表里真点选那颗第三方图标 →「移除这颗…」→ 确认框 → 隔离根里两层真没了' '测试进程不是管理员：点了会弹 UAC，跳过'
+        Skip 'J30d 窗口里真点「还原成移除前」→ 按记录重建、记录清空' '同上'
+    } else {
+        # ② 列表里选中那颗第三方图标（可移除的排最上面）。跨进程点不了 ListView 的行
+        #   （LVM_SETITEMSTATE 要写结构体，探针做不到 —— 坑），用 PostMessage 鼠标消息点到
+        #   行坐标（TBGui::MouseDown，坐标是 ListView 客户区）。选中后「移除这颗…」才亮；
+        #   万一第一行是系统条目（红色那行），按钮会变成「系统自带（不给移除）」并且是灰的
+        #   —— 那就往下试几行，直到选中一颗可移除的。
+        $jPcSelected = $false
+        if (($jPcWin -ne $null) -and ($jPcLv.Count -ge 1)) {
+            foreach ($jY in @(24, 28, 32, 36, 40, 44, 48, 52)) {
+                [void][TBGui]::MouseDown($jPcLv[0].H, 40, $jY)
+                Start-Sleep -Milliseconds 250
+                $jB = @(Get-ChildControls -RootHandle $jPcWin.H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '移除这颗…' -and $_.Enabled })
+                if ($jB.Count -eq 1) { $jPcSelected = $true; break }
+            }
+        }
+        $jPcDlg = $null
+        $jPcOk = $false
+        $jPcDone = ''
+        if ($jPcSelected) {
+            $jPcRemBtn2 = @(Get-ChildControls -RootHandle $jPcWin.H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '移除这颗…' })
+            if ($jPcRemBtn2.Count -eq 1) { [void][TBGui]::Click($jPcRemBtn2[0].H) }
+            for ($i = 0; $i -lt 40; $i++) {
+                Start-Sleep -Milliseconds 200
+                $jPcDlg = Find-JAssocDialog -ProcessId $proc.Id -Main $main -Owner $jPcWin.H -TitlePrefix '要移除这颗「此电脑」图标吗？'
+                if ($jPcDlg -ne $null) { break }
+            }
+            if ($jPcDlg -ne $null) {
+                $jOk = @(Get-ChildControls -RootHandle $jPcDlg.H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '移除这颗' })
+                if ($jOk.Count -eq 1) { [void][TBGui]::Click($jOk[0].H); $jPcOk = $true }
+            }
+            for ($i = 0; $i -lt 80; $i++) {
+                Start-Sleep -Milliseconds 250
+                $jPcDone = Find-JStatus $jPcWin.H '^移除完成：'
+                if ($jPcDone.Length -gt 0) { break }
+            }
+        }
+        $jPcGoneU = -not (Test-Path -LiteralPath ($jPcRootPsU + '\{11111111-1111-1111-1111-111111111111}'))
+        $jPcGoneM = -not (Test-Path -LiteralPath ($jPcRootPsM + '\{11111111-1111-1111-1111-111111111111}'))
+        $jPcSysStill = (Test-Path -LiteralPath ($jPcRootPsU + '\{088e3905-0323-4b02-9826-5d99428e115f}'))
+        $jPcTsvText = ''
+        if (Test-Path -LiteralPath $jPcTsv) { $jPcTsvText = [System.IO.File]::ReadAllText($jPcTsv, [System.Text.Encoding]::UTF8) }
+        Check 'J30c 列表里真点选那颗第三方图标 →「移除这颗…」→ 确认框 → 状态行报「移除完成：」、隔离根里两层第三方挂载点真没了、系统条目还在、原值进 tsv' `
+            ($jPcSelected -and ($jPcDlg -ne $null) -and $jPcOk -and ($jPcDone.Length -gt 0) -and `
+             $jPcGoneU -and $jPcGoneM -and $jPcSysStill -and ($jPcTsvText -match '11111111-1111-1111-1111-111111111111')) `
+            ('选中=' + $jPcSelected + ' 确认框=' + ($jPcDlg -ne $null) + ' 点了=' + $jPcOk + ' 状态="' + $jPcDone + '" 两层没了=' + $jPcGoneU + '/' + $jPcGoneM + ' 系统还在=' + $jPcSysStill)
+
+        # ③ 窗口里真点「还原成移除前」→ 确认框 → 按记录重建、记录清空
+        $jPcBackBtn = @(Get-ChildControls -RootHandle $jPcWin.H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '还原成移除前' })
+        $jPcDlg2 = $null
+        $jPcOk2 = $false
+        $jPcDone2 = ''
+        if (($jPcWin -ne $null) -and ($jPcBackBtn.Count -eq 1) -and $jPcBackBtn[0].Enabled) {
+            [void][TBGui]::Click($jPcBackBtn[0].H)
+            for ($i = 0; $i -lt 40; $i++) {
+                Start-Sleep -Milliseconds 200
+                $jPcDlg2 = Find-JAssocDialog -ProcessId $proc.Id -Main $main -Owner $jPcWin.H -TitlePrefix '要还原成移除前吗？'
+                if ($jPcDlg2 -ne $null) { break }
+            }
+            if ($jPcDlg2 -ne $null) {
+                $jOk2 = @(Get-ChildControls -RootHandle $jPcDlg2.H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '还原' })
+                if ($jOk2.Count -eq 1) { [void][TBGui]::Click($jOk2[0].H); $jPcOk2 = $true }
+            }
+            for ($i = 0; $i -lt 80; $i++) {
+                Start-Sleep -Milliseconds 250
+                $jPcDone2 = Find-JStatus $jPcWin.H '^还原完成：'
+                if ($jPcDone2.Length -gt 0) { break }
+            }
+        }
+        $jPcBackU = (Test-Path -LiteralPath ($jPcRootPsU + '\{11111111-1111-1111-1111-111111111111}'))
+        $jPcBackM = (Test-Path -LiteralPath ($jPcRootPsM + '\{11111111-1111-1111-1111-111111111111}'))
+        $jPcTsvGone = -not (Test-Path -LiteralPath $jPcTsv)
+        Check 'J30d 窗口里真点「还原成移除前」→ 确认框 → 状态行报「还原完成：」、两层挂载点重建回来、记录清空' `
+            (($jPcDlg2 -ne $null) -and $jPcOk2 -and ($jPcDone2.Length -gt 0) -and $jPcBackU -and $jPcBackM -and $jPcTsvGone) `
+            ('确认框=' + ($jPcDlg2 -ne $null) + ' 点了=' + $jPcOk2 + ' 状态="' + $jPcDone2 + '" 重建=' + $jPcBackU + '/' + $jPcBackM + ' 记录清空=' + $jPcTsvGone)
+        Close-JWindow $jPcWin
+        Start-Sleep -Milliseconds 300
+    }
+}
+try { if (Test-Path -LiteralPath $jPcRootPsU) { Remove-Item -LiteralPath $jPcRootPsU -Recurse -Force } } catch { }
+try { if (Test-Path -LiteralPath $jPcRootPsM) { Remove-Item -LiteralPath $jPcRootPsM -Recurse -Force } } catch { }
+try { if (Test-Path -LiteralPath $jPcTsv) { Remove-Item -LiteralPath $jPcTsv -Force } } catch { }
 
 [void][TBGui]::CloseWindow($main)
 Start-Sleep -Milliseconds 600

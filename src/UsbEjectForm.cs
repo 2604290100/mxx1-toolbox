@@ -39,7 +39,7 @@ namespace Mxx1Toolbox
             Text = "U 盘安全弹出（先看谁占着，再弹出）";
             ClientSize = new Size(980, 620);
             MinimumSize = new Size(820, 520);
-            MinimizeBox = false;
+            MinimizeBox = true;   // 最小化按钮：点它把主窗口一起收进任务栏（2026-10-26 主副窗口关联）
             MaximizeBox = false;
             ShowInTaskbar = false;
             Font = new Font("Microsoft YaHei", 9f, FontStyle.Regular, GraphicsUnit.Point);

@@ -32,7 +32,7 @@ namespace Mxx1Toolbox
             MinimumSize = new Size(460, 320);
             // 位置不在这里定：StartPosition=CenterParent 只对 ShowDialog 打开的模态窗口有效，
             // 这三个窗口都是用 Show() 开的非模态窗口 —— 位置交给 WindowPlacement.ShowCentered（那里有说明）。
-            MinimizeBox = false;
+            MinimizeBox = true;   // 最小化按钮：点它把主窗口一起收进任务栏（2026-10-26 主副窗口关联）
             MaximizeBox = false;
             ShowInTaskbar = false;
             Font = new Font("Microsoft YaHei", 9f, FontStyle.Regular, GraphicsUnit.Point);

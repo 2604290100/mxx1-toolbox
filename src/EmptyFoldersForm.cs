@@ -41,7 +41,7 @@ namespace Mxx1Toolbox
             Text = "空文件夹清理（删到回收站）";
             ClientSize = new Size(900, 620);
             MinimumSize = new Size(760, 500);
-            MinimizeBox = false;
+            MinimizeBox = true;   // 最小化按钮：点它把主窗口一起收进任务栏（2026-10-26 主副窗口关联）
             MaximizeBox = false;
             ShowInTaskbar = false;
             Font = new Font("Microsoft YaHei", 9f, FontStyle.Regular, GraphicsUnit.Point);

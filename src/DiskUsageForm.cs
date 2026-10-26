@@ -39,7 +39,7 @@ namespace Mxx1Toolbox
             Text = "C 盘空间体检（只读）";
             ClientSize = new Size(940, 580);
             MinimumSize = new Size(800, 460);
-            MinimizeBox = false;
+            MinimizeBox = true;   // 最小化按钮：点它把主窗口一起收进任务栏（2026-10-26 主副窗口关联）
             MaximizeBox = false;
             ShowInTaskbar = false;
             Font = new Font("Microsoft YaHei", 9f, FontStyle.Regular, GraphicsUnit.Point);

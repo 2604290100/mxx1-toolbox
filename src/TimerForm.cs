@@ -53,7 +53,7 @@ namespace Mxx1Toolbox
             Text = "定时关机 / 重启 / 睡眠";
             ClientSize = new Size(760, 470);
             MinimumSize = new Size(680, 420);
-            MinimizeBox = false;
+            MinimizeBox = true;   // 最小化按钮：点它把主窗口一起收进任务栏（2026-10-26 主副窗口关联）
             MaximizeBox = false;
             ShowInTaskbar = false;
             Font = new Font("Microsoft YaHei", 9f, FontStyle.Regular, GraphicsUnit.Point);

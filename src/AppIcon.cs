@@ -113,12 +113,32 @@ namespace Mxx1Toolbox
         }
     }
 
-    /// <summary>工具箱自己的窗口基类 —— 只做一件事：句柄建好时把图标装上。
+    /// <summary>工具箱自己的窗口基类 —— 两件事：① 句柄建好时把图标装上；② 主副窗口关联（2026-10-26 用户要的）。
     ///
     /// 全部窗口都从它派生，新加窗口自然也有图标，不会漏（`MainForm` / `UnlockForm` 这种
-    /// 直接显示在任务栏上的窗口，有没有图标一眼就能看出来）。</summary>
+    /// 直接显示在任务栏上的窗口，有没有图标一眼就能看出来）。
+    ///
+    /// 主副窗口关联：点按钮弹出的副窗口**默认带「最小化」按钮**；点它最小化时把挂它上面的
+    /// 主窗口一起最小化 —— 任务栏只剩主窗口一个按钮，点它两个窗口一起回来。反过来主窗口
+    /// 最小化 / 还原 / 关闭时，从属窗口由 WinForms 的 Owner 机制自动跟着动（所有副窗口都是
+    /// `WindowPlacement.ShowCentered(f, this)` 打开的，owner 已经挂好）。
+    /// 对话框（确认框 / 条款框 / 设置窗等）在子类里显式 `MinimizeBox = false` 覆盖掉；
+    /// `ShowInTaskbar = true` 的窗口（右键菜单管理 / 解除文件占用）自己有任务栏按钮，不联动。</summary>
     internal class Mxx1Form : Form
     {
+        public Mxx1Form()
+        {
+            MinimizeBox = true;
+            Resize += delegate
+            {
+                if (!ShowInTaskbar && WindowState == FormWindowState.Minimized
+                    && Owner != null && !Owner.IsDisposed)
+                {
+                    Owner.WindowState = FormWindowState.Minimized;
+                }
+            };
+        }
+
         protected override void OnHandleCreated(EventArgs e)
         {
             base.OnHandleCreated(e);

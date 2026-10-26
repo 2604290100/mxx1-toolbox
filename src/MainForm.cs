@@ -44,6 +44,8 @@ namespace Mxx1Toolbox
         private TrayIcon _tray;
         private NoticeForm _trayHint;      // 第一次缩进托盘时那张说明卡（它自己会关，这里留着引用）
         private bool _trayHintShown;
+        // 缩进托盘时跟着收起来的从属窗口（点按钮弹出的那些），叫回来时一起恢复（2026-10-26 主副窗口关联）
+        private readonly List<Form> _trayOwned = new List<Form>();
         // 真的是"退出"（托盘菜单 / 不同意条款 / 系统关机）：FormClosing 里不许再拦
         private bool _reallyExit;
 
@@ -1700,6 +1702,9 @@ namespace Mxx1Toolbox
                 case "assoc":
                     OpenAssoc();
                     break;
+                case "pcicons":
+                    OpenPcIcons();
+                    break;
                 default:
                     SetStatus("未实现的界面动作：" + t.Action);
                     Logger.Write(t.Name, "未实现的界面动作：" + t.Action);
@@ -1987,6 +1992,17 @@ namespace Mxx1Toolbox
             WindowPlacement.ShowCentered(f, this);
             SetStatus("文件关联体检 · 先只读体检；补之前会记原值，随时能还原");
             Logger.Write("文件关联体检", "打开窗口");
+        }
+
+        /// <summary>「此电脑多余图标」窗口（系统工具页 · 修复与诊断段）——治装软件后「此电脑 →
+        /// 设备和驱动器」里多出的图标（百度网盘这类，2026-10-26 用户报）。点开只读扫两个挂载点
+        /// （HKCU + HKLM 的 MyComputer\NameSpace）；「移除 / 还原」在窗口里过条款门 + 确认框。</summary>
+        private void OpenPcIcons()
+        {
+            PcIconsForm f = new PcIconsForm(_theme);
+            WindowPlacement.ShowCentered(f, this);
+            SetStatus("此电脑多余图标 · 只删挂载点、不删软件；移除前记原值，随时能还原");
+            Logger.Write("此电脑多余图标", "打开窗口");
         }
 
         /// <summary>「一键换 DNS」窗口（系统工具页 · 设备与硬件段，GAP-09）——改 DNS 才写系统，窗口里过确认框。</summary>
@@ -2482,6 +2498,13 @@ namespace Mxx1Toolbox
             }
             RememberGeometry();
             try { _settings.Save(); } catch { }
+            // 从属窗口（点按钮弹出来的那些，如「此电脑多余图标」）跟着主窗口一起收进托盘
+            // —— 不留一个窗口孤零零浮在屏幕上（2026-10-26 用户要的主副窗口关联）。
+            _trayOwned.Clear();
+            foreach (Form f in OwnedForms)
+            {
+                if (f.Visible && !f.IsDisposed) { _trayOwned.Add(f); f.Hide(); }
+            }
             Hide();
             Logger.Write("界面", "点关闭 → 缩到托盘（双击托盘图标、或再启动一次工具箱都能叫回来；退出用托盘右键菜单）");
             if (!_trayHintShown) { ShowTrayHintCard(); }
@@ -2542,6 +2565,14 @@ namespace Mxx1Toolbox
                 Activate();
                 BringToFront();
                 Native.ForceForeground(Handle);
+                // 缩进托盘时跟着收起来的从属窗口，一起叫回来（2026-10-26 主副窗口关联）
+                foreach (Form f in _trayOwned)
+                {
+                    if (f.IsDisposed || f.Owner != this) { continue; }
+                    f.Show();
+                    if (f.WindowState == FormWindowState.Minimized) { f.WindowState = FormWindowState.Normal; }
+                }
+                _trayOwned.Clear();
             }
             catch (Exception ex)
             {

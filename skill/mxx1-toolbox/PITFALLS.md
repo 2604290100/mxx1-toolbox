@@ -921,3 +921,19 @@
         - **判据坑 B**：`Find-TopWindow -TextPrefix` 是**前缀**匹配，窗口标题是「**修复桌面图标黑块**」
           （6 个字里带"桌面"），写成「修复图标黑块」永远找不到 → J27 整条判"窗口没开出来"，
           后面 J27b / J27c 跟着连红。**新开窗口的回归，前缀照窗体 `Text =` 原样抄。**
+
+    103. **`Shell Icons\29` 的"隐藏小箭头"只认系统 dll 资源索引 —— 别再造裸 .ico 文件了**
+        （2026-10-27，用户 Win10 22H2 实机钉死；四条死路 + 正解全记录）：
+        - **四条死路（在这台机器上全是黑块，别重复试）**：`shell32.dll,-50`（像素全透明但 Shell 画叠加
+          图标走掩码那条路、不认 alpha，坑 101）；**自生成的 1bpp + AND 掩码全 `0xFF` 空白 ICO**
+          （System.Drawing 画它 0 个非透明像素，真机照样黑 —— GDI 和 Shell 渲染行为不一致，上一轮的
+          §12.85/86 方案因此作废）；1×1 32bpp 全透明 ICO；PNG 压缩 32bpp 全透明 ICO。删掉 29 = 正常小箭头
+          （决定性对照）。**结论：这台机器只认 `路径,索引` 这种 dll 资源引用，不认裸 .ico 文件路径。**
+        - **正解**：写 **`%SystemRoot%\System32\imageres.dll,197`**（`SysReg.BlankArrowValue` 常量；
+          用户贴的 reg 命令实机验收"完美"：无黑块、无小箭头）。判断"29 是不是我们写的隐藏值"用
+          **`SysReg.IsBlankArrowValue`**（认字面 `%SystemRoot%…` / `Environment.ExpandEnvironmentVariables`
+          展开后的 `C:\Windows…` / 只含 `imageres.dll,197` 三种形态），**不要再调 `BlankIcon.IsOurs`**。
+        - **连带**：`BlankIcon.cs` 已退役（生成器保留给 `sysreg blankicon` 自检 + L12d–f 验字节结构）；
+          `MXX1_BLANK_ICON` 只服务那条自检。`MXX1_SHELLICONS_ROOT` 隔离根机制照旧。
+        - **边界**：Win7 / Win11 上 `imageres.dll,197` 是否空白**没验过**（只在这台 Win10 22H2 验）——
+          值仍写 197，别的版本最多显示成某个具体图标，不会变黑块，如实标注即可。

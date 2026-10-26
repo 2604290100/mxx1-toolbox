@@ -16,7 +16,29 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
 > **接手 / 新会话先做两件事**：读 `docs\DESIGN.md`（外观与行为的**唯一正本**）和本文件。
 > 设计一改先改 `DESIGN.md`，再同步本 skill —— 两份分叉就会出现"两套行为"。
 
-## 当前状态（2026-10-26，**未发布**：在 v1.6.0 之上 —— 修两个用户报的 bug（小箭头画成黑块 / 还原提示串台）+ 把「修复图标黑块」改成两种修法）
+## 当前状态（2026-10-27，**未发布**：在 v1.6.0 之上 —— 「去掉小箭头」改用系统 `imageres.dll,197` 实机钉死 + 「修复图标黑块」两种修法）
+
+> **⚠️ 2026-10-27 第三轮（`DESIGN.md` §12.88；条款正文没改 → 同意指纹不变 `db2c1a73f510a37c`）**：
+> 用户报「点了去掉小箭头出现黑块」→ 上两轮的自生成空白 ICO（1bpp 掩码 / 1×1 / PNG）在用户这台
+> Win10 22H2 上实机**全是黑块**；删掉 29 = 正常小箭头（决定性对照）；用户贴来 `imageres.dll,197`
+> 实机执行回「**完美了**」→ 拍板改工具箱。
+> ① **正解**：`Shell Icons\29` 的"隐藏小箭头"值 = **`%SystemRoot%\System32\imageres.dll,197`**
+>   （新常量 `SysReg.BlankArrowValue`，`shortcut-arrow` / `shell-icon-block` 两项的 on 值都换它）。
+>   这台机器**只认 dll 资源索引、不认裸 .ico 文件路径**（四条死路别重复试：shell32.dll,-50 /
+>   1bpp 掩码 ICO / 1×1 透明 ICO / PNG-ICO）。
+> ② **`BlankIcon.cs` 退役**：不再被按钮使用，生成器保留给 `sysreg blankicon` 自检（L12d–f 照旧）；
+>   `MXX1_BLANK_ICON` 只服务那条自检。判断改用 `IsBlankArrowValue`（认字面 `%SystemRoot%…` / 展开后
+>   `C:\Windows…` / 只含 `imageres.dll,197`）。
+> ③ **写前校验**：`Set()` / `FixIconBlock(keepHidden:true)` 改验 `imageres.dll` 存在（不在就一个字节不写）。
+> ④ **文案同步**：IconBlockForm 确认框 / common.json 三条 hint（≤120 字）/ Program.cs help。
+> ⑤ **回归**：命令行 **L12d–f** 照旧（验生成器）；界面 **J27c / J29b** 判据改为
+>   "29 == imageres.dll,197（%SystemRoot% 展开与否都认、不含 shell32.dll）"，J 组不再用 `MXX1_BLANK_ICON`。
+>   实测 `-Only A,L` **44/0**、`-Only J` **66/0**（J27c / J29b 真点出 `29 = %SystemRoot%\System32\imageres.dll,197`）、
+>   编码体检 **315 PASS**、内联体检 PASS；exe **1,373,696 字节**；按钮 / 图标 / status / 常用设置 59 一个都没变。
+> ⑥ 新坑 **103**。⚠️ **全套没跑**（命令行只 A,L；界面只 J）—— 发版前要清欠账。
+> ⑦ ⚠️ **没验到**：Win7 / Win11 上 `imageres.dll,197` 是否空白（只在这台 Win10 22H2 验过）；
+>   用户真机注册表当前就是 HKLM 29 = imageres.dll,197（当时按用户命令直接写入，非工具箱记录）。
+>   **本地提交，没推送、没发版；站点一个字没动**（用户上传完网盘再单独叫）。
 
 > **⚠️ 2026-10-26 第二轮（`DESIGN.md` §12.87；条款正文没改 → 同意指纹不变 `db2c1a73f510a37c`）**：
 > 用户原话「**修改【修复桌面图标黑块】不能只是换回箭头，而是要兼容一下，要 2 种方法

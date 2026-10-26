@@ -7,12 +7,21 @@ using System.Text;
 
 namespace Mxx1Toolbox
 {
-    /// <summary>「去掉小箭头」用的那张空白图标（2026-10-26 起的做法）。
+    /// <summary>「去掉小箭头」候选方案之一：工具箱自己生成的那张空白图标（**已退役，不再默认使用**）。
     ///
-    /// 为什么不再借 shell32.dll,-50：那是 Windows 自带的"全透明空图标"，本机实测它的像素
-    /// 确实全是透明的（ExtractIconEx 出来 32×32、不透明像素 0 个），可一旦被写进
-    /// `Shell Icons\29`，Shell 画叠加图标时画出来的是一块**黑方块** —— 用户 2026-10-24 报的
-    /// 「点了去掉小箭头，桌面图标全变黑块」就是它。所以改成工具箱自己生成一张真正空白的 ICO：
+    /// 为什么还留着它：`sysreg blankicon` 只读命令与命令行回归 L12d–L12f 还在用它自检
+    /// （生成 → 拆字节 → System.Drawing 真画一遍），所以生成器本身继续保留、继续可跑；
+    /// 但**「去掉小箭头」和「修复图标黑块 · 保持无箭头」已经不再写它的路径** ——
+    /// 2026-10-26 在用户这台 Win10 22H2 上实机验证：1bpp + AND 掩码全 0xFF 这张图
+    /// System.Drawing（GDI）画出来 0 个非透明像素，可真写进 `Shell Icons\29` 之后
+    /// 桌面**照样是黑块**。同一个下午 1×1 32bpp 全透明 ICO、PNG 压缩 32bpp 全透明 ICO
+    /// 也全失败 —— 这台机器的 Shell 渲染**不认裸 .ico 文件路径**。
+    ///
+    /// 现在的正解（用户 2026-10-26 提供、实机验收"完美"）：写**系统 dll 的资源索引**
+    /// `%SystemRoot%\System32\imageres.dll,197`（见 SysReg.BlankArrowValue）——
+    /// 无黑块、无小箭头。三条死路 + 正解的完整过程见 `docs\DESIGN.md` §12.85。
+    ///
+    /// 这张图本身长这样：
     ///
     ///   **1 位色（1bpp）+ AND 掩码全 0xFF**
     ///
@@ -23,9 +32,7 @@ namespace Mxx1Toolbox
     ///
     /// 三个尺寸（16 / 32 / 48）：Shell 按当前视图挑它要的那个。
     /// 文件位置见 AppPaths.BlankIconFile（默认 %LOCALAPPDATA%\mxx1-toolbox\blank-arrow.ico，
-    /// `MXX1_BLANK_ICON` 可以换掉，回归测试指向临时目录）。
-    /// ⚠️ 注册表里存的是**这个文件的完整路径**，所以别随手删它：删了"隐藏小箭头"就失效
-    /// （桌面会回到系统默认的小箭头，不影响别的任何东西）。</summary>
+    /// `MXX1_BLANK_ICON` 可以换掉，回归测试指向临时目录）。</summary>
     internal static class BlankIcon
     {
         /// <summary>这张图放在哪（写进注册表的就是这个路径）。</summary>

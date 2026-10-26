@@ -38,9 +38,9 @@ namespace Mxx1Toolbox
             }
         }
 
-        /// <summary>「去掉小箭头」写进 `Shell Icons\29` 的那张空白图标（工具箱自己生成，见 BlankIcon）。
-        /// ⚠️ 别再把它指回 `shell32.dll,-50` —— 那个在部分 Win10 上会被画成一块黑方块
-        /// （用户 2026-10-24 报的正是这个）。`MXX1_BLANK_ICON` 可以换掉这个位置：界面回归拿它把
+        /// <summary>工具箱自带的空白图标生成器落盘位置（见 BlankIcon —— **2026-10-27 起已不再被
+        /// 「去掉小箭头」使用**：那件事改走系统 imageres.dll,197，这张图只留给 `sysreg blankicon`
+        /// 自检 / 命令行回归 L12d–L12f 用）。`MXX1_BLANK_ICON` 可以换掉这个位置：回归拿它把
         /// 图标生成到临时目录，用户真实的那个文件一个字节都不碰。</summary>
         public static string BlankIconFile
         {

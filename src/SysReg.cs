@@ -61,9 +61,34 @@ namespace Mxx1Toolbox
 
         private const string ShellIconsKey = "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Shell Icons";
 
+        /// <summary>「隐藏小箭头」写进 `Shell Icons\29` 的值（2026-10-26 实机钉死的正解）：
+        /// 系统自带的 imageres.dll 索引 197 —— 用户这台 Win10 22H2 上实测：黑块消失、小箭头也不显示，
+        /// 一条路通到底。在此之前试过的三条路在这台机器上**全是黑块**：
+        ///   ① shell32.dll,-50（像素全透明，但 Shell 画叠加图标时把它画成黑）—— 坑 101；
+        ///   ② 工具箱自生成的 1bpp + AND 掩码全 0xFF 空白 ICO（System.Drawing 画它全透明，真机仍黑块）；
+        ///   ③ 1×1 / PNG 压缩的 32bpp 全透明 ICO（WIC 那条路）同样黑块。
+        /// 结论：这台 Win10 的 `Shell Icons\29` 渲染**只认 dll 资源索引（路径,索引）、不认裸 .ico
+        /// 文件路径**。Win7 / 11 上这个索引是不是同样空白**没验过**（如实标注）。</summary>
+        private const string BlankArrowValue = "%SystemRoot%\\System32\\imageres.dll,197";
+
+        /// <summary>这个值是不是「隐藏小箭头」的那个 imageres.dll,197（吃 %SystemRoot% 未展开 /
+        /// 已展开两种写法；后缀带不带 `,197` 都对不上就不认）。</summary>
+        private static bool IsBlankArrowValue(string value)
+        {
+            if (value == null) { return false; }
+            string v = value.Trim().Trim('"');
+            if (v.Length == 0) { return false; }
+            if (string.Equals(v, BlankArrowValue, StringComparison.OrdinalIgnoreCase)) { return true; }
+            try { v = Environment.ExpandEnvironmentVariables(v); }
+            catch { }
+            if (string.Equals(v, BlankArrowValue, StringComparison.OrdinalIgnoreCase)) { return true; }
+            return v.IndexOf("imageres.dll,197", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
         /// <summary>「Shell Icons\29」那两处值（快捷方式左下角那个叠加图标）。`onValue` 是"隐藏小箭头"
-        /// 时写进去的东西 —— 现在固定是工具箱自己生成的那张空白图标（BlankIcon.Path），
-        /// **不再是** `shell32.dll,-50`：那个在部分 Win10 上会被画成黑方块（坑 101）。
+        /// 时写进去的东西 —— 现在是系统自带的空白图标 `imageres.dll,197`（BlankArrowValue），
+        /// **不再是** `shell32.dll,-50`（部分 Win10 上被画成黑方块，坑 101），也**不是**自生成的
+        /// .ico 文件路径（2026-10-26 实机验证这台 Win10 不认裸 ico 文件，照样黑块）。
         /// ⚠️ 测试隔离：`MXX1_SHELLICONS_ROOT` 一设，两处合并成 **HKCU 下面这一个键** ——
         /// 界面回归就能真点「修复 / 还原」走完整条路，而用户真实的 `Shell Icons` 一个字节都不碰，
         /// 也不需要管理员（见 tests\Test-Gui.ps1 里那两个环境变量）。</summary>
@@ -243,8 +268,9 @@ namespace Mxx1Toolbox
             };
             list.Add(hidden);
 
-            // ⑨ 快捷方式小箭头：Shell Icons\29 覆盖成**工具箱自己生成的一张空白图标**
-            //    （BlankIcon：1bpp + AND 掩码全 0xFF，靠掩码说"一个像素都不画"）。
+            // ⑨ 快捷方式小箭头：Shell Icons\29 覆盖成**系统自带的空白图标** imageres.dll,197
+            //    （2026-10-26 实机钉死的正解：这台 Win10 只认 dll 资源索引、不认裸 .ico 文件路径；
+            //    之前写的 BlankIcon 自生成 ICO 和 shell32.dll,-50 在这台机器上都会被画成黑块）。
             //    关 = 把这个值删掉（OffValue = null → 引擎删值，不是写空字符串）。
             //
             //    ⚠️ 2026-10-20 实测修正：**只写 HKCU 在这台 Win10 上完全没用** ——
@@ -252,12 +278,6 @@ namespace Mxx1Toolbox
             //    叠加图标都是同样的 60 个像素；改成写 HKLM 的那一份，60 → **0**，删掉又回到 60。
             //    所以两个位置一起写：认 HKCU 的系统照旧，认 HKLM 的（这台）也真的会变。
             //    代价就是这一对从此要管理员（HKLM 那一条），「恢复」把两处都删掉。
-            //
-            //    ⚠️ 2026-10-26 修正（用户报「点了去掉小箭头会变成图标黑块」）：原来这里写的是
-            //    `%SystemRoot%\System32\shell32.dll,-50` —— Windows 自带的那个"全透明空图标"。
-            //    它的像素确实全是透明的，但 Shell 画叠加图标时会把它画成一块黑（坑 101）。
-            //    现在写的是 BlankIcon.Path 那张自己生成的图（路径是绝对路径、没有 ,索引）。
-            //    写之前 Set() 会先确保那张图真在硬盘上，生成不出来就一个字节都不写。
             //
             //    ⚠️ 还是要重启资源管理器才看得到变化。
             Tweak arrow = new Tweak();
@@ -268,9 +288,9 @@ namespace Mxx1Toolbox
             arrow.Item = new RegItemSpec();
             arrow.Item.Id = "shortcut-arrow";
             arrow.Item.Name = "快捷方式小箭头";
-            arrow.Item.What = "快捷方式图标左下角那个小箭头（把 Shell Icons\\29 写成工具箱自己生成的那张全透明空白图标 "
-                + "blank-arrow.ico；「恢复小箭头」把这个值删掉。HKCU 和 HKLM 两处一起写，改完要重启资源管理器）";
-            arrow.Item.Values = ShellIcon29Values(BlankIcon.Path);
+            arrow.Item.What = "快捷方式图标左下角那个小箭头（把 Shell Icons\\29 写成系统自带的空白图标 "
+                + "imageres.dll,197；「恢复小箭头」把这个值删掉。HKCU 和 HKLM 两处一起写，改完要重启资源管理器）";
+            arrow.Item.Values = ShellIcon29Values(BlankArrowValue);
             list.Add(arrow);
 
             // ⑩ 任务栏时钟显示秒：Windows 10 起才有这个值，Win7/8 上不成立（只给说明、不写注册表）
@@ -393,8 +413,8 @@ namespace Mxx1Toolbox
             //    所以：修复 = off 方向（删值，先记原值）；还原 = RestoreFor(这一项)。
             //    ⚠️ 只碰编号 29；77 / 179 这类别的编号只在报告里念一句，一个字节都不动。
             //    ⚠️ 这一项的 on 方向由 RestoreIconBlock 走"按记录还原"，不会走到 Engine.Apply ——
-            //       OnValue 只是照 ShellIcon29Values 的要求占个位（填的是同一张空白图标），
-            //       万一哪天真被 Apply 了，写进去的也是一张透明图，不至于把桌面弄花。
+            //       OnValue 只是照 ShellIcon29Values 的要求占个位（填的是同一个 imageres.dll,197），
+            //       万一哪天真被 Apply 了，写进去的也是系统自带的空白图标，不至于把桌面弄花。
             Tweak blk = new Tweak();
             blk.OnLabel = "还原修复前图标";
             blk.OffLabel = "修复桌面图标黑块";
@@ -405,7 +425,7 @@ namespace Mxx1Toolbox
             blk.Item.What = "桌面 / 快捷方式图标左下角那块黑方块（Shell Icons\\29 被写成了一个在这台机器上会画成黑块的图标；"
                 + "「修复桌面图标黑块」= 把 HKCU 与 HKLM 两处的 29 都删掉、回到系统默认的小箭头；"
                 + "「还原修复前图标」= 按修复前记下的原值写回去）";
-            blk.Item.Values = ShellIcon29Values(BlankIcon.Path);
+            blk.Item.Values = ShellIcon29Values(BlankArrowValue);
             list.Add(blk);
 
             foreach (Tweak t in list)
@@ -516,24 +536,23 @@ namespace Mxx1Toolbox
                     + Environment.NewLine + mismatch;
             }
 
-            // 「去掉小箭头」要写的是工具箱自己生成的那张空白图标：先把文件弄到硬盘上。
-            // 弄不出来就**一个字节都不写** —— 往注册表里塞一个指向不存在文件的路径，
+            // 「去掉小箭头」要写的是系统自带的 imageres.dll,197（2026-10-26 实机验证这台 Win10
+            // 只认 dll 资源索引、不认裸 .ico 文件路径）。写之前确认 imageres.dll 真在系统里：
+            // 不在就**一个字节都不写** —— 往注册表里塞一个指向不存在文件的路径，
             // 桌面只会更难看（用户报的下一件事就会是"图标变成白纸"）。
-            if (on && UsesBlankIcon(t))
+            if (on && UsesImageresArrow(t))
             {
-                string iconPath;
-                string iconError;
-                if (!BlankIcon.Ensure(out iconPath, out iconError))
+                string imageresDll = Environment.ExpandEnvironmentVariables("%SystemRoot%\\System32\\imageres.dll");
+                if (!System.IO.File.Exists(imageresDll))
                 {
                     ok = false;
                     StringBuilder fail = new StringBuilder();
                     fail.Append("【").Append(t.Item.Name).Append("】").Append(Wording(id, on)).AppendLine();
                     fail.AppendLine();
-                    fail.Append("  这次一个字都没写：要先把那张「全透明空白图标」放到硬盘上，这一步没成功（")
-                        .Append(iconError).AppendLine("）。");
-                    fail.Append("  位置：").Append(iconPath).AppendLine();
-                    fail.Append("  没有那张图就去写注册表，桌面图标只会变成一块黑方块 —— 所以这里宁愿不写。").AppendLine();
-                    fail.Append("  你还可以：把那个文件夹建出来 / 给写入权限，然后重试；实在不行就别点这一颗。");
+                    fail.Append("  这次一个字都没写：要写的那个空白图标在系统自带的 imageres.dll（")
+                        .Append(imageresDll).AppendLine("），这台机器上找不到它。");
+                    fail.Append("  没有它就去写注册表，桌面图标只会更难看 —— 所以这里宁愿不写。").AppendLine();
+                    fail.Append("  你还可以：先补上这个系统文件再重试；实在不行就别点这一颗。");
                     return fail.ToString();
                 }
             }
@@ -586,13 +605,13 @@ namespace Mxx1Toolbox
             return sb.ToString();
         }
 
-        /// <summary>这一项「开」的方向要写的是不是 BlankIcon 那张空白图标（现在只有「去掉小箭头」）。
-        /// 判断按值来、不写死 id：以后谁再用这张图，写之前自动也会先把它生成出来。</summary>
-        private static bool UsesBlankIcon(Tweak t)
+        /// <summary>这一项「开」的方向要写的是不是 imageres.dll,197（现在只有「去掉小箭头」）。
+        /// 判断按值来、不写死 id：以后谁再用这个值，写之前自动也会先校验系统文件在不在。</summary>
+        private static bool UsesImageresArrow(Tweak t)
         {
             foreach (RegValueSpec v in t.Item.Values)
             {
-                if (v.OnValue != null && BlankIcon.IsOurs(v.OnValue)) { return true; }
+                if (v.OnValue != null && IsBlankArrowValue(v.OnValue)) { return true; }
             }
             return false;
         }
@@ -664,8 +683,8 @@ namespace Mxx1Toolbox
             sb.Append("    → ").AppendLine(IconBlockNote(any ? first : ""));
             sb.AppendLine();
             sb.AppendLine("  两种修法（两种都会先把原值记下来，随时能点「还原修复前图标」退回）：");
-            sb.AppendLine("    ·「保持无箭头 · 只治黑块」：小箭头继续不显示，只把 29 换成工具箱自己生成的空白图标"
-                + "（1 位色 + 掩码，一个像素都不画）。要管理员，写完自动重启一次资源管理器。");
+            sb.AppendLine("    ·「保持无箭头 · 只治黑块」：小箭头继续不显示，只把 29 换成系统自带的空白图标"
+                + "（imageres.dll,197）。要管理员，写完自动重启一次资源管理器。");
             sb.AppendLine("    ·「恢复系统默认小箭头」：把 HKCU 与 HKLM 两处的 29 删掉，小箭头回到系统默认样子。"
                 + "要管理员，写完自动重启一次资源管理器。");
             sb.AppendLine();
@@ -684,9 +703,9 @@ namespace Mxx1Toolbox
         private static string IconBlockNote(string text)
         {
             if (text.Length == 0) { return "系统默认的小箭头（没有自定义图标值，本来不该有黑块）"; }
-            if (BlankIcon.IsOurs(text))
+            if (IsBlankArrowValue(text))
             {
-                return "工具箱自己生成的全透明空白图标 —— 小箭头是隐藏的；要是还有黑块，多半是图标缓存（见最后一行）";
+                return "系统自带的空白图标（imageres.dll,197）—— 小箭头是隐藏的；要是还有黑块，多半是图标缓存（见最后一行）";
             }
             if (text.IndexOf("shell32.dll,-50", StringComparison.OrdinalIgnoreCase) >= 0)
             {
@@ -697,8 +716,8 @@ namespace Mxx1Toolbox
 
         /// <summary>「修复桌面图标黑块」：用户 2026-10-26 要求「不能只是换回箭头，要兼容一下，
         /// 要 2 种方法：一个去图标后的修复方法、一个修改回箭头的方法」。
-        ///   · keepHidden = true  → 小箭头**继续不显示**，只把 `29` 换成工具箱自己生成的那张空白图标
-        ///     （以前那个 `shell32.dll,-50` 在这台机器上会被画成黑块，换掉它黑块就没了）；
+        ///   · keepHidden = true  → 小箭头**继续不显示**，只把 `29` 换成系统自带的空白图标
+        ///     imageres.dll,197（以前那个 `shell32.dll,-50` 在这台机器上会被画成黑块，换掉它黑块就没了）；
         ///   · keepHidden = false → 把 `29` 删掉，小箭头回到系统默认的样子。
         /// 两种都先记原值、写完读回核对、自动重启一次资源管理器；
         /// 「还原修复前图标」按这一次记下的原值退回（两种修法共用同一份记录）。
@@ -710,7 +729,7 @@ namespace Mxx1Toolbox
 
             StringBuilder sb = new StringBuilder();
             sb.AppendLine(keepHidden
-                ? "【修复桌面图标黑块】保持小箭头隐藏，只把那个会画成黑块的图标换成工具箱自己生成的空白图标"
+                ? "【修复桌面图标黑块】保持小箭头隐藏，只把那个会画成黑块的图标换成系统自带的空白图标（imageres.dll,197）"
                 : "【修复桌面图标黑块】删掉 Shell Icons\\29 里那个自定义图标值，恢复系统默认的小箭头");
             sb.AppendLine();
             sb.AppendLine("  写之前的样子：");
@@ -722,29 +741,25 @@ namespace Mxx1Toolbox
                 Engine.TryReadRaw(v, out exists, out kind, out text);
                 sb.Append("    ").Append(HiveLabel(v.Hive)).Append(" 29 = ")
                   .Append(exists ? text : "（本来就没有这个值，系统默认小箭头）").AppendLine();
-                if (exists && BlankIcon.IsOurs(text))
+                if (exists && IsBlankArrowValue(text))
                 {
                     sb.AppendLine(keepHidden
-                        ? "      ↑ 这是「去掉小箭头」写进去的那张全透明空白图标 —— 小箭头会继续不显示，只把这张图换成工具箱这次的空白图。"
-                        : "      ↑ 这是「去掉小箭头」写进去的那张全透明空白图标 —— 点这个修复会把这个设置一起撤掉，小箭头会回来。");
+                        ? "      ↑ 这是「去掉小箭头」写进去的系统空白图标（imageres.dll,197）—— 小箭头会继续不显示，只把这张图换成这次的空白图标。"
+                        : "      ↑ 这是「去掉小箭头」写进去的系统空白图标（imageres.dll,197）—— 点这个修复会把这个设置一起撤掉，小箭头会回来。");
                 }
             }
             sb.AppendLine();
 
-            // 「保持无箭头」这条要先确保那张空白图真在硬盘上：弄不出来就**一个字节都不写**
-            // （往注册表里塞一个指向不存在文件的路径，桌面只会更难看），同「去掉小箭头」那条。
+            // 「保持无箭头」这条要写的是 imageres.dll,197（系统文件）：写之前确认它真在系统里，
+            // 不在就**一个字节都不写**（写一个指向不存在文件的路径，桌面只会更难看）。
             if (keepHidden)
             {
-                string iconPath;
-                string iconError;
-                if (!BlankIcon.Ensure(out iconPath, out iconError))
+                string imageresDll = Environment.ExpandEnvironmentVariables("%SystemRoot%\\System32\\imageres.dll");
+                if (!System.IO.File.Exists(imageresDll))
                 {
                     ok = false;
-                    sb.AppendLine("  这次一个字都没写：要先把工具箱那张「全透明空白图标」放到硬盘上，这一步没成功");
-                    sb.Append("  （").Append(iconError).AppendLine("）。");
-                    sb.Append("  位置：").AppendLine(iconPath);
-                    sb.AppendLine("  没有那张图就往注册表里写，桌面图标只会更难看 —— 所以这里宁愿不写。");
-                    sb.AppendLine("  你还可以：点「恢复系统默认小箭头」那条路（它不生成任何文件）；或者把上面那个文件夹建出来、再点一次。");
+                    sb.AppendLine("  这次一个字都没写：要写的那个空白图标在系统自带的 imageres.dll（" + imageresDll + "），这台机器上找不到它。");
+                    sb.AppendLine("  你还可以：点「恢复系统默认小箭头」那条路（它不依赖任何文件）；或者先补上这个系统文件、再点一次。");
                     return sb.ToString();
                 }
             }
@@ -784,7 +799,7 @@ namespace Mxx1Toolbox
                 sb.Append("  ").Append(report.Written.ToString(CultureInfo.InvariantCulture))
                   .Append(" 处都写进去了，读回核对过。").AppendLine();
                 sb.AppendLine(keepHidden
-                    ? "  小箭头照旧不显示，只是换了一张「靠掩码透明」的空白图 —— 黑块应该就没了。"
+                    ? "  小箭头照旧不显示，只是换成了系统自带的空白图标（imageres.dll,197）—— 黑块应该就没了。"
                     : "  小箭头回到系统默认样子，黑块也没了。");
                 string extras = OtherShellIconValues();
                 if (extras.Length > 0)
@@ -895,9 +910,9 @@ namespace Mxx1Toolbox
                 }
             }
             if (have == 0) { return "系统默认的小箭头（没有自定义的 29 值）"; }
-            if (BlankIcon.IsOurs(first))
+            if (IsBlankArrowValue(first))
             {
-                return "小箭头是隐藏状态（29 = " + first + "，这是工具箱自己生成的全透明空白图标）";
+                return "小箭头是隐藏状态（29 = " + first + "，系统自带的空白图标 imageres.dll,197）";
             }
             if (first.IndexOf("shell32.dll,-50", StringComparison.OrdinalIgnoreCase) >= 0)
             {

@@ -363,7 +363,7 @@ namespace Mxx1Toolbox
             Console.WriteLine("  Mxx1Toolbox.exe privacy selftest     用工具箱自己的测试键自检「原值 → 写入 → 还原」链路");
             Console.WriteLine("  Mxx1Toolbox.exe sysreg status        只读列出系统设置开关（任务栏/开始菜单/内核隔离…）的状态与原值");
             Console.WriteLine("  Mxx1Toolbox.exe sysreg selftest      自检系统设置那条链路（DWORD / 字符串 / 整棵键三种值）");
-            Console.WriteLine("  Mxx1Toolbox.exe sysreg blankicon     生成并校验「去掉小箭头」用的那张空白图标（不碰注册表）");
+            Console.WriteLine("  Mxx1Toolbox.exe sysreg blankicon     生成并校验工具箱自带的空白图标生成器（自检用；「去掉小箭头」已改用系统 imageres.dll,197、不再写这张图，不碰注册表）");
             Console.WriteLine("  Mxx1Toolbox.exe rightmenu status     只读列出右键菜单里装了什么（装 / 卸只在界面里点）");
             Console.WriteLine("  Mxx1Toolbox.exe rightmenu list       只读列出五个位置里真实存在的菜单项（含别人的软件装的 / DLL 扩展）");
             Console.WriteLine("                                                       选项：--zone=files|folder|folderbg|desktop|drive");
@@ -687,6 +687,9 @@ namespace Mxx1Toolbox
             {
                 // 只读 + 顺手把那张图生成出来（它本来就是工具箱自己的文件，写在 BaseDir 里）。
                 // **不碰注册表**：命令行照旧没有"改系统设置"的入口（L07 钉着这条）。
+                // ⚠️ 2026-10-26：这张图**已不再被「去掉小箭头」使用**（实机验证这台 Win10
+                //    不认裸 ico 文件路径、照样黑块；正解是 imageres.dll,197，见 SysReg）——
+                //    这条命令现在只当"生成器自检"用（回归 L12d–L12f 靠它验字节结构）。
                 // 回归测试用 MXX1_BLANK_ICON 把它挪到临时目录，再逐字节验结构。
                 string path;
                 string error;

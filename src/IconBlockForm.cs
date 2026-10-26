@@ -12,8 +12,9 @@ namespace Mxx1Toolbox
     /// 用户 2026-10-26 的原话：「修改【修复桌面图标黑块】不能只是换回箭头，而是要兼容一下，
     /// 要 2 种方法：一个去图标后的修复方法、一个修改回箭头的方法」——
     /// 所以那颗按钮不再直接删值，而是开这个窗口让他挑：
-    ///   ·「保持无箭头 · 只治黑块」= 小箭头继续不显示，把 `Shell Icons\29` 换成工具箱自己生成的
-    ///     空白图标（以前那个 `shell32.dll,-50` 在这台机器上会被画成黑块，换掉它黑块就没了）；
+    ///   ·「保持无箭头 · 只治黑块」= 小箭头继续不显示，把 `Shell Icons\29` 换成**系统自带的空白图标
+    ///     imageres.dll,197**（2026-10-26 实机验证：`shell32.dll,-50` 和自生成的透明 ico 文件在这台
+    ///     机器上都会被画成黑块，只有 dll 资源索引这条路干净 —— 无黑块、无小箭头）；
     ///   ·「恢复系统默认小箭头」= 把两处 `29` 删掉，小箭头回到系统默认样子。
     ///
     /// 三条口径（和「文件关联体检」/「合盖与电源键动作」一致）：
@@ -234,9 +235,9 @@ namespace Mxx1Toolbox
             StringBuilder body = new StringBuilder();
             if (keepHidden)
             {
-                body.AppendLine("会把 HKCU 与 HKLM 两处的 Shell Icons\\29 换成工具箱自己生成的那张空白图标：");
+                body.AppendLine("会把 HKCU 与 HKLM 两处的 Shell Icons\\29 换成系统自带的空白图标（imageres.dll,197）：");
                 body.AppendLine("  · 小箭头**继续不显示**（和「去掉小箭头」一样）；");
-                body.AppendLine("  · 换掉的是那张会被画成黑方块的图 —— 桌面上的黑块应该就没了。");
+                body.AppendLine("  · 换掉的是那个会被画成黑方块的值 —— 桌面上的黑块应该就没了。");
             }
             else
             {
@@ -263,7 +264,7 @@ namespace Mxx1Toolbox
             _status.ForeColor = _theme.BarText;
             _status.Text = "正在改（写完还要重启一次资源管理器）…";
             Application.DoEvents();
-            Logger.Write("修复图标黑块", what + "：开始（" + (keepHidden ? "写空白图" : "删 29") + "）");
+            Logger.Write("修复图标黑块", what + "：开始（" + (keepHidden ? "写 imageres.dll,197" : "删 29") + "）");
             bool ok;
             string report = SysReg.FixIconBlock(keepHidden, out ok);
             Finish(report, ok, what);

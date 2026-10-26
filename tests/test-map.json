@@ -593,7 +593,7 @@
       "gui": [
         "J"
       ],
-      "note": "常用设置的注册表开关（记原值 / 读回核对 / 一键还原；隐私开关共用 RegEngine 这套实现）。⚠️ 2026-10-24 加了「修复图标黑块 / 还原修复前图标」那一对（独立 id `shell-icon-block`，「还原」走新的 `RegEngine.RestoreFor` 只退这一项）。⚠️ 2026-10-26 第一轮：「去掉小箭头」不再写 shell32.dll,-50，改成 `BlankIcon` 自己生成的那张空白 ICO（1 位色 + AND 掩码全 0xFF —— 原来是 Windows 自带的全透明空图标，被 Shell 画成了黑块）→ 命令行 L12d–L12f 拆 ICO 字节（尺寸 / 位深 / 掩码 / 画在红底上 0 个像素变），界面 J29 真点「去掉小箭头」看 29 变成那张图的完整路径、再点「恢复小箭头」看它被删掉。⚠️ 2026-10-26 第二轮：`src/IconBlockForm.cs`（「修复图标黑块」改成开窗口、两种修法让用户挑）→ 命令行 L03/L04 数「16 on + 15 off + 1 iconfix」、L12c 验 `kind=window` + 两句不串台；界面 J27/J27b/J27c/J28 真开窗口、窗口里两条路各点一次、在 `MXX1_SHELLICONS_ROOT` 隔离根里读回「删掉了 / 换成空白图完整路径 / 还原写回 -50 / 记录清空」"
+      "note": "常用设置的注册表开关（记原值 / 读回核对 / 一键还原；隐私开关共用 RegEngine 这套实现）。⚠️ 2026-10-24 加了「修复图标黑块 / 还原修复前图标」那一对（独立 id `shell-icon-block`，「还原」走新的 `RegEngine.RestoreFor` 只退这一项）。⚠️ 2026-10-26 第一轮：「去掉小箭头」不再写 shell32.dll,-50（被 Shell 画成黑块），改成 `BlankIcon` 自生成的 1bpp 掩码空白 ICO → 命令行 L12d–L12f 拆 ICO 字节、界面 J29 真点看 29 变成图的完整路径。⚠️ 2026-10-26 第二轮：`src/IconBlockForm.cs`（开窗口、两种修法让用户挑）→ L03/L04 数「16 on + 15 off + 1 iconfix」、L12c 验 `kind=window`；界面 J27/J27b/J27c/J28 真开窗口、两条路各点一次。⚠️ 2026-10-27 第三轮：自生成 ico（1bpp / 1×1 / PNG 三种）在用户 Win10 22H2 上实机**全是黑块**，正解改为写**系统 dll 资源索引 `imageres.dll,197`**（用户提供、实机验收「完美」）→ `BlankIcon` 只留 `sysreg blankicon` 自检（L12d–L12f 照旧），J27c / J29b 改验 29 = imageres.dll,197（%SystemRoot% 展开与否都认）"
     },
     {
       "paths": [

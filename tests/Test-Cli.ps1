@@ -1976,11 +1976,11 @@ Check 'L12c 「修复图标黑块」= 开窗口（两种修法），「还原修
      ((Get-Key $srIbFix.Out 'target') -ne (Get-Key $srIbBack.Out 'target'))) `
     ('fix=' + (Get-Key $srIbFix.Out 'kind') + '/' + (Get-Key $srIbFix.Out 'command') + ' back=' + (Get-Key $srIbBack.Out 'target'))
 
-# 「去掉小箭头」写的不再是 shell32.dll,-50（2026-10-26）：那一串是 Windows 自带的"全透明空图标"，
-# 在用户的机器上被 Shell 画成了一块黑方块。现在写的是**工具箱自己生成的一张空白 ICO**
-# （1 位色 + AND 掩码全 0xFF：掩码位 = 1 表示"这块保持屏幕原样"，所以一个像素都不画）。
-# 命令行这条腿（`sysreg blankicon`）只生成 / 校验那个文件，**一个注册表值都不写**；
-# "点了按钮之后注册表里到底写了什么"由界面回归 J29 真点按钮验。
+# 「去掉小箭头」的值：2026-10-26 起从 shell32.dll,-50 → 自生成空白 ICO →（2026-10-27 实机钉死）
+# **系统 dll 资源索引 imageres.dll,197**（自生成 ico 三种方案在用户 Win10 22H2 上全是黑块）。
+# 命令行这条腿（`sysreg blankicon`）现在**只是生成器自检**：生成 / 校验工具箱自带的那张空白 ICO，
+# **一个注册表值都不写**；"点了按钮之后注册表里到底写了什么"由界面回归 J27c / J29b 真点按钮验
+# （29 = imageres.dll,197）。
 $biPath = Join-Path $tmpRoot ('mxx1-blank-icon-' + $PID + '.ico')
 try { if (Test-Path -LiteralPath $biPath) { Remove-Item -LiteralPath $biPath -Force } } catch { }
 $bi = Invoke-Exe 'sysreg blankicon' 120 $Exe @{ MXX1_BLANK_ICON = $biPath }

@@ -3564,12 +3564,10 @@ $jIbTsv = Join-Path $tmpRoot ('mxx1-sysreg-gui-' + $PID + '.tsv')
 try { if (Test-Path -LiteralPath $jIbTsv) { Remove-Item -LiteralPath $jIbTsv -Force } } catch { }
 $jDsEnv['MXX1_SHELLICONS_ROOT'] = 'Software\mxx1-toolbox\shellicons-gui'
 $jDsEnv['MXX1_SYSREG_TSV'] = $jIbTsv
-# 「去掉小箭头」现在写的是工具箱自己生成的那张空白 ICO（2026-10-26）：`MXX1_BLANK_ICON` 把它
-# 生成到临时目录 —— 用户真实的 %LOCALAPPDATA%\mxx1-toolbox\blank-arrow.ico 一个字节都不碰，
-# 而 J29 又能真点按钮、真看注册表里写进去的是什么。
-$jBlankIco = Join-Path $tmpRoot ('mxx1-blank-gui-' + $PID + '.ico')
-try { if (Test-Path -LiteralPath $jBlankIco) { Remove-Item -LiteralPath $jBlankIco -Force } } catch { }
-$jDsEnv['MXX1_BLANK_ICON'] = $jBlankIco
+# 「去掉小箭头」现在写的是**系统自带的空白图标 imageres.dll,197**（2026-10-26 实机钉死：
+# 这台 Win10 只认 dll 资源索引、不认裸 .ico 文件路径，之前试过的自生成透明 ico / shell32.dll,-50
+# 真机全是黑块）—— 所以 J 组不需要再生成 / 验证任何图标文件，J27c / J29b 只验注册表里
+# 29 变成了 imageres.dll,197（%SystemRoot% 展开与否都认）。
 
 # ⚠ **必须自己起一个界面实例**：G 组（深色主题）在它结尾就把最开始的 `$main` 关掉了
 # （Test-Gui.ps1 里那句 CloseWindow($main)），H 组用的是自己的 `$procFixed`。
@@ -4424,7 +4422,7 @@ Check 'J26 常用设置页有「修复图标黑块 / 还原修复前图标」两
 if (($ibFixBtn.Count -ne 1) -or ($ibBackBtn.Count -ne 1)) {
     Check 'J27 真点「修复图标黑块」→ 开出一个窗口：现状报告 + 两种修法都在，而且点开这一个动作什么都没改' $false '按钮没找到'
     Check 'J27b 窗口里真点「恢复系统默认小箭头」→ 确认框 → 隔离根里 29 被删掉、原值记进 tsv' $false '按钮没找到'
-    Check 'J27c 窗口里真点「保持无箭头 · 只治黑块」→ 确认框 → 29 变成那张空白图标的完整路径' $false '按钮没找到'
+    Check 'J27c 窗口里真点「保持无箭头 · 只治黑块」→ 确认框 → 29 变成 imageres.dll,197' $false '按钮没找到'
     Check 'J28 真点「还原修复前图标」→ 确认框 → 按记录写回 29、记录清空' $false '按钮没找到'
 } else {
     $ibIsAdmin = $false
@@ -4435,7 +4433,7 @@ if (($ibFixBtn.Count -ne 1) -or ($ibBackBtn.Count -ne 1)) {
         # 窗口里那两条修法都要写 HKLM，非管理员点下去会走"提权重开一个自己"那条路，自动化验不了
         Skip 'J27 真点「修复图标黑块」→ 开出一个窗口：现状报告 + 两种修法都在' '测试进程不是管理员：窗口里的修法会弹 UAC，跳过'
         Skip 'J27b 窗口里真点「恢复系统默认小箭头」→ 隔离根里 29 被删掉、原值记进 tsv' '同上'
-        Skip 'J27c 窗口里真点「保持无箭头 · 只治黑块」→ 29 变成那张空白图标的完整路径' '同上'
+        Skip 'J27c 窗口里真点「保持无箭头 · 只治黑块」→ 29 变成 imageres.dll,197' '同上'
         Skip 'J28 真点「还原修复前图标」→ 按记录写回 29、记录清空' '同上'
     } else {
         # ① 点「修复图标黑块」→ 2026-10-26 起它开的是**窗口**（两种修法让用户挑）。
@@ -4489,10 +4487,10 @@ if (($ibFixBtn.Count -ne 1) -or ($ibBackBtn.Count -ne 1)) {
              ($ibOut.Text -match '已经没有这个值了') -and $ibGone -and ($ibTsvText -match 'shell-icon-block')) `
             ('确认框=' + $ibDlg.Found + '/' + $ibDlg.Clicked + ' 29删掉了=' + $ibGone + ' 记录=' + ($ibTsvText.Length) + '字符 报告=' + $ibOut.Text.Length + '字符')
 
-        # ③ 再点另一条修法「保持无箭头 · 只治黑块」：29 要变成那张空白图标的**完整路径**、文件真在
+        # ③ 再点另一条修法「保持无箭头 · 只治黑块」：29 要变成 imageres.dll,197（%SystemRoot% 展开与否都认）
         if ($ibWin -ne $null) {
             if ($ibKeepBtn.Count -eq 1) { [void][TBGui]::Click($ibKeepBtn[0].H) }
-            $ibDlg2 = Invoke-JConfirmBox -Owner $ibWin.H -BodyPrefix '换成工具箱自己生成的那张空白图标' -OkText '开始修复'
+            $ibDlg2 = Invoke-JConfirmBox -Owner $ibWin.H -BodyPrefix '换成系统自带的空白图标' -OkText '开始修复'
             for ($i = 0; $i -lt 60; $i++) {
                 Start-Sleep -Milliseconds 250
                 $ibEd3 = @(Get-ChildControls -RootHandle $ibWin.H | Where-Object { $_.Class -like '*EDIT*' })
@@ -4502,12 +4500,16 @@ if (($ibFixBtn.Count -ne 1) -or ($ibBackBtn.Count -ne 1)) {
         $ibDlg2Ok = $ibDlg2.Found -and $ibDlg2.Clicked
         $ibKeepVal = ''
         try { $ibKeepVal = [string](Get-ItemProperty -LiteralPath $jIbRootPs -Name '29' -ErrorAction Stop).'29' } catch { }
+        $ibKeepWant = [System.Environment]::ExpandEnvironmentVariables('%SystemRoot%\System32\imageres.dll,197')
         $ibKeepSame = $false
-        try { $ibKeepSame = [string]::Equals($ibKeepVal.Trim(), $jBlankIco.Trim(), [StringComparison]::OrdinalIgnoreCase) } catch { }
-        Check 'J27c 窗口里真点「保持无箭头 · 只治黑块」→ 29 换成那张空白图标的完整路径（小箭头继续不显示、黑块没了）' `
-            ($ibDlg2Ok -and $ibKeepSame -and ($ibKeepVal.IndexOf('shell32.dll') -lt 0) -and (Test-Path -LiteralPath $jBlankIco) -and `
+        try {
+            $ibKeepSame = [string]::Equals($ibKeepVal.Trim(), $ibKeepWant.Trim(), [StringComparison]::OrdinalIgnoreCase) -or
+                [string]::Equals($ibKeepVal.Trim(), '%SystemRoot%\System32\imageres.dll,197', [StringComparison]::OrdinalIgnoreCase)
+        } catch { }
+        Check 'J27c 窗口里真点「保持无箭头 · 只治黑块」→ 29 换成系统自带的空白图标 imageres.dll,197（小箭头继续不显示、黑块没了）' `
+            ($ibDlg2Ok -and $ibKeepSame -and ($ibKeepVal.IndexOf('shell32.dll') -lt 0) -and `
              ($ibOut2 -match '保持小箭头隐藏') -and ($ibOut2 -match '读回核对') -and ($ibOut2 -match '现在是')) `
-            ('确认框=' + $ibDlg2Ok + ' 29=' + $ibKeepVal + ' 同一路径=' + $ibKeepSame + ' 报告=' + $ibOut2.Length + '字符')
+            ('确认框=' + $ibDlg2Ok + ' 29=' + $ibKeepVal + ' 与 imageres 值一致=' + $ibKeepSame + ' 报告=' + $ibOut2.Length + '字符')
         Close-JWindow $ibWin
         Start-Sleep -Milliseconds 300
 
@@ -4533,9 +4535,11 @@ if (($ibFixBtn.Count -ne 1) -or ($ibBackBtn.Count -ne 1)) {
 }
 # ---- 2026-10-26：用户报的另一半 ——「点了『去掉小箭头』之后桌面图标全变成黑块」----------------
 # 真因：以前写进 Shell Icons\29 的是 `shell32.dll,-50`（Windows 自带的那个"全透明空图标"），
-# 它的像素确实全透明，可 Shell 画叠加图标时把它画成了一块黑。现在写的是工具箱**自己生成**的
-# 那张空白 ICO（1 位色 + AND 掩码全 0xFF）。这里真点两颗按钮（都走 sysreg，所以也要管理员）：
-#   ① 「去掉小箭头」→ 隔离根里的 29 变成那张图标文件的**完整路径**、不含 shell32.dll、文件真在；
+# 它的像素确实全透明，可 Shell 画叠加图标时把它画成了一块黑。后来又试过工具箱自生成的
+# 透明 ico（1bpp 掩码 / 1×1 / PNG 压缩）—— 真机照样黑块；正解是**系统 dll 资源索引**
+# imageres.dll,197（用户 2026-10-26 提供、实机验收"完美"）。这里真点两颗按钮（都走 sysreg，
+# 所以也要管理员）：
+#   ① 「去掉小箭头」→ 隔离根里的 29 变成 imageres.dll,197（%SystemRoot% 展开与否都认）、不含 shell32.dll；
 #   ② 「恢复小箭头」→ 那个值被删掉（小箭头回到系统默认）。
 $ibArrowBtn = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '去掉小箭头' })
 $ibArrowBackBtn = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '恢复小箭头' })
@@ -4544,7 +4548,7 @@ Check 'J29 常用设置页有「去掉小箭头 / 恢复小箭头」两颗按钮
     ('去掉=' + $ibArrowBtn.Count + ' 恢复=' + $ibArrowBackBtn.Count)
 
 if (($ibArrowBtn.Count -ne 1) -or ($ibArrowBackBtn.Count -ne 1)) {
-    Check 'J29b 真点「去掉小箭头」→ 29 变成那张空白图标的完整路径（不含 shell32.dll、文件真在）' $false '按钮没找到'
+    Check 'J29b 真点「去掉小箭头」→ 29 变成 imageres.dll,197（不含 shell32.dll）' $false '按钮没找到'
     Check 'J29c 真点「恢复小箭头」→ 29 被删掉、回到系统默认的小箭头' $false '按钮没找到'
 } else {
     $ibIsAdmin = $false
@@ -4552,7 +4556,7 @@ if (($ibArrowBtn.Count -ne 1) -or ($ibArrowBackBtn.Count -ne 1)) {
         $ibIsAdmin = (New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
     } catch { }
     if (-not $ibIsAdmin) {
-        Skip 'J29b 真点「去掉小箭头」→ 29 变成那张空白图标的完整路径' '测试进程不是管理员：点了会弹 UAC，跳过'
+        Skip 'J29b 真点「去掉小箭头」→ 29 变成 imageres.dll,197' '测试进程不是管理员：点了会弹 UAC，跳过'
         Skip 'J29c 真点「恢复小箭头」→ 29 被删掉' '同上'
     } else {
         [void][TBGui]::Click($ibArrowBtn[0].H)
@@ -4563,13 +4567,15 @@ if (($ibArrowBtn.Count -ne 1) -or ($ibArrowBackBtn.Count -ne 1)) {
             $ibArrowVal = [string](Get-ItemProperty -LiteralPath $jIbRootPs -Name '29' -ErrorAction Stop).'29'
             $ibArrowRead = $true
         } catch { }
-        $ibIcoThere = Test-Path -LiteralPath $jBlankIco
         $ibSamePath = $false
-        try { $ibSamePath = [string]::Equals($ibArrowVal.Trim(), $jBlankIco.Trim(), [StringComparison]::OrdinalIgnoreCase) } catch { }
-        Check 'J29b 真点「去掉小箭头」→ 29 变成那张空白图标的完整路径（不含 shell32.dll、文件真在）' `
-            ($ibArrowRead -and $ibSamePath -and ($ibArrowVal.IndexOf('shell32.dll') -lt 0) -and $ibIcoThere -and `
+        try {
+            $ibSamePath = [string]::Equals($ibArrowVal.Trim(), $ibKeepWant.Trim(), [StringComparison]::OrdinalIgnoreCase) -or
+                [string]::Equals($ibArrowVal.Trim(), '%SystemRoot%\System32\imageres.dll,197', [StringComparison]::OrdinalIgnoreCase)
+        } catch { }
+        Check 'J29b 真点「去掉小箭头」→ 29 变成 imageres.dll,197（%SystemRoot% 展开与否都认、不含 shell32.dll）' `
+            ($ibArrowRead -and $ibSamePath -and ($ibArrowVal.IndexOf('shell32.dll') -lt 0) -and `
              ($ibOut3.Text -match '【快捷方式小箭头】') -and ($ibOut3.Text -match '读回核对')) `
-            ('29=' + $ibArrowVal + ' 同一路径=' + $ibSamePath + ' 图标文件=' + $ibIcoThere + ' 报告=' + $ibOut3.Text.Length + '字符')
+            ('29=' + $ibArrowVal + ' 与 imageres 值一致=' + $ibSamePath + ' 报告=' + $ibOut3.Text.Length + '字符')
         Close-JWindow $ibOut3.Win
         Start-Sleep -Milliseconds 300
 
@@ -4584,8 +4590,6 @@ if (($ibArrowBtn.Count -ne 1) -or ($ibArrowBackBtn.Count -ne 1)) {
         Start-Sleep -Milliseconds 300
     }
 }
-try { if (Test-Path -LiteralPath $jBlankIco) { Remove-Item -LiteralPath $jBlankIco -Force } } catch { }
-
 try { if (Test-Path -LiteralPath $jIbRootPs) { Remove-Item -LiteralPath $jIbRootPs -Recurse -Force } } catch { }
 try { if (Test-Path -LiteralPath $jIbTsv) { Remove-Item -LiteralPath $jIbTsv -Force } } catch { }
 

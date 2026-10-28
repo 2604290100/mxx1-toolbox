@@ -21,9 +21,15 @@
     在哪台机器上打包，包里带的就是那台机器上真的在用的工具。只把缓存 / 临时文件 /
     说明.txt 排除在外（说明.txt 是工具箱第一次打开界面时自己写的那份，包里的永远是最新的）。
 
-    **发布包里不该有的东西（用户 2026-10-27 报 v1.6.1 包混进 tests/ 与 tools\Test-*.ps1）：**
-      tests\ 整棵不进包；tools\ 排除 Test-*.ps1 / Sync-Skill.ps1 / Make-Package.ps1。
-      这些是开发者脚本，普通用户下载发布包用不到。
+    **发布包里不该有的东西（用户 2026-10-27 报 v1.6.1 包混进 tests/ 与 tools\Test-*.ps1；
+      2026-10-28 又报「压缩包里有些文件夹非必要」—— src\ 源码 / docs\ 开发文档 / build.ps1 /
+      tools\*.ps1 开发脚本 / bin-tools 里的工具文档 txt 都不进包）：**
+      src\ 整棵不进包（源码编译进 exe 就够了）；docs\ 整棵不进包（DISCLAIMER.md 已内嵌进 exe，
+      其余全是开发文档）；build.ps1 不进包（构建脚本）；tools\ 只带运行时数据 *.json，
+      .ps1 一个都不进（Make-Icons / Make-AppIcon / Make-Screenshots / Show-MenuOrder /
+      Test-* / Sync-Skill / Make-Package 全排）；tests\ 整棵不进包；bin-tools 里工具的
+      Readme / History / License 等文档 txt 不进包。
+      打完包回读 zip 做**反向黑名单断言**：上面这些只要出现一个就让打包失败。
 
     参数:
       -Root      工具箱根目录（默认：本脚本的上一层）
@@ -101,17 +107,18 @@ try {
 
     # ---- 要打进去的东西：一条一条列出来 -----------------------------------------------
     Add-PackItem $exe 'Mxx1Toolbox.exe' '程序'
-    foreach ($one in @('build.ps1', 'README.md', 'CHANGELOG.md', 'LICENSE')) {
+    # 根目录只带三份说明文档；build.ps1 是构建脚本，不进发布包
+    foreach ($one in @('README.md', 'CHANGELOG.md', 'LICENSE')) {
         $p = Join-Path $Root $one
         if (Test-Path -LiteralPath $p) { Add-PackItem $p $one '根目录' }
     }
-    Add-PackTree (Join-Path $Root 'src')    'src'    '源码'
+    # assets：图标整棵必需（按钮图标），进包
     Add-PackTree (Join-Path $Root 'assets') 'assets' '图标清单'
-    # tools：只带运行时与构建要用的脚本，测试 / 体检 / 同步 / 打包器自己不进发布包
-    Add-PackTree (Join-Path $Root 'tools')  'tools'  '工具脚本' `
-        -SkipNames @('Test-Encoding.ps1', 'Test-InlineSyntax.ps1', 'Test-Quick.ps1', 'Sync-Skill.ps1', 'Make-Package.ps1')
-    # tests：测试脚本只给开发者用，不进发布包（2026-10-27 用户报 v1.6.1 包混进 tests/ 与 Test-*.ps1）
-    Add-PackTree (Join-Path $Root 'docs')   'docs'   '文档'
+    # tools：只带运行时数据 *.json；.ps1 全是开发脚本，一个都不进发布包
+    Add-PackTree (Join-Path $Root 'tools')  'tools'  '工具数据' -SkipExts @('.ps1')
+    # src：源码编译进 exe 就够了，发布包不带（2026-10-28 用户报「压缩包里有些文件夹非必要」）
+    # docs：DISCLAIMER.md 编译时已内嵌进 exe，其余全是开发文档，发布包不带（2026-10-28）
+    # tests：测试脚本只给开发者用，不进发布包（2026-10-27 用户报 v1.6.1 包混进 tests/）
 
     # ---- bin-tools\：用户自己放进去的工具，整个目录跟着走 -----------------------------
     $payloadRoot = Join-Path $binDir 'bin-tools'
@@ -119,7 +126,7 @@ try {
     if (Test-Path -LiteralPath $payloadRoot) {
         Add-PackTree $payloadRoot 'bin-tools' '外部工具' `
             -SkipDirs @('cache', 'temp', 'tmp', '.git') `
-            -SkipNames @('说明.txt') `
+            -SkipNames @('说明.txt', 'history.txt', 'license.txt', 'readme.txt') `
             -SkipExts @('.tmp', '.log', '.bak')
     }
     $payloadCount = $plan.Count - $payloadCountBefore
@@ -168,6 +175,18 @@ try {
         Write-Host ''
         foreach ($m in @($missing | Select-Object -First 10)) { Write-Host ('  missing  : ' + $m.Target) }
         throw ('打包自检没过：zip 里少了 ' + $missing.Count + ' 个文件（上面列了前几个）')
+    }
+
+    # ---- 反向黑名单断言：发布包里不该出现的东西一个都不能有（2026-10-28 用户报「非必要打包」）----
+    # 源码 / 开发文档 / 测试 / 任何 .ps1 / build.ps1：普通用户下载发布包用不到，进了就是违规
+    $forbidden = @($names | Where-Object {
+        $_ -like 'src\*' -or $_ -like 'docs\*' -or $_ -like 'tests\*' -or
+        $_ -eq 'build.ps1' -or $_ -like '*.ps1'
+    })
+    if ($forbidden.Count -gt 0) {
+        Write-Host ''
+        foreach ($f in @($forbidden | Select-Object -First 10)) { Write-Host ('  forbidden : ' + $f) }
+        throw ('反向黑名单自检没过：发布包里混进了 ' + $forbidden.Count + ' 个不该有的条目（源码 / 开发文档 / 测试 / 脚本，上面列了前几个）')
     }
 
     Write-Host ''

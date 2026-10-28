@@ -2,6 +2,27 @@
 
 本文件记录每个版本改了什么。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [未发布] 发布包内容规范加强（2026-10-28，用户报「压缩包里有些文件夹非必要」）
+
+用户打开 v1.6.2 发布包发现**开发文件混进去了**（321 个文件里 114 个是 src\ 源码 / docs\ 开发文档 /
+build.ps1 / tools\*.ps1 脚本），要求「删除然后重新打包，并且规范一下，避免以后再犯同一个问题」。
+
+- **发布包黑名单扩展（写死在 `tools\Make-Package.ps1`，进包 = 自检失败）**：
+  - `src\` 整棵不进包（102 个 .cs 源码，编译进 exe 就够了）；
+  - `docs\` 整棵不进包（DISCLAIMER.md 编译时已内嵌进 exe，其余全是开发文档）；
+  - `build.ps1` 不进包（构建脚本）；
+  - `tools\` 只带运行时数据 `*.json`（common / system / apps / mine / cleanup / privacy / rightmenu），
+    `.ps1` 一个都不进（Make-Icons / Make-AppIcon / Make-Screenshots / Show-MenuOrder / Test-* /
+    Sync-Skill / Make-Package 全排）；
+  - `bin-tools\` 里工具的文档 txt（History / License / Readme）不进包。
+- **反向黑名单自检**：打完包回读 zip，src\ / docs\ / tests\ / *.ps1 / build.ps1 只要出现一个就让
+  打包失败（`Make-Package.ps1` 内新增 forbidden 断言）。
+- **回归同步**：`Test-Cli.ps1` P06 改为「包里该有的 = exe + 三份说明文档 + 7 个运行时 json」；
+  P07b 断言扩展为新黑名单；P04 工具目录判据同步排除 History / License / Readme。
+- **效果**：发布包 321 → **207 个文件**（2,382,441 → **1,325,724 字节**），只含 exe / README /
+  CHANGELOG / LICENSE / 187 项图标资源 / 7 个运行时 json / bin-tools 9 个运行时文件。
+- **验证**：命令行 `-Only A,P` 35 通过 / 0 失败；打包回读自检 0 违规。
+
 ## [v1.6.2] — 2026-10-28 开始菜单程序管理 + 程序和功能管理 + 打包内容规范（未发布 → 已发布）
 
 ### 开始菜单程序管理（2026-10-28，用户报「开始菜单里一堆软件图标，隐藏后列表不显示」）

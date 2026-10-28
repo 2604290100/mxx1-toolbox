@@ -23,11 +23,14 @@
 
     **发布包里不该有的东西（用户 2026-10-27 报 v1.6.1 包混进 tests/ 与 tools\Test-*.ps1；
       2026-10-28 又报「压缩包里有些文件夹非必要」—— src\ 源码 / docs\ 开发文档 / build.ps1 /
-      tools\*.ps1 开发脚本 / bin-tools 里的工具文档 txt 都不进包）：**
+      tools\*.ps1 开发脚本 / bin-tools 里的工具文档 txt 都不进包；
+      随后用户再报「assets、tools 这2个文件夹不应该打包进去的」—— 查实：按钮清单 json
+      （ToolRegistry.cs 读内嵌资源 tools.*.json）和按钮图标（icons.<id>.png 内嵌，磁盘
+      assets\icons 只是开发回退）**全部编译进 exe，运行时单文件自足**，assets / tools 也都不进包）：**
       src\ 整棵不进包（源码编译进 exe 就够了）；docs\ 整棵不进包（DISCLAIMER.md 已内嵌进 exe，
-      其余全是开发文档）；build.ps1 不进包（构建脚本）；tools\ 只带运行时数据 *.json，
-      .ps1 一个都不进（Make-Icons / Make-AppIcon / Make-Screenshots / Show-MenuOrder /
-      Test-* / Sync-Skill / Make-Package 全排）；tests\ 整棵不进包；bin-tools 里工具的
+      其余全是开发文档）；build.ps1 不进包（构建脚本）；tools\ 整棵不进包（*.json 是按钮清单源文件，
+      编译时内嵌进 exe，运行时不需要）；assets\ 整棵不进包（图标 png / app.ico / manifest 都是
+      编译时资源，运行时回退磁盘也不需要）；tests\ 整棵不进包；bin-tools 里工具的
       Readme / History / License 等文档 txt 不进包。
       打完包回读 zip 做**反向黑名单断言**：上面这些只要出现一个就让打包失败。
 
@@ -112,13 +115,10 @@ try {
         $p = Join-Path $Root $one
         if (Test-Path -LiteralPath $p) { Add-PackItem $p $one '根目录' }
     }
-    # assets：图标整棵必需（按钮图标），进包
-    Add-PackTree (Join-Path $Root 'assets') 'assets' '图标清单'
-    # tools：只带运行时数据 *.json；.ps1 全是开发脚本，一个都不进发布包
-    Add-PackTree (Join-Path $Root 'tools')  'tools'  '工具数据' -SkipExts @('.ps1')
-    # src：源码编译进 exe 就够了，发布包不带（2026-10-28 用户报「压缩包里有些文件夹非必要」）
-    # docs：DISCLAIMER.md 编译时已内嵌进 exe，其余全是开发文档，发布包不带（2026-10-28）
-    # tests：测试脚本只给开发者用，不进发布包（2026-10-27 用户报 v1.6.1 包混进 tests/）
+    # assets / tools：按钮清单 json（ToolRegistry 读内嵌 tools.*.json）和按钮图标（icons.<id>.png）
+    #   全部编译进 exe，运行时单文件自足 —— 这两个文件夹不进发布包（2026-10-28 用户点名）
+    # src：源码编译进 exe 就够了，发布包不带；docs：DISCLAIMER.md 已内嵌 exe，其余是开发文档，不带
+    # tests：测试脚本只给开发者用，不进发布包
 
     # ---- bin-tools\：用户自己放进去的工具，整个目录跟着走 -----------------------------
     $payloadRoot = Join-Path $binDir 'bin-tools'
@@ -178,15 +178,17 @@ try {
     }
 
     # ---- 反向黑名单断言：发布包里不该出现的东西一个都不能有（2026-10-28 用户报「非必要打包」）----
-    # 源码 / 开发文档 / 测试 / 任何 .ps1 / build.ps1：普通用户下载发布包用不到，进了就是违规
+    # 源码 / 开发文档 / 测试 / 按钮清单与图标源（assets、tools）/ 任何 .ps1 / build.ps1：
+    # 全部编译进 exe 或只给开发者用，普通用户下载发布包用不到，进了就是违规
     $forbidden = @($names | Where-Object {
         $_ -like 'src\*' -or $_ -like 'docs\*' -or $_ -like 'tests\*' -or
+        $_ -like 'assets\*' -or $_ -like 'tools\*' -or
         $_ -eq 'build.ps1' -or $_ -like '*.ps1'
     })
     if ($forbidden.Count -gt 0) {
         Write-Host ''
         foreach ($f in @($forbidden | Select-Object -First 10)) { Write-Host ('  forbidden : ' + $f) }
-        throw ('反向黑名单自检没过：发布包里混进了 ' + $forbidden.Count + ' 个不该有的条目（源码 / 开发文档 / 测试 / 脚本，上面列了前几个）')
+        throw ('反向黑名单自检没过：发布包里混进了 ' + $forbidden.Count + ' 个不该有的条目（源码 / 开发文档 / 测试 / 资源与清单源 / 脚本，上面列了前几个）')
     }
 
     Write-Host ''

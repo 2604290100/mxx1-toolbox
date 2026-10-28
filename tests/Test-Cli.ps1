@@ -4356,11 +4356,19 @@ try {
         $zr = [System.IO.Compression.ZipFile]::OpenRead($pZip)
         try { foreach ($e in $zr.Entries) { [void]$names.Add($e.FullName.Replace('/', '\')) } } finally { $zr.Dispose() }
 
-        # assets\icons：2026-10-05 之前这里是空的
+        # assets\icons：2026-10-28 用户点名「assets、tools 这2个文件夹不应该打包进去的」——
+        # 查实：按钮图标编译进 exe（icons.<id>.png 内嵌资源），按钮清单 json 也编译进 exe
+        # （tools.*.json 内嵌资源），运行时单文件自足，磁盘 assets\tools 只是开发期源文件。
+        # 所以发布包里**不该有** assets\ 和 tools\（反向断言，见 P07b）。
+        # 这里用反射直接读 exe 的内嵌资源，证明"exe 自己就带齐了图标和按钮清单"：
+        $exePath = Join-Path $root 'bin\Mxx1Toolbox.exe'
+        $asmRef = [System.Reflection.Assembly]::LoadFrom($exePath)
+        $resNames = @($asmRef.GetManifestResourceNames())
+        $iconRes = @($resNames | Where-Object { $_ -like 'icons.*.png' })
+        $jsonRes = @($resNames | Where-Object { $_ -like 'tools.*.json' })
         $iconSrc = @(Get-ChildItem -LiteralPath (Join-Path $root 'assets\icons') -Filter *.png -File -Force -ErrorAction SilentlyContinue)
-        $iconIn = @($iconSrc | Where-Object { $names.Contains('assets\icons\' + $_.Name) })
-        Check ('P03 assets\icons 里的 {0} 张按钮图标全在包里（这里以前是个空目录）' -f $iconSrc.Count) `
-            (($iconSrc.Count -gt 0) -and ($iconIn.Count -eq $iconSrc.Count)) ('in=' + $iconIn.Count + ' / ' + $iconSrc.Count)
+        Check ('P03 exe 单文件自足：内嵌 {0} 张按钮图标 + {1} 份按钮清单 json（开发期 assets\icons 有 {2} 张，发布包不带这些源文件）' -f $iconRes.Count, $jsonRes.Count, $iconSrc.Count) `
+            (($iconRes.Count -gt 0) -and ($jsonRes.Count -gt 0) -and ($iconRes.Count -ge $iconSrc.Count)) ('embedded icons=' + $iconRes.Count + ' / disk png=' + $iconSrc.Count + ' / embedded json=' + $jsonRes.Count)
 
         # 工具目录：凡是该进包的都要在（说明.txt 由工具箱第一次打开界面时自己写，缓存 / 临时文件 /
         # 工具自带的文档 txt（History / License / Readme）不进包 —— 2026-10-28 定，与 P07b 黑名单一致）
@@ -4415,29 +4423,28 @@ try {
                 ($bad.Count -eq 0) $(if ($bad.Count -gt 0) { '缺：' + ($bad -join ' / ') } else { (@($folders | ForEach-Object { $_.Name }) -join ' / ') })
         }
 
-        $jsonCount = @(Get-ChildItem -LiteralPath (Join-Path $root 'tools') -Filter *.json -File -ErrorAction SilentlyContinue).Count
-        # 和磁盘上的数量对，别写死 38 这种数字：加一个 json 就会假红
-        $jsonMiss = @(Get-ChildItem -LiteralPath (Join-Path $root 'tools') -Filter *.json -File -ErrorAction SilentlyContinue |
-            Where-Object { -not $names.Contains('tools\' + $_.Name) })
-        # ⚠️ 发布包只带运行时内容：exe + 三份说明文档 + tools 运行时数据 json。
-        #    src 源码 / docs 开发文档 / build.ps1 / *.ps1 全都不进包（2026-10-28 定，见 P07b）
+        # ⚠️ 发布包只带运行时内容：exe + 三份说明文档 + bin-tools 外部工具。
+        #    src 源码 / docs 文档 / assets 图标源 / tools 按钮清单源 / build.ps1 / *.ps1 全都不进包
+        #    （2026-10-28 定：按钮清单与图标全编译进 exe，见 P03 与 P07b）
         $basics = @('Mxx1Toolbox.exe', 'README.md', 'CHANGELOG.md', 'LICENSE')
         $missBasic = @($basics | Where-Object { -not $names.Contains($_) })
-        Check ('P06 包里该有的都在（exe / 说明文档 / {0} 个运行时 json，一个不少）' -f $jsonCount) `
-            (($missBasic.Count -eq 0) -and ($jsonMiss.Count -eq 0)) `
-            ('缺基本文件=' + $(if ($missBasic.Count -gt 0) { $missBasic -join ' ' } else { '无' }) + ' 缺清单=' + $jsonMiss.Count)
+        Check 'P06 包里该有的都在（exe / 三份说明文档，一个不少）' `
+            ($missBasic.Count -eq 0) `
+            ('缺基本文件=' + $(if ($missBasic.Count -gt 0) { $missBasic -join ' ' } else { '无' }))
 
         $junk = @($names | Where-Object { $_ -like 'bin-tools\*' -and (($_ -like '*\cache\*') -or ($_ -like '*.tmp') -or ($_ -like '*.log') -or ($_ -like '*.bak')) })
         Check 'P07 没把缓存 / 临时文件塞进包' ($junk.Count -eq 0) (($junk | Select-Object -First 3) -join ' / ')
 
-        # 2026-10-28 定死的发布包黑名单：src 源码 / docs 开发文档 / tests 测试 / build.ps1 /
-        # tools 的 .ps1 脚本 / bin-tools 工具文档 txt 都不进包（用户两次报「包混进不该打的」）
+        # 2026-10-28 定死的发布包黑名单：src 源码 / docs 文档 / tests 测试 / assets 图标源 /
+        # tools 按钮清单源 / build.ps1 / 所有 .ps1 / bin-tools 工具文档 txt 都不进包
+        # （用户两次报「包混进不该打的」，第三次点名 assets、tools 两个文件夹）
         $notInHit = @($names | Where-Object {
             $_ -like 'src\*' -or $_ -like 'docs\*' -or $_ -like 'tests\*' -or
+            $_ -like 'assets\*' -or $_ -like 'tools\*' -or
             $_ -eq 'build.ps1' -or $_ -like '*.ps1' -or
             ($_ -like 'bin-tools\*' -and ($_ -like '*\history.txt' -or $_ -like '*\license.txt' -or $_ -like '*\readme.txt'))
         })
-        Check 'P07b 发布包黑名单生效：src 源码 / docs 文档 / tests / build.ps1 / 所有 .ps1 / 工具文档 txt 都不进包' ($notInHit.Count -eq 0) (($notInHit | Select-Object -First 5) -join ' / ')
+        Check 'P07b 发布包黑名单生效：src 源码 / docs 文档 / assets 图标源 / tools 清单源 / tests / build.ps1 / 所有 .ps1 / 工具文档 txt 都不进包' ($notInHit.Count -eq 0) (($notInHit | Select-Object -First 5) -join ' / ')
     }
 
     # 失败路径也要有人管：没编过 exe 就打包，必须当场说清原因、退出码非 0（不能"打了个空包还挺高兴"）

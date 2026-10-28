@@ -1,6 +1,6 @@
 ---
 name: mxx1-toolbox
-description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Windows button-wall launcher whose main window is a multi-row, multi-column grid of small buttons that each start another program, script, or feature. Covers its interface rules (four column compact buttons, top tabs, separator segments, light/dark theme, computed column width, grey "not wired up yet" buttons), the tools\*.json button registry, bin-tools\ auto-loaded tool buttons (tool.json), how buttons launch things (exe / script / open / builtin / macro), how the 52 系统工具 buttons open Windows components, how the 常用设置 registry switches record the original value so every change can be undone, how a run reports success or failure, the first-run consent gate (免责声明与服务条款 fingerprint), the read-only update check, Windows 7/10/11 compatibility, plus build.ps1, screenshot tool and the GUI/CLI test suites.
+description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Windows button-wall launcher whose main window is a multi-row, multi-column grid of small buttons that each start another program, script, or feature. Covers its interface rules (four column compact buttons, top tabs, separator segments, light/dark theme, computed column width, grey "not wired up yet" buttons), the tools\*.json button registry, bin-tools\ auto-loaded tool buttons (tool.json), how buttons launch things (exe / script / open / builtin / macro), how the 54 系统工具 buttons open Windows components, how the 常用设置 registry switches record the original value so every change can be undone, how a run reports success or failure, the first-run consent gate (免责声明与服务条款 fingerprint), the read-only update check, Windows 7/10/11 compatibility, plus build.ps1, screenshot tool and the GUI/CLI test suites.
 ---
 
 # 萌新工具箱（mxx1 Toolbox）
@@ -8,7 +8,7 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
 **主界面 = 多行多列的小按钮墙**，点一下按钮就启动一个已经做好的程序 / 脚本 / 功能。
 加按钮只是往 `tools\*.json` 丢配置，**不需要重新编译主程序**。
 
-- 程序名 **萌新工具箱**，标题栏 `萌新工具箱 v1.6.1`；署名 `mxx1` / `mxx1.cn`；GPL-3.0-or-later
+- 程序名 **萌新工具箱**，标题栏 `萌新工具箱 v1.6.2`；署名 `mxx1` / `mxx1.cn`；GPL-3.0-or-later
 - 工程目录 **`D:\萌新工具开发\toolbox\`**，与隔壁 `permanent-delete-menu` **互不修改**（只调它的 exe）
 - 支持范围 **Windows 7 SP1 / 10 / 11**（用户 2026-10-05 收窄的：**只考虑这三版**）；见「兼容性」一节
 - 外观参考：`C:\Users\Administrator\Pictures\Snipaste_2026-10-04_10-29-34.png`（那种紧凑按钮墙）
@@ -16,7 +16,33 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
 > **接手 / 新会话先做两件事**：读 `docs\DESIGN.md`（外观与行为的**唯一正本**）和本文件。
 > 设计一改先改 `DESIGN.md`，再同步本 skill —— 两份分叉就会出现"两套行为"。
 
-## 当前状态（2026-10-26，**v1.6.1 已发布**：内置按钮 / 图标 **183**、`status` **186**、系统工具 **52** —— 「此电脑多余图标」管理窗口 + 主副窗口关联（副窗口统一带最小化按钮、跟着主窗口走）；站点一个字没动）
+## 当前状态（2026-10-28，**v1.6.2 已发布**：内置按钮 / 图标 **185**、`status` **188**、系统工具 **54** —— 「开始菜单程序管理」+「程序和功能管理」两个管理窗口 + 打包内容规范；站点一个字没动）
+
+> **⚠️ 2026-10-28 第五轮（`DESIGN.md` §12.91 + §12.92；条款正文没改 → 同意指纹不变 `db2c1a73f510a37c`）**：
+> 用户上传开始菜单截图 + 控制面板「程序和功能」截图，要求「设计这两个界面的管理隐藏删除按钮，参考
+> HideUL」（HideUL 只管「程序和功能」窗口 → 开始菜单自研）→ 拍板「做吧。」。
+> ① **开始菜单程序管理**（`startmenu-manage`，order 100）：两级 Programs 目录（系统 ProgramData /
+>   用户 APPDATA）`.lnk` 扫描；隐藏 = 记 tsv → 移进备份目录（保留相对结构）→ 读回核对；还原按记录
+>   移回、被软件加回跳过；删除走回收站。**隐藏后条目还在列表**（`AddHidden()` 补录，标「已隐藏」灰、
+>   「状态」列可见，可单条「显示这个…」放回）；隔离根 `MXX1_STARTMENU_SYS/USER/HIDDEN` 三个都设才
+>   允许写 + `MXX1_STARTMENU_TSV`。**系统级隐藏要管理员**。⚠️ `IsSystemLevel` 必须用 `Source` 字段
+>   （拿路径字符串含 ProgramData 判断，隔离测试目录会把系统条目当用户级 —— 坑 106）。
+> ② **程序和功能管理**（`uninstall-manage`，order 105）：三根 Uninstall（HKLM64/HKLM32/HKCU）只读
+>   扫描，系统组件（SystemComponent=1）只列不动；隐藏 = 写 SystemComponent=1、锁定卸载 = NoRemove=1、
+>   删除条目 = .reg 备份 + 删子键、还原按记录；隔离根 `MXX1_UNINST_HKLM64/HKLM32/HKCU`（值带 hive
+>   前缀）+ TSV/DELTSV/BACKUP。⚠️ `LoadOurKeys()` 只认动作列 = `hide` 的记录（tsv 混记 lock 会把
+>   锁定条目误标「已隐藏」—— 坑 105）。
+> ③ **全局「颗 → 个」**（用户原话「『显示这颗…』改成『显示这个…』，其他【颗】都要换成【个】」）：
+>   61 个文件全局替换，条款正文没动。
+> ④ **打包内容规范**（用户报「bin 乱七八糟 / 不该打包的也打包发布了」）：`tools\Make-Package.ps1`
+>   tests 整棵不进包、tools 排除 Test-*.ps1/Sync-Skill.ps1/Make-Package.ps1；bin 目录只放
+>   exe / bin-tools / 发布包；测试与探针输出写 `%TEMP%\mxx1-tests\`。
+> ⑤ **回归**：命令行 `-Only A,D` **100 通过 / 0 失败**（D11/D12 各十条隔离根端到端）、界面 `-Only J`
+>   **82 通过 / 0 失败 / 0 跳过**（J31/J32 真点隐藏 → 还在列表 → 显示放回）、编码体检 **324 PASS**、
+>   内联体检 PASS；exe **1,472,000 字节**。
+> ⑥ ⚠️ 没验到：真机从未实际写过 Start Menu 目录 / Uninstall 注册表（只读 + 隔离根）——「图标真的
+>   消失 / 控制面板真的不显示」用户实机验收；Win7 未跑；火绒误报 `Trojan/Loader.bb` 仍要用户在火绒
+>   界面提交（坑 89）；**站点还是 v1.5.9 / 133 按钮，一个字没动**（等他传完网盘再叫）。
 
 > **⚠️ 2026-10-26 第四轮（`DESIGN.md` §12.89 + §12.90；条款正文没改 → 同意指纹不变 `db2c1a73f510a37c`）**：
 > 用户报装完百度网盘后「此电脑 → 设备和驱动器」多图标 → 做成**管理窗口**（列表 + 图标 + 单行操作，
@@ -28,8 +54,8 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
 >   加回的跳过；隔离根 `MXX1_PCICONS_HKCU` + `MXX1_PCICONS_HKLM`（两个都设才允许写）+ `MXX1_PCICONS_TSV`。
 >   `pc-icons --json` 只读，`--remove/--restore` 非隔离退 2；`pcicons` = 开窗口。
 > ③ **`src\PcIconsForm.cs`**：ListView 六列 + ImageList（32-bit 16×16，`.ico` 直接加载 / `dll,-N` 走
->   `ExtractIconEx`）+ 过滤 + 状态行；系统条目标红不给移除；单颗移除走条款门 + 确认框 + UAC 提权重开；
->   右键「移除这颗… / 复制 GUID」。接线 `system.json` 段 4 order 95（module=app）、`Make-Icons.ps1` `'pc'`
+>   `ExtractIconEx`）+ 过滤 + 状态行；系统条目标红不给移除；单个移除走条款门 + 确认框 + UAC 提权重开；
+>   右键「移除这个… / 复制 GUID」。接线 `system.json` 段 4 order 95（module=app）、`Make-Icons.ps1` `'pc'`
 >   画法 → **内置 182 → 183**、`status` 185 → **186**、系统工具 51 → **52**（`systemTargets=29` 没变）。
 > ④ **主副窗口关联**：基类 `Mxx1Form`（`src\AppIcon.cs`）`MinimizeBox = true` + `Resize` 联动
 >   （副窗口最小化 → `Owner.WindowState = Minimized`，任务栏只剩主窗口一个按钮；`!ShowInTaskbar` 才联动）
@@ -72,7 +98,7 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
 > 一个去图标后的修复方法一个修改回箭头的方法**」。
 > ① **交互**：点「修复图标黑块」不再直接删值，**开一个小窗口**（新文件 `src\IconBlockForm.cs`，仿 `FileAssocForm`）：
 >   上面一块只读的「现在的样子」（`SysReg.IconBlockReport()` 念两处 `29` 各是什么 + 一句判断），
->   下面**两颗修法按钮** —— 「**保持无箭头 · 只治黑块**」（`FixIconBlock(keepHidden:true)`：两处 29 换成
+>   下面**两个修法按钮** —— 「**保持无箭头 · 只治黑块**」（`FixIconBlock(keepHidden:true)`：两处 29 换成
 >   自己生成的空白图，小箭头继续不显示）/「**恢复系统默认小箭头**」（`FixIconBlock(keepHidden:false)`：两处都删掉）。
 >   两条都记原值 + 逐处读回核对 + 自动重启一次 explorer；「还原修复前图标」**两种修法共用同一份记录**。
 > ② **接线**：`tools\common.json` 的 `iconblock-fix` 由 `sysreg/off` → **`sysreg/iconfix`**，去掉 `runAsAdmin`/`confirm`
@@ -99,7 +125,7 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
 >   `MXX1_BLANK_ICON` 可覆盖），HKCU + HKLM 照旧一起写。`SysReg.Set()` 写之前先 `Ensure`，**生成不出来就一个字节都不写**。
 > ③ **新只读命令** `sysreg blankicon`（生成 + 校验那张图，打印 `path/exists/bytes/sizes/bpp/mask/valid`，**不碰注册表**）。
 > ④ **第二个 bug**：报头改用**按钮名** `【还原修复前图标】` / `【修复桌面图标黑块】`；空记录时先说「这次没有写任何东西」
->   再指路三颗按钮；`OnLabel` 改成 `还原修复前图标`；`Describe()` 给 `shell-icon-block` 单开两句；
+>   再指路三个按钮；`OnLabel` 改成 `还原修复前图标`；`Describe()` 给 `shell-icon-block` 单开两句；
 >   修复前若发现 29 指向我们那张空白图，追加一句「点了小箭头会回来」。
 > ⑤ **数字一个都没变**（内置 182 / `status` 185 / 常用设置 59）；改的是实现与文案（四条 hint 压到 ≤120 字）。
 > ⑥ **回归**：命令行新增 **L12d / L12e / L12f**（拆 ICO 字节 + 真画到红底上 0 个像素变化）、**L12c** 改判据（两句不许串台）；
@@ -109,7 +135,7 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
 >   Win7 未跑。**本地提交，没推送、没发版；站点一个字没动**（用户上传完网盘再单独叫）。
 
 > **⚠️ 2026-10-24 深夜这一轮（「修复桌面图标黑块 / 还原修复前图标」；条款又改了一次）**：
-> 用户发来一张桌面截图问「看看这个可以修复不？顺便做成按键功能」—— 截图里**每颗快捷方式的角上都是同一块黑方块**。
+> 用户发来一张桌面截图问「看看这个可以修复不？顺便做成按键功能」—— 截图里**每个快捷方式的角上都是同一块黑方块**。
 > ① **真因**：`Shell Icons\29` 被写成了 `%SystemRoot%\System32\shell32.dll,-50`（**正是「去掉小箭头」写进去的那个
 >   "全透明空图标"**），在这台 Win10 上它没画成透明、渲染成一块黑。`HKLM` 与 `HKCU` 两处都有 → 修复要两处一起清。
 >   `HKLM` 里还有 `77` / `179 = imageres.dll,197`（第三方美化工具留下的）→ **只报告、一个字节都不动**。
@@ -123,9 +149,9 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
 >   「修复图标与缩略图缓存」（那是另一件事）。「查看设置改动」里这一项**不再念「开启状态」**（改成
 >   「有自定义图标值（…，这块黑方块就是它画出来的）」/「系统默认的小箭头」）。
 > ⑤ 隔离根：`MXX1_SHELLICONS_ROOT`（两处合并成 HKCU 下一个测试键，免管理员）+ `MXX1_SYSREG_TSV`。
-> ⑥ 数字：内置按钮 / 图标 **180 → 182**（`status` **183 → 185**）、常用设置 **57 → 59**（段 4 8 → 10 颗）。
+> ⑥ 数字：内置按钮 / 图标 **180 → 182**（`status` **183 → 185**）、常用设置 **57 → 59**（段 4 8 → 10 个）。
 > ⑦ 回归：命令行 **L02 / L03 / L04c / L04d / L06 / L12c** + A04/A07/A09/A10/H02 计数；
->   界面 **J26–J28**（真点两颗按钮 → 过确认框 → 隔离根里 `29` 真被删掉、原值真进 tsv → 真点还原 → 值写回来、记录清空）。
+>   界面 **J26–J28**（真点两个按钮 → 过确认框 → 隔离根里 `29` 真被删掉、原值真进 tsv → 真点还原 → 值写回来、记录清空）。
 > ⑧ ⚠️ **条款第 1/2 节补了这一对 → 同意指纹 `7a73d879b51e54c7` → `db2c1a73f510a37c`**（所有人下次打开界面要重确认一次）。
 > ⑨ ⚠️ **没验到的**：「桌面上的黑真的变回小箭头」要靠人眼看（回归只验到值删掉/写回都读回核对过）；
 >   77/179 若也是坏值本工具不动；Win7 没跑。正本 `docs\DESIGN.md` **§12.85**。
@@ -142,7 +168,7 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
 >   10 条系统入口「进去点哪里」/ 10 条失败文案「你还可以…」）；
 > ⑤ **条款正文补齐**（P-5）：第 1 节换成"会删东西的清单"、第 2 节新增「会改动本机设置的按钮」8 条；
 >   **同意指纹 `65e4045041b6ccab` → `847086ed4543101e`**（内嵌 16,897 → 21,659 字节）；
-> ⑥ **定时关机「改一下」**（P-7）：一颗按钮三种说法（开始计时 / 改一下 / 确认改掉），
+> ⑥ **定时关机「改一下」**（P-7）：一个按钮三种说法（开始计时 / 改一下 / 确认改掉），
 >   第一下只填控件**不写记录**，第二下才确认；后端 `PowerTimer.Modify` 与 `Start` 走同一条路。
 > 数字：内置按钮 / 图标 **180**（`status` 本机 **183** = 180 + 2 个自建 + 1 个自动）、系统工具 **51**、
 > 常用设置 **57**、清理 13 / 隐私 29 / 应用 6 / 右键 21、`systemTargets` 29、`systemMissing` 0。
@@ -192,7 +218,7 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
 > （`start explorer.exe` 继承 stdout 管道 → `ReadToEndAsync().Result` 永不返回 → 输出只再等 3 秒）。
 > 修完命令行 **462 通过 + 1 跳过**、界面 A+B 两组 28 通过；坑 **86/87**、`DESIGN.md` §12.77/§12.78。
 > 数字：内置图标 131 → **153**、内置按钮 131 → **153**（`status` 报的按钮数 133 → **155**，
-> 多出来的 2 颗是本机的用户按钮 / `bin-tools` 自动按钮）；清理优化 8 → **12**、系统工具 27 → **37**、
+> 多出来的 2 个是本机的用户按钮 / `bin-tools` 自动按钮）；清理优化 8 → **12**、系统工具 27 → **37**、
 > 常用设置 33 → **46**。
 > ⚠️ **没推送 / 没 tag / 没 Release / 站点还是 v1.5.9 的 133** —— 这些都要用户点头（见「待办」）。
 > 细节正本：`docs\DESIGN.md` **§12.74 / §12.75**、坑 **80–82**、
@@ -209,7 +235,7 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
 >
 > **同一凌晨再往下的「B 组前四条」（2026-10-20）**：「常用设置」页新开第 4 段
 > 「文件显示 · 快捷方式 · 时钟」= 4 对成对按钮（显示文件扩展名 / 显示隐藏文件 / 去掉小箭头 /
-> 时钟显示秒，各带反方向一颗），全走 sysreg（HKCU、记原值、读回、一键还原）。
+> 时钟显示秒，各带反方向一个），全走 sysreg（HKCU、记原值、读回、一键还原）。
 > 数字再顶一档：内置 **145 → 153**（`status` **155**）、常用设置 **38 → 46**（五段）；
 > L 组扩到 **13 项**（新增 **L04c** 按 id 核对四个新开关），界面套件写死的段标题名单
 > （B03/B07b 的 `$wantCaps`）加新段名。正本 `docs\DESIGN.md` **§12.77**、坑 **84/85**。
@@ -277,12 +303,12 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
 > （这台上是游戏加速器 `Pavise.exe` 建的 `Pavise 竞技`：他设的"合盖 = 关机"还在原方案里，
 > 活动方案已经不是它了）—— 先把 10 个方案都改回他要的值（原值备份在桌面
 > `lid-action-backup-20261019-144510.txt`，改完逐方案读回核对），再按他拍板的口径加了
-> **常用设置页第 3 段「电源与笔记本（合盖 · 电池 · 唤醒）」5 颗按钮**；随后他又发来一张截图 +
-> 一句「**这里有问题**」（那颗按钮文字被截、图标掉到文字下面）→ 修法是**标签缩短 + `FitLabel()` 兜底**。
+> **常用设置页第 3 段「电源与笔记本（合盖 · 电池 · 唤醒）」5 个按钮**；随后他又发来一张截图 +
+> 一句「**这里有问题**」（那个按钮文字被截、图标掉到文字下面）→ 修法是**标签缩短 + `FitLabel()` 兜底**。
 > 落地：`src\Power.cs`（读注册表 / 写走 `powercfg` / 记原值 / 读回核对 + 体检 / 电池报告 / 唤醒）、
 > `src\PowerForm.cs`（三个动作 × 接电源·用电池 + 「让控制面板能看见合盖设置」那个勾）、
-> 界面加 5 颗按钮（`power-lid` / `power-fit` / `power-battery` / `power-wake` / `power-desk`：
-> 前两颗**写**、后三颗**只读**；写的那两颗要管理员 + 确认框）；**全工具箱 128 → 133 个按钮、
+> 界面加 5 个按钮（`power-lid` / `power-fit` / `power-battery` / `power-wake` / `power-desk`：
+> 前两个**写**、后三个**只读**；写的那两个要管理员 + 确认框）；**全工具箱 128 → 133 个按钮、
 > 常用设置 33 → 38**（常用设置页现在 4 段：段 3 电源、段 4「改动的记录与还原」）。
 > **三条硬约定**（坑 73/74）：① 改动作 = **所有方案一起改**（只改当前方案等于没改）；
 > ② 改前把每个方案的原值写进 `%LOCALAPPDATA%\mxx1-toolbox\power-original.tsv`
@@ -386,7 +412,7 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
 >    这台机器上 19 个 CLSID 里**6 个早就在黑名单里**了（以前一律写「扩展项」= 在骗用户）；
 >    新增「黑名单残留」段（卸载残留，只在「文件」页列、不算条数、默认收起）、
 >    「打开 DLL 目录」「复制 CLSID」两个只读按钮、**能勾选**（底栏按钮勾到扩展时改叫「停用」）、
->    **「重启资源管理器」**（命令照 `tools\common.json` 里那颗按钮，先弹确认框；
+>    **「重启资源管理器」**（命令照 `tools\common.json` 里那个按钮，先弹确认框；
 >    `MXX1_NO_EXPLORER_RESTART=1` 只写日志）。⚠️ 只写**用户区**黑名单（`HKCU`），系统区那份只读。
 > ③ 正本 `docs\DESIGN.md` **§12.68**；坑 **55–61**；回归命令行 **M49–M58**（含把黑名单两个根也挪走
 >    `MXX1_CTXMENU_BLOCKED` / `_BLOCKED_MACHINE`，否则真实那 16 条会变成"残留"）+ 界面 **C19v5–C19v10**。
@@ -570,7 +596,7 @@ D:\萌新工具开发\toolbox\
                                    写动作走 `powercfg /setacvalueindex|/setdcvalueindex` —— **所有方案一起写**、
                                    改前把每个方案三个动作的原值（6 个值 + 原本可见）记进
                                    `%LOCALAPPDATA%\mxx1-toolbox\power-original.tsv`（**写不进去就一字不改**）、
-                                   写完逐方案**读回核对**；另外三颗只读：体检（把跟多数不一样的那行用 `!` 点出来）、
+                                   写完逐方案**读回核对**；另外三个只读：体检（把跟多数不一样的那行用 `!` 点出来）、
                                    `powercfg /batteryreport` 报告 + 健康度、`/requests`+`/lastwake`+`/devicequery`。
                                    隔离缝：`MXX1_POWERCFG`（假 powercfg）/ `MXX1_POWER_ROOT` / `MXX1_POWER_TSV` /
                                    `MXX1_NO_OPEN`（别弹浏览器）
@@ -795,7 +821,7 @@ D:\萌新工具开发\toolbox\
                                    S31 盯"中文没乱码"= GBK 解码的判据，S32 盯 `url=` 是站点资源页）；
                                    环境不满足的项走 Skip()，打印 [SKIP] 不算失败）
   tests\Test-Gui.ps1               界面回归 **257 项**（要交互式桌面，无桌面返回 3 = 跳过；
-                                   **2026-10-20 F4 新增 J17–J21 共 5 项**：常用设置页那颗「定时关机 / 重启 / 睡眠」
+                                   **2026-10-20 F4 新增 J17–J21 共 5 项**：常用设置页那个「定时关机 / 重启 / 睡眠」
                                    按钮在且可点、窗口里三种动作与两种时间都在、点「开始计时」先弹确认框
                                    （写明"不会替你保存文档"）、确认后记录写进去且「取消定时」解禁、取消后回到空状态；
                                    ⚠️ **T 组（托盘 / 单实例）现在会先看"屏幕上有没有别人开的工具箱"**，
@@ -1067,7 +1093,7 @@ powershell -File tools\Make-AppIcon.ps1       # 重生成 assets\app.ico（改�
   ⚠️ **小箭头 / 时钟秒 / 小组件 / Copilot / 未激活水印 / 修复图标黑块这六个带 `Tweak.RestartExplorer`** —— 写完
   `SysReg.Set` 自动调一次 `src\ExplorerRestart.cs`（命令唯一来源 = common.json 的 `restart-explorer`；
   `sysreg items` 会多打一列，`L04d` 盯着"正好这六个"）。`MXX1_NO_EXPLORER_RESTART=1` 时不真做。
-- **段 3「电源与笔记本」五颗**（`src\Power.cs` / `src\PowerForm.cs`）：
+- **段 3「电源与笔记本」五个**（`src\Power.cs` / `src\PowerForm.cs`）：
   `power-lid`（开窗设**合盖 / 按电源按钮 / 按睡眠按钮**三个动作 × 接电源·用电池；写的时候**所有方案一起写**；
   窗口里能「还原成改前的值」，还有一个「让控制面板里能看见『选择关闭盖子的功能』」的勾）、
   `power-fit`（只读：列所有方案，把跟多数不一样的那一行用 `!` 点出来 + 为什么）、
@@ -1130,8 +1156,8 @@ powershell -File tools\Make-AppIcon.ps1       # 重生成 assets\app.ico（改�
 
 ## 六件新工具（H1–H6，2026-10-19/20）怎么点
 
-四颗在「清理优化」页第 3 段「文件清单」（无效快捷方式清理 / 空文件夹清理 / 重复文件查找 / 批量重命名），
-两颗在「系统工具」页（屏幕取色器 / 端口与进程）。**全部是程序自己的窗口**（`module=app`），
+四个在「清理优化」页第 3 段「文件清单」（无效快捷方式清理 / 空文件夹清理 / 重复文件查找 / 批量重命名），
+两个在「系统工具」页（屏幕取色器 / 端口与进程）。**全部是程序自己的窗口**（`module=app`），
 命令行与窗口共用同一份后端；详细规则表在 `docs\DESIGN.md` **§12.74**。要点：
 
 - **删除一律进回收站**（`src\Recycle.cs` 一处实现）；删除类按钮默认灰、勾选后才亮。
@@ -1318,7 +1344,7 @@ powershell -File tools\Make-AppIcon.ps1       # 重生成 assets\app.ico（改�
   现在从黑名单读（`已停用` / `已停用（系统区）` / `扩展项`），另有「黑名单残留」那一段（卸载残留）。
   停用 / 恢复 = 往**用户区** `HKCU\...\Shell Extensions\Blocked` 写 / 删一条（值名 = CLSID、
   值数据 = 人看的名字）。三条别改：**只写用户区**（系统区那份只读）、**不碰登记键**、
-  **必须重启资源管理器才生效**（底栏那个「重启资源管理器」按钮跑的是 `tools\common.json` 里那颗，
+  **必须重启资源管理器才生效**（底栏那个「重启资源管理器」按钮跑的是 `tools\common.json` 里那个，
   先弹确认框；`MXX1_NO_EXPLORER_RESTART=1` 只写日志）。测试要把**黑名单两个根也挪走**
   （`MXX1_CTXMENU_BLOCKED` / `_BLOCKED_MACHINE`）。
 - **菜单图标（v1.5.1，`src\MenuIcons.cs`）**：注册表的 `Icon` **只认"带图标资源的 exe/dll"或 `.ico`
@@ -1507,7 +1533,7 @@ powershell -File tools\Make-AppIcon.ps1       # 重生成 assets\app.ico（改�
    界面那 221 项在同一份代码上（只有版本号与文档变了）上一次改动后已全绿。
    ⚠️ **站点标题里还是 `v1.5.6`**（低于新版 → 只会"没有更新提示"，**不会**假提示）；
    等站点改成 `v1.5.7` 之后新版本用户才会被提示更新（改站点的步骤在工作区 `AGENTS.md` §8）。
-3c. ✅ **v1.5.9 已发布**（2026-10-19，用户一句「继续」= 走这版发布流程）：内容 = 电源与笔记本（5 颗按钮）+
+3c. ✅ **v1.5.9 已发布**（2026-10-19，用户一句「继续」= 走这版发布流程）：内容 = 电源与笔记本（5 个按钮）+
     按钮标签修复（`FitLabel()`）+ **那个"死窗口"bug**（用户当天又报的：构造函数先置"忙"、
     `Load` 里那次读状态被自己的守卫挡掉 → 转圈光标 + 全灰 + 报告区空白）。
     提交 `cc89c7a`（`3255def..cc89c7a`，23 个文件 `+3008 / -83`）、CI **success**（1m49s）；
@@ -1529,7 +1555,7 @@ powershell -File tools\Make-AppIcon.ps1       # 重生成 assets\app.ico（改�
     内容 = 「无效快捷方式清理 / 空文件夹清理 / 屏幕取色器 / 端口与进程 / 重复文件查找 / 批量重命名」
     + 「系统工具」页的 磁盘管理 / 优化驱动器 / 网络连接 / 计算机管理 / 系统配置 / Windows 功能 /
     用户账户 / 字体 + 「常用设置」页第 4 段的 显示文件扩展名 / 显示隐藏文件 / 去掉小箭头 / 时钟显示秒
-    （各带反方向一颗；详情 `CHANGELOG.md` 的 `[未发布]`）。已做：**本地提交**
+    （各带反方向一个；详情 `CHANGELOG.md` 的 `[未发布]`）。已做：**本地提交**
     （`ba8e3e4` 功能 + `36971ce` 测试 + `94687b0` 文档 + `a3acfcf` A 组 + B 组那一笔，见 `git log`），
     命令行全量 **461 通过 + 1 环境跳过 / 0 失败**（共 462 项）、界面全量 **244 通过 / 0 失败 / 0 跳过**、
     编码体检 **263 文件 PASS**。❌ **没做**：push / tag / Release / 站点同步 —— 都要用户点头。
@@ -1544,7 +1570,7 @@ powershell -File tools\Make-AppIcon.ps1       # 重生成 assets\app.ico（改�
    有人把 `HKLM\Software\Classes\Folder\shell\open`（文件夹的「打开」动词，列表里只显示成 `open`）
    删掉了 → **双击文件夹打不开**（已用备份 `.reg` 导回、验收过）。
    当时给的三个方案（**A** 标注 + 删除确认框点名警告 / **B** 直接不给删、只允许禁用 / **C** 只标注）
-   他选的是"不管"。⚠️ **那颗雷还在**：导回去的键管理员完全控制，**工具箱照样能再删它**；
+   他选的是"不管"。⚠️ **那个雷还在**：导回去的键管理员完全控制，**工具箱照样能再删它**；
    以后他要是再提，方案 A 的设想还在本节历史里。
    流程照旧：`build.ps1 -Package` → 算 SHA256 → `git tag -a vX.Y.Z` + push →
    `gh release create vX.Y.Z bin\Mxx1Toolbox.exe bin\Mxx1Toolbox-package.zip --title … --notes-file …`。

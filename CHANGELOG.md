@@ -2,6 +2,28 @@
 
 本文件记录每个版本改了什么。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [未发布] 修复「系统时间同步」等四个按钮的原生命中文字乱码（2026-10-28，用户截图报乱码）
+
+用户发来「系统时间同步」窗口截图：`w32tm /query /status` 的输出（Leap 指示符 / 层次 / 精度 /
+根延迟 / 根分散 / 引用 ID / 上次成功同步时间 / 源 / 轮询间隔）全是乱码，而 PowerShell 自己写的
+中文正常。
+
+- **根因**：中文版 Windows 的 `w32tm.exe` 输出是 **GBK（代码页 936）**，按钮脚本里
+  `w32tm /resync 2>&1` 捕获时被 PowerShell 按 UTF-8 解码 → 中文全乱（Windows PowerShell 5.1 与
+  pwsh 7 都复现）。
+- **修法**：新增内联 helper `Native`（`ProcessStartInfo` 重定向 stdout/stderr，并按
+  `Encoding.GetEncoding(936)` 解码，退出码记进 `$NativeExit`），四个按钮统一替换原生命令捕获：
+  - `time-sync`（系统时间同步）：`w32tm /resync` + `w32tm /query /status`；
+  - `sfc-scan`（系统文件修复 SFC）：`sfc /scannow`；
+  - `disk-check`（磁盘错误检测）：`chkdsk /scan`；
+  - `net-reset`（网络一键重置）：`netsh winsock reset` + `netsh int ip reset`（退出码改读
+    `$NativeExit`，ipconfig 的输出本来就丢弃、不用改）。
+- **验证**：新脚本实跑 `w32tm`（5.1）零乱码；4 个 inline 语法解析 PASS；命令行全量回归
+  **557 通过 / 0 失败 / 1 环境跳过（F03）**、内联体检 PASS、编码体检 324 PASS；exe 重新编译
+  **1,474,560 字节**（内嵌 tools.system.json 已是新版，`run time-sync --dry` 验过命令文本）。
+- ⚠️ 没验到：sfc / chkdsk / netsh 三条没有真跑（会长时间扫描或真的改动网络配置），只验了
+  语法与同一个 Native 解码路径（w32tm 真跑验证过解码正确）；用户在界面上点这四个按钮看一眼为准。
+
 ## [未发布] 发布包内容规范加强（2026-10-28，用户报「压缩包里有些文件夹非必要」）
 
 用户打开 v1.6.2 发布包发现**开发文件混进去了**（321 个文件里 114 个是 src\ 源码 / docs\ 开发文档 /

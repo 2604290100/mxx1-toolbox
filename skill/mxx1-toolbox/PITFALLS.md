@@ -1,9 +1,16 @@
-# 萌新工具箱 · 踩坑清单（106 条）
+# 萌新工具箱 · 踩坑清单（107 条）
 
 > 这是 skill 的**按需**文件：改测试 / 改界面探针 / 改用户可见文案之前读一次。
 > 每一条都是真踩过的，写着"根因 + 判据 + 哪个回归盯着"。序号在 `SKILL.md` 与提交信息里会被引用
 > （比如"坑 29"= 进程归属那条），所以**别重排、别删号**。
-> 最近更新：2026-10-28（坑 105–106：同一张改动记录 tsv 混记多种动作时，读回必须过滤动作列 ——
+> 最近更新：2026-10-28（坑 107：**原生 exe 的中文输出是 GBK，PowerShell 直接捕获必乱码** ——
+> 中文版 Windows 的 w32tm / netsh / chkdsk / sfc 输出是代码页 936，脚本里 `w32tm … 2>&1` 捕获时
+> PowerShell（5.1 与 pwsh 都）按 UTF-8 解码 → 中文全乱（判据：`Leap 指示符` 变 `Leap ָʾ��`）。
+> 修法：`ProcessStartInfo + RedirectStandardOutput/Error + StandardOutputEncoding/ErrorEncoding =
+> GetEncoding(936)` 读字节流；**退出码要取 `$p.ExitCode` 记进 `$NativeExit`，不能用 `$LASTEXITCODE`**
+> （那是 PowerShell 引擎跑原生程序才设置的，.NET Process 不会）。time-sync / sfc-scan / disk-check /
+> net-reset 四个按钮已统一替换，命令行 D 组盯着）。
+> 坑 105–106：同一张改动记录 tsv 混记多种动作时，读回必须过滤动作列 ——
 > 程序和功能管理的锁定条目被误标「已隐藏」（`LoadOurKeys` 只认 `hide` 行）；判断系统级 / 用户级
 > 别拿路径字符串猜 —— 隔离测试根不含 `ProgramData`，`IsSystemLevel` 要用 Scan 时的权威字段 `Source`。
 > 2026-10-26（坑 104：副窗口「最小化跟随主窗口」的联动放**基类 `Mxx1Form`**、

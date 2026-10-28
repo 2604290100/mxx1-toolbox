@@ -1488,7 +1488,7 @@ namespace Mxx1Toolbox
             if (t.Kind == "builtin" && t.Module == Launcher.ModulePower && t.Action == "timer")
             {
                 // 「定时关机 / 重启 / 睡眠」：程序自己的窗口（开始 / 取消 / 状态）。
-                // 同「合盖与电源键动作」的口径：点这颗按钮本身什么都不改，不弹确认框；
+                // 同「合盖与电源键动作」的口径：点这个按钮本身什么都不改，不弹确认框；
                 // 窗口里每一次「开始计时 / 取消定时」才过条款门 + 确认框。
                 OpenTimerForm();
                 SetStatus(t.Name + " · 已打开「定时关机 / 重启 / 睡眠」窗口");
@@ -1705,6 +1705,12 @@ namespace Mxx1Toolbox
                 case "pcicons":
                     OpenPcIcons();
                     break;
+                case "startmenu":
+                    OpenStartMenu();
+                    break;
+                case "uninstall":
+                    OpenUninstall();
+                    break;
                 default:
                     SetStatus("未实现的界面动作：" + t.Action);
                     Logger.Write(t.Name, "未实现的界面动作：" + t.Action);
@@ -1887,7 +1893,7 @@ namespace Mxx1Toolbox
         }
 
         /// <summary>「修复桌面图标黑块」窗口（常用设置页那个按钮）。窗口自己就是后端 `src\SysReg.cs`
-        /// 的界面 —— 上面一块只读的现状报告 + 两种修法各一颗按钮（保持无箭头只治黑块 / 恢复系统默认小箭头），
+        /// 的界面 —— 上面一块只读的现状报告 + 两种修法各一个按钮（保持无箭头只治黑块 / 恢复系统默认小箭头），
         /// 每一步过确认框；会改动系统的动作只从界面里写（命令行那条 `iconfix` 只开窗口）。</summary>
         private void OpenIconBlockForm()
         {
@@ -2003,6 +2009,28 @@ namespace Mxx1Toolbox
             WindowPlacement.ShowCentered(f, this);
             SetStatus("此电脑多余图标 · 只删挂载点、不删软件；移除前记原值，随时能还原");
             Logger.Write("此电脑多余图标", "打开窗口");
+        }
+
+        /// <summary>「开始菜单程序管理」窗口（系统工具页 · 修复与诊断段，2026-10-27 用户要求管
+        /// 开始菜单 + 「程序和功能」两个列表）——治开始菜单「所有应用」里没用的快捷方式。点开
+        /// 只读扫两个 Programs 目录；「隐藏 / 还原 / 删除」在窗口里过条款门 + 确认框。</summary>
+        private void OpenStartMenu()
+        {
+            StartMenuForm f = new StartMenuForm(_theme);
+            WindowPlacement.ShowCentered(f, this);
+            SetStatus("开始菜单程序管理 · 只移 .lnk、不删程序本体；隐藏前记原值，随时能还原");
+            Logger.Write("开始菜单程序管理", "打开窗口");
+        }
+
+        /// <summary>「程序和功能管理」窗口（系统工具页 · 修复与诊断段，2026-10-27 用户要求，
+        /// 参考 HideUL）——治控制面板卸载列表里不想看到 / 怕手滑卸掉的条目。点开只读扫三根
+        /// Uninstall；「隐藏 / 显示 / 锁定 / 删除条目 / 还原」在窗口里过条款门 + 确认框。</summary>
+        private void OpenUninstall()
+        {
+            UninstallForm f = new UninstallForm(_theme);
+            WindowPlacement.ShowCentered(f, this);
+            SetStatus("程序和功能管理 · 只改列表登记、不删程序；改前记原值，随时能还原");
+            Logger.Write("程序和功能管理", "打开窗口");
         }
 
         /// <summary>「一键换 DNS」窗口（系统工具页 · 设备与硬件段，GAP-09）——改 DNS 才写系统，窗口里过确认框。</summary>

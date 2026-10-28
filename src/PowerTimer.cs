@@ -380,7 +380,7 @@ namespace Mxx1Toolbox
 
         /// <summary>把现在这条定时**改成新的**（动作 / 时间都能换）。和 `Start` 走的是同一条路
         /// （先撤旧的 → 写新记录 → 再动手），区别只在说法：「改好了」而不是「定好了」。
-        /// 2026-10-24 的 P-7：界面上一颗「改一下」按钮，不用先取消再定一遍。</summary>
+        /// 2026-10-24 的 P-7：界面上一个「改一下」按钮，不用先取消再定一遍。</summary>
         public static int Modify(string action, DateTime at, out string report)
         {
             return StartCore(action, at, true, out report);

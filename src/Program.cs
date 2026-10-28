@@ -96,6 +96,19 @@ namespace Mxx1Toolbox
                     Application.Run(new PcIconsForm(Theme.Resolve(Settings.Load().Theme)));
                     return 0;
                 }
+                // 「开始菜单程序管理」窗口。来路同 `pcicons`（2026-10-27 新增，用户要求管开始菜单
+                // + 「程序和功能」两个列表）：界面里那个按钮直接 new；需要管理员时提权重开自己（`startmenu`）。
+                if (args.Length == 1 && string.Equals(args[0], "startmenu", StringComparison.OrdinalIgnoreCase))
+                {
+                    Application.Run(new StartMenuForm(Theme.Resolve(Settings.Load().Theme)));
+                    return 0;
+                }
+                // 「程序和功能管理」窗口。同上（参考 HideUL 的隐藏 / 显示 / 锁定卸载）。
+                if (args.Length == 1 && string.Equals(args[0], "uninstall", StringComparison.OrdinalIgnoreCase))
+                {
+                    Application.Run(new UninstallForm(Theme.Resolve(Settings.Load().Theme)));
+                    return 0;
+                }
                 // `ui log` / `ui settings`：右键「常用功能」子菜单里那几个固定入口。打开主界面，
                 // 然后替用户点一下那个界面动作（否则从资源管理器点出来会"什么都不发生"）。
                 if (string.Equals(args[0], "ui", StringComparison.OrdinalIgnoreCase))
@@ -239,6 +252,8 @@ namespace Mxx1Toolbox
                     case "eject": return EjectCommand(args);
                     case "assoc": return AssocCommand(args);
                     case "pcicons": return PcIconsCommand(args);
+                    case "startmenu": return StartMenuCommand(args);
+                    case "uninstall": return UninstallCommand(args);
                     case "dup": return DupCommand(args);
                     case "rename": return RenameCommand(args);
                     case "privacy": return PrivacyCommand(args);
@@ -731,7 +746,7 @@ namespace Mxx1Toolbox
         }
 
         /// <summary>`timer status | plan | cancel`。**没有"开始计时"的入口** —— 定哪一条只能从界面
-        /// 那颗「定时关机 / 重启 / 睡眠」按钮里点（要过条款门 + 确认框），同 `sysreg` /
+        /// 那个「定时关机 / 重启 / 睡眠」按钮里点（要过条款门 + 确认框），同 `sysreg` /
         /// `rightmenu` / `power` 的规矩。
         ///
         /// · `timer status`：只读。有记录就报动作 / 到点 / 还剩多久；过了点没执行会如实写 `stale=1`。
@@ -1399,7 +1414,7 @@ namespace Mxx1Toolbox
         }
 
         /// <summary>`audio [--json]` / `audio --set-default &lt;设备 id&gt;` —— 「输出设备体检」的命令行出口
-        /// （窗口那颗按钮是 `sound-devices`，读的是同一份 `src\AudioDevices.cs`）。
+        /// （窗口那个按钮是 `sound-devices`，读的是同一份 `src\AudioDevices.cs`）。
         ///
         /// 口径：
         /// ① **默认只读**：列出所有音频端点（含已停用 / 没插 / 不在了的）、谁是默认设备、音频服务状态；
@@ -1601,7 +1616,7 @@ namespace Mxx1Toolbox
             {
                 if (!DnsConfig.WriteAllowed())
                 {
-                    Console.Error.WriteLine("写 DNS 只能在窗口里做（点「一键换 DNS」那颗按钮）。命令行只读：dns / dns --json");
+                    Console.Error.WriteLine("写 DNS 只能在窗口里做（点「一键换 DNS」那个按钮）。命令行只读：dns / dns --json");
                     return 2;
                 }
                 if (apply != DnsConfig.Choice114 && apply != DnsConfig.ChoiceAli && apply != DnsConfig.ChoiceDhcp)
@@ -1679,7 +1694,7 @@ namespace Mxx1Toolbox
             {
                 if (!ProxyConfig.WriteAllowed())
                 {
-                    Console.Error.WriteLine("改系统代理只能在窗口里点（「关掉系统代理」那颗按钮）。命令行只读：proxy / proxy --json");
+                    Console.Error.WriteLine("改系统代理只能在窗口里点（「关掉系统代理」那个按钮）。命令行只读：proxy / proxy --json");
                     return 2;
                 }
                 string message;
@@ -1746,7 +1761,7 @@ namespace Mxx1Toolbox
             {
                 if (!StartupItems.WriteAllowed())
                 {
-                    Console.Error.WriteLine("禁用 / 还原自启项只能在窗口里点（「启动项管理」那颗按钮）。命令行只读：startup / startup --json");
+                    Console.Error.WriteLine("禁用 / 还原自启项只能在窗口里点（「启动项管理」那个按钮）。命令行只读：startup / startup --json");
                     return 2;
                 }
                 string wantName = (disable.Length > 0) ? disable : restore;
@@ -1831,7 +1846,7 @@ namespace Mxx1Toolbox
             {
                 if (!FileAssoc.WriteAllowed())
                 {
-                    Console.Error.WriteLine("修复 / 还原文件关联只能在窗口里点（「文件关联体检」那颗按钮）。"
+                    Console.Error.WriteLine("修复 / 还原文件关联只能在窗口里点（「文件关联体检」那个按钮）。"
                         + "命令行只读：assoc / assoc --json");
                     return 2;
                 }
@@ -1879,8 +1894,8 @@ namespace Mxx1Toolbox
         }
 
         /// <summary>`pcicons [--json]` —— 「此电脑多余图标」的命令行出口（2026-10-26，用户报装完百度网盘
-        /// 「此电脑」里多了一颗「双击运行百度网盘」），**默认只读**：扫 `MyComputer\NameSpace` 两个挂载点
-        /// （HKCU 每用户 + HKLM 这台机器所有用户），列出每颗图标的 GUID / 显示名 / 来源 / 双击命令，
+        /// 「此电脑」里多了一个「双击运行百度网盘」），**默认只读**：扫 `MyComputer\NameSpace` 两个挂载点
+        /// （HKCU 每用户 + HKLM 这台机器所有用户），列出每个图标的 GUID / 显示名 / 来源 / 双击命令，
         /// 系统自带条目标 system、只报告。真正写注册表的两条（`--remove=<guid,…>` / `--restore`）
         /// **只在两个隔离根都设好的情况下才走**（`MXX1_PCICONS_HKCU` / `MXX1_PCICONS_HKLM` /
         /// `MXX1_PCICONS_TSV`）—— 同「文件关联体检」：用户自己那台机器只能在窗口里点出来。
@@ -1909,7 +1924,7 @@ namespace Mxx1Toolbox
             {
                 if (!PcIcons.WriteAllowed())
                 {
-                    Console.Error.WriteLine("移除 / 还原「此电脑」图标只能在窗口里点（「此电脑多余图标」那颗按钮）。"
+                    Console.Error.WriteLine("移除 / 还原「此电脑」图标只能在窗口里点（「此电脑多余图标」那个按钮）。"
                         + "命令行只读：pcicons / pcicons --json");
                     return 2;
                 }
@@ -1945,7 +1960,7 @@ namespace Mxx1Toolbox
                 }
                 if (targets.Count == 0)
                 {
-                    Console.Error.WriteLine("这些 GUID 在当前扫描里一颗都没找到，没删任何东西：" + remove);
+                    Console.Error.WriteLine("这些 GUID 在当前扫描里一个都没找到，没删任何东西：" + remove);
                     return 1;
                 }
                 PcIconsReport rep2 = PcIcons.Remove(targets);
@@ -1971,6 +1986,219 @@ namespace Mxx1Toolbox
             return 0;
         }
 
+        /// <summary>`startmenu` / `startmenu --json` —— 「开始菜单程序管理」的命令行出口（2026-10-27
+        /// 用户要求管开始菜单 + 「程序和功能」两个列表）：默认**只读**扫两个 Programs 目录的 .lnk。
+        /// 写入口（`--hide=<system|user>:<相对路径>` / `--delete=…` / `--restore`）只在三个隔离根
+        /// （MXX1_STARTMENU_SYS / MXX1_STARTMENU_USER / MXX1_STARTMENU_HIDDEN，外加记录文件
+        /// MXX1_STARTMENU_TSV）都设好时才放行，否则退 2 —— 用户自己那台机器只能在窗口里点。
+        /// 单独一个 `startmenu`（不带别的参数）在 Program.Main 里就被拦去开窗口了，走不到这儿。</summary>
+        private static int StartMenuCommand(string[] args)
+        {
+            bool restore = false;
+            string hide = "", show = "", del = "";
+            for (int i = 1; i < args.Length; i++)
+            {
+                string a = args[i];
+                if (string.Equals(a, "--restore", StringComparison.OrdinalIgnoreCase)) { restore = true; }
+                else if (a.StartsWith("--hide=", StringComparison.OrdinalIgnoreCase)) { hide = a.Substring("--hide=".Length).Trim(); }
+                else if (a.StartsWith("--show=", StringComparison.OrdinalIgnoreCase)) { show = a.Substring("--show=".Length).Trim(); }
+                else if (a.StartsWith("--delete=", StringComparison.OrdinalIgnoreCase)) { del = a.Substring("--delete=".Length).Trim(); }
+            }
+
+            int nActions = (restore ? 1 : 0) + (hide.Length > 0 ? 1 : 0) + (show.Length > 0 ? 1 : 0) + (del.Length > 0 ? 1 : 0);
+            if (nActions > 1)
+            {
+                Console.Error.WriteLine("--hide / --show / --delete / --restore 只能给一个动作。");
+                return 2;
+            }
+
+            if (restore || hide.Length > 0 || show.Length > 0 || del.Length > 0)
+            {
+                if (!StartMenu.WriteAllowed())
+                {
+                    Console.Error.WriteLine("隐藏 / 显示 / 还原 / 删除开始菜单快捷方式只能在窗口里点（「开始菜单程序管理」那个按钮）。"
+                        + "命令行只读：startmenu / startmenu --json");
+                    return 2;
+                }
+                List<StartMenuItem> scan = StartMenu.Scan();
+                string action = restore ? "restore" : (hide.Length > 0 ? "hide" : (show.Length > 0 ? "show" : "delete"));
+                StartMenuReport rep;
+                if (restore)
+                {
+                    rep = StartMenu.Restore();
+                }
+                else
+                {
+                    string spec = hide.Length > 0 ? hide : (show.Length > 0 ? show : del);
+                    string flag = hide.Length > 0 ? "--hide" : (show.Length > 0 ? "--show" : "--delete");
+                    List<StartMenuItem> targets = ResolveStartMenuTargets(scan, spec, flag);
+                    if (targets.Count == 0) { return 2; }
+                    rep = hide.Length > 0 ? StartMenu.Hide(targets)
+                        : (show.Length > 0 ? StartMenu.Show(targets) : StartMenu.Delete(targets));
+                }
+                Console.WriteLine("action=" + action);
+                Console.WriteLine("root=" + StartMenu.RootText());
+                Console.WriteLine("changed=" + rep.Changed.ToString(CultureInfo.InvariantCulture));
+                Console.WriteLine("skipped=" + rep.Skipped.ToString(CultureInfo.InvariantCulture));
+                Console.WriteLine("failed=" + rep.Failed.ToString(CultureInfo.InvariantCulture));
+                Console.WriteLine("result=" + (rep.Ok ? "ok" : "failed"));
+                Console.WriteLine("message=" + OneLine(rep.Message));
+                Console.WriteLine("record=" + StartMenu.RecordFile());
+                Console.WriteLine("pending=" + StartMenu.PendingRecords().ToString(CultureInfo.InvariantCulture));
+                return rep.Ok ? 0 : 1;
+            }
+
+            List<StartMenuItem> read = StartMenu.Scan();
+            if (HasFlag(args, "--json"))
+            {
+                Console.WriteLine(StartMenu.JsonReport(read));
+                return 0;
+            }
+            Console.WriteLine(StartMenu.ReportText(read));
+            return 0;
+        }
+
+        /// <summary>把 `--hide=user:相对路径` 这种参数解析成具体条目（找不到就说清、退 2）。</summary>
+        private static List<StartMenuItem> ResolveStartMenuTargets(List<StartMenuItem> scan, string spec, string flag)
+        {
+            List<StartMenuItem> hit = new List<StartMenuItem>();
+            string src = "user";
+            string rel = spec;
+            int colon = spec.IndexOf(':');
+            if (colon > 0)
+            {
+                string head = spec.Substring(0, colon).Trim().ToLowerInvariant();
+                if (head == "system" || head == "user")
+                {
+                    src = head;
+                    rel = spec.Substring(colon + 1);
+                }
+            }
+            foreach (StartMenuItem it in scan)
+            {
+                if (it.Source == src && string.Equals(it.Rel, rel, StringComparison.OrdinalIgnoreCase))
+                {
+                    hit.Add(it);
+                    break;
+                }
+            }
+            if (hit.Count == 0)
+            {
+                Console.Error.WriteLine(flag + " 找不到这条开始菜单快捷方式：" + spec
+                    + "（格式：--" + flag.Replace("--", "") + "=<system|user>:<相对路径，含 .lnk>）");
+            }
+            return hit;
+        }
+
+        /// <summary>`uninstall` / `uninstall --json` —— 「程序和功能管理」的命令行出口（2026-10-27，
+        /// 参考 HideUL）：默认**只读**扫三根 Uninstall。写入口（`--hide=<HKLM64|HKLM32|HKCU>:<键名>` /
+        /// `--show=…` / `--lock=…` / `--delete=…` / `--restore`）只在三根隔离根
+        /// （MXX1_UNINST_HKLM64 / MXX1_UNINST_HKLM32 / MXX1_UNINST_HKCU，外加记录 MXX1_UNINST_TSV /
+        /// MXX1_UNINST_DELTSV / MXX1_UNINST_BACKUP）都设好时才放行，否则退 2 —— 用户自己那台机器
+        /// 只能在窗口里点。单独一个 `uninstall`（不带别的参数）在 Program.Main 里就被拦去开窗口了。</summary>
+        private static int UninstallCommand(string[] args)
+        {
+            bool restore = false;
+            string hide = "", show = "", lockv = "", del = "";
+            for (int i = 1; i < args.Length; i++)
+            {
+                string a = args[i];
+                if (string.Equals(a, "--restore", StringComparison.OrdinalIgnoreCase)) { restore = true; }
+                else if (a.StartsWith("--hide=", StringComparison.OrdinalIgnoreCase)) { hide = a.Substring("--hide=".Length).Trim(); }
+                else if (a.StartsWith("--show=", StringComparison.OrdinalIgnoreCase)) { show = a.Substring("--show=".Length).Trim(); }
+                else if (a.StartsWith("--lock=", StringComparison.OrdinalIgnoreCase)) { lockv = a.Substring("--lock=".Length).Trim(); }
+                else if (a.StartsWith("--delete=", StringComparison.OrdinalIgnoreCase)) { del = a.Substring("--delete=".Length).Trim(); }
+            }
+
+            int actions = (restore ? 1 : 0) + (hide.Length > 0 ? 1 : 0) + (show.Length > 0 ? 1 : 0)
+                + (lockv.Length > 0 ? 1 : 0) + (del.Length > 0 ? 1 : 0);
+            if (actions > 1)
+            {
+                Console.Error.WriteLine("--hide / --show / --lock / --delete / --restore 只能给一个动作。");
+                return 2;
+            }
+
+            if (actions == 1)
+            {
+                if (!UninstallItems.WriteAllowed())
+                {
+                    Console.Error.WriteLine("隐藏 / 显示 / 锁定 / 删除「程序和功能」条目只能在窗口里点（「程序和功能管理」那个按钮）。"
+                        + "命令行只读：uninstall / uninstall --json");
+                    return 2;
+                }
+                List<UninstallItem> scan = UninstallItems.Scan();
+                string action = restore ? "restore" : (hide.Length > 0 ? "hide" : (show.Length > 0 ? "show" : (lockv.Length > 0 ? "lock" : "delete")));
+                string spec = hide.Length > 0 ? hide : (show.Length > 0 ? show : (lockv.Length > 0 ? lockv : del));
+                string flag = hide.Length > 0 ? "--hide" : (show.Length > 0 ? "--show" : (lockv.Length > 0 ? "--lock" : "--delete"));
+                UninstallReport rep;
+                if (restore)
+                {
+                    rep = UninstallItems.Restore();
+                }
+                else
+                {
+                    List<UninstallItem> targets = ResolveUninstallTargets(scan, spec, flag);
+                    if (targets.Count == 0) { return 2; }
+                    if (hide.Length > 0) { rep = UninstallItems.Hide(targets); }
+                    else if (show.Length > 0) { rep = UninstallItems.Show(targets); }
+                    else if (lockv.Length > 0) { rep = UninstallItems.Lock(targets); }
+                    else { rep = UninstallItems.DeleteEntry(targets); }
+                }
+                Console.WriteLine("action=" + action);
+                Console.WriteLine("root=" + UninstallItems.RootText());
+                Console.WriteLine("changed=" + rep.Changed.ToString(CultureInfo.InvariantCulture));
+                Console.WriteLine("skipped=" + rep.Skipped.ToString(CultureInfo.InvariantCulture));
+                Console.WriteLine("failed=" + rep.Failed.ToString(CultureInfo.InvariantCulture));
+                Console.WriteLine("result=" + (rep.Ok ? "ok" : "failed"));
+                Console.WriteLine("message=" + OneLine(rep.Message));
+                Console.WriteLine("record=" + UninstallItems.RecordFile());
+                Console.WriteLine("pending=" + UninstallItems.PendingRecords().ToString(CultureInfo.InvariantCulture));
+                return rep.Ok ? 0 : 1;
+            }
+
+            List<UninstallItem> read = UninstallItems.Scan();
+            if (HasFlag(args, "--json"))
+            {
+                Console.WriteLine(UninstallItems.JsonReport(read));
+                return 0;
+            }
+            Console.WriteLine(UninstallItems.ReportText(read));
+            return 0;
+        }
+
+        /// <summary>把 `--hide=HKLM32:Weixin` 这种参数解析成具体条目（找不到就说清、退 2）。
+        /// 键名 = Uninstall 下的子键名（{GUID} 或 Weixin 这种），root = HKLM64 | HKLM32 | HKCU。</summary>
+        private static List<UninstallItem> ResolveUninstallTargets(List<UninstallItem> scan, string spec, string flag)
+        {
+            List<UninstallItem> hit = new List<UninstallItem>();
+            string root = "HKCU";
+            string key = spec;
+            int colon = spec.IndexOf(':');
+            if (colon > 0)
+            {
+                string head = spec.Substring(0, colon).Trim().ToUpperInvariant();
+                if (head == "HKLM64" || head == "HKLM32" || head == "HKCU")
+                {
+                    root = head;
+                    key = spec.Substring(colon + 1);
+                }
+            }
+            foreach (UninstallItem it in scan)
+            {
+                if (it.Root == root && string.Equals(it.KeyName, key, StringComparison.OrdinalIgnoreCase))
+                {
+                    hit.Add(it);
+                    break;
+                }
+            }
+            if (hit.Count == 0)
+            {
+                Console.Error.WriteLine(flag + " 找不到这条卸载登记：" + spec
+                    + "（格式：--" + flag.Replace("--", "") + "=<HKLM64|HKLM32|HKCU>:<子键名，如 {GUID} 或 Weixin>）");
+            }
+            return hit;
+        }
+
         /// <summary>`eject [--json]` —— 「U 盘安全弹出」的命令行出口（GAP-03），**只读**：
         /// 列出系统报成「可移动」的盘（U 盘 / 读卡器）。真的弹出只在窗口里点（要过确认框），
         /// `--now=<盘符>` 那条路只在 `MXX1_EJECT_FAKE` 造出来的假盘下才走 —— 用来验"弹不出时如实说"。</summary>
@@ -1989,7 +2217,7 @@ namespace Mxx1Toolbox
                 string fake = (Environment.GetEnvironmentVariable("MXX1_EJECT_FAKE") ?? "").Trim();
                 if (fake.Length == 0)
                 {
-                    Console.Error.WriteLine("弹出磁盘只能在窗口里点（「U 盘安全弹出」那颗按钮）。命令行只读：eject / eject --json");
+                    Console.Error.WriteLine("弹出磁盘只能在窗口里点（「U 盘安全弹出」那个按钮）。命令行只读：eject / eject --json");
                     return 2;
                 }
                 RemovableDrive target = null;
@@ -2606,7 +2834,7 @@ namespace Mxx1Toolbox
             {
                 if (string.Equals(t.Action, "iconfix", StringComparison.OrdinalIgnoreCase))
                 {
-                    // 2026-10-26：这颗按钮改成开窗口（两种修法让用户挑），所以它不再是"直接改注册表"。
+                    // 2026-10-26：这个按钮改成开窗口（两种修法让用户挑），所以它不再是"直接改注册表"。
                     kind = "window";
                     target = "（本程序内的窗口）";
                     hint = "窗口里挑一种修法（保持无箭头只治黑块 / 恢复系统默认小箭头），点下去才会改；命令行只负责带管理员重开这个窗口";

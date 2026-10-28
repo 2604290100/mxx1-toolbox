@@ -455,7 +455,35 @@
       "gui": [
         "J"
       ],
-      "note": "2026-10-26「此电脑多余图标」（治装完百度网盘这类软件后「此电脑 → 设备和驱动器」里多一颗「双击运行百度网盘」图标——量出来是软件往 HKCU/HKLM 的 Explorer\\MyComputer\\NameSpace 写挂载子键；本机百度网盘 {679F137C-3162-45da-BE3C-2F9C3D093F64} 两层都有）。后端 = 只读扫两处挂载点 + 解析 CLSID（显示名/图标/双击命令）+ 写死系统名单（含 DelegateFolders，只报告）+ 移除只删挂载点（不删 CLSID/软件本体）、写前记原值（pc-icons-original.tsv）、逐处读回核对、按记录还原（软件重装加回来的跳过）。命令行判据 D10–D10i（隔离根 MXX1_PCICONS_HKCU + MXX1_PCICONS_HKLM + MXX1_PCICONS_TSV，绝不碰真实 NameSpace；D10c 盯「没有隔离就退 2」；D10d 验两层同名合成一颗 both；D10f 验移除后两层都读回核对过、系统条目原样；D10i 验「软件重装加回来」时还原跳过）；界面 J30–J30d 真从按钮开窗口、真点「移除全部第三方图标…」「还原成移除前」并读回注册表与记录文件"
+      "note": "2026-10-26「此电脑多余图标」（治装完百度网盘这类软件后「此电脑 → 设备和驱动器」里多一个「双击运行百度网盘」图标——量出来是软件往 HKCU/HKLM 的 Explorer\\MyComputer\\NameSpace 写挂载子键；本机百度网盘 {679F137C-3162-45da-BE3C-2F9C3D093F64} 两层都有）。后端 = 只读扫两处挂载点 + 解析 CLSID（显示名/图标/双击命令）+ 写死系统名单（含 DelegateFolders，只报告）+ 移除只删挂载点（不删 CLSID/软件本体）、写前记原值（pc-icons-original.tsv）、逐处读回核对、按记录还原（软件重装加回来的跳过）。命令行判据 D10–D10i（隔离根 MXX1_PCICONS_HKCU + MXX1_PCICONS_HKLM + MXX1_PCICONS_TSV，绝不碰真实 NameSpace；D10c 盯「没有隔离就退 2」；D10d 验两层同名合成一个 both；D10f 验移除后两层都读回核对过、系统条目原样；D10i 验「软件重装加回来」时还原跳过）；界面 J30–J30d 真从按钮开窗口、真点「移除全部第三方图标…」「还原成移除前」并读回注册表与记录文件"
+    },
+    {
+      "paths": [
+        "src/StartMenu.cs",
+        "src/StartMenuForm.cs"
+      ],
+      "cli": [
+        "A",
+        "D"
+      ],
+      "gui": [
+        "J"
+      ],
+      "note": "2026-10-27「开始菜单程序管理」（用户要求管开始菜单「所有应用」+ 控制面板「程序和功能」两个列表，截图里一堆装软件塞的快捷方式）。后端 = 只读扫两级 Programs 目录的 .lnk（系统 ProgramData + 用户 APPDATA）+ 系统目录前缀只标注不锁 + 隐藏 = 记原值（startmenu-hidden.tsv）→ 移进备份目录（保留相对结构）→ 读回核对 + 还原按记录移回原位（被别的文件占了跳过）+ 删除走 Recycle.DeleteToRecycleBin（进回收站，绝不用 File.Delete）。命令行判据 D11–D11i（隔离根 MXX1_STARTMENU_SYS + MXX1_STARTMENU_USER + MXX1_STARTMENU_HIDDEN + MXX1_STARTMENU_TSV，绝不碰真实开始菜单；D11c 盯「没有隔离就退 2」；D11d 验隐藏后文件真移走且 tsv 含原路径；D11f 验还原后文件回原位、被占跳过；D11i 验删除进回收站）；界面 J31 起真从按钮开窗口、真点「隐藏这个…」「还原成隐藏前」并读回目录与记录文件"
+    },
+    {
+      "paths": [
+        "src/UninstallItems.cs",
+        "src/UninstallForm.cs"
+      ],
+      "cli": [
+        "A",
+        "D"
+      ],
+      "gui": [
+        "J"
+      ],
+      "note": "2026-10-27「程序和功能管理」（参考 HideUL，管控制面板「程序和功能」/ 设置「应用」列表条目的 隐藏（SystemComponent=1）/显示（按记录还原）/锁定卸载（NoRemove=1）/删除条目（reg.exe export 备份 .reg → 删子键 → 记录；还原时 reg.exe import 导回））。后端 = 只读扫三根 Uninstall（HKLM64 / HKLM32 / HKCU，只列有 DisplayName 的 + 工具箱自己藏过的）+ 系统组件（SystemComponent 本来就是 1 且非本工具所藏）只列不动。命令行判据 D12–D12i（隔离根 MXX1_UNINST_HKLM64 + MXX1_UNINST_HKLM32 + MXX1_UNINST_HKCU + MXX1_UNINST_TSV + MXX1_UNINST_DELTSV + MXX1_UNINST_BACKUP，绝不碰真实 Uninstall；D12c 盯「没有隔离就退 2」；D12d 验隐藏后 SystemComponent 真=1 且 tsv 记原值；D12f 验显示/还原后值回原样、被别的工具改过跳过；D12h 验删除条目后 .reg 备份真在且子键没了；D12i 验还原把 .reg 导回）；界面 J32 起真从按钮开窗口、真点「隐藏这个…」「还原成操作前」并读回注册表与记录文件"
     },
     {
       "paths": [

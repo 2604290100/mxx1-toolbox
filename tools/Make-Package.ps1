@@ -21,6 +21,10 @@
     在哪台机器上打包，包里带的就是那台机器上真的在用的工具。只把缓存 / 临时文件 /
     说明.txt 排除在外（说明.txt 是工具箱第一次打开界面时自己写的那份，包里的永远是最新的）。
 
+    **发布包里不该有的东西（用户 2026-10-27 报 v1.6.1 包混进 tests/ 与 tools\Test-*.ps1）：**
+      tests\ 整棵不进包；tools\ 排除 Test-*.ps1 / Sync-Skill.ps1 / Make-Package.ps1。
+      这些是开发者脚本，普通用户下载发布包用不到。
+
     参数:
       -Root      工具箱根目录（默认：本脚本的上一层）
       -StageDir  暂存目录（默认 bin\Mxx1Toolbox-package；测试传临时目录进来）
@@ -103,8 +107,10 @@ try {
     }
     Add-PackTree (Join-Path $Root 'src')    'src'    '源码'
     Add-PackTree (Join-Path $Root 'assets') 'assets' '图标清单'
-    Add-PackTree (Join-Path $Root 'tools')  'tools'  '工具脚本'
-    Add-PackTree (Join-Path $Root 'tests')  'tests'  '测试'
+    # tools：只带运行时与构建要用的脚本，测试 / 体检 / 同步 / 打包器自己不进发布包
+    Add-PackTree (Join-Path $Root 'tools')  'tools'  '工具脚本' `
+        -SkipNames @('Test-Encoding.ps1', 'Test-InlineSyntax.ps1', 'Test-Quick.ps1', 'Sync-Skill.ps1', 'Make-Package.ps1')
+    # tests：测试脚本只给开发者用，不进发布包（2026-10-27 用户报 v1.6.1 包混进 tests/ 与 Test-*.ps1）
     Add-PackTree (Join-Path $Root 'docs')   'docs'   '文档'
 
     # ---- bin-tools\：用户自己放进去的工具，整个目录跟着走 -----------------------------

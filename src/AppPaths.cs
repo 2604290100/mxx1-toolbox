@@ -27,7 +27,7 @@ namespace Mxx1Toolbox
         /// <summary>同一套机制，记的是「常用设置」里那批写注册表的系统设置（任务栏合并方式 /
         /// 开始菜单对齐 / 驱动自动安装 / 内核隔离 / 资源管理器与右键菜单的 CLSID 覆盖）。
         /// `MXX1_SYSREG_TSV` 可以把这份记录挪走（界面回归点「修复桌面图标黑块」时用：
-        /// 那两颗按钮真写注册表，记录文件也得跟着隔离，别混进用户真实的原值记录里）。</summary>
+        /// 那两个按钮真写注册表，记录文件也得跟着隔离，别混进用户真实的原值记录里）。</summary>
         public static string SysRegBackupFile
         {
             get

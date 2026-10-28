@@ -51,7 +51,7 @@ function Get-Shape {
         @('startup-manage',  'refresh'),
         @('usb-eject',       'disk'),
         @('net-check',       'globe'),
-        # 2026-10-22 补的四颗（豆包缺口清单 GAP-01/06/07/08）：显示设置 = 显示器、
+        # 2026-10-22 补的四个（豆包缺口清单 GAP-01/06/07/08）：显示设置 = 显示器、
         # 输入法打不出字 = 钥匙（和账户 / 激活同画法，都是"某个开关拧不动了"）、
         # 蓝屏解读 = 信息（只读、只解释）。
         # ⚠ 必须排在下面对 `@('desktop','monitor')` 等泛匹配之前。
@@ -63,8 +63,13 @@ function Get-Shape {
         @('assoc-fix',        'linkbreak'),
         # 2026-10-26「此电脑多余图标」：电脑（显示器 + 底座 + 屏幕里的设备方块）——
         # 治的是「此电脑 → 设备和驱动器」里被软件塞的挂载点图标（百度网盘这类），
-        # 和「显示设置」那颗纯显示器的 monitor 分得开。
+        # 和「显示设置」那个纯显示器的 monitor 分得开。
         @('pc-icons',         'pc'),
+        # 2026-10-27「开始菜单程序管理」：一个窗口里排着几行条目（开始菜单「所有应用」列表）
+        # —— 治的是列表里没用的快捷方式；「程序和功能管理」：同样的列表，多一条贯穿的斜线
+        # （把条目从列表里藏掉 / 删掉的意思），两个都带「管理列表」这层含义。
+        @('startmenu-manage', 'list-window'),
+        @('uninstall-manage', 'list-del'),
         # 「右键增强」页签那 7 个按钮（v1.5.0）：装上 = 加号、撤掉 = 减号、
         # 解除占用 = 钥匙（解锁）、常用功能 = 清单、重建 = 刷新、说明 = 文档
         @('rightmenu.unlock.on',  'key'),
@@ -279,6 +284,23 @@ function Draw-Shape {
             $G.DrawLine($Pen, 3.5, 6.8, 12.5, 6.8)
             $G.FillRectangle($Brush, 4.6, 5.4, 1.4, 1)
             $G.DrawLine($Pen, 5.5, 9, 10.5, 9)
+        }
+        'list-window' {
+            # 开始菜单程序管理：一个窗口（带标题条）里排着几行条目 —— "把列表里的东西整理一下"
+            $G.DrawRectangle($Pen, 3.5, 3.5, 9, 9)
+            $G.DrawLine($Pen, 3.5, 6, 12.5, 6)
+            $G.DrawLine($Pen, 5.5, 8, 11.5, 8)
+            $G.DrawLine($Pen, 5.5, 10, 11.5, 10)
+            $G.FillRectangle($Brush, 4.6, 4.4, 1.4, 1)
+        }
+        'list-del' {
+            # 程序和功能管理：同样的列表窗口，中间一条贯穿的斜线 = "把这一条从列表里藏掉 / 删掉"
+            $G.DrawRectangle($Pen, 3.5, 3.5, 9, 9)
+            $G.DrawLine($Pen, 3.5, 6, 12.5, 6)
+            $G.DrawLine($Pen, 5.5, 8, 11.5, 8)
+            $G.DrawLine($Pen, 5.5, 10, 11.5, 10)
+            $G.FillRectangle($Brush, 4.6, 4.4, 1.4, 1)
+            $G.DrawLine($Pen, 4.5, 11.5, 11.5, 4.5)
         }
         'folder' {
             $pts = @(

@@ -9,14 +9,14 @@ using Microsoft.Win32;
 
 namespace Mxx1Toolbox
 {
-    /// <summary>「此电脑 → 设备和驱动器」里的一颗**非磁盘**图标（2026-10-26 用户报：装完百度网盘，
-    /// 「此电脑」里多了一颗「双击运行百度网盘」的图标）。
+    /// <summary>「此电脑 → 设备和驱动器」里的一个**非磁盘**图标（2026-10-26 用户报：装完百度网盘，
+    /// 「此电脑」里多了一个「双击运行百度网盘」的图标）。
     ///
     /// 量出来的机制：这类图标不是磁盘，是软件安装时往注册表里写的**挂载点** ——
     /// `HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\MyComputer\NameSpace\{GUID}`
     /// （每用户）和 `HKLM\SOFTWARE\…\Explorer\MyComputer\NameSpace\{GUID}`（这台机器所有用户）。
     /// 资源管理器打开「此电脑」时枚举这两个键，每个 GUID 去 CLSID 键里读显示名（默认值）、
-    /// 图标（DefaultIcon）和双击命令（Shell\Open\Command），于是「设备和驱动器」里就多出一颗。
+    /// 图标（DefaultIcon）和双击命令（Shell\Open\Command），于是「设备和驱动器」里就多出一个。
     /// 本机实测：百度网盘 = `{679F137C-3162-45da-BE3C-2F9C3D093F64}`，HKCU 和 HKLM 两处都有。
     ///
     /// 所以「移除」= 只删 NameSpace 里的那个挂载子键（HKCU + HKLM 同名 GUID 两处一起删），
@@ -74,7 +74,7 @@ namespace Mxx1Toolbox
         }
     }
 
-    /// <summary>「此电脑多余图标」的后端。见上面 PcIconItem 的注释（2026-10-26 用户报的那颗
+    /// <summary>「此电脑多余图标」的后端。见上面 PcIconItem 的注释（2026-10-26 用户报的那个
     /// 「百度网盘」图标就是从这两个挂载点来的）。</summary>
     internal static class PcIcons
     {
@@ -212,7 +212,7 @@ namespace Mxx1Toolbox
 
         // ------------------------------------------------------------------ 扫描
 
-        /// <summary>只读扫一遍两处 NameSpace，把每一颗挂载点解析成一行报告。
+        /// <summary>只读扫一遍两处 NameSpace，把每一个挂载点解析成一行报告。
         /// CLSID 的显示名 / 图标 / 双击命令**永远从真实注册表读**（只读、无害），隔离根只管 NameSpace。</summary>
         public static List<PcIconItem> Scan()
         {
@@ -324,7 +324,7 @@ namespace Mxx1Toolbox
             {
                 rep.Ok = true;
                 rep.Message = "没有需要移除的第三方图标";
-                rep.Lines.Insert(0, "扫描根：" + RootText() + "（系统条目只报告，一颗都不会动）");
+                rep.Lines.Insert(0, "扫描根：" + RootText() + "（系统条目只报告，一个都不会动）");
                 return rep;
             }
 
@@ -385,8 +385,8 @@ namespace Mxx1Toolbox
             }
             rep.Ok = (rep.Failed == 0);
             rep.Message = (rep.Failed == 0)
-                ? ("移除了 " + rep.Changed + " 颗（跳过 " + rep.Skipped + " 颗）")
-                : ("移除 " + rep.Changed + " 颗，" + rep.Failed + " 颗没成");
+                ? ("移除了 " + rep.Changed + " 个（跳过 " + rep.Skipped + " 个）")
+                : ("移除 " + rep.Changed + " 个，" + rep.Failed + " 个没成");
             rep.Lines.Add("");
             rep.Lines.Add("汇总：" + rep.Message + "。原值记在 " + path + "，点「还原成移除前」可以原样放回去。");
             rep.Lines.Add("只删了「此电脑」里的挂载点，软件本身没动；软件重启 / 重装可能把图标写回来（去软件设置里关）。");
@@ -474,7 +474,7 @@ namespace Mxx1Toolbox
 
         // ------------------------------------------------------------------ 还原
 
-        /// <summary>按记录把挂载子键重建回去（来源写哪层就建哪层）：原值记的是「这颗当时挂在
+        /// <summary>按记录把挂载子键重建回去（来源写哪层就建哪层）：原值记的是「这个当时挂在
         /// both / HKCU / HKLM」，还原就照着建。现在这个键已经在（软件重装加回来了）→ 跳过并说明。</summary>
         public static PcIconsReport Restore()
         {
@@ -561,15 +561,15 @@ namespace Mxx1Toolbox
 
             rep.Ok = (rep.Skipped == 0);
             rep.Message = (rep.Skipped == 0)
-                ? ("还原了 " + rep.Changed + " 颗，记录已清空")
-                : ("还原了 " + rep.Changed + " 颗，" + rep.Skipped + " 颗没放回（原因在每一行后面）");
+                ? ("还原了 " + rep.Changed + " 个，记录已清空")
+                : ("还原了 " + rep.Changed + " 个，" + rep.Skipped + " 个没放回（原因在每一行后面）");
             rep.Lines.Add("");
             rep.Lines.Add("汇总：" + rep.Message);
             LastError = rep.Ok ? "" : rep.Message;
             return rep;
         }
 
-        /// <summary>还原一颗：原来挂在哪层就重建哪层的挂载子键（带当时的(默认)值），读回核对在。
+        /// <summary>还原一个：原来挂在哪层就重建哪层的挂载子键（带当时的(默认)值），读回核对在。
         /// 现在这个键已经在 → 跳过（软件可能重装加回来了，别覆盖它）。</summary>
         private static bool RestoreOne(string guid, string source, string hkcuFull, string hklmFull,
             string defaultValue, out string note)
@@ -685,12 +685,12 @@ namespace Mxx1Toolbox
 
             sb.AppendLine();
             int pending = PendingRecords();
-            sb.AppendLine("汇总：共 " + items.Count + " 颗 —— 系统 " + sys + " 颗（不动）、第三方 " + third + " 颗、"
-                + "来历不明 " + unknown + " 颗"
+            sb.AppendLine("汇总：共 " + items.Count + " 个 —— 系统 " + sys + " 个（不动）、第三方 " + third + " 个、"
+                + "来历不明 " + unknown + " 个"
                 + (pending > 0 ? ("；有 " + pending + " 条移除记录还没还原") : "；没有待还原的记录"));
             if (third + unknown > 0)
             {
-                sb.AppendLine("结论：有 " + (third + unknown) + " 颗第三方 / 来历不明的图标，点「移除全部第三方图标…」"
+                sb.AppendLine("结论：有 " + (third + unknown) + " 个第三方 / 来历不明的图标，点「移除全部第三方图标…」"
                     + "把它们从「此电脑」里清掉（只删挂载点、不删软件；删前记原值、随时能还原）。");
             }
             else

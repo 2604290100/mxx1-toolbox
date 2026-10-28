@@ -256,7 +256,7 @@ namespace Mxx1Toolbox
             _root.Controls.Add(_searchRow, 0, 1);
             _tips.SetToolTip(_hint, "静态菜单项是每次右键现场拼的（2026-10-09 用只读探针在五个位置实测过），"
                 + "改完再点一次右键就是新的；DLL 扩展项是资源管理器启动时加载进去的，"
-                + "所以停用 / 恢复扩展项之后工具箱会自动重启一次资源管理器（不用自己去找那颗按钮）。");
+                + "所以停用 / 恢复扩展项之后工具箱会自动重启一次资源管理器（不用自己去找那个按钮）。");
         }
 
         private void AddFilter(FlowLayoutPanel host, string id, string text)
@@ -391,9 +391,9 @@ namespace Mxx1Toolbox
 
             // 「重启资源管理器」：扩展项的停用 / 恢复**必须重启资源管理器才生效**（DLL 是 explorer
             // 启动时加载进去的），所以这件事得有个一步就能点的地方 —— 不然用户改完看不到变化，
-            // 只会以为"这功能没用"。命令走工具箱自己那颗按钮（见 DoRestartExplorer 的说明）。
+            // 只会以为"这功能没用"。命令走工具箱自己那个按钮（见 DoRestartExplorer 的说明）。
             _restartBtn = MakeBarButton("重启资源管理器", "让扩展项的停用 / 恢复立刻生效：会关掉所有已打开的文件夹窗口、"
-                + "任务栏闪一下（有确认框）；跑的就是「常用设置」页那颗按钮");
+                + "任务栏闪一下（有确认框）；跑的就是「常用设置」页那个按钮");
             _restartBtn.Click += delegate { DoRestartExplorer(); };
             right.Controls.Add(_restartBtn);
 
@@ -1019,7 +1019,7 @@ namespace Mxx1Toolbox
             LoadRows();
             // 扩展项的停用 / 恢复是写系统黑名单，**DLL 是 explorer 启动时加载的** —— 不重启就看不到变化。
             // 用户 2026-10-20 的要求：「需要重启资源管理器的功能，要自动调用」→ 这里直接重启，
-            // 不再让人自己去点底栏那颗按钮（那颗按钮还在，留给"我就是想重启一下"的场合）。
+            // 不再让人自己去点底栏那个按钮（那个按钮还在，留给"我就是想重启一下"的场合）。
             string tail = "";
             if (exts.Count > 0 && done > 0)
             {
@@ -1172,12 +1172,12 @@ namespace Mxx1Toolbox
         /// （DLL 是 explorer 启动时加载进去的，不重启看不到变化）。
         ///
         /// 三条（2026-10-11 定的）：
-        /// ① 命令**只有一个来源** —— 工具箱「常用设置」页那颗「重启资源管理器」按钮
+        /// ① 命令**只有一个来源** —— 工具箱「常用设置」页那个「重启资源管理器」按钮
         ///    （`tools\common.json` 里的 `restart-explorer`）。这里照 id 把那个 `ToolItem` 找出来、
         ///    走 `Launcher.Run` 跑它，**绝不在这里重抄一遍 `taskkill /f /im explorer.exe`**
         ///    （抄一份就有两处要维护，以后改一处忘一处）。
         /// ② 会**关掉所有已经打开的文件夹窗口**、任务栏闪一下，所以先过一次确认框
-        ///    （那颗按钮自己也是 `confirm: true`）；确认框里把命令原样写出来给用户看。
+        ///    （那个按钮自己也是 `confirm: true`）；确认框里把命令原样写出来给用户看。
         /// ③ `MXX1_NO_EXPLORER_RESTART=1` 时**只写日志、不真做** —— 回归测试点它的时候绝不许
         ///    把用户（或测试机）的 explorer 杀掉。</summary>
         private void DoRestartExplorer()
@@ -1186,7 +1186,7 @@ namespace Mxx1Toolbox
             ToolItem t = FindToolById("restart-explorer");
             if (t == null)
             {
-                Flash("工具清单里找不到「重启资源管理器」那颗按钮（tools\\common.json 被改过？）");
+                Flash("工具清单里找不到「重启资源管理器」那个按钮（tools\\common.json 被改过？）");
                 return;
             }
             if (!Consent.EnsureAccepted(this, _theme, "右键菜单管理：重启资源管理器"))
@@ -1204,7 +1204,7 @@ namespace Mxx1Toolbox
             body.AppendLine("· 任务栏和桌面会闪一下 —— 所有已经打开的文件夹窗口会一起关掉（没保存的先存一下）；");
             body.AppendLine("· 托盘图标、任务栏上固定的按钮会重新出现。");
             body.AppendLine();
-            body.AppendLine("跑的就是工具箱「常用设置」页那颗按钮，命令原样是：");
+            body.AppendLine("跑的就是工具箱「常用设置」页那个按钮，命令原样是：");
             body.Append("  ").AppendLine(cmd);
             bool go;
             using (ConfirmForm f = new ConfirmForm("要重启资源管理器吗？", body.ToString(), "重启资源管理器", _theme))
@@ -1221,7 +1221,7 @@ namespace Mxx1Toolbox
             Flash("已经重启资源管理器 —— 现在再点一次右键看看（扩展项的停用 / 恢复这下才生效）");
         }
 
-        /// <summary>按 id 从工具清单里找那一颗按钮（找不到返回 null）。</summary>
+        /// <summary>按 id 从工具清单里找那一个按钮（找不到返回 null）。</summary>
         private static ToolItem FindToolById(string id)
         {
             try

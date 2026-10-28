@@ -799,7 +799,7 @@ function Start-Manager {
 # 找一个本进程里的顶层窗口（按标题前缀）。I 组用它找《使用条款确认》。
 # ⚠️ **必须排掉鼠标提示条**（`tooltips_class32`，阴影是 `SysShadow`）：按钮的悬停提示
 #    文字是「按钮名 / 说明…」，同样以按钮名为前缀，而且它是个**没有子窗口**的顶层窗口 ——
-#    鼠标恰好停在某颗按钮上时，找出来的"窗口"就是那条提示，于是"窗口里没有按钮 / 没有下拉框 /
+#    鼠标恰好停在某个按钮上时，找出来的"窗口"就是那条提示，于是"窗口里没有按钮 / 没有下拉框 /
 #    找不到说明"一起假红（2026-10-24 全套实测：H08b/H08c/H09 三条同时红，单跑 H 组却全绿）。
 function Find-TopWindow {
     param([int]$ProcessId, [string]$TextPrefix)
@@ -3296,7 +3296,7 @@ try {
             Check 'H03 换到只有 1 个按钮的页签，窗口尺寸一动不动' $false '切不到「右键增强」'
         }
 
-        # ---- H08/H08b/H08c/H09：「合盖与电源键动作」窗口（这一页那颗按钮）------------------
+        # ---- H08/H08b/H08c/H09：「合盖与电源键动作」窗口（这一页那个按钮）------------------
         # 用户 2026-10-19 报的第二个真 bug：「我看这个按钮打开的窗口没有做好。鼠标移上去一直转圈圈。」
         # 根因：窗口构造函数先 SetBusyUi(true)（把 _busy 打开），而 Load 里那句 RefreshState() 开头
         # 就是 `if (_busy) { return; }` —— 第一次读状态被自己挡掉，于是光标永远停在 WaitCursor、
@@ -3439,7 +3439,7 @@ try {
             }
 
             # H07：**渲染结果**才是用户看到的东西（用户 2026-10-19 报的就是这个）。
-            # 他报的那颗按钮（桌面模式）当时的真机像素：文字在上(8..18)、图标被翻到下面(14..28)，
+            # 他报的那个按钮（桌面模式）当时的真机像素：文字在上(8..18)、图标被翻到下面(14..28)，
             # 图标中心偏了 6.5px —— 而**窗口文字一直是全名**，所以 H04/H05 那两天全绿、
             # 界面上却是坏的。判据（拿修之前留下的真机截图 desk-broken-back1x.png 校验过）：
             #   ① 图标上下居中（中心误差 <= 3px：正常 0.5，坏的样子 6.5）；
@@ -3447,21 +3447,21 @@ try {
             $deskBtn = @(Get-ChildControls -RootHandle $h2 | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '桌面模式·合盖不睡' })
             $shotH = Get-WindowShot -Handle $h2
             if ($deskBtn.Count -eq 0 -or $shotH -eq $null) {
-                Check 'H07 桌面模式那颗按钮的图标还在文字左边、上下居中（渲染结果）' $false `
+                Check 'H07 桌面模式那个按钮的图标还在文字左边、上下居中（渲染结果）' $false `
                     ('没找到按钮（' + $deskBtn.Count + ' 个）或窗口截图失败')
             } else {
                 $db = @{ X = $deskBtn[0].Left - $shotH.Left; Y = $deskBtn[0].Top - $shotH.Top
                          W = $deskBtn[0].Width; H = $deskBtn[0].Height }
                 $inkH = Get-InkRows -Shot $shotH -Icon -X $db.X -Y $db.Y -W $db.W -H $db.H
                 if ($inkH.IconTop -lt 0 -or $inkH.LabelTop -lt 0) {
-                    Skip 'H07 桌面模式那颗按钮的图标还在文字左边、上下居中（渲染结果）' `
-                        '这颗按钮没在该页可视区里（被滚出去了），抓不到它的像素'
+                    Skip 'H07 桌面模式那个按钮的图标还在文字左边、上下居中（渲染结果）' `
+                        '这个按钮没在该页可视区里（被滚出去了），抓不到它的像素'
                 } else {
                     $iconCY = ($inkH.IconTop + $inkH.IconBottom) / 2.0
                     $btnCY = ($db.H - 1) / 2.0
                     $dyIcon = [Math]::Abs($iconCY - $btnCY)
                     $textInside = ($inkH.LabelTop -gt $inkH.IconTop) -and ($inkH.LabelBottom -lt $inkH.IconBottom)
-                    Check 'H07 桌面模式那颗按钮的图标还在文字左边、上下居中（渲染结果）' `
+                    Check 'H07 桌面模式那个按钮的图标还在文字左边、上下居中（渲染结果）' `
                         ($textInside -and ($dyIcon -le 3.0)) `
                         ('图标行=' + $inkH.IconTop + '..' + $inkH.IconBottom + ' 文字行=' + $inkH.LabelTop + '..' + $inkH.LabelBottom +
                          ' 上下误差=' + $dyIcon.ToString('0.0') + 'px 文字在图标行内=' + $textInside + ' 按钮=' + $db.W + 'x' + $db.H)
@@ -3473,7 +3473,7 @@ try {
             Check 'H04 新增一个名字超长的按钮，窗口宽度不变（宽度固定，不跟着内容长）' $false '重启后界面没起来'
             Check 'H05 名字太长的按钮不会把别人挤出去（这一页按钮数还对）' $false 'skipped'
             Check 'H06 名字塞不下的按钮缩成「前几个字…」（全名留给工具提示）' $false 'skipped'
-            Check 'H07 桌面模式那颗按钮的图标还在文字左边、上下居中（渲染结果）' $false 'skipped'
+            Check 'H07 桌面模式那个按钮的图标还在文字左边、上下居中（渲染结果）' $false 'skipped'
         }
         Remove-Item -LiteralPath $UserToolsJson -Force -ErrorAction SilentlyContinue
         $script:InjectedPh = $false
@@ -3483,7 +3483,7 @@ try {
         Check 'H04 新增一个名字超长的按钮，窗口宽度不变（宽度固定，不跟着内容长）' $false 'skipped'
         Check 'H05 名字太长的按钮不会把别人挤出去（这一页按钮数还对）' $false 'skipped'
         Check 'H06 名字塞不下的按钮缩成「前几个字…」（全名留给工具提示）' $false 'skipped'
-        Check 'H07 桌面模式那颗按钮的图标还在文字左边、上下居中（渲染结果）' $false 'skipped'
+        Check 'H07 桌面模式那个按钮的图标还在文字左边、上下居中（渲染结果）' $false 'skipped'
     }
 } catch {
     Write-Host ('  H 组出错: ' + $_.Exception.Message)
@@ -3566,8 +3566,8 @@ $jDsEnv['MXX1_SHELLICONS_ROOT'] = 'Software\mxx1-toolbox\shellicons-gui'
 $jDsEnv['MXX1_SYSREG_TSV'] = $jIbTsv
 # 「此电脑多余图标」（2026-10-26）也给它一对**隔离根**：`MXX1_PCICONS_HKCU` + `MXX1_PCICONS_HKLM`
 # 一设，扫描 / 移除 / 还原全部跑在这两个 HKCU 测试键上（用户真实的 NameSpace 一个字节都不碰）。
-# 夹具做成"用户那台机器的样子"：一颗第三方图标 {11111111-…} 两层都有（模拟百度网盘），
-# 一颗系统名单里的 {088e3905-…}（永远不动）。
+# 夹具做成"用户那台机器的样子"：一个第三方图标 {11111111-…} 两层都有（模拟百度网盘），
+# 一个系统名单里的 {088e3905-…}（永远不动）。
 $jPcRootPsU = 'HKCU:\Software\mxx1-toolbox\pcicons-gui-u'
 $jPcRootPsM = 'HKCU:\Software\mxx1-toolbox\pcicons-gui-m'
 try { if (Test-Path -LiteralPath $jPcRootPsU) { Remove-Item -LiteralPath $jPcRootPsU -Recurse -Force } } catch { }
@@ -3580,6 +3580,53 @@ try { if (Test-Path -LiteralPath $jPcTsv) { Remove-Item -LiteralPath $jPcTsv -Fo
 $jDsEnv['MXX1_PCICONS_HKCU'] = 'HKCU\Software\mxx1-toolbox\pcicons-gui-u'
 $jDsEnv['MXX1_PCICONS_HKLM'] = 'HKCU\Software\mxx1-toolbox\pcicons-gui-m'
 $jDsEnv['MXX1_PCICONS_TSV'] = $jPcTsv
+# 「开始菜单程序管理」（2026-10-27）：给它三个隔离目录 + 记录文件（MXX1_STARTMENU_SYS / USER /
+# HIDDEN / TSV 一设，扫描 / 隐藏 / 还原 / 删除全在这三个测试目录里跑，用户真实的开始菜单一个字节
+# 都不碰）。夹具做成"用户那台机器的样子"：系统级 Accessories\Notepad.lnk（系统标注，只列不动，
+# 放系统级目录 → 按钮带「（要管理员）」不会误选）+ 用户级 测试\演示用.lnk（要隐藏的目标）。
+$jSmSys = Join-Path $tmpRoot ('mxx1-sm-sys-' + $PID)
+$jSmUser = Join-Path $tmpRoot ('mxx1-sm-user-' + $PID)
+$jSmHidden = Join-Path $tmpRoot ('mxx1-sm-hidden-' + $PID)
+$jSmTsv = Join-Path $tmpRoot ('mxx1-sm-gui-' + $PID + '.tsv')
+foreach ($p in @($jSmSys, $jSmUser, $jSmHidden)) { try { if (Test-Path -LiteralPath $p) { Remove-Item -LiteralPath $p -Recurse -Force } } catch { } }
+try { if (Test-Path -LiteralPath $jSmTsv) { Remove-Item -LiteralPath $jSmTsv -Force } } catch { }
+[void](New-Item -ItemType Directory -Path (Join-Path $jSmSys 'Accessories') -Force)
+[void](New-Item -ItemType Directory -Path (Join-Path $jSmUser '测试') -Force)
+[System.IO.File]::WriteAllText((Join-Path $jSmSys 'Accessories\Notepad.lnk'), 'x')
+[System.IO.File]::WriteAllText((Join-Path $jSmUser '测试\演示用.lnk'), 'x')
+$jDsEnv['MXX1_STARTMENU_SYS'] = $jSmSys
+$jDsEnv['MXX1_STARTMENU_USER'] = $jSmUser
+$jDsEnv['MXX1_STARTMENU_HIDDEN'] = $jSmHidden
+$jDsEnv['MXX1_STARTMENU_TSV'] = $jSmTsv
+# 「程序和功能管理」（2026-10-27）：给它三个隔离根 + 记录文件 + 备份目录（MXX1_UNINST_* 一设，
+# 扫描 / 隐藏 / 锁定 / 删除条目 / 还原全在这几个 HKCU 测试键上跑，用户真实的 Uninstall 一个字节
+# 都不碰，HKLM 也不需要管理员）。夹具：64 根 {TEST-GUID-64}、32 根 Weixin（HKLM 条目）、
+# CU 根 DoubaoTest（SystemComponent=1，系统组件只列不动）+ GuiApp（HKCU 非系统，要隐藏的目标）。
+$jUn64Ps = 'HKCU:\Software\mxx1-toolbox\uninst-gui-64'
+$jUn32Ps = 'HKCU:\Software\mxx1-toolbox\uninst-gui-32'
+$jUnCuPs = 'HKCU:\Software\mxx1-toolbox\uninst-gui-cu'
+foreach ($r in @($jUn64Ps, $jUn32Ps, $jUnCuPs)) { try { if (Test-Path -LiteralPath $r) { Remove-Item -LiteralPath $r -Recurse -Force } } catch { } }
+[void](New-Item -Path ($jUn64Ps + '\{TEST-GUID-64}') -Force)
+Set-ItemProperty -Path ($jUn64Ps + '\{TEST-GUID-64}') -Name DisplayName -Value '测试程序64'
+[void](New-Item -Path ($jUn32Ps + '\Weixin') -Force)
+Set-ItemProperty -Path ($jUn32Ps + '\Weixin') -Name DisplayName -Value '测试程序32'
+[void](New-Item -Path ($jUnCuPs + '\DoubaoTest') -Force)
+Set-ItemProperty -Path ($jUnCuPs + '\DoubaoTest') -Name DisplayName -Value '测试程序CU'
+Set-ItemProperty -Path ($jUnCuPs + '\DoubaoTest') -Name SystemComponent -Value 1
+[void](New-Item -Path ($jUnCuPs + '\GuiApp') -Force)
+Set-ItemProperty -Path ($jUnCuPs + '\GuiApp') -Name DisplayName -Value '测试程序GUI'
+$jUnTsv = Join-Path $tmpRoot ('mxx1-uninst-gui-' + $PID + '.tsv')
+$jUnDelTsv = Join-Path $tmpRoot ('mxx1-undel-gui-' + $PID + '.tsv')
+$jUnBackup = Join-Path $tmpRoot ('mxx1-unbackup-gui-' + $PID)
+try { if (Test-Path -LiteralPath $jUnTsv) { Remove-Item -LiteralPath $jUnTsv -Force } } catch { }
+try { if (Test-Path -LiteralPath $jUnDelTsv) { Remove-Item -LiteralPath $jUnDelTsv -Force } } catch { }
+try { if (Test-Path -LiteralPath $jUnBackup) { Remove-Item -LiteralPath $jUnBackup -Recurse -Force } } catch { }
+$jDsEnv['MXX1_UNINST_HKLM64'] = 'HKCU\Software\mxx1-toolbox\uninst-gui-64'
+$jDsEnv['MXX1_UNINST_HKLM32'] = 'HKCU\Software\mxx1-toolbox\uninst-gui-32'
+$jDsEnv['MXX1_UNINST_HKCU'] = 'HKCU\Software\mxx1-toolbox\uninst-gui-cu'
+$jDsEnv['MXX1_UNINST_TSV'] = $jUnTsv
+$jDsEnv['MXX1_UNINST_DELTSV'] = $jUnDelTsv
+$jDsEnv['MXX1_UNINST_BACKUP'] = $jUnBackup
 # 「去掉小箭头」现在写的是**系统自带的空白图标 imageres.dll,197**（2026-10-26 实机钉死：
 # 这台 Win10 只认 dll 资源索引、不认裸 .ico 文件路径，之前试过的自生成透明 ico / shell32.dll,-50
 # 真机全是黑块）—— 所以 J 组不需要再生成 / 验证任何图标文件，J27c / J29b 只验注册表里
@@ -3634,7 +3681,7 @@ foreach ($nm in @('无效快捷方式清理', '空文件夹清理', '重复文�
     $hit = @($cleanJ | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq $nm })
     if (($hit.Count -ne 1) -or (-not $hit[0].Enabled)) { $cleanBtnJ += $nm }
 }
-Check 'J01 清理优化页四颗新按钮都在、都可点' ($cleanTabJ -and ($cleanBtnJ.Count -eq 0)) ('缺/灰=' + ($cleanBtnJ -join ' | '))
+Check 'J01 清理优化页四个新按钮都在、都可点' ($cleanTabJ -and ($cleanBtnJ.Count -eq 0)) ('缺/灰=' + ($cleanBtnJ -join ' | '))
 
 # ---- H1 无效快捷方式清理 ------------------------------------------------------------------
 $w1 = Open-JWindow '无效快捷方式清理' '无效快捷方式清理'
@@ -3727,7 +3774,7 @@ foreach ($nm in @('端口与进程', '屏幕取色器')) {
     $hit = @($sysJ | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq $nm })
     if (($hit.Count -ne 1) -or (-not $hit[0].Enabled)) { $sysBtnJ += $nm }
 }
-Check 'J11 系统工具页两颗新按钮都在、都可点' ($sysTabJ -and ($sysBtnJ.Count -eq 0)) ('缺/灰=' + ($sysBtnJ -join ' | '))
+Check 'J11 系统工具页两个新按钮都在、都可点' ($sysTabJ -and ($sysBtnJ.Count -eq 0)) ('缺/灰=' + ($sysBtnJ -join ' | '))
 
 # ---- H4 端口与进程（只读列出）-------------------------------------------------------------
 $w4 = Open-JWindow '端口与进程' '端口与进程'
@@ -3864,7 +3911,7 @@ if ($w9 -eq $null) {
 # ---- 「启动项管理」窗口（豆包缺口清单 GAP-05）------------------------------------------------
 # 只看不勾：窗口里的根也被隔离到夹具（MXX1_STARTUP_ROOT / _FOLDER），所以状态行能断言到"一共 3 项"。
 # 「禁用勾选的」「恢复选中的」在没勾 / 没选中已禁用项时必须是灰的 —— 这一版不给"一键全禁"。
-# ⚠️ 这颗按钮在「应用管理」页签上，先把页签切过去再点（Open-JWindow 只在当前页签里找按钮）。
+# ⚠️ 这个按钮在「应用管理」页签上，先把页签切过去再点（Open-JWindow 只在当前页签里找按钮）。
 [void](Switch-Tab -Handle $main -TabName '应用管理' -ExpectNames @('启动项管理'))
 $w10 = Open-JWindow '启动项管理' '启动项管理'
 Check 'J13h 点「启动项管理」能开窗口' ($w10 -ne $null) ''
@@ -3949,7 +3996,7 @@ if ($w11 -eq $null) {
 
 # ---- H3 屏幕取色器（全屏遮罩 + Esc 退出）---------------------------------------------------
 # 它没有标题（FormBorderStyle.None），所以按"有没有一个盖住虚拟屏幕的顶层窗口"找。
-# ⚠️ 上面刚把页签切到「应用管理」，这颗按钮在「系统工具」页签上 —— 先切回来。
+# ⚠️ 上面刚把页签切到「应用管理」，这个按钮在「系统工具」页签上 —— 先切回来。
 [void](Switch-Tab -Handle $main -TabName '系统工具' -ExpectNames @('屏幕取色器'))
 $pickBtn = @((Get-ChildControls -RootHandle $main) | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '屏幕取色器' })
 $pick = $null
@@ -4027,7 +4074,7 @@ for ($tj = 0; $tj -lt 3; $tj++) {
     #    `Remove-Item $UserToolsJson`），而 H 组跑完就把那个注入文件删了 ——
     #    于是 J 这边永远等不到「占位自检」，Switch-Tab 恒为 False，**按钮其实一直都在**
     #    （2026-10-24 全套实测：页上按钮=70 缺=占位自检，这是测试自己的账，不是产品的）。
-    #    这条检查真正要问的是"常用设置页上有没有这颗按钮、能不能点"，那就直接等它。
+    #    这条检查真正要问的是"常用设置页上有没有这个按钮、能不能点"，那就直接等它。
     $tmTabJ = Switch-Tab -Handle $main -TabName '常用设置' -ExpectNames @('定时关机 / 重启 / 睡眠')
     $tmBtn = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '定时关机 / 重启 / 睡眠' })
     if ($tmTabJ -and $tmBtn.Count -eq 1) { break }
@@ -4068,7 +4115,7 @@ if ($null -eq $tmWin) {
 
     $tmStart0 = @($tmKids | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '开始计时' })
     $tmMod0 = @($tmKids | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '改一下' })
-    Check 'J18b 没有定时任务时那颗按钮是「开始计时」，不会冒出「改一下」' `
+    Check 'J18b 没有定时任务时那个按钮是「开始计时」，不会冒出「改一下」' `
         (($tmStart0.Count -eq 1) -and ($tmMod0.Count -eq 0)) `
         ('开始=' + $tmStart0.Count + ' 改一下=' + $tmMod0.Count)
 
@@ -4116,7 +4163,7 @@ if ($null -eq $tmWin) {
         ('记录=' + (($tmRec -split "`r?`n" | Where-Object { $_ -like 'action=*' -or $_ -like 'mode=*' }) -join ' ') +
          ' 状态行=[' + $tmStatus2 + '] 取消=' + $(if ($tmCancel2.Count -eq 1) { $tmCancel2[0].Enabled } else { '没找到' }))
 
-    # ---- 「改一下」（2026-10-24 P-7）：已经定好一条时，那颗按钮变成「改一下」-------------------
+    # ---- 「改一下」（2026-10-24 P-7）：已经定好一条时，那个按钮变成「改一下」-------------------
     # 用户原话：「定时关机加个『改一下』」—— 以前想换时间 / 换动作只能先「取消定时」再定一遍。
     # 这里真点两下：第一下只是把现在这条填回上面（一个字节都不写），第二下才弹确认框、真的改。
     $tmAtBefore = ''
@@ -4279,7 +4326,7 @@ $wAs = Open-JWindow '文件关联体检' '文件关联体检'
 Check 'J23 点「文件关联体检」能开窗口（系统工具页 · 修复与诊断段）' ($wAs -ne $null) ''
 if ($wAs -eq $null) {
     Check 'J23b 窗口不卡、报告里有完整体检（隔离根 + 24 项 + 汇总；不是空框 / 死窗口）' $false '窗口没开出来'
-    Check 'J23c 还没修复时「还原成修复前」是灰的，另外四颗按钮可点' $false '窗口没开出来'
+    Check 'J23c 还没修复时「还原成修复前」是灰的，另外四个按钮可点' $false '窗口没开出来'
     Check 'J24 真点「修复缺失项…」→ 确认框 → 报告出「修复结果」、隔离根里 lnkfile\IsShortcut 真被补上' $false '窗口没开出来'
     Check 'J25 真点「还原成修复前」→ 报告出「还原结果」、那个值被删掉、记录清空' $false '窗口没开出来'
 } else {
@@ -4308,7 +4355,7 @@ if ($wAs -eq $null) {
         $hit = @($asBtns | Where-Object { [string]$_.Text -eq $nm })
         if (($hit.Count -ne 1) -or (-not $hit[0].Enabled)) { $asOtherOk = $false }
     }
-    Check 'J23c 还没修复时「还原成修复前」是灰的（没有可退的东西），另外四颗按钮都可点' `
+    Check 'J23c 还没修复时「还原成修复前」是灰的（没有可退的东西），另外四个按钮都可点' `
         (($asRestoreBtn.Count -eq 1) -and (-not $asRestoreBtn[0].Enabled) -and $asOtherOk -and `
          ($asReport -match '没有待还原的记录')) `
         ('还原=' + $(if ($asRestoreBtn.Count -eq 1) { $asRestoreBtn[0].Enabled } else { '没找到' }) + ' 其它可点=' + $asOtherOk)
@@ -4431,7 +4478,7 @@ function Read-JOutputBox {
 $ibTab = Switch-Tab -Handle $main -TabName '常用设置' -ExpectNames @('修复图标黑块', '还原修复前图标')
 $ibFixBtn = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '修复图标黑块' })
 $ibBackBtn = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '还原修复前图标' })
-Check 'J26 常用设置页有「修复图标黑块 / 还原修复前图标」两颗按钮，都可点（第 4 段 · 文件显示那一组）' `
+Check 'J26 常用设置页有「修复图标黑块 / 还原修复前图标」两个按钮，都可点（第 4 段 · 文件显示那一组）' `
     ($ibTab -and ($ibFixBtn.Count -eq 1) -and $ibFixBtn[0].Enabled -and ($ibBackBtn.Count -eq 1) -and $ibBackBtn[0].Enabled) `
     ('页签=' + $ibTab + ' 修复=' + $ibFixBtn.Count + ' 还原=' + $ibBackBtn.Count)
 
@@ -4473,7 +4520,7 @@ if (($ibFixBtn.Count -ne 1) -or ($ibBackBtn.Count -ne 1)) {
             $ibEd = @(Get-ChildControls -RootHandle $ibWin.H | Where-Object { $_.Class -like '*EDIT*' })
             if ($ibEd.Count -ge 1) { $ibRepText = [string]$ibEd[0].Text }
         }
-        Check 'J27 真点「修复图标黑块」→ 开出一个窗口：现状报告念出 29 = shell32.dll,-50 与两种修法，两颗修法按钮都可点，点开什么都没改（29 还是原值）' `
+        Check 'J27 真点「修复图标黑块」→ 开出一个窗口：现状报告念出 29 = shell32.dll,-50 与两种修法，两个修法按钮都可点，点开什么都没改（29 还是原值）' `
             (($ibWin -ne $null) -and ($ibKeepBtn.Count -eq 1) -and $ibKeepBtn[0].Enabled -and `
              ($ibArrowBtn.Count -eq 1) -and $ibArrowBtn[0].Enabled -and `
              ($ibRepText -match '现在的样子') -and ($ibRepText -match 'shell32\.dll,-50') -and `
@@ -4529,7 +4576,7 @@ if (($ibFixBtn.Count -ne 1) -or ($ibBackBtn.Count -ne 1)) {
         Close-JWindow $ibWin
         Start-Sleep -Milliseconds 300
 
-        # ④ 外面那颗「还原修复前图标」：按第一次修复前记下的原值写回（-50），记录清空
+        # ④ 外面那个「还原修复前图标」：按第一次修复前记下的原值写回（-50），记录清空
         [void][TBGui]::Click($ibBackBtn[0].H)
         $ibDlg3 = Invoke-JConfirmBox -Owner $main -BodyPrefix '要执行「还原修复前图标」' -OkText '执行'
         $ibOut3 = Read-JOutputBox -TitlePrefix '还原修复前图标'
@@ -4553,13 +4600,13 @@ if (($ibFixBtn.Count -ne 1) -or ($ibBackBtn.Count -ne 1)) {
 # 真因：以前写进 Shell Icons\29 的是 `shell32.dll,-50`（Windows 自带的那个"全透明空图标"），
 # 它的像素确实全透明，可 Shell 画叠加图标时把它画成了一块黑。后来又试过工具箱自生成的
 # 透明 ico（1bpp 掩码 / 1×1 / PNG 压缩）—— 真机照样黑块；正解是**系统 dll 资源索引**
-# imageres.dll,197（用户 2026-10-26 提供、实机验收"完美"）。这里真点两颗按钮（都走 sysreg，
+# imageres.dll,197（用户 2026-10-26 提供、实机验收"完美"）。这里真点两个按钮（都走 sysreg，
 # 所以也要管理员）：
 #   ① 「去掉小箭头」→ 隔离根里的 29 变成 imageres.dll,197（%SystemRoot% 展开与否都认）、不含 shell32.dll；
 #   ② 「恢复小箭头」→ 那个值被删掉（小箭头回到系统默认）。
 $ibArrowBtn = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '去掉小箭头' })
 $ibArrowBackBtn = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '恢复小箭头' })
-Check 'J29 常用设置页有「去掉小箭头 / 恢复小箭头」两颗按钮，都可点（第 4 段 · 文件显示那一组）' `
+Check 'J29 常用设置页有「去掉小箭头 / 恢复小箭头」两个按钮，都可点（第 4 段 · 文件显示那一组）' `
     (($ibArrowBtn.Count -eq 1) -and $ibArrowBtn[0].Enabled -and ($ibArrowBackBtn.Count -eq 1) -and $ibArrowBackBtn[0].Enabled) `
     ('去掉=' + $ibArrowBtn.Count + ' 恢复=' + $ibArrowBackBtn.Count)
 
@@ -4609,12 +4656,12 @@ if (($ibArrowBtn.Count -ne 1) -or ($ibArrowBackBtn.Count -ne 1)) {
 try { if (Test-Path -LiteralPath $jIbRootPs) { Remove-Item -LiteralPath $jIbRootPs -Recurse -Force } } catch { }
 try { if (Test-Path -LiteralPath $jIbTsv) { Remove-Item -LiteralPath $jIbTsv -Force } } catch { }
 
-# ---- 「此电脑多余图标」窗口（2026-10-26，治装完百度网盘「此电脑 → 设备和驱动器」里多一颗图标）-----
+# ---- 「此电脑多余图标」窗口（2026-10-26，治装完百度网盘「此电脑 → 设备和驱动器」里多一个图标）-----
 # 这一段的"根"是 MXX1_PCICONS_HKCU + MXX1_PCICONS_HKLM 指到的两个测试键（见上面夹具），
 # 所以窗口里的「移除 / 还原」可以**真点**；用户真实的 NameSpace 一个字节都不碰。
 # 后端同一条路在命令行 D10 组盯着（只读 / 拦截 / 隔离端到端）；这里验的是**用户真点按钮**这条：
-# ① 点按钮开窗口 → 扫成一张列表（ListView + 状态行点数），没选中行时「移除这颗…」是灰的，点开这个动作什么都没改；
-# ② 点选列表里那颗第三方图标（可移除的排最上面）→「移除这颗…」亮 → 确认框 → 隔离根里两层真没了、系统条目还在、原值进 tsv；
+# ① 点按钮开窗口 → 扫成一张列表（ListView + 状态行点数），没选中行时「移除这个…」是灰的，点开这个动作什么都没改；
+# ② 点选列表里那个第三方图标（可移除的排最上面）→「移除这个…」亮 → 确认框 → 隔离根里两层真没了、系统条目还在、原值进 tsv；
 # ③ 窗口里真点「还原成移除前」→ 按记录重建、记录清空。
 $jPcTab = Switch-Tab -Handle $main -TabName '系统工具' -ExpectNames @('此电脑多余图标')
 $jPcBtn = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '此电脑多余图标' })
@@ -4623,8 +4670,8 @@ Check 'J30 系统工具页有「此电脑多余图标」按钮，可点（修复
     ('页签=' + $jPcTab + ' 按钮=' + $jPcBtn.Count)
 
 if ($jPcBtn.Count -ne 1) {
-    Check 'J30b 真点「此电脑多余图标」→ 开出一个列表窗口：ListView 有行、状态行报出系统/可移除颗数、没选中时「移除这颗…」是灰的，点开什么都没改' $false '按钮没找到'
-    Check 'J30c 列表里真点选那颗第三方图标 →「移除这颗…」→ 确认框 → 隔离根里两层第三方挂载点真没了、系统条目还在' $false '按钮没找到'
+    Check 'J30b 真点「此电脑多余图标」→ 开出一个列表窗口：ListView 有行、状态行报出系统/可移除个数、没选中时「移除这个…」是灰的，点开什么都没改' $false '按钮没找到'
+    Check 'J30c 列表里真点选那个第三方图标 →「移除这个…」→ 确认框 → 隔离根里两层第三方挂载点真没了、系统条目还在' $false '按钮没找到'
     Check 'J30d 窗口里真点「还原成移除前」→ 按记录重建、记录清空' $false '按钮没找到'
 } else {
     # ① 点开窗口（仿「文件关联体检」：先找窗口，不真点移除）。窗口标题 = 「此电脑多余图标（设备和驱动器里被软件加的）」，
@@ -4643,12 +4690,12 @@ if ($jPcBtn.Count -ne 1) {
         Start-Sleep -Milliseconds 600
         $jPcCtrls = Get-ChildControls -RootHandle $jPcWin.H
         $jPcLv = @($jPcCtrls | Where-Object { $_.Class -like '*SysListView*' })
-        $jPcRemBtn = @($jPcCtrls | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '移除这颗…' })
-        $jPcStatus = Find-JStatus $jPcWin.H '^共 \d+ 颗：系统 \d+ 颗（不动）、第三方 / 来历不明 \d+ 颗（可移除）'
+        $jPcRemBtn = @($jPcCtrls | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '移除这个…' })
+        $jPcStatus = Find-JStatus $jPcWin.H '^共 \d+ 个：系统 \d+ 个（不动）、第三方 / 来历不明 \d+ 个（可移除）'
     }
     $jPcBefore = (Test-Path -LiteralPath ($jPcRootPsU + '\{11111111-1111-1111-1111-111111111111}'))
     $jPcSysBefore = (Test-Path -LiteralPath ($jPcRootPsU + '\{088e3905-0323-4b02-9826-5d99428e115f}'))
-    Check 'J30b 真点「此电脑多余图标」→ 开出一个列表窗口：ListView 有行、状态行报出系统/可移除颗数、没选中时「移除这颗…」是灰的，点开这个动作什么都没改' `
+    Check 'J30b 真点「此电脑多余图标」→ 开出一个列表窗口：ListView 有行、状态行报出系统/可移除个数、没选中时「移除这个…」是灰的，点开这个动作什么都没改' `
         (($jPcWin -ne $null) -and ($jPcLv.Count -ge 1) -and ($jPcStatus.Length -gt 0) -and `
          ($jPcRemBtn.Count -eq 1) -and (-not $jPcRemBtn[0].Enabled) -and $jPcBefore -and $jPcSysBefore) `
         ('窗口=' + ($jPcWin -ne $null) + ' 列表=' + $jPcLv.Count + ' 状态="' + $jPcStatus + '" 点开后第三方还在=' + $jPcBefore)
@@ -4660,20 +4707,20 @@ if ($jPcBtn.Count -ne 1) {
     if (-not $jPcIsAdmin) {
         # 窗口里的移除 / 还原要写 HKLM（哪怕隔离根指到 HKCU，窗口逻辑也照常过"要管理员"那道门），
         # 非管理员点下去会走"提权重开一个自己"那条路，自动化验不了 —— 同 J27/J29 的口径。
-        Skip 'J30c 列表里真点选那颗第三方图标 →「移除这颗…」→ 确认框 → 隔离根里两层真没了' '测试进程不是管理员：点了会弹 UAC，跳过'
+        Skip 'J30c 列表里真点选那个第三方图标 →「移除这个…」→ 确认框 → 隔离根里两层真没了' '测试进程不是管理员：点了会弹 UAC，跳过'
         Skip 'J30d 窗口里真点「还原成移除前」→ 按记录重建、记录清空' '同上'
     } else {
-        # ② 列表里选中那颗第三方图标（可移除的排最上面）。跨进程点不了 ListView 的行
+        # ② 列表里选中那个第三方图标（可移除的排最上面）。跨进程点不了 ListView 的行
         #   （LVM_SETITEMSTATE 要写结构体，探针做不到 —— 坑），用 PostMessage 鼠标消息点到
-        #   行坐标（TBGui::MouseDown，坐标是 ListView 客户区）。选中后「移除这颗…」才亮；
+        #   行坐标（TBGui::MouseDown，坐标是 ListView 客户区）。选中后「移除这个…」才亮；
         #   万一第一行是系统条目（红色那行），按钮会变成「系统自带（不给移除）」并且是灰的
-        #   —— 那就往下试几行，直到选中一颗可移除的。
+        #   —— 那就往下试几行，直到选中一个可移除的。
         $jPcSelected = $false
         if (($jPcWin -ne $null) -and ($jPcLv.Count -ge 1)) {
             foreach ($jY in @(24, 28, 32, 36, 40, 44, 48, 52)) {
                 [void][TBGui]::MouseDown($jPcLv[0].H, 40, $jY)
                 Start-Sleep -Milliseconds 250
-                $jB = @(Get-ChildControls -RootHandle $jPcWin.H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '移除这颗…' -and $_.Enabled })
+                $jB = @(Get-ChildControls -RootHandle $jPcWin.H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '移除这个…' -and $_.Enabled })
                 if ($jB.Count -eq 1) { $jPcSelected = $true; break }
             }
         }
@@ -4681,15 +4728,15 @@ if ($jPcBtn.Count -ne 1) {
         $jPcOk = $false
         $jPcDone = ''
         if ($jPcSelected) {
-            $jPcRemBtn2 = @(Get-ChildControls -RootHandle $jPcWin.H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '移除这颗…' })
+            $jPcRemBtn2 = @(Get-ChildControls -RootHandle $jPcWin.H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '移除这个…' })
             if ($jPcRemBtn2.Count -eq 1) { [void][TBGui]::Click($jPcRemBtn2[0].H) }
             for ($i = 0; $i -lt 40; $i++) {
                 Start-Sleep -Milliseconds 200
-                $jPcDlg = Find-JAssocDialog -ProcessId $proc.Id -Main $main -Owner $jPcWin.H -TitlePrefix '要移除这颗「此电脑」图标吗？'
+                $jPcDlg = Find-JAssocDialog -ProcessId $proc.Id -Main $main -Owner $jPcWin.H -TitlePrefix '要移除这个「此电脑」图标吗？'
                 if ($jPcDlg -ne $null) { break }
             }
             if ($jPcDlg -ne $null) {
-                $jOk = @(Get-ChildControls -RootHandle $jPcDlg.H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '移除这颗' })
+                $jOk = @(Get-ChildControls -RootHandle $jPcDlg.H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '移除这个' })
                 if ($jOk.Count -eq 1) { [void][TBGui]::Click($jOk[0].H); $jPcOk = $true }
             }
             for ($i = 0; $i -lt 80; $i++) {
@@ -4703,7 +4750,7 @@ if ($jPcBtn.Count -ne 1) {
         $jPcSysStill = (Test-Path -LiteralPath ($jPcRootPsU + '\{088e3905-0323-4b02-9826-5d99428e115f}'))
         $jPcTsvText = ''
         if (Test-Path -LiteralPath $jPcTsv) { $jPcTsvText = [System.IO.File]::ReadAllText($jPcTsv, [System.Text.Encoding]::UTF8) }
-        Check 'J30c 列表里真点选那颗第三方图标 →「移除这颗…」→ 确认框 → 状态行报「移除完成：」、隔离根里两层第三方挂载点真没了、系统条目还在、原值进 tsv' `
+        Check 'J30c 列表里真点选那个第三方图标 →「移除这个…」→ 确认框 → 状态行报「移除完成：」、隔离根里两层第三方挂载点真没了、系统条目还在、原值进 tsv' `
             ($jPcSelected -and ($jPcDlg -ne $null) -and $jPcOk -and ($jPcDone.Length -gt 0) -and `
              $jPcGoneU -and $jPcGoneM -and $jPcSysStill -and ($jPcTsvText -match '11111111-1111-1111-1111-111111111111')) `
             ('选中=' + $jPcSelected + ' 确认框=' + ($jPcDlg -ne $null) + ' 点了=' + $jPcOk + ' 状态="' + $jPcDone + '" 两层没了=' + $jPcGoneU + '/' + $jPcGoneM + ' 系统还在=' + $jPcSysStill)
@@ -4743,6 +4790,392 @@ if ($jPcBtn.Count -ne 1) {
 try { if (Test-Path -LiteralPath $jPcRootPsU) { Remove-Item -LiteralPath $jPcRootPsU -Recurse -Force } } catch { }
 try { if (Test-Path -LiteralPath $jPcRootPsM) { Remove-Item -LiteralPath $jPcRootPsM -Recurse -Force } } catch { }
 try { if (Test-Path -LiteralPath $jPcTsv) { Remove-Item -LiteralPath $jPcTsv -Force } } catch { }
+
+# J31 —— 「开始菜单程序管理」窗口（2026-10-27，用户要求管开始菜单「所有应用」列表）。
+# 后端同一条路在命令行 D11 组盯着；这里验的是**用户真点按钮**这条：开窗口 → 列表形态 →
+# 选中用户级条目真点「隐藏这个…」→ 确认框 → 隔离目录里 .lnk 真移走、备份目录里在、原值进 tsv、
+# 系统标注的 Accessories 条目还在。还原在窗口里无条件过"要管理员"那道门 → 非管理员跳过。
+$jSmTab = Switch-Tab -Handle $main -TabName '系统工具' -ExpectNames @('开始菜单程序管理')
+$jSmBtn = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '开始菜单程序管理' })
+Check 'J31 系统工具页有「开始菜单程序管理」按钮，可点（修复与诊断段，挨着「程序和功能管理」）' `
+    ($jSmTab -and ($jSmBtn.Count -eq 1) -and $jSmBtn[0].Enabled) `
+    ('页签=' + $jSmTab + ' 按钮=' + $jSmBtn.Count)
+
+if ($jSmBtn.Count -ne 1) {
+    Check 'J31b 真点「开始菜单程序管理」→ 开出一个列表窗口：ListView 有行、状态行报出系统级/用户级条数、没选中时「隐藏这个…」是灰的，点开什么都没改' $false '按钮没找到'
+    Check 'J31c 列表里真点选用户级条目 →「隐藏这个…」→ 确认框 → 隔离根里 .lnk 真移走、备份目录里在、原值进 tsv、系统标注条目还在' $false '按钮没找到'
+    Check 'J31d 窗口里真点「还原成隐藏前」→ 按记录移回原位、记录清空' $false '按钮没找到'
+} else {
+    [void][TBGui]::Click($jSmBtn[0].H)
+    $jSmWin = $null
+    for ($i = 0; $i -lt 60; $i++) {
+        Start-Sleep -Milliseconds 200
+        $jSmWin = Find-TopWindow -ProcessId $proc.Id -TextPrefix '开始菜单程序管理'
+        if ($jSmWin -ne $null) { break }
+    }
+    $jSmLv = @(); $jSmHideBtn = @(); $jSmStatus = ''
+    if ($jSmWin -ne $null) {
+        Start-Sleep -Milliseconds 600
+        $jSmCtrls = Get-ChildControls -RootHandle $jSmWin.H
+        $jSmLv = @($jSmCtrls | Where-Object { $_.Class -like '*SysListView*' })
+        $jSmHideBtn = @($jSmCtrls | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '隐藏这个…' })
+        $jSmStatus = Find-JStatus $jSmWin.H '^共 \d+ 个：显示中 \d+、已隐藏 \d+'
+    }
+    $jSmBefore = Test-Path -LiteralPath (Join-Path $jSmUser '测试\演示用.lnk')
+    $jSmAccBefore = Test-Path -LiteralPath (Join-Path $jSmSys 'Accessories\Notepad.lnk')
+    Check 'J31b 真点「开始菜单程序管理」→ 开出一个列表窗口：ListView 有行、状态行报出系统级/用户级条数、没选中时「隐藏这个…」是灰的，点开什么都没改' `
+        (($jSmWin -ne $null) -and ($jSmLv.Count -ge 1) -and ($jSmStatus.Length -gt 0) -and `
+         ($jSmHideBtn.Count -eq 1) -and (-not $jSmHideBtn[0].Enabled) -and $jSmBefore -and $jSmAccBefore) `
+        ('窗口=' + ($jSmWin -ne $null) + ' 列表=' + $jSmLv.Count + ' 状态="' + $jSmStatus + '" 点开后 .lnk 还在=' + $jSmBefore)
+
+    # ② 逐行点选，直到「隐藏这个…」亮且文本不带「（要管理员）」（= 选中的是用户级条目）
+    $jSmSelected = $false
+    if (($jSmWin -ne $null) -and ($jSmLv.Count -ge 1)) {
+        foreach ($jY in @(24, 28, 32, 36, 40, 44, 48, 52, 56, 60, 64)) {
+            [void][TBGui]::MouseDown($jSmLv[0].H, 40, $jY)
+            Start-Sleep -Milliseconds 250
+            $jB = @(Get-ChildControls -RootHandle $jSmWin.H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '隐藏这个…' -and $_.Enabled })
+            if ($jB.Count -eq 1) { $jSmSelected = $true; break }
+        }
+    }
+    $jSmDlg = $null; $jSmOk = $false; $jSmDone = ''
+    if ($jSmSelected) {
+        $jSmHideBtn2 = @(Get-ChildControls -RootHandle $jSmWin.H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '隐藏这个…' })
+        if ($jSmHideBtn2.Count -eq 1) { [void][TBGui]::Click($jSmHideBtn2[0].H) }
+        for ($i = 0; $i -lt 40; $i++) {
+            Start-Sleep -Milliseconds 200
+            $jSmDlg = Find-JAssocDialog -ProcessId $proc.Id -Main $main -Owner $jSmWin.H -TitlePrefix '要隐藏这条开始菜单快捷方式吗？'
+            if ($jSmDlg -ne $null) { break }
+        }
+        if ($jSmDlg -ne $null) {
+            $jOk = @(Get-ChildControls -RootHandle $jSmDlg.H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '隐藏这个' })
+            if ($jOk.Count -eq 1) { [void][TBGui]::Click($jOk[0].H); $jSmOk = $true }
+        }
+        for ($i = 0; $i -lt 80; $i++) {
+            Start-Sleep -Milliseconds 250
+            $jSmDone = Find-JStatus $jSmWin.H '^隐藏完成：'
+            if ($jSmDone.Length -gt 0) { break }
+        }
+    }
+    $jSmGone = -not (Test-Path -LiteralPath (Join-Path $jSmUser '测试\演示用.lnk'))
+    $jSmMoved = Test-Path -LiteralPath (Join-Path $jSmHidden '测试\演示用.lnk')
+    $jSmAccStill = Test-Path -LiteralPath (Join-Path $jSmSys 'Accessories\Notepad.lnk')
+    $jSmTsvText = ''
+    if (Test-Path -LiteralPath $jSmTsv) { $jSmTsvText = [System.IO.File]::ReadAllText($jSmTsv, [System.Text.Encoding]::UTF8) }
+    Check 'J31c 列表里真点选用户级条目 →「隐藏这个…」→ 确认框 → 状态行报「隐藏完成：」（还带「已隐藏」）、隔离根里 .lnk 真移走、备份目录里在、原值进 tsv、Accessories 系统标注条目还在' `
+        ($jSmSelected -and ($jSmDlg -ne $null) -and $jSmOk -and ($jSmDone.Length -gt 0) -and ($jSmDone -match '已隐藏') -and `
+         $jSmGone -and $jSmMoved -and $jSmAccStill -and ($jSmTsvText -match '演示用\.lnk')) `
+        ('选中=' + $jSmSelected + ' 确认框=' + ($jSmDlg -ne $null) + ' 点了=' + $jSmOk + ' 状态="' + $jSmDone + '" 移走=' + $jSmGone + ' 备份里=' + $jSmMoved + ' 系统标注还在=' + $jSmAccStill)
+
+    $jSmIsAdmin = $false
+    try {
+        $jSmIsAdmin = (New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    } catch { }
+    if (-not $jSmIsAdmin) {
+        Skip 'J31d 窗口里真点「还原成隐藏前」→ 按记录移回原位、记录清空' '测试进程不是管理员：还原无条件过"要管理员"那道门，点了会弹 UAC，跳过'
+    } else {
+        $jSmBackBtn = @(Get-ChildControls -RootHandle $jSmWin.H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '还原成隐藏前' })
+        $jSmDlg2 = $null; $jSmOk2 = $false; $jSmDone2 = ''
+        if (($jSmWin -ne $null) -and ($jSmBackBtn.Count -eq 1) -and $jSmBackBtn[0].Enabled) {
+            [void][TBGui]::Click($jSmBackBtn[0].H)
+            for ($i = 0; $i -lt 40; $i++) {
+                Start-Sleep -Milliseconds 200
+                $jSmDlg2 = Find-JAssocDialog -ProcessId $proc.Id -Main $main -Owner $jSmWin.H -TitlePrefix '要还原成隐藏前吗？'
+                if ($jSmDlg2 -ne $null) { break }
+            }
+            if ($jSmDlg2 -ne $null) {
+                $jOk2 = @(Get-ChildControls -RootHandle $jSmDlg2.H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '还原' })
+                if ($jOk2.Count -eq 1) { [void][TBGui]::Click($jOk2[0].H); $jSmOk2 = $true }
+            }
+            for ($i = 0; $i -lt 80; $i++) {
+                Start-Sleep -Milliseconds 250
+                $jSmDone2 = Find-JStatus $jSmWin.H '^还原完成：'
+                if ($jSmDone2.Length -gt 0) { break }
+            }
+        }
+        $jSmBack = Test-Path -LiteralPath (Join-Path $jSmUser '测试\演示用.lnk')
+        $jSmTsvGone = -not (Test-Path -LiteralPath $jSmTsv)
+        Check 'J31d 窗口里真点「还原成隐藏前」→ 确认框 → 状态行报「还原完成：」、.lnk 移回原位、记录清空' `
+            (($jSmDlg2 -ne $null) -and $jSmOk2 -and ($jSmDone2.Length -gt 0) -and $jSmBack -and $jSmTsvGone) `
+            ('确认框=' + ($jSmDlg2 -ne $null) + ' 点了=' + $jSmOk2 + ' 状态="' + $jSmDone2 + '" 回原位=' + $jSmBack + ' 记录清空=' + $jSmTsvGone)
+    }
+
+    # ③ 再隐藏一次 —— 这次验窗口里的「显示这个…」：隐藏后条目**还在列表里**（状态行报「已隐藏」），
+    #    重新选中那条 →「显示这个…」亮 → 确认框 → 放回原位、备份没了、记录清空（用户级不用管理员）
+    $jSmSel2 = $false
+    if (($jSmWin -ne $null) -and ($jSmLv.Count -ge 1)) {
+        foreach ($jY in @(24, 28, 32, 36, 40, 44, 48, 52, 56, 60, 64)) {
+            [void][TBGui]::MouseDown($jSmLv[0].H, 40, $jY)
+            Start-Sleep -Milliseconds 250
+            $jB = @(Get-ChildControls -RootHandle $jSmWin.H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '隐藏这个…' -and $_.Enabled })
+            if ($jB.Count -eq 1) { $jSmSel2 = $true; break }
+        }
+    }
+    $jSmHide2Done = ''
+    if ($jSmSel2) {
+        $jB2 = @(Get-ChildControls -RootHandle $jSmWin.H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '隐藏这个…' })
+        if ($jB2.Count -eq 1) { [void][TBGui]::Click($jB2[0].H) }
+        for ($i = 0; $i -lt 40; $i++) {
+            Start-Sleep -Milliseconds 200
+            $jDlg3 = Find-JAssocDialog -ProcessId $proc.Id -Main $main -Owner $jSmWin.H -TitlePrefix '要隐藏这条开始菜单快捷方式吗？'
+            if ($jDlg3 -ne $null) { break }
+        }
+        if ($jDlg3 -ne $null) {
+            $jOk3 = @(Get-ChildControls -RootHandle $jDlg3.H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '隐藏这个' })
+            if ($jOk3.Count -eq 1) { [void][TBGui]::Click($jOk3[0].H) }
+        }
+        for ($i = 0; $i -lt 80; $i++) {
+            Start-Sleep -Milliseconds 250
+            $jSmHide2Done = Find-JStatus $jSmWin.H '^隐藏完成：'
+            if ($jSmHide2Done.Length -gt 0) { break }
+        }
+    }
+    $jSmHidden2 = Test-Path -LiteralPath (Join-Path $jSmHidden '测试\演示用.lnk')
+    Check 'J31e 隐藏后条目没从列表消失（状态行带「已隐藏」，还能重新选中）' `
+        ($jSmSel2 -and ($jSmHide2Done.Length -gt 0) -and ($jSmHide2Done -match '已隐藏') -and $jSmHidden2) `
+        ('选中=' + $jSmSel2 + ' 状态="' + $jSmHide2Done + '" 备份里=' + $jSmHidden2)
+
+    # 显示这个…：重新逐行点选，直到「显示这个…」亮（= 选中的是已隐藏行）
+    $jSmSel3 = $false
+    if (($jSmWin -ne $null) -and ($jSmLv.Count -ge 1)) {
+        foreach ($jY in @(24, 28, 32, 36, 40, 44, 48, 52, 56, 60, 64)) {
+            [void][TBGui]::MouseDown($jSmLv[0].H, 40, $jY)
+            Start-Sleep -Milliseconds 250
+            $jB = @(Get-ChildControls -RootHandle $jSmWin.H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '显示这个…' -and $_.Enabled })
+            if ($jB.Count -eq 1) { $jSmSel3 = $true; break }
+        }
+    }
+    $jSmShowDone = ''; $jSmDlg4 = $null
+    if ($jSmSel3) {
+        $jB3 = @(Get-ChildControls -RootHandle $jSmWin.H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '显示这个…' })
+        if ($jB3.Count -eq 1) { [void][TBGui]::Click($jB3[0].H) }
+        for ($i = 0; $i -lt 40; $i++) {
+            Start-Sleep -Milliseconds 200
+            $jSmDlg4 = Find-JAssocDialog -ProcessId $proc.Id -Main $main -Owner $jSmWin.H -TitlePrefix '要显示这条开始菜单快捷方式吗？'
+            if ($jSmDlg4 -ne $null) { break }
+        }
+        if ($jSmDlg4 -ne $null) {
+            $jOk4 = @(Get-ChildControls -RootHandle $jSmDlg4.H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '显示这个' })
+            if ($jOk4.Count -eq 1) { [void][TBGui]::Click($jOk4[0].H) }
+        }
+        for ($i = 0; $i -lt 80; $i++) {
+            Start-Sleep -Milliseconds 250
+            $jSmShowDone = Find-JStatus $jSmWin.H '^显示完成：'
+            if ($jSmShowDone.Length -gt 0) { break }
+        }
+    }
+    $jSmBack2 = Test-Path -LiteralPath (Join-Path $jSmUser '测试\演示用.lnk')
+    $jSmMovedGone = -not (Test-Path -LiteralPath (Join-Path $jSmHidden '测试\演示用.lnk'))
+    $jSmTsvGone2 = -not (Test-Path -LiteralPath $jSmTsv)
+    Check 'J31f 真点「显示这个…」→ 确认框 → 状态行报「显示完成：」、.lnk 回原位、备份没了、记录清空' `
+        ($jSmSel3 -and ($jSmDlg4 -ne $null) -and ($jSmShowDone.Length -gt 0) -and $jSmBack2 -and $jSmMovedGone -and $jSmTsvGone2) `
+        ('选中=' + $jSmSel3 + ' 确认框=' + ($jSmDlg4 -ne $null) + ' 状态="' + $jSmShowDone + '" 回原位=' + $jSmBack2 + ' 备份没了=' + $jSmMovedGone + ' 记录清空=' + $jSmTsvGone2)
+    Close-JWindow $jSmWin
+    Start-Sleep -Milliseconds 300
+}
+foreach ($p in @($jSmSys, $jSmUser, $jSmHidden)) { try { if (Test-Path -LiteralPath $p) { Remove-Item -LiteralPath $p -Recurse -Force } } catch { } }
+try { if (Test-Path -LiteralPath $jSmTsv) { Remove-Item -LiteralPath $jSmTsv -Force } } catch { }
+
+# J32 —— 「程序和功能管理」窗口（2026-10-27，参考 HideUL，管控制面板「程序和功能」列表）。
+# 后端同一条路在命令行 D12 组盯着；这里验的是**用户真点按钮**这条：开窗口 → 列表形态 →
+# 选中 HKCU 条目真点「隐藏这个…」→ 确认框 → SystemComponent 真变成 1、改动进 tsv、系统组件没动 →
+# 再真点「显示这个…」→ 值删回原样。锁定 / 删除 / 还原动 HKLM（窗口里过"要管理员"那道门）→ 非管理员跳过。
+$jUnTab = Switch-Tab -Handle $main -TabName '系统工具' -ExpectNames @('程序和功能管理')
+$jUnBtn = @(Get-ChildControls -RootHandle $main | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '程序和功能管理' })
+Check 'J32 系统工具页有「程序和功能管理」按钮，可点（修复与诊断段，挨着「开始菜单程序管理」）' `
+    ($jUnTab -and ($jUnBtn.Count -eq 1) -and $jUnBtn[0].Enabled) `
+    ('页签=' + $jUnTab + ' 按钮=' + $jUnBtn.Count)
+
+if ($jUnBtn.Count -ne 1) {
+    Check 'J32b 真点「程序和功能管理」→ 开出一个列表窗口：ListView 有行、状态行报出显示中/已隐藏/系统组件、没选中时「隐藏这个…」是灰的，点开什么都没改' $false '按钮没找到'
+    Check 'J32c 列表里真点选 HKCU 条目 →「隐藏这个…」→ 确认框 → SystemComponent 真变成 1、改动进 tsv、系统组件没动' $false '按钮没找到'
+    Check 'J32d 窗口里真点「显示这个…」→ 确认框 → SystemComponent 删掉（值回原样）' $false '按钮没找到'
+    Check 'J32e 列表里真点选 HKLM 条目 →「锁定卸载」→ 确认框 → NoRemove 真变成 1' $false '按钮没找到'
+    Check 'J32f 窗口里真点「还原成操作前」→ 按记录全部还原、记录清空' $false '按钮没找到'
+} else {
+    [void][TBGui]::Click($jUnBtn[0].H)
+    $jUnWin = $null
+    for ($i = 0; $i -lt 60; $i++) {
+        Start-Sleep -Milliseconds 200
+        $jUnWin = Find-TopWindow -ProcessId $proc.Id -TextPrefix '程序和功能管理'
+        if ($jUnWin -ne $null) { break }
+    }
+    $jUnLv = @(); $jUnHideBtn = @(); $jUnStatus = ''
+    if ($jUnWin -ne $null) {
+        Start-Sleep -Milliseconds 600
+        $jUnCtrls = Get-ChildControls -RootHandle $jUnWin.H
+        $jUnLv = @($jUnCtrls | Where-Object { $_.Class -like '*SysListView*' })
+        $jUnHideBtn = @($jUnCtrls | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '隐藏这个…' })
+        $jUnStatus = Find-JStatus $jUnWin.H '^共 \d+ 条：显示中 \d+、已隐藏 \d+、系统组件 \d+（不动）。'
+    }
+    $jUnBefore = $null -eq (Get-ItemProperty -Path ($jUnCuPs + '\GuiApp') -ErrorAction SilentlyContinue).SystemComponent
+    $jUnSysBefore = [int](Get-ItemProperty -Path ($jUnCuPs + '\DoubaoTest') -ErrorAction SilentlyContinue).SystemComponent
+    Check 'J32b 真点「程序和功能管理」→ 开出一个列表窗口：ListView 有行、状态行报出显示中/已隐藏/系统组件、没选中时「隐藏这个…」是灰的，点开什么都没改' `
+        (($jUnWin -ne $null) -and ($jUnLv.Count -ge 1) -and ($jUnStatus.Length -gt 0) -and `
+         ($jUnHideBtn.Count -eq 1) -and (-not $jUnHideBtn[0].Enabled) -and $jUnBefore -and ($jUnSysBefore -eq 1)) `
+        ('窗口=' + ($jUnWin -ne $null) + ' 列表=' + $jUnLv.Count + ' 状态="' + $jUnStatus + '" 点开后 GuiApp 没隐藏=' + $jUnBefore)
+
+    # ② 逐行点选，直到「隐藏这个…」亮且文本不带「（要管理员）」（= 选中的是 HKCU 条目）
+    $jUnSelected = $false
+    if (($jUnWin -ne $null) -and ($jUnLv.Count -ge 1)) {
+        foreach ($jY in @(24, 28, 32, 36, 40, 44, 48, 52, 56, 60, 64)) {
+            [void][TBGui]::MouseDown($jUnLv[0].H, 40, $jY)
+            Start-Sleep -Milliseconds 250
+            $jB = @(Get-ChildControls -RootHandle $jUnWin.H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '隐藏这个…' -and $_.Enabled })
+            if ($jB.Count -eq 1) { $jUnSelected = $true; break }
+        }
+    }
+    $jUnDlg = $null; $jUnOk = $false; $jUnDone = ''
+    if ($jUnSelected) {
+        $jUnHideBtn2 = @(Get-ChildControls -RootHandle $jUnWin.H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '隐藏这个…' })
+        if ($jUnHideBtn2.Count -eq 1) { [void][TBGui]::Click($jUnHideBtn2[0].H) }
+        for ($i = 0; $i -lt 40; $i++) {
+            Start-Sleep -Milliseconds 200
+            $jUnDlg = Find-JAssocDialog -ProcessId $proc.Id -Main $main -Owner $jUnWin.H -TitlePrefix '要把这条从列表隐藏吗？'
+            if ($jUnDlg -ne $null) { break }
+        }
+        if ($jUnDlg -ne $null) {
+            $jOk = @(Get-ChildControls -RootHandle $jUnDlg.H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '隐藏这个' })
+            if ($jOk.Count -eq 1) { [void][TBGui]::Click($jOk[0].H); $jUnOk = $true }
+        }
+        for ($i = 0; $i -lt 80; $i++) {
+            Start-Sleep -Milliseconds 250
+            $jUnDone = Find-JStatus $jUnWin.H '^隐藏完成：'
+            if ($jUnDone.Length -gt 0) { break }
+        }
+    }
+    $jUnHid = [int](Get-ItemProperty -Path ($jUnCuPs + '\GuiApp') -ErrorAction SilentlyContinue).SystemComponent
+    $jUnSysStill = [int](Get-ItemProperty -Path ($jUnCuPs + '\DoubaoTest') -ErrorAction SilentlyContinue).SystemComponent
+    $jUnTsvText = ''
+    if (Test-Path -LiteralPath $jUnTsv) { $jUnTsvText = [System.IO.File]::ReadAllText($jUnTsv, [System.Text.Encoding]::UTF8) }
+    Check 'J32c 列表里真点选 HKCU 条目 →「隐藏这个…」→ 确认框 → 状态行报「隐藏完成：」、SystemComponent 真变成 1、改动进 tsv、系统组件（DoubaoTest）没动' `
+        ($jUnSelected -and ($jUnDlg -ne $null) -and $jUnOk -and ($jUnDone.Length -gt 0) -and `
+         ($jUnHid -eq 1) -and ($jUnSysStill -eq 1) -and ($jUnTsvText -match 'GuiApp')) `
+        ('选中=' + $jUnSelected + ' 确认框=' + ($jUnDlg -ne $null) + ' 点了=' + $jUnOk + ' 状态="' + $jUnDone + '" SystemComponent=' + $jUnHid + ' 系统组件还在=' + $jUnSysStill)
+
+    # ③ 窗口里真点「显示这个…」→ HKCU 不需要管理员，直接还原。
+    #    J32c 隐藏后列表刷新、选中丢了 → 先逐行点选到 GuiApp 那行（「显示这个…」亮），再点。
+    $jUnShownSel = $false
+    if (($jUnWin -ne $null) -and ($jUnLv.Count -ge 1)) {
+        foreach ($jY in @(24, 28, 32, 36, 40, 44, 48, 52, 56, 60, 64)) {
+            [void][TBGui]::MouseDown($jUnLv[0].H, 40, $jY)
+            Start-Sleep -Milliseconds 250
+            $jB = @(Get-ChildControls -RootHandle $jUnWin.H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '显示这个…' -and $_.Enabled })
+            if ($jB.Count -eq 1) { $jUnShownSel = $true; break }
+        }
+    }
+    $jUnDlg2 = $null; $jUnOk2 = $false; $jUnDone2 = ''
+    if ($jUnShownSel) {
+        $jUnShowBtn = @(Get-ChildControls -RootHandle $jUnWin.H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '显示这个…' })
+        if ($jUnShowBtn.Count -eq 1) { [void][TBGui]::Click($jUnShowBtn[0].H) }
+        for ($i = 0; $i -lt 40; $i++) {
+            Start-Sleep -Milliseconds 200
+            $jUnDlg2 = Find-JAssocDialog -ProcessId $proc.Id -Main $main -Owner $jUnWin.H -TitlePrefix '要把这条放回列表吗？'
+            if ($jUnDlg2 -ne $null) { break }
+        }
+        if ($jUnDlg2 -ne $null) {
+            $jOk2 = @(Get-ChildControls -RootHandle $jUnDlg2.H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '显示这个' })
+            if ($jOk2.Count -eq 1) { [void][TBGui]::Click($jOk2[0].H); $jUnOk2 = $true }
+        }
+        for ($i = 0; $i -lt 80; $i++) {
+            Start-Sleep -Milliseconds 250
+            $jUnDone2 = Find-JStatus $jUnWin.H '^显示完成：'
+            if ($jUnDone2.Length -gt 0) { break }
+        }
+    }
+    $jUnShown = $null -eq (Get-ItemProperty -Path ($jUnCuPs + '\GuiApp') -ErrorAction SilentlyContinue).SystemComponent
+    Check 'J32d 窗口里真点「显示这个…」→ 确认框 → 状态行报「显示完成：」、SystemComponent 按记录删掉（值回原样）' `
+        ($jUnShownSel -and ($jUnDlg2 -ne $null) -and $jUnOk2 -and ($jUnDone2.Length -gt 0) -and $jUnShown) `
+        ('选中=' + $jUnShownSel + ' 确认框=' + ($jUnDlg2 -ne $null) + ' 点了=' + $jUnOk2 + ' 状态="' + $jUnDone2 + '" SystemComponent 没了=' + $jUnShown)
+
+    $jUnIsAdmin = $false
+    try {
+        $jUnIsAdmin = (New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    } catch { }
+    if (-not $jUnIsAdmin) {
+        Skip 'J32e 列表里真点选 HKLM 条目 →「锁定卸载」→ 确认框 → NoRemove 真变成 1' '测试进程不是管理员：HKLM 条目要过"要管理员"那道门，点了会弹 UAC，跳过'
+        Skip 'J32f 窗口里真点「还原成操作前」→ 按记录全部还原、记录清空' '同上'
+    } else {
+        # ④ 锁定卸载（管理员）：逐行选到 HKLM 条目（按钮文本「锁定卸载（要管理员）」→ 用 -like 匹配），
+        #    点锁定 → 确认框 → NoRemove=1
+        $jUnLockSelected = $false
+        if (($jUnWin -ne $null) -and ($jUnLv.Count -ge 1)) {
+            foreach ($jY in @(24, 28, 32, 36, 40, 44, 48, 52, 56, 60, 64)) {
+                [void][TBGui]::MouseDown($jUnLv[0].H, 40, $jY)
+                Start-Sleep -Milliseconds 250
+                $jB = @(Get-ChildControls -RootHandle $jUnWin.H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -like '锁定卸载*' -and $_.Enabled })
+                if ($jB.Count -eq 1) { $jUnLockSelected = $true; break }
+            }
+        }
+        $jUnLockBtn = @(Get-ChildControls -RootHandle $jUnWin.H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -like '锁定卸载*' })
+        $jUnDlg3 = $null; $jUnOk3 = $false; $jUnDone3 = ''
+        if ($jUnLockSelected -and ($jUnLockBtn.Count -eq 1)) {
+            [void][TBGui]::Click($jUnLockBtn[0].H)
+            for ($i = 0; $i -lt 40; $i++) {
+                Start-Sleep -Milliseconds 200
+                $jUnDlg3 = Find-JAssocDialog -ProcessId $proc.Id -Main $main -Owner $jUnWin.H -TitlePrefix '要锁定卸载按钮吗？'
+                if ($jUnDlg3 -ne $null) { break }
+            }
+            if ($jUnDlg3 -ne $null) {
+                $jOk3 = @(Get-ChildControls -RootHandle $jUnDlg3.H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '锁定卸载' })
+                if ($jOk3.Count -eq 1) { [void][TBGui]::Click($jOk3[0].H); $jUnOk3 = $true }
+            }
+            for ($i = 0; $i -lt 80; $i++) {
+                Start-Sleep -Milliseconds 250
+                $jUnDone3 = Find-JStatus $jUnWin.H '^锁定卸载完成：'
+                if ($jUnDone3.Length -gt 0) { break }
+            }
+        }
+        $jUnLocked = $false
+        foreach ($rp in @(($jUn64Ps + '\{TEST-GUID-64}'), ($jUn32Ps + '\Weixin'), ($jUnCuPs + '\GuiApp'))) {
+            if (Test-Path -LiteralPath $rp) {
+                $v = (Get-ItemProperty -Path $rp -ErrorAction SilentlyContinue).NoRemove
+                if ($null -ne $v -and [int]$v -eq 1) { $jUnLocked = $true; break }
+            }
+        }
+        Check 'J32e 列表里真点选条目 →「锁定卸载」→ 确认框 → 状态行报「锁定卸载完成：」、某条（三根任一）的 NoRemove 真变成 1' `
+            ($jUnLockSelected -and ($jUnDlg3 -ne $null) -and $jUnOk3 -and ($jUnDone3.Length -gt 0) -and $jUnLocked) `
+            ('选中=' + $jUnLockSelected + ' 确认框=' + ($jUnDlg3 -ne $null) + ' 点了=' + $jUnOk3 + ' 状态="' + $jUnDone3 + '" NoRemove=1=' + $jUnLocked)
+
+        # ⑤ 还原成操作前（管理员）
+        $jUnBackBtn = @(Get-ChildControls -RootHandle $jUnWin.H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '还原成操作前' })
+        $jUnDlg4 = $null; $jUnOk4 = $false; $jUnDone4 = ''
+        if (($jUnWin -ne $null) -and ($jUnBackBtn.Count -eq 1) -and $jUnBackBtn[0].Enabled) {
+            [void][TBGui]::Click($jUnBackBtn[0].H)
+            for ($i = 0; $i -lt 40; $i++) {
+                Start-Sleep -Milliseconds 200
+                $jUnDlg4 = Find-JAssocDialog -ProcessId $proc.Id -Main $main -Owner $jUnWin.H -TitlePrefix '要还原成操作前吗？'
+                if ($jUnDlg4 -ne $null) { break }
+            }
+            if ($jUnDlg4 -ne $null) {
+                $jOk4 = @(Get-ChildControls -RootHandle $jUnDlg4.H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '还原' })
+                if ($jOk4.Count -eq 1) { [void][TBGui]::Click($jOk4[0].H); $jUnOk4 = $true }
+            }
+            for ($i = 0; $i -lt 80; $i++) {
+                Start-Sleep -Milliseconds 250
+                $jUnDone4 = Find-JStatus $jUnWin.H '^还原完成：'
+                if ($jUnDone4.Length -gt 0) { break }
+            }
+        }
+        $jUnNoRemoveBack = $true
+        foreach ($rp in @(($jUn64Ps + '\{TEST-GUID-64}'), ($jUn32Ps + '\Weixin'), ($jUnCuPs + '\GuiApp'))) {
+            if (Test-Path -LiteralPath $rp) {
+                $v = (Get-ItemProperty -Path $rp -ErrorAction SilentlyContinue).NoRemove
+                if ($null -ne $v) { $jUnNoRemoveBack = $false; break }
+            }
+        }
+        $jUnTsvGone = -not (Test-Path -LiteralPath $jUnTsv)
+        Check 'J32f 窗口里真点「还原成操作前」→ 确认框 → 状态行报「还原完成：」、NoRemove 复原、记录清空' `
+            (($jUnDlg4 -ne $null) -and $jUnOk4 -and ($jUnDone4.Length -gt 0) -and $jUnNoRemoveBack -and $jUnTsvGone) `
+            ('确认框=' + ($jUnDlg4 -ne $null) + ' 点了=' + $jUnOk4 + ' 状态="' + $jUnDone4 + '" NoRemove 没了=' + $jUnNoRemoveBack + ' 记录清空=' + $jUnTsvGone)
+    }
+    Close-JWindow $jUnWin
+    Start-Sleep -Milliseconds 300
+}
+foreach ($r in @($jUn64Ps, $jUn32Ps, $jUnCuPs)) { try { if (Test-Path -LiteralPath $r) { Remove-Item -LiteralPath $r -Recurse -Force } } catch { } }
+try { if (Test-Path -LiteralPath $jUnTsv) { Remove-Item -LiteralPath $jUnTsv -Force } } catch { }
+try { if (Test-Path -LiteralPath $jUnDelTsv) { Remove-Item -LiteralPath $jUnDelTsv -Force } } catch { }
+try { if (Test-Path -LiteralPath $jUnBackup) { Remove-Item -LiteralPath $jUnBackup -Recurse -Force } } catch { }
 
 [void][TBGui]::CloseWindow($main)
 Start-Sleep -Milliseconds 600

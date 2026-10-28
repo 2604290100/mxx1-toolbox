@@ -35,7 +35,7 @@ namespace Mxx1Toolbox
 
         /// <summary>写完之后**自动重启一次资源管理器**（这个改动不重启就看不到）。
         /// 用户 2026-10-20 的要求：「需要重启资源管理器的功能，要自动调用」——
-        /// 走 ExplorerRestart（命令的唯一来源是 common.json 里那颗「重启资源管理器」）。</summary>
+        /// 走 ExplorerRestart（命令的唯一来源是 common.json 里那个「重启资源管理器」）。</summary>
         public bool RestartExplorer;
 
         public string Name { get { return Item.Name; } }
@@ -366,7 +366,7 @@ namespace Mxx1Toolbox
             Tweak fast = new Tweak();
             fast.OnLabel = "开启快速启动";
             fast.OffLabel = "关闭快速启动";
-            fast.AfterNote = "快速启动要靠休眠文件：如果休眠被关掉（powercfg /h off），这个值写了也不生效 —— 这一页的「禁用/启用休眠」那颗按钮会把两者一起切。";
+            fast.AfterNote = "快速启动要靠休眠文件：如果休眠被关掉（powercfg /h off），这个值写了也不生效 —— 这一页的「禁用/启用休眠」那个按钮会把两者一起切。";
             fast.Item = new RegItemSpec();
             fast.Item.Id = "fast-startup";
             fast.Item.Name = "快速启动";
@@ -552,7 +552,7 @@ namespace Mxx1Toolbox
                     fail.Append("  这次一个字都没写：要写的那个空白图标在系统自带的 imageres.dll（")
                         .Append(imageresDll).AppendLine("），这台机器上找不到它。");
                     fail.Append("  没有它就去写注册表，桌面图标只会更难看 —— 所以这里宁愿不写。").AppendLine();
-                    fail.Append("  你还可以：先补上这个系统文件再重试；实在不行就别点这一颗。");
+                    fail.Append("  你还可以：先补上这个系统文件再重试；实在不行就别点这一个。");
                     return fail.ToString();
                 }
             }
@@ -590,7 +590,7 @@ namespace Mxx1Toolbox
                 {
                     // 不重启资源管理器就看不到变化的开关（小箭头 / 时钟秒）：当场自动重启一次。
                     // 用户 2026-10-20 的原话「需要重启资源管理器的功能，要自动调用」——
-                    // 命令走 common.json 里那颗「重启资源管理器」（ExplorerRestart 是唯一入口）。
+                    // 命令走 common.json 里那个「重启资源管理器」（ExplorerRestart 是唯一入口）。
                     string restartMsg;
                     ExplorerRestart.Run(t.Item.Name, out restartMsg);
                     sb.Append("  ").Append(restartMsg).AppendLine();
@@ -658,7 +658,7 @@ namespace Mxx1Toolbox
         }
 
         /// <summary>只读：把 `Shell Icons\29` 两处现在的样子念一遍 + 两种修法各自会做什么。
-        /// 「修复图标黑块」那颗按钮点开的小窗口就是拿它当正文 —— 点开这个窗口**什么都不改**。</summary>
+        /// 「修复图标黑块」那个按钮点开的小窗口就是拿它当正文 —— 点开这个窗口**什么都不改**。</summary>
         public static string IconBlockReport()
         {
             Tweak t = FindTweak(IconBlockId);
@@ -837,7 +837,7 @@ namespace Mxx1Toolbox
         /// ⚠️ 2026-10-26：报头原来写的是「【桌面图标黑块】还原修复前的图标设置」+ 空记录时一句
         /// 「还没点过『修复桌面图标黑块』」—— 用户点了「还原修复前图标」看到这两句，以为程序
         /// 搞错了按钮（报的问题原话是"点击还原修复前图标提示修复桌面图标黑块"）。现在报头
-        /// 直接用**按钮名**，空记录时先把"这次一个字没写"说清楚，再告诉他想干那件事该点哪颗。</summary>
+        /// 直接用**按钮名**，空记录时先把"这次一个字没写"说清楚，再告诉他想干那件事该点哪个。</summary>
         public static string RestoreIconBlock(out bool ok)
         {
             RegRestoreReport report = Engine.RestoreFor(IconBlockId);

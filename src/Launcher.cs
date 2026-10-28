@@ -369,7 +369,7 @@ namespace Mxx1Toolbox
                         if (string.Equals(t.Action, "status", StringComparison.OrdinalIgnoreCase)) { return "只读：列出每个系统设置开关现在的状态和记下的原值"; }
                         if (string.Equals(t.Action, "iconfix", StringComparison.OrdinalIgnoreCase))
                         {
-                            // 2026-10-26：用户要「两种修法」，所以这颗按钮改成开窗口让他挑
+                            // 2026-10-26：用户要「两种修法」，所以这个按钮改成开窗口让他挑
                             return "在本程序里打开「修复桌面图标黑块」窗口（两种修法：保持无箭头只治黑块 / 恢复系统默认小箭头）";
                         }
                         bool on = string.Equals(t.Action, "on", StringComparison.OrdinalIgnoreCase);
@@ -435,6 +435,8 @@ namespace Mxx1Toolbox
                         if (ua == "rename") { return "在本程序里打开「批量重命名」窗口（先预览再执行，有冲突整批拒绝，可撤销）"; }
                         if (ua == "assoc") { return "在本程序里打开「文件关联体检」窗口（先只读体检 .lnk / .exe / .bat / .msi 这些关联；点「修复缺失项」才写注册表，写前记原值、能还原）"; }
                         if (ua == "pcicons") { return "在本程序里打开「此电脑多余图标」窗口（只读列出「此电脑 → 设备和驱动器」里被软件塞的图标；点「移除全部第三方图标…」才删注册表挂载点，删前记原值、能还原）"; }
+                        if (ua == "startmenu") { return "在本程序里打开「开始菜单程序管理」窗口（只读列出开始菜单「所有应用」里的 .lnk；点「隐藏这个…」才移进备份目录，移前记原值、能还原；删除走回收站）"; }
+                        if (ua == "uninstall") { return "在本程序里打开「程序和功能管理」窗口（只读列出控制面板卸载列表；隐藏 / 锁定 / 删除条目都在窗口里点，改前记原值、能还原）"; }
                         return "在本程序里打开的窗口: " + t.Action;
                     }
                     return "内置动作: " + t.Module + "/" + t.Action;
@@ -783,7 +785,7 @@ namespace Mxx1Toolbox
         }
 
         /// <summary>「电源与笔记本」那一页：一条窗口入口 + 三条只读 + 一条一键动作。
-        /// 真正的"改"只有两处 —— 窗口里的「应用 / 还原」和「桌面模式」这颗按钮；
+        /// 真正的"改"只有两处 —— 窗口里的「应用 / 还原」和「桌面模式」这个按钮；
         /// 命令行那条 `power` 只负责"带管理员重开窗口"，它不接受任何要改什么的参数
         /// （同「右键菜单管理」：写动作只能由用户在窗口里点出来）。</summary>
         private static LaunchResult RunPower(ToolItem t, bool asAdmin, bool showResult)

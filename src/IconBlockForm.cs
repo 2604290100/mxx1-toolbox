@@ -7,11 +7,11 @@ using System.Windows.Forms;
 
 namespace Mxx1Toolbox
 {
-    /// <summary>「修复桌面图标黑块」窗口：一块只读的现状报告 + **两种修法**各一颗按钮。
+    /// <summary>「修复桌面图标黑块」窗口：一块只读的现状报告 + **两种修法**各一个按钮。
     ///
     /// 用户 2026-10-26 的原话：「修改【修复桌面图标黑块】不能只是换回箭头，而是要兼容一下，
     /// 要 2 种方法：一个去图标后的修复方法、一个修改回箭头的方法」——
-    /// 所以那颗按钮不再直接删值，而是开这个窗口让他挑：
+    /// 所以那个按钮不再直接删值，而是开这个窗口让他挑：
     ///   ·「保持无箭头 · 只治黑块」= 小箭头继续不显示，把 `Shell Icons\29` 换成**系统自带的空白图标
     ///     imageres.dll,197**（2026-10-26 实机验证：`shell32.dll,-50` 和自生成的透明 ico 文件在这台
     ///     机器上都会被画成黑块，只有 dll 资源索引这条路干净 —— 无黑块、无小箭头）；
@@ -63,7 +63,7 @@ namespace Mxx1Toolbox
             intro.Text = "桌面 / 快捷方式图标左下角那块黑方块，是「Shell Icons\\29」里那个自定义图标值画出来的。"
                 + "这个窗口给你两种修法 —— 想继续不显示小箭头，就点「保持无箭头 · 只治黑块」；"
                 + "想干脆把小箭头要回来，就点「恢复系统默认小箭头」。"
-                + "两种都会先把原值记下来，随时能点外面那颗「还原修复前图标」退回原样。";
+                + "两种都会先把原值记下来，随时能点外面那个「还原修复前图标」退回原样。";
             root.Controls.Add(intro, 0, 0);
 
             Label cap = new Label();
@@ -248,7 +248,7 @@ namespace Mxx1Toolbox
             body.AppendLine();
             body.AppendLine("要动的是注册表，需要管理员权限；改之前会先把原值记到：" + SysReg.BackupPath);
             body.AppendLine("写完之后会一处一处读回来核对，然后自动重启一次资源管理器（桌面会闪一下）。");
-            body.AppendLine("想退回原样，点外面那颗「还原修复前图标」（按刚才记下的原值写回去）。");
+            body.AppendLine("想退回原样，点外面那个「还原修复前图标」（按刚才记下的原值写回去）。");
             using (ConfirmForm f = new ConfirmForm("要这样修桌面图标吗？", body.ToString(), "开始修复", _theme))
             {
                 if (f.ShowDialog(this) != DialogResult.OK) { return; }

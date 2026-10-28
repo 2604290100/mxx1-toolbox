@@ -14,14 +14,14 @@ namespace Mxx1Toolbox
     /// <summary>「此电脑多余图标」窗口：把「此电脑 → 设备和驱动器」里的挂载点图标扫成一张**列表**
     /// （每行带它自己的小图标），选中一行可以**单个操作**（仿「端口与进程」窗口）：
     ///
-    /// 治的是用户 2026-10-26 报的那个：装完百度网盘，「此电脑 → 设备和驱动器」里多了一颗
+    /// 治的是用户 2026-10-26 报的那个：装完百度网盘，「此电脑 → 设备和驱动器」里多了一个
     /// 「双击运行百度网盘」的图标 —— 真因是软件往 `MyComputer\NameSpace` 写了挂载点（HKCU +
     /// HKLM 两处都有同名 GUID）。移除 = 只删挂载子键、绝不碰 CLSID / 软件本身；系统自带的挂载点
-    /// 只列出、一颗都不会动（选中了也只显示「系统自带（不给移除）」）；移除前记原值、随时能还原。
+    /// 只列出、一个都不会动（选中了也只显示「系统自带（不给移除）」）；移除前记原值、随时能还原。
     ///
     /// 三条口径（和「文件关联体检」「端口与进程」窗口一致）：
     /// ① 点开这个窗口**什么都不改**，只读一遍两个挂载点给你看，所以这里不弹确认框；
-    /// ② 「移除这颗…」/「还原成移除前」每一次都过条款门 + 确认框；不是管理员时弹一次 UAC 带
+    /// ② 「移除这个…」/「还原成移除前」每一次都过条款门 + 确认框；不是管理员时弹一次 UAC 带
     ///    管理员重开窗口，重开之后要再点一次；
     /// ③ 移除之前先把原值记到磁盘（记不下来就一个字都不改），所以「还原成移除前」永远点得动。</summary>
     internal sealed class PcIconsForm : Mxx1Form
@@ -41,7 +41,7 @@ namespace Mxx1Toolbox
         private readonly Button _restore = new Button();
         private readonly Button _refresh = new Button();
         private readonly ContextMenuStrip _menu = new ContextMenuStrip();
-        private readonly ToolStripMenuItem _miRemove = new ToolStripMenuItem("移除这颗…");
+        private readonly ToolStripMenuItem _miRemove = new ToolStripMenuItem("移除这个…");
         private readonly ToolStripMenuItem _miGuid = new ToolStripMenuItem("复制 GUID");
 
         private volatile bool _busy = false;
@@ -87,9 +87,9 @@ namespace Mxx1Toolbox
             intro.MaximumSize = new Size(930, 0);
             intro.Text = "装软件时被塞进「此电脑 → 设备和驱动器」的图标（百度网盘、迅雷、微信这类）"
                 + "就来自注册表里的两个挂载点 —— 这一页把它们扫成一张列表（每行带它自己的小图标）："
-                + "显示名 / 来源 / 图标 / 双击干什么。选中一颗第三方图标点「移除这颗…」（或右键），"
+                + "显示名 / 来源 / 图标 / 双击干什么。选中一个第三方图标点「移除这个…」（或右键），"
                 + "只把挂载点清掉：软件本身不删、照常能用，图标马上从「此电脑」消失。"
-                + "系统自带的条目只列出、一颗都不会动；移除前会把原值记下来，所以随时能点「还原成移除前」放回去。";
+                + "系统自带的条目只列出、一个都不会动；移除前会把原值记下来，所以随时能点「还原成移除前」放回去。";
             intro.Margin = new Padding(2, 0, 2, 8);
             root.Controls.Add(intro, 0, 0);
 
@@ -145,7 +145,7 @@ namespace Mxx1Toolbox
             buttons.ColumnCount = 5;
             buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
             for (int i = 0; i < 4; i++) { buttons.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize)); }
-            _remove.Text = "移除这颗…";
+            _remove.Text = "移除这个…";
             StyleButton(_remove, 150);
             _remove.Click += delegate { DoRemoveOne(); };
             _restore.Text = "还原成移除前";
@@ -277,12 +277,12 @@ namespace Mxx1Toolbox
             try { pending = PcIcons.PendingRecords(); } catch { }
             StringBuilder sb = new StringBuilder();
             if (resultPrefix.Length > 0) { sb.Append(resultPrefix).Append("　"); }
-            sb.Append("共 ").Append(items.Count.ToString(CultureInfo.InvariantCulture)).Append(" 颗：系统 ")
-                .Append((items.Count - _removable).ToString(CultureInfo.InvariantCulture)).Append(" 颗（不动）、第三方 / 来历不明 ")
-                .Append(_removable.ToString(CultureInfo.InvariantCulture)).Append(" 颗（可移除）。");
+            sb.Append("共 ").Append(items.Count.ToString(CultureInfo.InvariantCulture)).Append(" 个：系统 ")
+                .Append((items.Count - _removable).ToString(CultureInfo.InvariantCulture)).Append(" 个（不动）、第三方 / 来历不明 ")
+                .Append(_removable.ToString(CultureInfo.InvariantCulture)).Append(" 个（可移除）。");
             if (_removable > 0)
             {
-                sb.Append("选中一颗点「移除这颗…」或右键（系统自带的不给移除）。");
+                sb.Append("选中一个点「移除这个…」或右键（系统自带的不给移除）。");
             }
             if (pending > 0)
             {
@@ -424,7 +424,7 @@ namespace Mxx1Toolbox
             _miRemove.Enabled = _remove.Enabled;
             _miGuid.Enabled = it != null;
             if (it != null && !it.Removable) { _remove.Text = "系统自带（不给移除）"; }
-            else { _remove.Text = "移除这颗…"; }
+            else { _remove.Text = "移除这个…"; }
             int pending = 0;
             try { pending = PcIcons.PendingRecords(); } catch { }
             _restore.Enabled = !_busy && pending > 0;
@@ -465,7 +465,7 @@ namespace Mxx1Toolbox
             }
         }
 
-        // ------------------------------------------------------------------ 移除（单颗）
+        // ------------------------------------------------------------------ 移除（单个）
 
         private void DoRemoveOne()
         {
@@ -474,10 +474,10 @@ namespace Mxx1Toolbox
             if (it == null) { Flash("先选中一行。"); return; }
             if (!it.Removable)
             {
-                Flash("这颗是系统自带的挂载点，这一页不会动它。");
+                Flash("这个是系统自带的挂载点，这一页不会动它。");
                 return;
             }
-            if (!Consent.EnsureAccepted(this, _theme, "要移除这颗「此电脑」图标"))
+            if (!Consent.EnsureAccepted(this, _theme, "要移除这个「此电脑」图标"))
             {
                 Flash("没有同意《免责声明与服务条款》，这个动作被拦下了。");
                 return;
@@ -485,7 +485,7 @@ namespace Mxx1Toolbox
 
             string name = it.Name.Length > 0 ? it.Name : "（来历不明）";
             StringBuilder body = new StringBuilder();
-            body.Append("要移除这颗「此电脑」图标吗？").AppendLine();
+            body.Append("要移除这个「此电脑」图标吗？").AppendLine();
             body.AppendLine();
             body.Append("  名称：").AppendLine(name);
             body.Append("  GUID：").AppendLine(it.Guid);
@@ -494,12 +494,12 @@ namespace Mxx1Toolbox
             if (it.Command.Length > 0) { body.Append("  双击：").AppendLine(it.Command); }
             body.AppendLine();
             body.AppendLine("只删挂载点：软件本身不删、照常能用，图标马上从「此电脑」消失（不用重启资源管理器）。");
-            body.AppendLine("系统自带的条目一颗都不会动。移除前会把原值记到：" + PcIcons.RecordFile());
+            body.AppendLine("系统自带的条目一个都不会动。移除前会把原值记到：" + PcIcons.RecordFile());
             body.AppendLine("删完会一处一处读回来核对；想放回去，点「还原成移除前」。");
             body.AppendLine();
             body.AppendLine("要动的是注册表（HKLM 那一层），需要管理员权限。软件重启 / 重装可能把图标写回来 —— 那要进软件设置里关。");
 
-            using (ConfirmForm f = new ConfirmForm("要移除这颗「此电脑」图标吗？", body.ToString(), "移除这颗", _theme))
+            using (ConfirmForm f = new ConfirmForm("要移除这个「此电脑」图标吗？", body.ToString(), "移除这个", _theme))
             {
                 if (f.ShowDialog(this) != DialogResult.OK) { return; }
             }
@@ -534,11 +534,11 @@ namespace Mxx1Toolbox
                 Flash("没有待还原的记录（这台机器还没用这个窗口移除过「此电脑」图标）。");
                 return;
             }
-            string body = "会把之前移除的 " + pending.ToString(CultureInfo.InvariantCulture) + " 颗挂载点按记录放回去："
+            string body = "会把之前移除的 " + pending.ToString(CultureInfo.InvariantCulture) + " 个挂载点按记录放回去："
                 + Environment.NewLine + Environment.NewLine
                 + "  · 原来挂在用户层（HKCU）的 → 在用户层重建；" + Environment.NewLine
                 + "  · 原来挂在系统层（HKLM）的 → 在系统层重建。" + Environment.NewLine + Environment.NewLine
-                + "如果有哪一颗后来被软件自己加回来了，那一颗会跳过并在报告里写出来（不会覆盖它）。"
+                + "如果有哪一个后来被软件自己加回来了，那一个会跳过并在报告里写出来（不会覆盖它）。"
                 + Environment.NewLine + Environment.NewLine
                 + "记录文件：" + PcIcons.RecordFile();
             using (ConfirmForm f = new ConfirmForm("要还原成移除前吗？", body, "还原", _theme))
@@ -570,7 +570,7 @@ namespace Mxx1Toolbox
             RefreshState(line);
             if (rep.NeedAdmin && !Launcher.IsAdmin())
             {
-                Flash(what + "时有几颗因为权限没删成 —— 点它们会弹 UAC，用管理员重开窗口之后再点一次。");
+                Flash(what + "时有几个因为权限没删成 —— 点它们会弹 UAC，用管理员重开窗口之后再点一次。");
             }
         }
 

@@ -8,10 +8,10 @@ namespace Mxx1Toolbox
     /// <summary>「要重启资源管理器才生效」的功能共用的一条路。
     ///
     /// 用户 2026-10-20 的要求原话：「需要重启资源管理器的功能，要自动调用」——
-    /// 点了开关就当场重启，不要让人再自己去找那一颗按钮（不然会以为"点了没反应"）。
+    /// 点了开关就当场重启，不要让人再自己去找那一个按钮（不然会以为"点了没反应"）。
     ///
     /// 三条口径：
-    /// ① 命令**只有一个来源** —— `tools\common.json` 里的 `restart-explorer` 那颗按钮；
+    /// ① 命令**只有一个来源** —— `tools\common.json` 里的 `restart-explorer` 那个按钮；
     ///    这里照 id 把它找出来、走 `Launcher.Run` 跑，**绝不重抄一遍** `taskkill /f /im explorer.exe`
     ///    （和右键菜单管理那条路是同一份命令，见 CtxMenuForm.DoRestartExplorer）。
     /// ② 这里只负责"真去做"，**不弹确认框** —— 调用方负责"用户已经同意"这件事
@@ -20,7 +20,7 @@ namespace Mxx1Toolbox
     ///    绝不许把用户的 explorer 杀掉（和右键菜单管理那条同一个开关）。</summary>
     internal static class ExplorerRestart
     {
-        /// <summary>那颗「重启资源管理器」按钮的 id（命令的唯一来源）。</summary>
+        /// <summary>那个「重启资源管理器」按钮的 id（命令的唯一来源）。</summary>
         public const string ToolId = "restart-explorer";
 
         /// <summary>测试开关：`MXX1_NO_EXPLORER_RESTART=1` 时只写日志。</summary>
@@ -33,7 +33,7 @@ namespace Mxx1Toolbox
             }
         }
 
-        /// <summary>那颗按钮会执行的命令原文（确认框 / 报告里给用户看的那一行）。</summary>
+        /// <summary>那个按钮会执行的命令原文（确认框 / 报告里给用户看的那一行）。</summary>
         public static string CommandText()
         {
             ToolItem t = Find();
@@ -49,7 +49,7 @@ namespace Mxx1Toolbox
             ToolItem t = Find();
             if (t == null)
             {
-                message = "工具清单里找不到「重启资源管理器」那颗按钮（tools\\common.json 被改过？）"
+                message = "工具清单里找不到「重启资源管理器」那个按钮（tools\\common.json 被改过？）"
                     + " —— 资源管理器没有重启，手动重启一次（或注销）就有变化。";
                 return false;
             }
@@ -71,7 +71,7 @@ namespace Mxx1Toolbox
             return ok;
         }
 
-        /// <summary>按 id 从工具清单里找那一颗按钮（找不到返回 null）。</summary>
+        /// <summary>按 id 从工具清单里找那一个按钮（找不到返回 null）。</summary>
         private static ToolItem Find()
         {
             try

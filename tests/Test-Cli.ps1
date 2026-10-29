@@ -487,13 +487,13 @@ foreach ($line in ($status.Out -split "`r?`n")) {
     }
 }
 
-Check ('A04 按钮总数 185 + 工具目录里自动加载的 {0} 个（测试期间用户层的按钮会暂停：常用 59 + 系统工具 54 + 隐私 29 + 应用 6 + 清理 13 + 右键 21 + 我的 3）' -f $autoBase) `
-    ((Get-Key $status.Out 'buttons') -eq [string](185 + $autoBase)) (Get-Key $status.Out 'buttons')
+Check ('A04 按钮总数 190 + 工具目录里自动加载的 {0} 个（测试期间用户层的按钮会暂停：常用 59 + 系统工具 59 + 隐私 29 + 应用 6 + 清理 13 + 右键 21 + 我的 3）' -f $autoBase) `
+    ((Get-Key $status.Out 'buttons') -eq [string](190 + $autoBase)) (Get-Key $status.Out 'buttons')
 Check 'A05 内置清单里没有灰色占位按钮了（两个「资源管理器」也接上了真功能；灰规则改由 B 组注入验证）' ((Get-Key $status.Out 'placeholders') -eq '0') (Get-Key $status.Out 'placeholders')
 Check 'A06 危险按钮 3 个' ((Get-Key $status.Out 'dangerous') -eq '3') (Get-Key $status.Out 'dangerous')
 
 # 「常用」页签是合成的（置顶 + 最近使用），清单里没有它的按钮，所以是 0
-$tabExpect = @{ 'recent' = 0; 'common' = 59; 'mine' = 3; 'system' = 54; 'cleanup' = 13; 'privacy' = 29; 'apps' = 6; 'rightmenu' = 21 }
+$tabExpect = @{ 'recent' = 0; 'common' = 59; 'mine' = 3; 'system' = 59; 'cleanup' = 13; 'privacy' = 29; 'apps' = 6; 'rightmenu' = 21 }
 $tabOk = $true
 $tabDetail = @()
 foreach ($k in $tabExpect.Keys) {
@@ -501,13 +501,13 @@ foreach ($k in $tabExpect.Keys) {
     $tabDetail += ($k + '=' + $v)
     if ($v -ne [string]([int]$tabExpect[$k] + [int]$autoByTab[$k])) { $tabOk = $false }
 }
-Check 'A07 八个页签的按钮数正确（0/59/3/54/13/29/6/21，加上自动按钮）' $tabOk ($tabDetail -join ' ')
+Check 'A07 八个页签的按钮数正确（0/59/3/59/13/29/6/21，加上自动按钮）' $tabOk ($tabDetail -join ' ')
 
 $list = Invoke-Exe 'list'
 Check 'A08 list 退出码 0' ($list.Code -eq 0) ('exit=' + $list.Code)
-Check 'A09 list 报的按钮数一致' ((Get-Key $list.Out 'buttons') -eq [string](185 + $autoBase)) (Get-Key $list.Out 'buttons')
+Check 'A09 list 报的按钮数一致' ((Get-Key $list.Out 'buttons') -eq [string](190 + $autoBase)) (Get-Key $list.Out 'buttons')
 $lines = @($list.Out -split "`r?`n" | Where-Object { $_ -match "`t" })
-Check ('A10 list 打出 {0} 行按钮' -f (185 + $autoBase)) ($lines.Count -eq (185 + $autoBase)) ('lines=' + $lines.Count)
+Check ('A10 list 打出 {0} 行按钮' -f (190 + $autoBase)) ($lines.Count -eq (190 + $autoBase)) ('lines=' + $lines.Count)
 
 $rmList = Invoke-Exe 'list --tab rightmenu'
 Check 'A11 右键增强 21 个按钮（20 个右键菜单功能 + 隔壁永久删除工具）' ((Get-Key $rmList.Out 'shown') -eq [string](21 + [int]$autoByTab['rightmenu'])) (Get-Key $rmList.Out 'shown')
@@ -689,7 +689,7 @@ if ($permdel -eq '(未找到)' -or $permdel.Length -eq 0) {
 # ---------------------------------------------------------------- D 组：系统工具
 if (Test-GroupSelected 'D') {
 Write-Host ''
-Write-Host 'D 组 · 「系统工具」54 个按钮（Windows 自带组件 + 修复/诊断 + 文件哈希校验 / 屏幕取色器 / 端口与进程 / 关掉系统代理 / 文件关联体检 / 此电脑多余图标 / 开始菜单程序管理 / 程序和功能管理，--dry 只解析不启动）'
+Write-Host 'D 组 · 「系统工具」59 个按钮（Windows 自带组件 + 修复/诊断 + 文件哈希校验 / 屏幕取色器 / 端口与进程 / 关掉系统代理 / 文件关联体检 / 此电脑多余图标 / 开始菜单程序管理 / 程序和功能管理 / 解除附件管理器锁定 / USB 省电 / 高 DPI 兼容 / 文件取得所有权 / 计划任务 + 服务自启，--dry 只解析不启动）'
 
 # 缺组件的口径按系统版本分叉：Win7 上那 7 个 ms-settings: 按钮天生打不开（算"没有"），
 # Win10/11 上一个都不该缺。这样才能在两种机器上跑同一套测试。
@@ -699,14 +699,14 @@ Check 'D01 status 报 29 个系统工具动作（21 组件 + 2 诊断 + 4 权限
     (((Get-Key $status.Out 'systemTargets') -eq '29') -and $missOk) $d01detail
 
 $sysList = Invoke-Exe 'list --tab system'
-Check 'D02 系统工具页签 54 个按钮（33 + 文件哈希校验 + 屏幕取色器 + 端口与进程 + 系统体检 + 打印卡住了 + 声音问题体检 + 网络体检 + 显示设置 + 打印机显示脱机 + 输入法打不出字 + 蓝屏原因解读 + 输出设备体检 + 进程占用体检 + C 盘空间体检 + 一键换 DNS + U 盘安全弹出 + 关掉系统代理 + 文件关联体检 + 此电脑多余图标 + 开始菜单程序管理 + 程序和功能管理）、没有 placeholder' `
-    (((Get-Key $sysList.Out 'shown') -eq '54') -and (-not ($sysList.Out -match 'placeholder'))) ''
+Check 'D02 系统工具页签 59 个按钮（33 + 文件哈希校验 + 屏幕取色器 + 端口与进程 + 系统体检 + 打印卡住了 + 声音问题体检 + 网络体检 + 显示设置 + 打印机显示脱机 + 输入法打不出字 + 蓝屏原因解读 + 输出设备体检 + 进程占用体检 + C 盘空间体检 + 一键换 DNS + U 盘安全弹出 + 关掉系统代理 + 文件关联体检 + 此电脑多余图标 + 开始菜单程序管理 + 程序和功能管理 + 解除附件管理器锁定 + USB 省电 + 高 DPI 兼容 + 文件取得所有权 + 计划任务 + 服务自启）、没有 placeholder' `
+    (((Get-Key $sysList.Out 'shown') -eq '59') -and (-not ($sysList.Out -match 'placeholder'))) ''
 
 $sysIds = @()
 foreach ($line in ($sysList.Out -split "`r?`n")) {
     if ($line -match "`t") { $sysIds += ($line -split "`t")[0] }
 }
-Check 'D03 读到 54 个系统工具 id' ($sysIds.Count -eq 54) ($sysIds -join ' ')
+Check 'D03 读到 59 个系统工具 id' ($sysIds.Count -eq 59) ($sysIds -join ' ')
 
 $bad = @()
 $detail = @()
@@ -1470,6 +1470,461 @@ try { if (Test-Path -LiteralPath $unTsv) { Remove-Item -LiteralPath $unTsv -Forc
 try { if (Test-Path -LiteralPath $unDelTsv) { Remove-Item -LiteralPath $unDelTsv -Force } } catch { }
 try { if (Test-Path -LiteralPath $unBackup) { Remove-Item -LiteralPath $unBackup -Recurse -Force } } catch { }
 
+# ---- D13（2026-10-29）「解除附件管理器锁定」（治下载的 Office 文档进保护视图 / EXE 弹「Windows 已保护你的电脑」）
+# 机制：从网上下来的文件带一条 NTFS 备用数据流 `:Zone.Identifier`（ZoneId=3 = Internet），
+# 资源管理器 / Office / SmartScreen 认的就是它。解除 = **只删那条流**（文件内容一个字节不动）；
+# 记原值 → 删 → 读回；还原 = 按记录把那条流原样写回去。这里验四件事：
+# ① 按钮在册；② 真机只读；③ 非隔离下 --unblock / --restore 被拦；④ 隔离根里 扫描 → 解除 → 读回 → 还原 → 读回。
+# ⚠️ 夹具里的 ADS 只能用 PowerShell 的 `-Stream` 参数造（.NET 的 File.WriteAllText 不吃 `a.txt:流名`）。
+$ubBtn = Invoke-Exe 'list'
+Check 'D13 「解除附件管理器锁定」在系统工具页，是界面动作（builtin:app/unblock）' `
+    (($ubBtn.Out -match '(?m)^file-unblock\t') -and ($ubBtn.Out -match 'builtin:app/unblock')) ''
+
+$ubReal = Invoke-Exe 'unblock --json'
+$ubRealJson = $null
+try { $ubRealJson = $ubReal.Out | ConvertFrom-Json } catch { }
+Check 'D13b 真机上 unblock --json 只读跑得通（默认扫「下载」文件夹，root 报出来）' `
+    (($ubReal.Code -eq 0) -and ($ubRealJson -ne $null) -and ([string]$ubRealJson.root).Length -gt 0) `
+    ('exit=' + $ubReal.Code + ' root=' + $(if ($ubRealJson) { $ubRealJson.root } else { '解析失败' }))
+
+$ubGuard = Invoke-Exe 'unblock --unblock=all'
+Check 'D13c 不在隔离根下时 unblock --unblock 被拦住（退出码 2，并且说清「只能在窗口里点」）' `
+    (($ubGuard.Code -eq 2) -and ($ubGuard.Err -match '窗口')) ('exit=' + $ubGuard.Code)
+$ubGuard2 = Invoke-Exe 'unblock --restore'
+Check 'D13c2 --restore 同样被拦（退出码 2）' ($ubGuard2.Code -eq 2) ('exit=' + $ubGuard2.Code)
+
+$ubRoot = Join-Path $tmpRoot ('unblock-' + $PID)
+$ubTsv = Join-Path $tmpRoot ('unblock-' + $PID + '.tsv')
+try { if (Test-Path -LiteralPath $ubRoot) { Remove-Item -LiteralPath $ubRoot -Recurse -Force } } catch { }
+try { if (Test-Path -LiteralPath $ubTsv) { Remove-Item -LiteralPath $ubTsv -Force } } catch { }
+[void](New-Item -ItemType Directory -Path $ubRoot -Force)
+$ubLocked = Join-Path $ubRoot 'locked.txt'
+$ubClean = Join-Path $ubRoot 'clean.txt'
+[System.IO.File]::WriteAllText($ubLocked, 'locked content')
+[System.IO.File]::WriteAllText($ubClean, 'clean content')
+Add-Content -LiteralPath $ubLocked -Stream 'Zone.Identifier' -Encoding ASCII `
+    -Value @('[ZoneTransfer]', 'ZoneId=3', 'HostUrl=https://example.com/setup.exe')
+$ubEnv = @{ MXX1_UNBLOCK_ROOT = $ubRoot; MXX1_UNBLOCK_TSV = $ubTsv }
+
+$ubIso = Invoke-Exe 'unblock --json' -Env $ubEnv
+$ubIsoJson = $null
+try { $ubIsoJson = $ubIso.Out | ConvertFrom-Json } catch { }
+Check 'D13d 隔离根里扫描：只认出带 Zone.Identifier 的那一个（干净文件不列）、blocked=true、zone=3' `
+    (($ubIsoJson -ne $null) -and (@($ubIsoJson.items).Count -eq 1) `
+        -and (@($ubIsoJson.items | Where-Object { [bool]$_.blocked -and [string]$_.zone -eq '3' }).Count -eq 1)) `
+    ('items=' + $(if ($ubIsoJson) { @($ubIsoJson.items).Count } else { '?' }))
+
+$ubRun = Invoke-Exe 'unblock --unblock=all' -Env $ubEnv
+$ubStreamGone = $null -eq (Get-Item -LiteralPath $ubLocked -Stream 'Zone.Identifier' -ErrorAction SilentlyContinue)
+$ubTsvMade = $false
+try { $ubTsvMade = (Test-Path -LiteralPath $ubTsv) -and ((Get-Item -LiteralPath $ubTsv).Length -gt 0) } catch { }
+Check 'D13e 解除：result=ok、changed=1，那条备用数据流真没了、文件内容没动、原值进了记录' `
+    (($ubRun.Code -eq 0) -and ((Get-Key $ubRun.Out 'result') -eq 'ok') -and ([int](Get-Key $ubRun.Out 'changed') -eq 1) `
+        -and $ubStreamGone -and $ubTsvMade -and ([System.IO.File]::ReadAllText($ubLocked) -eq 'locked content')) `
+    ('changed=' + (Get-Key $ubRun.Out 'changed') + ' 流没了=' + $ubStreamGone + ' 记录=' + $ubTsvMade)
+
+$ubBack = Invoke-Exe 'unblock --restore' -Env $ubEnv
+$ubStreamBack = $null -ne (Get-Item -LiteralPath $ubLocked -Stream 'Zone.Identifier' -ErrorAction SilentlyContinue)
+$ubZoneBack = ''
+try { $ubZoneBack = [string](Get-Content -LiteralPath $ubLocked -Stream 'Zone.Identifier' -Raw) } catch { }
+Check 'D13f 还原：result=ok、changed=1，那条流按记录写回来了（ZoneId=3 还在）、记录清空' `
+    (($ubBack.Code -eq 0) -and ((Get-Key $ubBack.Out 'result') -eq 'ok') -and ([int](Get-Key $ubBack.Out 'changed') -eq 1) `
+        -and $ubStreamBack -and ($ubZoneBack -match 'ZoneId=3') -and ([int](Get-Key $ubBack.Out 'pending') -eq 0)) `
+    ('changed=' + (Get-Key $ubBack.Out 'changed') + ' 流回来=' + $ubStreamBack + ' pending=' + (Get-Key $ubBack.Out 'pending'))
+
+try { if (Test-Path -LiteralPath $ubRoot) { Remove-Item -LiteralPath $ubRoot -Recurse -Force } } catch { }
+try { if (Test-Path -LiteralPath $ubTsv) { Remove-Item -LiteralPath $ubTsv -Force } } catch { }
+
+# ---- D14（2026-10-29）「USB 省电（断连）」（治 U 盘 / 移动硬盘用着用着自己掉、鼠标键盘卡一下）
+# 机制：`Enum\USB\<VID_PID>\<实例>\Device Parameters` 下那两个 DWORD
+# （EnhancedPowerManagementEnabled / SelectiveSuspendEnabled）= 1 就是「允许计算机关闭此设备以节约电源」。
+# 关掉省电 = 两个都写 0；记原值（含「原本没有这个值」）→ 写 → 读回；还原 = 写回原值 / 原本没有的删掉。
+$upBtn = Invoke-Exe 'list'
+Check 'D14 「USB 省电（断连）」在系统工具页，是界面动作（builtin:app/usbpower）' `
+    (($upBtn.Out -match '(?m)^usb-power\t') -and ($upBtn.Out -match 'builtin:app/usbpower')) ''
+
+$upReal = Invoke-Exe 'usbpower --json'
+$upRealJson = $null
+try { $upRealJson = $upReal.Out | ConvertFrom-Json } catch { }
+Check 'D14b 真机上 usbpower --json 只读跑得通（枚举根报出来、至少一台 USB 设备）' `
+    (($upReal.Code -eq 0) -and ($upRealJson -ne $null) -and (@($upRealJson.devices).Count -ge 1)) `
+    ('exit=' + $upReal.Code + ' devices=' + $(if ($upRealJson) { @($upRealJson.devices).Count } else { '解析失败' }))
+
+$upGuard = Invoke-Exe 'usbpower --disable=all'
+Check 'D14c 不在隔离根下时 usbpower --disable 被拦住（退出码 2，并且说清「只能在窗口里点」）' `
+    (($upGuard.Code -eq 2) -and ($upGuard.Err -match '窗口')) ('exit=' + $upGuard.Code)
+$upGuard2 = Invoke-Exe 'usbpower --restore'
+Check 'D14c2 --restore 同样被拦（退出码 2）' ($upGuard2.Code -eq 2) ('exit=' + $upGuard2.Code)
+
+$upRoot = 'HKCU\Software\mxx1-toolbox\usbpower-test'
+$upRootPs = 'HKCU:\Software\mxx1-toolbox\usbpower-test'
+$upTsv = Join-Path $tmpRoot ('usbpower-' + $PID + '.tsv')
+try { if (Test-Path -LiteralPath $upRootPs) { Remove-Item -LiteralPath $upRootPs -Recurse -Force } } catch { }
+try { if (Test-Path -LiteralPath $upTsv) { Remove-Item -LiteralPath $upTsv -Force } } catch { }
+$upParams = $upRootPs + '\VID_1111&PID_2222\5&abc&0&1\Device Parameters'
+[void](New-Item -Path $upParams -Force)
+Set-ItemProperty -Path $upParams -Name 'EnhancedPowerManagementEnabled' -Value 1 -Type DWord
+Set-ItemProperty -Path $upParams -Name 'SelectiveSuspendEnabled' -Value 1 -Type DWord
+$upEnv = @{ MXX1_USBPOWER_ROOT = $upRoot; MXX1_USBPOWER_TSV = $upTsv }
+
+$upIso = Invoke-Exe 'usbpower --json' -Env $upEnv
+$upIsoJson = $null
+try { $upIsoJson = $upIso.Out | ConvertFrom-Json } catch { }
+$upState = ''
+if ($upIsoJson -ne $null -and @($upIsoJson.devices).Count -ge 1) { $upState = [string](@($upIsoJson.devices)[0].state) }
+Check 'D14d 隔离根里扫描：那台假设备在册、state=on（两个值都是 1 = 允许省电）' `
+    (($upIsoJson -ne $null) -and (@($upIsoJson.devices).Count -eq 1) -and ($upState -eq 'on')) `
+    ('devices=' + $(if ($upIsoJson) { @($upIsoJson.devices).Count } else { '?' }) + ' state=' + $upState)
+
+$upOff = Invoke-Exe 'usbpower --disable=all' -Env $upEnv
+$upOn = -1; $upOn2 = -1
+try { $upOn = [int](Get-ItemProperty -Path $upParams -ErrorAction Stop).EnhancedPowerManagementEnabled } catch { }
+try { $upOn2 = [int](Get-ItemProperty -Path $upParams -ErrorAction Stop).SelectiveSuspendEnabled } catch { }
+Check 'D14e 关省电：result=ok、changed=1，两个值都真变成 0、原值进了记录' `
+    (($upOff.Code -eq 0) -and ((Get-Key $upOff.Out 'result') -eq 'ok') -and ([int](Get-Key $upOff.Out 'changed') -eq 1) `
+        -and ($upOn -eq 0) -and ($upOn2 -eq 0) -and (Test-Path -LiteralPath $upTsv)) `
+    ('Enhanced=' + $upOn + ' Selective=' + $upOn2 + ' tsv=' + (Test-Path -LiteralPath $upTsv))
+
+$upBack = Invoke-Exe 'usbpower --restore' -Env $upEnv
+$upOnBack = -1; $upOnBack2 = -1
+try { $upOnBack = [int](Get-ItemProperty -Path $upParams -ErrorAction Stop).EnhancedPowerManagementEnabled } catch { }
+try { $upOnBack2 = [int](Get-ItemProperty -Path $upParams -ErrorAction Stop).SelectiveSuspendEnabled } catch { }
+Check 'D14f 还原：result=ok、changed=2（两个值各一条记录），两个值都写回 1、记录清空' `
+    (($upBack.Code -eq 0) -and ((Get-Key $upBack.Out 'result') -eq 'ok') -and ([int](Get-Key $upBack.Out 'changed') -eq 2) `
+        -and ($upOnBack -eq 1) -and ($upOnBack2 -eq 1) -and ([int](Get-Key $upBack.Out 'pending') -eq 0)) `
+    ('changed=' + (Get-Key $upBack.Out 'changed') + ' 值=' + $upOnBack + '/' + $upOnBack2 + ' pending=' + (Get-Key $upBack.Out 'pending'))
+
+try { if (Test-Path -LiteralPath $upRootPs) { Remove-Item -LiteralPath $upRootPs -Recurse -Force } } catch { }
+try { if (Test-Path -LiteralPath $upTsv) { Remove-Item -LiteralPath $upTsv -Force } } catch { }
+
+# ---- D15（2026-10-29）「高 DPI 兼容」（治开了 125% / 150% 缩放之后老程序界面糊成一片）
+# 机制：`HKCU\...\AppCompatFlags\Layers` 里「程序完整路径 = ~ HIGHDPIAWARE」；**只写当前用户**（不要管理员）。
+# 设成高 DPI = 把 DPI 那三个词换掉、加上 HIGHDPIAWARE，**别的标记（RUNASADMIN 这类）原样保留**；
+# 记原值（含「原本没有这条例」）→ 写 → 读回；还原 = 按记录写回 / 删掉。
+$dpBtn = Invoke-Exe 'list'
+Check 'D15 「高 DPI 兼容」在系统工具页，是界面动作（builtin:app/dpiflag）' `
+    (($dpBtn.Out -match '(?m)^dpi-flag\t') -and ($dpBtn.Out -match 'builtin:app/dpiflag')) ''
+
+$dpReal = Invoke-Exe 'dpiflag --json'
+$dpRealJson = $null
+try { $dpRealJson = $dpReal.Out | ConvertFrom-Json } catch { }
+Check 'D15b 真机上 dpiflag --json 只读跑得通（兼容性标记根报出来）' `
+    (($dpReal.Code -eq 0) -and ($dpRealJson -ne $null) -and ([string]$dpRealJson.root).Length -gt 0) `
+    ('exit=' + $dpReal.Code + ' items=' + $(if ($dpRealJson) { @($dpRealJson.items).Count } else { '解析失败' }))
+
+$dpGuard = Invoke-Exe 'dpiflag --set=all'
+Check 'D15c 不在隔离根下时 dpiflag --set 被拦住（退出码 2，并且说清「只能在窗口里点」）' `
+    (($dpGuard.Code -eq 2) -and ($dpGuard.Err -match '窗口')) ('exit=' + $dpGuard.Code)
+$dpGuard2 = Invoke-Exe 'dpiflag --restore'
+Check 'D15c2 --restore 同样被拦（退出码 2）' ($dpGuard2.Code -eq 2) ('exit=' + $dpGuard2.Code)
+
+$dpRoot = 'HKCU\Software\mxx1-toolbox\dpiflag-test'
+$dpRootPs = 'HKCU:\Software\mxx1-toolbox\dpiflag-test'
+$dpTsv = Join-Path $tmpRoot ('dpiflag-' + $PID + '.tsv')
+try { if (Test-Path -LiteralPath $dpRootPs) { Remove-Item -LiteralPath $dpRootPs -Recurse -Force } } catch { }
+try { if (Test-Path -LiteralPath $dpTsv) { Remove-Item -LiteralPath $dpTsv -Force } } catch { }
+# ⚠️ 值名用 %ProgramFiles% 开头：编码体检查会拦「盘符开头的字面绝对路径」，夹具一律别写 C:\…
+$dpExe = '%ProgramFiles%\Mxx1Test\a.exe'
+[void](New-Item -Path $dpRootPs -Force)
+Set-ItemProperty -Path $dpRootPs -Name $dpExe -Value '~ RUNASADMIN' -Type String
+$dpEnv = @{ MXX1_DPIFLAG_ROOT = $dpRoot; MXX1_DPIFLAG_TSV = $dpTsv }
+
+$dpIso = Invoke-Exe 'dpiflag --json' -Env $dpEnv
+$dpIsoJson = $null
+try { $dpIsoJson = $dpIso.Out | ConvertFrom-Json } catch { }
+$dpData = ''
+if ($dpIsoJson -ne $null -and @($dpIsoJson.items).Count -ge 1) { $dpData = [string](@($dpIsoJson.items)[0].data) }
+Check 'D15d 隔离根里扫描：那条例在册、原来的标记是 ~ RUNASADMIN（还没设过高 DPI）' `
+    (($dpIsoJson -ne $null) -and (@($dpIsoJson.items).Count -eq 1) -and ($dpData -eq '~ RUNASADMIN')) `
+    ('items=' + $(if ($dpIsoJson) { @($dpIsoJson.items).Count } else { '?' }) + ' data=' + $dpData)
+
+$dpSet = Invoke-Exe ('dpiflag --set=' + $dpExe) -Env $dpEnv
+$dpNow = [string](Get-ItemProperty -Path $dpRootPs -Name $dpExe -ErrorAction SilentlyContinue).$dpExe
+Check 'D15e 设为高 DPI：result=ok、changed=1，标记变成 ~ HIGHDPIAWARE RUNASADMIN（别的标记没被吃掉）、原值进了记录' `
+    (($dpSet.Code -eq 0) -and ((Get-Key $dpSet.Out 'result') -eq 'ok') -and ([int](Get-Key $dpSet.Out 'changed') -eq 1) `
+        -and ($dpNow -eq '~ HIGHDPIAWARE RUNASADMIN') -and (Test-Path -LiteralPath $dpTsv)) `
+    ('data=[' + $dpNow + '] tsv=' + (Test-Path -LiteralPath $dpTsv))
+
+$dpBack = Invoke-Exe 'dpiflag --restore' -Env $dpEnv
+$dpNowBack = [string](Get-ItemProperty -Path $dpRootPs -Name $dpExe -ErrorAction SilentlyContinue).$dpExe
+Check 'D15f 还原：result=ok、changed=1，标记按记录写回 ~ RUNASADMIN、记录清空' `
+    (($dpBack.Code -eq 0) -and ((Get-Key $dpBack.Out 'result') -eq 'ok') -and ([int](Get-Key $dpBack.Out 'changed') -eq 1) `
+        -and ($dpNowBack -eq '~ RUNASADMIN') -and ([int](Get-Key $dpBack.Out 'pending') -eq 0)) `
+    ('data=[' + $dpNowBack + '] pending=' + (Get-Key $dpBack.Out 'pending'))
+
+try { if (Test-Path -LiteralPath $dpRootPs) { Remove-Item -LiteralPath $dpRootPs -Recurse -Force } } catch { }
+try { if (Test-Path -LiteralPath $dpTsv) { Remove-Item -LiteralPath $dpTsv -Force } } catch { }
+
+# ---- D16（2026-10-29）「文件取得所有权」（治文件 / 文件夹删不掉改不了、右键「属性 → 安全」是灰的）
+# 机制：把所有者改成当前用户 + 追加一条「完全控制」；**只追加、不删任何原有 ACE**（就算还原失败，
+# 原来的权限也还在）；改前把原样的 SDDL 记进 TSV。命令行多一道边界：目标**必须落在隔离根里面**
+# （否则 --take= 就能把机器上任何文件的所有者改掉）。这里验五件事：按钮 / 真机只读 / 非隔离被拦 /
+# 隔离根里越界被拦 / 取得 → 读回 → 还原 整条链。
+$toBtn = Invoke-Exe 'list'
+Check 'D16 「文件取得所有权」在系统工具页，是界面动作（builtin:app/takeown）' `
+    (($toBtn.Out -match '(?m)^file-takeown\t') -and ($toBtn.Out -match 'builtin:app/takeown')) ''
+
+$toRoot = Join-Path $tmpRoot ('takeown-' + $PID)
+$toOutside = Join-Path $tmpRoot ('takeown-' + $PID + '-outside')
+$toTsv = Join-Path $tmpRoot ('takeown-' + $PID + '.tsv')
+foreach ($p in @($toRoot, $toOutside)) { try { if (Test-Path -LiteralPath $p) { Remove-Item -LiteralPath $p -Recurse -Force } } catch { } }
+try { if (Test-Path -LiteralPath $toTsv) { Remove-Item -LiteralPath $toTsv -Force } } catch { }
+[void](New-Item -ItemType Directory -Path $toRoot -Force)
+[void](New-Item -ItemType Directory -Path $toOutside -Force)
+$toFile = Join-Path $toRoot 'a.txt'
+$toOutFile = Join-Path $toOutside 'b.txt'
+[System.IO.File]::WriteAllText($toFile, 'take me')
+[System.IO.File]::WriteAllText($toOutFile, 'do not touch')
+
+$toReal = Invoke-Exe ('takeown --paths=' + (Quote-Arg $toFile) + ' --json')
+$toRealJson = $null
+try { $toRealJson = $toReal.Out | ConvertFrom-Json } catch { }
+$toRealSelf = $false
+if ($toRealJson -ne $null -and @($toRealJson.items).Count -ge 1) { $toRealSelf = [bool](@($toRealJson.items)[0].self) }
+Check 'D16b 真机上 takeown --paths=… --json 只读跑得通（这个文件在册、所有者就是当前用户、没改任何权限）' `
+    (($toReal.Code -eq 0) -and ($toRealJson -ne $null) -and (@($toRealJson.items).Count -eq 1) -and $toRealSelf `
+        -and ([int](Get-Key $toReal.Out 'pending') -eq 0)) `
+    ('exit=' + $toReal.Code + ' self=' + $toRealSelf)
+
+$toGuard = Invoke-Exe ('takeown --take=' + (Quote-Arg $toFile))
+Check 'D16c 不在隔离根下时 takeown --take 被拦住（退出码 2，并且说清「只能在窗口里点」）' `
+    (($toGuard.Code -eq 2) -and ($toGuard.Err -match '窗口')) ('exit=' + $toGuard.Code)
+$toGuard2 = Invoke-Exe 'takeown --restore'
+Check 'D16c2 --restore 同样被拦（退出码 2）' ($toGuard2.Code -eq 2) ('exit=' + $toGuard2.Code)
+
+$toEnv = @{ MXX1_TAKEOWN_ROOT = $toRoot; MXX1_TAKEOWN_TSV = $toTsv }
+$toCross = Invoke-Exe ('takeown --take=' + (Quote-Arg $toOutFile)) -Env $toEnv
+Check 'D16d 隔离根里的目标边界：指向根外面的路径退 2、并且一个都没动（防止命令行改别处的所有者）' `
+    (($toCross.Code -eq 2) -and ($toCross.Err -match '隔离根')) ('exit=' + $toCross.Code)
+
+$toAdmin = ((Get-Key $status.Out 'admin') -eq 'yes')
+if (-not $toAdmin) {
+    Skip 'D16e 取得所有权（真改权限）' '不是管理员：拿不到 SeTakeOwnershipPrivilege（这不是功能坏了，用管理员重跑即可）'
+    Skip 'D16f 还原所有者 / 权限' '不是管理员：同上'
+} else {
+    $toRun = Invoke-Exe ('takeown --paths=' + (Quote-Arg $toFile) + ' --take=all') -Env $toEnv
+    $toAfter = Invoke-Exe ('takeown --paths=' + (Quote-Arg $toFile) + ' --json') -Env $toEnv
+    $toAfterJson = $null
+    try { $toAfterJson = $toAfter.Out | ConvertFrom-Json } catch { }
+    $toSelfAfter = $false
+    if ($toAfterJson -ne $null -and @($toAfterJson.items).Count -ge 1) { $toSelfAfter = [bool](@($toAfterJson.items)[0].self) }
+    Check 'D16e 取得所有权：result=ok、changed=1，读回来所有者在册是自己、原样 SDDL 进了记录' `
+        (($toRun.Code -eq 0) -and ((Get-Key $toRun.Out 'result') -eq 'ok') -and ([int](Get-Key $toRun.Out 'changed') -eq 1) `
+            -and $toSelfAfter -and (Test-Path -LiteralPath $toTsv)) `
+        ('changed=' + (Get-Key $toRun.Out 'changed') + ' self=' + $toSelfAfter + ' tsv=' + (Test-Path -LiteralPath $toTsv))
+
+    $toBack = Invoke-Exe 'takeown --restore' -Env $toEnv
+    Check 'D16f 还原：result=ok、changed=1，记录清空（所有者和 DACL 按记下的 SDDL 还回去）、文件内容一个字节没动' `
+        (($toBack.Code -eq 0) -and ((Get-Key $toBack.Out 'result') -eq 'ok') -and ([int](Get-Key $toBack.Out 'changed') -eq 1) `
+            -and ([int](Get-Key $toBack.Out 'pending') -eq 0) -and ([System.IO.File]::ReadAllText($toFile) -eq 'take me')) `
+        ('changed=' + (Get-Key $toBack.Out 'changed') + ' pending=' + (Get-Key $toBack.Out 'pending'))
+}
+
+foreach ($p in @($toRoot, $toOutside)) { try { if (Test-Path -LiteralPath $p) { Remove-Item -LiteralPath $p -Recurse -Force } } catch { } }
+try { if (Test-Path -LiteralPath $toTsv) { Remove-Item -LiteralPath $toTsv -Force } } catch { }
+
+# ---- D17（2026-10-29）「计划任务 + 服务自启」（治「启动项里关了它还是自己跑起来」）
+# 读：任务 = 解析 `%SystemRoot%\System32\Tasks` 下的任务 XML（UTF-16，全靠英文标签，中文系统也读得懂）；
+#     服务 = `HKLM\SYSTEM\CurrentControlSet\Services\<名>` 的 Start / Type / ImagePath。
+# 写：任务 = `schtasks /change /tn "<名字>" /disable`，读回核对 = 同一个 XML 里出现 `<Enabled>false</Enabled>`；
+#     服务 = Start 写 4。
+# 底线：`\Microsoft\` 开头的任务、ImagePath 落在 %SystemRoot% 的服务、驱动、**读不到 ImagePath 的**
+# 一律只报告不给动。这里用假 schtasks（MXX1_SCHTASKS）+ 隔离的任务目录 / 服务根验整条链。
+$aeBtn = Invoke-Exe 'list'
+Check 'D17 「计划任务 + 服务自启」在系统工具页，是界面动作（builtin:app/autoextra）' `
+    (($aeBtn.Out -match '(?m)^auto-extra\t') -and ($aeBtn.Out -match 'builtin:app/autoextra')) ''
+
+$aeReal = Invoke-Exe 'autoextra --json'
+$aeRealJson = $null
+try { $aeRealJson = $aeReal.Out | ConvertFrom-Json } catch { }
+$aeRealSys = 0; $aeRealTasks = 0; $aeRealItems = 0
+if ($aeRealJson -ne $null) {
+    $aeRealItems = @($aeRealJson.items).Count
+    $aeRealSys = @($aeRealJson.items | Where-Object { [bool]$_.system }).Count
+    $aeRealTasks = @($aeRealJson.items | Where-Object { [string]$_.kind -eq 'task' }).Count
+}
+Check 'D17b 真机上 autoextra --json 只读跑得通（任务 + 服务都在，系统自带的都标 system）' `
+    (($aeReal.Code -eq 0) -and ($aeRealJson -ne $null) -and ($aeRealItems -ge 1) -and ($aeRealSys -ge 1) -and ($aeRealTasks -ge 1)) `
+    ('exit=' + $aeReal.Code + ' items=' + $aeRealItems + ' system=' + $aeRealSys + ' tasks=' + $aeRealTasks)
+
+$aeGuard = Invoke-Exe 'autoextra --disable=all'
+Check 'D17c 不在隔离根下时 autoextra --disable 被拦住（退出码 2，并且说清「只能在窗口里点」）' `
+    (($aeGuard.Code -eq 2) -and ($aeGuard.Err -match '窗口')) ('exit=' + $aeGuard.Code)
+$aeGuard2 = Invoke-Exe 'autoextra --restore'
+Check 'D17c2 --restore 同样被拦（退出码 2）' ($aeGuard2.Code -eq 2) ('exit=' + $aeGuard2.Code)
+
+$aeDir = Join-Path $tmpRoot ('autoextra-' + $PID)
+$aeTasks = Join-Path $aeDir 'tasks'
+$aeTsv = Join-Path $aeDir 'original.tsv'
+$aeFake = Join-Path $aeDir 'schtasks.exe'
+$aeFakeLog = Join-Path $aeDir 'schtasks.log'
+$aeSvcRoot = 'HKCU\Software\mxx1-toolbox\autoextra-svc'
+$aeSvcRootPs = 'HKCU:\Software\mxx1-toolbox\autoextra-svc'
+try { if (Test-Path -LiteralPath $aeDir) { Remove-Item -LiteralPath $aeDir -Recurse -Force } } catch { }
+try { if (Test-Path -LiteralPath $aeSvcRootPs) { Remove-Item -LiteralPath $aeSvcRootPs -Recurse -Force } } catch { }
+[void](New-Item -ItemType Directory -Path $aeTasks -Force)
+
+# 夹具一：一个第三方计划任务（\MyTask，登录触发）——任务 XML 是 UTF-16 + BOM
+$aeTaskFile = Join-Path $aeTasks 'MyTask'
+$aeTaskXml = @'
+<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo><Author>Mxx1Test</Author></RegistrationInfo>
+  <Triggers><LogonTrigger /></Triggers>
+  <Settings><Enabled>true</Enabled></Settings>
+  <Actions><Exec><Command>%ProgramFiles%\Mxx1Test\fake.exe</Command></Exec></Actions>
+</Task>
+'@
+[System.IO.File]::WriteAllText($aeTaskFile, $aeTaskXml, (New-Object System.Text.UnicodeEncoding($false, $true)))
+
+# 夹具二：三个服务 —— 第三方（可动）/ ImagePath 在 %SystemRoot% 下（系统，只报告）/ 读不到 ImagePath（按系统处理）
+function New-AeService {
+    param([string]$Name, [string]$Image, [int]$Start = 3)
+    $p = $aeSvcRootPs + '\' + $Name
+    [void](New-Item -Path $p -Force)
+    if ($Image.Length -gt 0) { Set-ItemProperty -Path $p -Name 'ImagePath' -Value $Image -Type String }
+    Set-ItemProperty -Path $p -Name 'Start' -Value $Start -Type DWord
+    Set-ItemProperty -Path $p -Name 'Type' -Value 16 -Type DWord
+}
+New-AeService 'Mxx1FakeThird' '%ProgramFiles%\Mxx1Test\fake-svc.exe' 3
+New-AeService 'Mxx1FakeSystem' '%SystemRoot%\System32\svchost.exe -k netsvcs' 2
+New-AeService 'Mxx1FakeNoImage' '' 3
+
+# 假的 schtasks：把 `<Enabled>false</Enabled>` 写进 / 从任务 XML 里拿掉（源码一律英文，中文会被 Add-Type 按 ANSI 解坏）
+$aeSrc = @'
+using System;
+using System.IO;
+using System.Text;
+
+// A stand-in for schtasks.exe: /change /tn <name> /disable|/enable flips <Enabled> in the task XML
+// under MXX1_FAKE_TASKS. Every call is appended to MXX1_FAKE_SCHTASKS_LOG.
+public static class FakeSchtasks
+{
+    public static int Main(string[] args)
+    {
+        try
+        {
+            string log = Environment.GetEnvironmentVariable("MXX1_FAKE_SCHTASKS_LOG");
+            if (log != null && log.Length > 0)
+            {
+                File.AppendAllText(log, string.Join(" ", args) + Environment.NewLine, new UTF8Encoding(false));
+            }
+        }
+        catch { }
+
+        string name = "";
+        bool disable = false;
+        bool enable = false;
+        for (int i = 0; i < args.Length; i++)
+        {
+            if (string.Equals(args[i], "/tn", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length) { name = args[i + 1]; }
+            else if (string.Equals(args[i], "/disable", StringComparison.OrdinalIgnoreCase)) { disable = true; }
+            else if (string.Equals(args[i], "/enable", StringComparison.OrdinalIgnoreCase)) { enable = true; }
+        }
+        string root = Environment.GetEnvironmentVariable("MXX1_FAKE_TASKS");
+        if (root == null || root.Length == 0 || name.Length == 0)
+        {
+            Console.Error.WriteLine("fake schtasks: need MXX1_FAKE_TASKS and /tn");
+            return 2;
+        }
+        string file = Path.Combine(root, name.TrimStart('\\'));
+        if (!File.Exists(file))
+        {
+            Console.Error.WriteLine("fake schtasks: no such task " + name);
+            return 1;
+        }
+        string text;
+        using (StreamReader r = new StreamReader(file, Encoding.UTF8, true)) { text = r.ReadToEnd(); }
+        if (disable)
+        {
+            if (text.IndexOf("<Enabled>false</Enabled>", StringComparison.Ordinal) < 0)
+            {
+                text = text.Replace("</Settings>", "<Enabled>false</Enabled></Settings>");
+            }
+        }
+        else if (enable)
+        {
+            text = text.Replace("<Enabled>false</Enabled>", "");
+        }
+        File.WriteAllText(file, text, new UnicodeEncoding(false, true));
+        return 0;
+    }
+}
+'@
+
+$aeWhy = ''
+$aeFakeOk = $false
+try {
+    if (Test-Path -LiteralPath $aeFake) { Remove-Item -LiteralPath $aeFake -Force }
+    Add-Type -TypeDefinition $aeSrc -OutputAssembly $aeFake -OutputType ConsoleApplication -ErrorAction Stop
+    $aeFakeOk = Test-Path -LiteralPath $aeFake
+} catch { $aeFakeOk = $false; $aeWhy = $_.Exception.Message }
+
+if (-not $aeFakeOk) {
+    Skip 'D17d–D17h 计划任务 + 服务自启（隔离根端到端）' ('这台机器编不出假的 schtasks.exe（Add-Type 失败）：' + $aeWhy)
+} else {
+    $aeEnv = @{
+        MXX1_AUTOEXTRA_TASKS = $aeTasks
+        MXX1_AUTOEXTRA_SERVICES = $aeSvcRoot
+        MXX1_AUTOEXTRA_TSV = $aeTsv
+        MXX1_SCHTASKS = $aeFake
+        MXX1_FAKE_TASKS = $aeTasks
+        MXX1_FAKE_SCHTASKS_LOG = $aeFakeLog
+    }
+
+    $aeIso = Invoke-Exe 'autoextra --json' -Env $aeEnv
+    $aeIsoJson = $null
+    try { $aeIsoJson = $aeIso.Out | ConvertFrom-Json } catch { }
+    $aeIsoItems = 0; $aeIsoSys = 0; $aeNoImgSys = $false
+    if ($aeIsoJson -ne $null) {
+        $aeIsoItems = @($aeIsoJson.items).Count
+        $aeIsoSys = @($aeIsoJson.items | Where-Object { [bool]$_.system }).Count
+        $aeNoImgSys = (@($aeIsoJson.items | Where-Object { [string]$_.kind -eq 'service' -and [string]$_.id -eq 'Mxx1FakeNoImage' -and [bool]$_.system }).Count -eq 1)
+    }
+    Check 'D17d 隔离根里扫描：1 个任务 + 3 个服务都在，系统自带的 2 个标 system（ImagePath 读不到的也算系统、不给动）' `
+        (($aeIsoJson -ne $null) -and ($aeIsoItems -eq 4) -and ($aeIsoSys -eq 2) -and $aeNoImgSys) `
+        ('items=' + $aeIsoItems + ' system=' + $aeIsoSys + ' 没ImagePath的算系统=' + $aeNoImgSys)
+
+    $aeTaskRun = Invoke-Exe 'autoextra --disable=task:\MyTask' -Env $aeEnv
+    $aeXml = ''
+    try { $aeXml = [System.IO.File]::ReadAllText($aeTaskFile, [System.Text.Encoding]::Unicode) } catch { }
+    Check 'D17e 禁用计划任务：result=ok、changed=1，任务 XML 里真出现 <Enabled>false</Enabled>（读回核对的就是它）' `
+        (($aeTaskRun.Code -eq 0) -and ((Get-Key $aeTaskRun.Out 'result') -eq 'ok') -and ([int](Get-Key $aeTaskRun.Out 'changed') -eq 1) `
+            -and ($aeXml -match '<Enabled>false</Enabled>')) `
+        ('changed=' + (Get-Key $aeTaskRun.Out 'changed') + ' XML里有已禁用=' + ($aeXml -match '<Enabled>false</Enabled>'))
+
+    $aeSvcRun = Invoke-Exe 'autoextra --disable=service:Mxx1FakeThird' -Env $aeEnv
+    $aeStart = -1
+    try { $aeStart = [int](Get-ItemProperty -Path ($aeSvcRootPs + '\Mxx1FakeThird') -ErrorAction Stop).Start } catch { }
+    Check 'D17f 禁用服务：result=ok、changed=1，注册表 Start 真变成 4、原值进了记录' `
+        (($aeSvcRun.Code -eq 0) -and ((Get-Key $aeSvcRun.Out 'result') -eq 'ok') -and ([int](Get-Key $aeSvcRun.Out 'changed') -eq 1) `
+            -and ($aeStart -eq 4) -and (Test-Path -LiteralPath $aeTsv)) `
+        ('Start=' + $aeStart + ' tsv=' + (Test-Path -LiteralPath $aeTsv))
+
+    $aeSysRun = Invoke-Exe 'autoextra --disable=service:Mxx1FakeSystem' -Env $aeEnv
+    $aeSysStart = -1
+    try { $aeSysStart = [int](Get-ItemProperty -Path ($aeSvcRootPs + '\Mxx1FakeSystem') -ErrorAction Stop).Start } catch { }
+    Check 'D17g 系统自带的服务不给动：skipped=1、changed=0、Start 还是 2（说明里点名「不给禁用」）' `
+        (($aeSysRun.Code -eq 0) -and ([int](Get-Key $aeSysRun.Out 'changed') -eq 0) `
+            -and ([int](Get-Key $aeSysRun.Out 'skipped') -eq 1) -and ($aeSysStart -eq 2) `
+            -and ((Get-Key $aeSysRun.Out 'message') -match '不给禁用')) `
+        ('changed=' + (Get-Key $aeSysRun.Out 'changed') + ' skipped=' + (Get-Key $aeSysRun.Out 'skipped') + ' Start=' + $aeSysStart)
+
+    $aeBack = Invoke-Exe 'autoextra --restore' -Env $aeEnv
+    $aeXmlBack = ''
+    try { $aeXmlBack = [System.IO.File]::ReadAllText($aeTaskFile, [System.Text.Encoding]::Unicode) } catch { }
+    $aeStartBack = -1
+    try { $aeStartBack = [int](Get-ItemProperty -Path ($aeSvcRootPs + '\Mxx1FakeThird') -ErrorAction Stop).Start } catch { }
+    Check 'D17h 还原：result=ok、changed=2（任务 + 服务），任务 XML 里那条「已禁用」没了、Start 回到 3、记录清空' `
+        (($aeBack.Code -eq 0) -and ((Get-Key $aeBack.Out 'result') -eq 'ok') -and ([int](Get-Key $aeBack.Out 'changed') -eq 2) `
+            -and ($aeXmlBack -notmatch '<Enabled>false</Enabled>') -and ($aeStartBack -eq 3) `
+            -and ([int](Get-Key $aeBack.Out 'pending') -eq 0)) `
+        ('changed=' + (Get-Key $aeBack.Out 'changed') + ' XML里已禁用=' + ($aeXmlBack -match '<Enabled>false</Enabled>') + ' Start=' + $aeStartBack + ' pending=' + (Get-Key $aeBack.Out 'pending'))
+}
+
+try { if (Test-Path -LiteralPath $aeDir) { Remove-Item -LiteralPath $aeDir -Recurse -Force } } catch { }
+try { if (Test-Path -LiteralPath $aeSvcRootPs) { Remove-Item -LiteralPath $aeSvcRootPs -Recurse -Force } } catch { }
+
 }
 
 # ---------------------------------------------------------------- F 组：工具目录（bin-tools）
@@ -1797,7 +2252,7 @@ Write-Host 'H 组 · 悬停说明（用户 2026-10-04 报过「鼠标悬停的�
 # tip 命令打印的就是界面塞给 ToolTip 的那个字符串，所以这里能直接断言，不用去动真鼠标。
 $tipsAll = Invoke-Exe 'tip'
 Check 'H01 tip 退出码 0' ($tipsAll.Code -eq 0) ('exit=' + $tipsAll.Code)
-Check ('H02 tip 覆盖了每个按钮（185 + 自动 {0} 个）' -f $autoBase) ((Get-Key $tipsAll.Out 'tips') -eq [string](185 + $autoBase)) (Get-Key $tipsAll.Out 'tips')
+Check ('H02 tip 覆盖了每个按钮（190 + 自动 {0} 个）' -f $autoBase) ((Get-Key $tipsAll.Out 'tips') -eq [string](190 + $autoBase)) (Get-Key $tipsAll.Out 'tips')
 
 $blocks = @{}
 $curId = ''

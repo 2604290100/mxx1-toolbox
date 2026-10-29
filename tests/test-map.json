@@ -487,6 +487,76 @@
     },
     {
       "paths": [
+        "src/FileUnblock.cs",
+        "src/FileUnblockForm.cs"
+      ],
+      "cli": [
+        "A",
+        "D"
+      ],
+      "gui": [
+        "J"
+      ],
+      "note": "2026-10-29「解除附件管理器锁定」（下载的 Office 文档保护视图 / EXE 弹「Windows 已保护你的电脑」——量出来是 NTFS 的备用数据流 `文件名:Zone.Identifier`，ZoneId=3 = 来自 Internet）。后端 = 只读扫目录里每个文件的这条流（**只能走 P/Invoke CreateFileW**：.NET 的 FileStream 对 `a.txt:Zone.Identifier` 抛「不支持给定路径的格式」，一改成 FileStream 扫描就永远 0 条）+ 解除前把流的原文 base64 记进 unblock-original.tsv（记不下来就一个都不删）+ 删完读回核对 + 按记录写回去还原。命令行判据 D13–D13f（隔离根 MXX1_UNBLOCK_ROOT / MXX1_UNBLOCK_TSV，绝不碰真实下载文件夹；D13c 盯「没有隔离就退 2」；D13e 验主文件内容一个字节都没动）；界面 J33/J33b–J33d 真从按钮开窗口、真点「全部解除…」「还原锁定」并读回那条流与记录文件"
+    },
+    {
+      "paths": [
+        "src/UsbPower.cs",
+        "src/UsbPowerForm.cs"
+      ],
+      "cli": [
+        "A",
+        "D"
+      ],
+      "gui": [
+        "J"
+      ],
+      "note": "2026-10-29「USB 省电（断连）」（U 盘突然掉 / 鼠标卡一下 / 移动硬盘认不到——Windows 默认「为了省电可以关掉这个 USB 设备」）。后端 = 只读扫 `USB\\Enum` 下每个设备的 `Device Parameters` 两个值（EnhancedPowerManagementEnabled / SelectiveSuspendEnabled）+ 关省电 = 两个都写 0 + 写前记原值（5 段一行：时间/键路径/值名/原本有没有/原值）+ 写完读回核对 + 按记录还原（原本没有的值删掉）。命令行判据 D14–D14f（隔离根 MXX1_USBPOWER_ROOT / MXX1_USBPOWER_TSV，绝不碰真实设备键；D14c 盯「没有隔离就退 2」）；界面 J34/J34b/J34c 真从按钮开窗口、真点「关掉全部…」「还原成关闭前」并读回两个值。⚠️ 记录行是 **5 段**，`Restore` 里那句 `r.Length < 5` 别写成 `< 6`（写成 6 就一条都读不进来，D14f 当场红）"
+    },
+    {
+      "paths": [
+        "src/DpiFlag.cs",
+        "src/DpiFlagForm.cs"
+      ],
+      "cli": [
+        "A",
+        "D"
+      ],
+      "gui": [
+        "J"
+      ],
+      "note": "2026-10-29「高 DPI 兼容」（笔记本 125% / 150% 缩放后老程序界面糊成一片或字小得看不清）。后端 = 读写 HKCU 的 `AppCompatFlags\\Layers`（值名 = 程序完整路径，值是 `~ HIGHDPIAWARE` 这种用空格分开的标记）+ 设成高 DPI 时**只换掉 DPI 那三个词、别的标记原样留着**（`~ RUNASADMIN` 不许被吃掉）+ 写前记原值（dpi-flag-original.tsv）+ 写完读回核对 + 按记录还原。命令行判据 D15–D15f（隔离根 MXX1_DPIFLAG_ROOT / MXX1_DPIFLAG_TSV；D15c 盯「没有隔离就退 2」；D15e 验 RUNASADMIN 还在）；界面 J35/J35b/J35c 真从按钮开窗口、真点选一行、真点「设为高 DPI 感知…」「还原成设置前」并读回标记。⚠️ 夹具里的值名用 `%ProgramFiles%\\Mxx1Test\\…` 开头 —— 编码体检查会拦盘符开头的字面绝对路径"
+    },
+    {
+      "paths": [
+        "src/FileTakeOwn.cs",
+        "src/FileTakeOwnForm.cs"
+      ],
+      "cli": [
+        "A",
+        "D"
+      ],
+      "gui": [
+        "J"
+      ],
+      "note": "2026-10-29「文件 / 文件夹取得所有权」（删不掉、改不了、右键看权限是灰的 = 所有者不是你且你连改权限的资格都没有）。后端 = 读所有者（SDDL）+ 取得所有权 = SeTakeOwnershipPrivilege 改所有者成自己 + 追加一条「完全控制」（**只追加、不删原有 ACE**）+ 写前记 SDDL（记不下来就一个都不动）+ 写完读回核对 + 按记录还原（SeRestorePrivilege 写回原 SDDL）。命令行判据 D16–D16f（隔离根 MXX1_TAKEOWN_ROOT / MXX1_TAKEOWN_TSV；D16c 盯「没有隔离就退 2」）；界面 J36 只验窗口能开、空列表、该灰的灰（往列表里加文件要走系统文件对话框，自动化点不了 —— 写链路由命令行 D16e/D16f 盯同一份后端）。⚠️ 两个坑：① `OwnerSidOf` 必须走 `RawSecurityDescriptor`（SDDL 里所有者常写成 `O:BA` 这种别名，土办法抠出来永远和 `S-1-5-…` 对不上）；② 「归你管吗」= 你的用户 SID **或你所在组的 SID**（管理员新建的文件所有者是 `BUILTIN\\Administrators`，只比用户 SID 会把自己刚建的文件全标成「不是你」）"
+    },
+    {
+      "paths": [
+        "src/AutoExtra.cs",
+        "src/AutoExtraForm.cs"
+      ],
+      "cli": [
+        "A",
+        "D"
+      ],
+      "gui": [
+        "J"
+      ],
+      "note": "2026-10-29「计划任务 + 服务自启」（「启动项管理」只管注册表 Run 键和启动文件夹，可软件还有计划任务、服务两条路能自己跑起来）。后端 = 计划任务读 `%SystemRoot%\\System32\\Tasks` 下的任务 XML（UTF-16，靠英文标签解析）+ 禁用走 `schtasks /change /tn … /disable` + 读回同一份 XML 里 `<Enabled>false</Enabled>`；服务读 `HKLM\\SYSTEM\\CurrentControlSet\\Services\\<名>` 的 `Start`（禁用 = 4）+ 写前记原值（auto-extra-original.tsv）+ 按记录还原。安全边界：`\\Microsoft\\` 开头的任务、ImagePath 落在 `%SystemRoot%` 的服务、驱动一律只报告；**ImagePath 读不到的一律按系统自带处理**。命令行判据 D17–D17i（隔离根 MXX1_AUTOEXTRA_TASKS / MXX1_AUTOEXTRA_SERVICES / MXX1_AUTOEXTRA_TSV，绝不碰真实任务与真实服务键；D17c 盯「没有隔离就退 2」）；界面 J37/J37b/J37c 真从按钮开窗口、真点「禁用全部第三方…」「还原成禁用前」并读回 Start 与记录文件"
+    },
+    {
+      "paths": [
         "src/DnsConfig.cs",
         "src/DnsForm.cs"
       ],

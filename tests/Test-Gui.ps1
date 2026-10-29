@@ -3627,6 +3627,81 @@ $jDsEnv['MXX1_UNINST_HKCU'] = 'HKCU\Software\mxx1-toolbox\uninst-gui-cu'
 $jDsEnv['MXX1_UNINST_TSV'] = $jUnTsv
 $jDsEnv['MXX1_UNINST_DELTSV'] = $jUnDelTsv
 $jDsEnv['MXX1_UNINST_BACKUP'] = $jUnBackup
+
+# ---- 2026-10-29 五个新功能（系统工具页）的隔离夹具 --------------------------------------
+# ① 「解除附件管理器锁定」：隔离根就是"扫哪个文件夹"本身，记录文件单独指走。
+#    ⚠️ 夹具里的 ADS 只能用 PowerShell 的 `-Stream` 造（.NET 的 File.WriteAllText 不吃 `a.txt:流名`）。
+$jUbDir = Join-Path $tmpRoot ('mxx1-ub-gui-' + $PID)
+$jUbTsv = Join-Path $tmpRoot ('mxx1-ub-gui-' + $PID + '.tsv')
+try { if (Test-Path -LiteralPath $jUbDir) { Remove-Item -LiteralPath $jUbDir -Recurse -Force } } catch { }
+try { if (Test-Path -LiteralPath $jUbTsv) { Remove-Item -LiteralPath $jUbTsv -Force } } catch { }
+[void](New-Item -ItemType Directory -Path $jUbDir -Force)
+$jUbFile = Join-Path $jUbDir 'locked.txt'
+[System.IO.File]::WriteAllText($jUbFile, 'locked content')
+Add-Content -LiteralPath $jUbFile -Stream 'Zone.Identifier' -Encoding ASCII `
+    -Value @('[ZoneTransfer]', 'ZoneId=3', 'HostUrl=https://example.com/setup.exe')
+$jDsEnv['MXX1_UNBLOCK_ROOT'] = $jUbDir
+$jDsEnv['MXX1_UNBLOCK_TSV'] = $jUbTsv
+
+# ② 「USB 省电（断连）」：一台假 USB 设备，两个电源管理值都是 1（= 允许计算机关掉它）。
+$jUpPs = 'HKCU:\Software\mxx1-toolbox\usbpower-gui'
+$jUpTsv = Join-Path $tmpRoot ('mxx1-up-gui-' + $PID + '.tsv')
+try { if (Test-Path -LiteralPath $jUpPs) { Remove-Item -LiteralPath $jUpPs -Recurse -Force } } catch { }
+try { if (Test-Path -LiteralPath $jUpTsv) { Remove-Item -LiteralPath $jUpTsv -Force } } catch { }
+$jUpParams = $jUpPs + '\VID_1111&PID_2222\5&abc&0&1\Device Parameters'
+[void](New-Item -Path $jUpParams -Force)
+Set-ItemProperty -Path $jUpParams -Name 'EnhancedPowerManagementEnabled' -Value 1 -Type DWord
+Set-ItemProperty -Path $jUpParams -Name 'SelectiveSuspendEnabled' -Value 1 -Type DWord
+$jDsEnv['MXX1_USBPOWER_ROOT'] = 'HKCU\Software\mxx1-toolbox\usbpower-gui'
+$jDsEnv['MXX1_USBPOWER_TSV'] = $jUpTsv
+
+# ③ 「高 DPI 兼容」：一条带 RUNASADMIN 的兼容性标记（设成高 DPI 之后两个标记都得在）。
+#    ⚠️ 值名用 %ProgramFiles% 开头：编码体检查会拦"盘符开头的字面绝对路径"。
+$jDpPs = 'HKCU:\Software\mxx1-toolbox\dpiflag-gui'
+$jDpTsv = Join-Path $tmpRoot ('mxx1-dp-gui-' + $PID + '.tsv')
+$jDpExe = '%ProgramFiles%\Mxx1Test\gui.exe'
+try { if (Test-Path -LiteralPath $jDpPs) { Remove-Item -LiteralPath $jDpPs -Recurse -Force } } catch { }
+try { if (Test-Path -LiteralPath $jDpTsv) { Remove-Item -LiteralPath $jDpTsv -Force } } catch { }
+[void](New-Item -Path $jDpPs -Force)
+Set-ItemProperty -Path $jDpPs -Name $jDpExe -Value '~ RUNASADMIN' -Type String
+$jDsEnv['MXX1_DPIFLAG_ROOT'] = 'HKCU\Software\mxx1-toolbox\dpiflag-gui'
+$jDsEnv['MXX1_DPIFLAG_TSV'] = $jDpTsv
+
+# ④ 「文件取得所有权」：一个测试文件夹 + 一个文件。**窗口里只验"能开、空列表、按钮灰"** ——
+#    往列表里加文件要走系统文件对话框（自动化点不了）；"取得所有权 / 还原"整条链由 Test-Cli 的
+#    D16e / D16f 盯着同一份后端（`FileTakeOwn.TakeOwnItems` / `Restore`）。
+$jToDir = Join-Path $tmpRoot ('mxx1-to-gui-' + $PID)
+$jToTsv = Join-Path $tmpRoot ('mxx1-to-gui-' + $PID + '.tsv')
+try { if (Test-Path -LiteralPath $jToDir) { Remove-Item -LiteralPath $jToDir -Recurse -Force } } catch { }
+try { if (Test-Path -LiteralPath $jToTsv) { Remove-Item -LiteralPath $jToTsv -Force } } catch { }
+[void](New-Item -ItemType Directory -Path $jToDir -Force)
+$jToFile = Join-Path $jToDir 'a.txt'
+[System.IO.File]::WriteAllText($jToFile, 'take me')
+$jDsEnv['MXX1_TAKEOWN_ROOT'] = $jToDir
+$jDsEnv['MXX1_TAKEOWN_TSV'] = $jToTsv
+
+# ⑤ 「计划任务 + 服务自启」：任务目录给一个**空**夹具（别去读真机那 161 个任务，慢）；
+#    服务根给一个第三方服务（Start=3，可禁用）+ 一个 ImagePath 在 %SystemRoot% 下的（系统，只报告）。
+#    这里只点"服务"那一半 —— 计划任务那一半（schtasks + 任务 XML）由 Test-Cli 的 D17e / D17h 盯着。
+$jAeTasks = Join-Path $tmpRoot ('mxx1-ae-gui-tasks-' + $PID)
+$jAePs = 'HKCU:\Software\mxx1-toolbox\autoextra-gui'
+$jAeTsv = Join-Path $tmpRoot ('mxx1-ae-gui-' + $PID + '.tsv')
+try { if (Test-Path -LiteralPath $jAeTasks) { Remove-Item -LiteralPath $jAeTasks -Recurse -Force } } catch { }
+try { if (Test-Path -LiteralPath $jAePs) { Remove-Item -LiteralPath $jAePs -Recurse -Force } } catch { }
+try { if (Test-Path -LiteralPath $jAeTsv) { Remove-Item -LiteralPath $jAeTsv -Force } } catch { }
+[void](New-Item -ItemType Directory -Path $jAeTasks -Force)
+[void](New-Item -Path ($jAePs + '\Mxx1GuiThird') -Force)
+Set-ItemProperty -Path ($jAePs + '\Mxx1GuiThird') -Name 'ImagePath' -Value '%ProgramFiles%\Mxx1Test\gui-svc.exe' -Type String
+Set-ItemProperty -Path ($jAePs + '\Mxx1GuiThird') -Name 'Start' -Value 3 -Type DWord
+Set-ItemProperty -Path ($jAePs + '\Mxx1GuiThird') -Name 'Type' -Value 16 -Type DWord
+[void](New-Item -Path ($jAePs + '\Mxx1GuiSystem') -Force)
+Set-ItemProperty -Path ($jAePs + '\Mxx1GuiSystem') -Name 'ImagePath' -Value '%SystemRoot%\System32\svchost.exe -k netsvcs' -Type String
+Set-ItemProperty -Path ($jAePs + '\Mxx1GuiSystem') -Name 'Start' -Value 2 -Type DWord
+Set-ItemProperty -Path ($jAePs + '\Mxx1GuiSystem') -Name 'Type' -Value 16 -Type DWord
+$jDsEnv['MXX1_AUTOEXTRA_TASKS'] = $jAeTasks
+$jDsEnv['MXX1_AUTOEXTRA_SERVICES'] = 'HKCU\Software\mxx1-toolbox\autoextra-gui'
+$jDsEnv['MXX1_AUTOEXTRA_TSV'] = $jAeTsv
+
 # 「去掉小箭头」现在写的是**系统自带的空白图标 imageres.dll,197**（2026-10-26 实机钉死：
 # 这台 Win10 只认 dll 资源索引、不认裸 .ico 文件路径，之前试过的自生成透明 ico / shell32.dll,-50
 # 真机全是黑块）—— 所以 J 组不需要再生成 / 验证任何图标文件，J27c / J29b 只验注册表里
@@ -5176,6 +5251,379 @@ foreach ($r in @($jUn64Ps, $jUn32Ps, $jUnCuPs)) { try { if (Test-Path -LiteralPa
 try { if (Test-Path -LiteralPath $jUnTsv) { Remove-Item -LiteralPath $jUnTsv -Force } } catch { }
 try { if (Test-Path -LiteralPath $jUnDelTsv) { Remove-Item -LiteralPath $jUnDelTsv -Force } } catch { }
 try { if (Test-Path -LiteralPath $jUnBackup) { Remove-Item -LiteralPath $jUnBackup -Recurse -Force } } catch { }
+
+# ---- 2026-10-29 五个新功能（系统工具页 · 段 1 的「USB 省电」+ 段 4 的四颗）-------------------
+# 这一组的重点是用户报过的那类毛病（坑 78/79）：**按钮点下去窗口是不是真能用** ——
+# 窗口开得出来、不卡在"忙"上、状态行真的报出了数字、危险按钮该灰的时候是灰的。
+# 写动作能端到端做的都在隔离根里真点一遍；「文件取得所有权」加文件要走系统文件对话框
+# （自动化点不了），它的写链路由 Test-Cli 的 D16e / D16f 盯着。
+$jNewNames = @('USB 省电（断连）', '解除附件管理器锁定', '文件取得所有权', '计划任务 + 服务自启', '高 DPI 兼容')
+$jNewKids = Get-ChildControls -RootHandle $main
+$jNewMiss = @()
+foreach ($nm in $jNewNames) {
+    $hit = @($jNewKids | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq $nm })
+    if (($hit.Count -ne 1) -or (-not $hit[0].Enabled)) { $jNewMiss += $nm }
+}
+Check 'J33 系统工具页上五个新按钮都在、都可点（USB 省电（断连）/ 解除附件管理器锁定 / 文件取得所有权 / 计划任务 + 服务自启 / 高 DPI 兼容）' `
+    ($jNewMiss.Count -eq 0) ('缺/灰=' + ($jNewMiss -join ' | '))
+
+# ① 解除附件管理器锁定（隔离根里那个带 Zone.Identifier 的文件）
+$jUbWin = Open-JWindow '解除附件管理器锁定' '解除附件管理器锁定'
+if ($jUbWin -eq $null) {
+    Check 'J33b 真点「解除附件管理器锁定」→ 窗口开着不卡、状态行报出「共 1 个带标记的文件…真的被锁住 1 个」、ListView 有行、「还原锁定」是灰的' $false '窗口没开出来'
+    Check 'J33c 窗口里真点「全部解除…」→ 确认框 → 状态行报「解除完成：」、那条备用数据流真没了、原值进 tsv' $false '窗口没开出来'
+    Check 'J33d 窗口里真点「还原锁定」→ 确认框 → 状态行报「还原完成：」、那条流按记录写回来、记录清空' $false '窗口没开出来'
+} else {
+    $jUbStatus = ''
+    for ($i = 0; $i -lt 80; $i++) {
+        Start-Sleep -Milliseconds 250
+        $jUbStatus = Find-JStatus $jUbWin.H '^共 \d+ 个带标记的文件'
+        if ($jUbStatus.Length -gt 0) { break }
+    }
+    $jUbKids = Get-ChildControls -RootHandle $jUbWin.H
+    $jUbLv = @($jUbKids | Where-Object { $_.Class -like '*SysListView*' })
+    $jUbRest = @($jUbKids | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '还原锁定' })
+    $jUbAll = @($jUbKids | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '全部解除…' })
+    $jUbBefore = $null -ne (Get-Item -LiteralPath $jUbFile -Stream 'Zone.Identifier' -ErrorAction SilentlyContinue)
+    Check 'J33b 真点「解除附件管理器锁定」→ 窗口开着不卡、状态行报出「共 1 个带标记的文件…真的被锁住 1 个」、ListView 有行、「还原锁定」是灰的（还没解除过）' `
+        (($jUbStatus -match '真的被锁住 1 个') -and ($jUbLv.Count -ge 1) -and ($jUbRest.Count -eq 1) -and (-not $jUbRest[0].Enabled) `
+            -and ($jUbAll.Count -eq 1) -and $jUbAll[0].Enabled -and $jUbBefore) `
+        ('状态="' + $jUbStatus + '" 列表=' + $jUbLv.Count + ' 还原灰=' + $(if ($jUbRest.Count -eq 1) { -not $jUbRest[0].Enabled } else { '没找到' }) + ' 流还在=' + $jUbBefore)
+
+    $jUbDlg = $null; $jUbOk = $false; $jUbDone = ''
+    if ($jUbAll.Count -eq 1) {
+        [void][TBGui]::Click($jUbAll[0].H)
+        for ($i = 0; $i -lt 50; $i++) {
+            Start-Sleep -Milliseconds 200
+            $jUbDlg = Find-JAssocDialog -ProcessId $proc.Id -Main $main -Owner $jUbWin.H -TitlePrefix '要解除这些文件的锁定吗？'
+            if ($jUbDlg -ne $null) { break }
+        }
+        if ($jUbDlg -ne $null) {
+            $okU = @(Get-ChildControls -RootHandle $jUbDlg.H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '解除' })
+            if ($okU.Count -eq 1) { [void][TBGui]::Click($okU[0].H); $jUbOk = $true }
+        }
+        for ($i = 0; $i -lt 80; $i++) {
+            Start-Sleep -Milliseconds 250
+            $jUbDone = Find-JStatus $jUbWin.H '^解除完成：'
+            if ($jUbDone.Length -gt 0) { break }
+        }
+    }
+    $jUbGone = $null -eq (Get-Item -LiteralPath $jUbFile -Stream 'Zone.Identifier' -ErrorAction SilentlyContinue)
+    $jUbTsvMade = $false
+    try { $jUbTsvMade = (Test-Path -LiteralPath $jUbTsv) -and ((Get-Item -LiteralPath $jUbTsv).Length -gt 0) } catch { }
+    $jUbContent = ''
+    try { $jUbContent = [System.IO.File]::ReadAllText($jUbFile) } catch { }
+    Check 'J33c 窗口里真点「全部解除…」→ 确认框 → 状态行报「解除完成：」、那条备用数据流真没了、文件内容没动、原值进 tsv' `
+        (($jUbDlg -ne $null) -and $jUbOk -and ($jUbDone.Length -gt 0) -and $jUbGone -and $jUbTsvMade -and ($jUbContent -eq 'locked content')) `
+        ('确认框=' + ($jUbDlg -ne $null) + ' 点了=' + $jUbOk + ' 状态="' + $jUbDone + '" 流没了=' + $jUbGone + ' 记录=' + $jUbTsvMade)
+
+    $jUbDlg2 = $null; $jUbOk2 = $false; $jUbDone2 = ''
+    $jUbRest2 = @(Get-ChildControls -RootHandle $jUbWin.H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '还原锁定' })
+    if (($jUbRest2.Count -eq 1) -and $jUbRest2[0].Enabled) {
+        [void][TBGui]::Click($jUbRest2[0].H)
+        for ($i = 0; $i -lt 50; $i++) {
+            Start-Sleep -Milliseconds 200
+            $jUbDlg2 = Find-JAssocDialog -ProcessId $proc.Id -Main $main -Owner $jUbWin.H -TitlePrefix '要把锁定恢复回去吗？'
+            if ($jUbDlg2 -ne $null) { break }
+        }
+        if ($jUbDlg2 -ne $null) {
+            $okU2 = @(Get-ChildControls -RootHandle $jUbDlg2.H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '还原' })
+            if ($okU2.Count -eq 1) { [void][TBGui]::Click($okU2[0].H); $jUbOk2 = $true }
+        }
+        for ($i = 0; $i -lt 80; $i++) {
+            Start-Sleep -Milliseconds 250
+            $jUbDone2 = Find-JStatus $jUbWin.H '^还原完成：'
+            if ($jUbDone2.Length -gt 0) { break }
+        }
+    }
+    $jUbBack = $null -ne (Get-Item -LiteralPath $jUbFile -Stream 'Zone.Identifier' -ErrorAction SilentlyContinue)
+    $jUbZone = ''
+    try { $jUbZone = [string](Get-Content -LiteralPath $jUbFile -Stream 'Zone.Identifier' -Raw) } catch { }
+    $jUbTsvGone = -not (Test-Path -LiteralPath $jUbTsv)
+    Check 'J33d 窗口里真点「还原锁定」→ 确认框 → 状态行报「还原完成：」、那条流按记录写回来（ZoneId=3 还在）、记录清空' `
+        (($jUbDlg2 -ne $null) -and $jUbOk2 -and ($jUbDone2.Length -gt 0) -and $jUbBack -and ($jUbZone -match 'ZoneId=3') -and $jUbTsvGone) `
+        ('确认框=' + ($jUbDlg2 -ne $null) + ' 点了=' + $jUbOk2 + ' 状态="' + $jUbDone2 + '" 流回来=' + $jUbBack + ' 记录清空=' + $jUbTsvGone)
+    Close-JWindow $jUbWin
+    Start-Sleep -Milliseconds 300
+}
+
+# ② USB 省电（隔离根里那台两个值都是 1 的假设备）
+$jUpWin = Open-JWindow 'USB 省电（断连）' 'USB 省电'
+if ($jUpWin -eq $null) {
+    Check 'J34 真点「USB 省电（断连）」→ 窗口开着不卡、状态行报出「共 1 个 USB 设备：允许省电 1 个」、ListView 有行、「还原成关闭前」是灰的' $false '窗口没开出来'
+    Check 'J34b 窗口里真点「关掉全部…」→ 确认框 → 状态行报「关掉省电完成：」、两个值都变成 0、原值进 tsv' $false '窗口没开出来'
+    Check 'J34c 窗口里真点「还原成关闭前」→ 确认框 → 状态行报「还原完成：」、两个值都写回 1、记录清空' $false '窗口没开出来'
+} else {
+    $jUpStatus = ''
+    for ($i = 0; $i -lt 80; $i++) {
+        Start-Sleep -Milliseconds 250
+        $jUpStatus = Find-JStatus $jUpWin.H '^共 \d+ 个 USB 设备'
+        if ($jUpStatus.Length -gt 0) { break }
+    }
+    $jUpKids = Get-ChildControls -RootHandle $jUpWin.H
+    $jUpLv = @($jUpKids | Where-Object { $_.Class -like '*SysListView*' })
+    $jUpRest = @($jUpKids | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '还原成关闭前' })
+    $jUpAll = @($jUpKids | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '关掉全部…' })
+    Check 'J34 真点「USB 省电（断连）」→ 窗口开着不卡、状态行报出「共 1 个 USB 设备：允许省电 1 个」、ListView 有行、「还原成关闭前」是灰的' `
+        (($jUpStatus -match '允许省电 1 个') -and ($jUpLv.Count -ge 1) -and ($jUpRest.Count -eq 1) -and (-not $jUpRest[0].Enabled) `
+            -and ($jUpAll.Count -eq 1) -and $jUpAll[0].Enabled) `
+        ('状态="' + $jUpStatus + '" 列表=' + $jUpLv.Count + ' 还原灰=' + $(if ($jUpRest.Count -eq 1) { -not $jUpRest[0].Enabled } else { '没找到' }))
+
+    $jUpDlg = $null; $jUpOk = $false; $jUpDone = ''
+    if ($jUpAll.Count -eq 1) {
+        [void][TBGui]::Click($jUpAll[0].H)
+        for ($i = 0; $i -lt 50; $i++) {
+            Start-Sleep -Milliseconds 200
+            $jUpDlg = Find-JAssocDialog -ProcessId $proc.Id -Main $main -Owner $jUpWin.H -TitlePrefix '要关掉这些 USB 设备的省电吗？'
+            if ($jUpDlg -ne $null) { break }
+        }
+        if ($jUpDlg -ne $null) {
+            $okP = @(Get-ChildControls -RootHandle $jUpDlg.H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '关掉省电' })
+            if ($okP.Count -eq 1) { [void][TBGui]::Click($okP[0].H); $jUpOk = $true }
+        }
+        for ($i = 0; $i -lt 80; $i++) {
+            Start-Sleep -Milliseconds 250
+            $jUpDone = Find-JStatus $jUpWin.H '^关掉省电完成：'
+            if ($jUpDone.Length -gt 0) { break }
+        }
+    }
+    $jUpV1 = -1; $jUpV2 = -1
+    try { $jUpV1 = [int](Get-ItemProperty -Path $jUpParams -ErrorAction Stop).EnhancedPowerManagementEnabled } catch { }
+    try { $jUpV2 = [int](Get-ItemProperty -Path $jUpParams -ErrorAction Stop).SelectiveSuspendEnabled } catch { }
+    $jUpTsvMade = $false
+    try { $jUpTsvMade = (Test-Path -LiteralPath $jUpTsv) -and ((Get-Item -LiteralPath $jUpTsv).Length -gt 0) } catch { }
+    Check 'J34b 窗口里真点「关掉全部…」→ 确认框 → 状态行报「关掉省电完成：」、两个值都变成 0、原值进 tsv' `
+        (($jUpDlg -ne $null) -and $jUpOk -and ($jUpDone.Length -gt 0) -and ($jUpV1 -eq 0) -and ($jUpV2 -eq 0) -and $jUpTsvMade) `
+        ('确认框=' + ($jUpDlg -ne $null) + ' 点了=' + $jUpOk + ' 状态="' + $jUpDone + '" 值=' + $jUpV1 + '/' + $jUpV2 + ' 记录=' + $jUpTsvMade)
+
+    $jUpDlg2 = $null; $jUpOk2 = $false; $jUpDone2 = ''
+    $jUpRest2 = @(Get-ChildControls -RootHandle $jUpWin.H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '还原成关闭前' })
+    if (($jUpRest2.Count -eq 1) -and $jUpRest2[0].Enabled) {
+        [void][TBGui]::Click($jUpRest2[0].H)
+        for ($i = 0; $i -lt 50; $i++) {
+            Start-Sleep -Milliseconds 200
+            $jUpDlg2 = Find-JAssocDialog -ProcessId $proc.Id -Main $main -Owner $jUpWin.H -TitlePrefix '要还原成关闭前吗？'
+            if ($jUpDlg2 -ne $null) { break }
+        }
+        if ($jUpDlg2 -ne $null) {
+            $okP2 = @(Get-ChildControls -RootHandle $jUpDlg2.H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '还原' })
+            if ($okP2.Count -eq 1) { [void][TBGui]::Click($okP2[0].H); $jUpOk2 = $true }
+        }
+        for ($i = 0; $i -lt 80; $i++) {
+            Start-Sleep -Milliseconds 250
+            $jUpDone2 = Find-JStatus $jUpWin.H '^还原完成：'
+            if ($jUpDone2.Length -gt 0) { break }
+        }
+    }
+    $jUpB1 = -1; $jUpB2 = -1
+    try { $jUpB1 = [int](Get-ItemProperty -Path $jUpParams -ErrorAction Stop).EnhancedPowerManagementEnabled } catch { }
+    try { $jUpB2 = [int](Get-ItemProperty -Path $jUpParams -ErrorAction Stop).SelectiveSuspendEnabled } catch { }
+    $jUpTsvGone = -not (Test-Path -LiteralPath $jUpTsv)
+    Check 'J34c 窗口里真点「还原成关闭前」→ 确认框 → 状态行报「还原完成：」、两个值都写回 1、记录清空' `
+        (($jUpDlg2 -ne $null) -and $jUpOk2 -and ($jUpDone2.Length -gt 0) -and ($jUpB1 -eq 1) -and ($jUpB2 -eq 1) -and $jUpTsvGone) `
+        ('确认框=' + ($jUpDlg2 -ne $null) + ' 点了=' + $jUpOk2 + ' 状态="' + $jUpDone2 + '" 值=' + $jUpB1 + '/' + $jUpB2 + ' 记录清空=' + $jUpTsvGone)
+    Close-JWindow $jUpWin
+    Start-Sleep -Milliseconds 300
+}
+
+# ③ 高 DPI 兼容（隔离根里那条 ~ RUNASADMIN）
+$jDpWin = Open-JWindow '高 DPI 兼容' '高 DPI 兼容'
+if ($jDpWin -eq $null) {
+    Check 'J35 真点「高 DPI 兼容」→ 窗口开着不卡、状态行报出「共 1 个程序有兼容性标记」、ListView 有行、没选中时「设为高 DPI 感知…」是灰的' $false '窗口没开出来'
+    Check 'J35b 列表里真点选那一行 →「设为高 DPI 感知 1 个…」→ 确认框 → 标记变成 ~ HIGHDPIAWARE RUNASADMIN（别的标记没被吃掉）' $false '窗口没开出来'
+    Check 'J35c 窗口里真点「还原成设置前」→ 确认框 → 标记按记录写回 ~ RUNASADMIN、记录清空' $false '窗口没开出来'
+} else {
+    $jDpStatus = ''
+    for ($i = 0; $i -lt 80; $i++) {
+        Start-Sleep -Milliseconds 250
+        $jDpStatus = Find-JStatus $jDpWin.H '^共 \d+ 个程序有兼容性标记'
+        if ($jDpStatus.Length -gt 0) { break }
+    }
+    $jDpKids = Get-ChildControls -RootHandle $jDpWin.H
+    $jDpLv = @($jDpKids | Where-Object { $_.Class -like '*SysListView*' })
+    $jDpSet = @($jDpKids | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '设为高 DPI 感知…' })
+    $jDpRest = @($jDpKids | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '还原成设置前' })
+    Check 'J35 真点「高 DPI 兼容」→ 窗口开着不卡、状态行报出「共 1 个程序有兼容性标记」、ListView 有行、没选中时「设为高 DPI 感知…」是灰的' `
+        (($jDpStatus -match '共 1 个程序有兼容性标记') -and ($jDpLv.Count -ge 1) -and ($jDpSet.Count -eq 1) -and (-not $jDpSet[0].Enabled) `
+            -and ($jDpRest.Count -eq 1) -and (-not $jDpRest[0].Enabled)) `
+        ('状态="' + $jDpStatus + '" 列表=' + $jDpLv.Count + ' 设置灰=' + $(if ($jDpSet.Count -eq 1) { -not $jDpSet[0].Enabled } else { '没找到' }))
+
+    # 跨进程点不了 ListView 的行（LVM_SETITEMSTATE 要写结构体）→ 用鼠标消息点行坐标（同 J30c）
+    $jDpSelected = $false
+    if ($jDpLv.Count -ge 1) {
+        foreach ($jY in @(24, 28, 32, 36, 40, 44)) {
+            [void][TBGui]::MouseDown($jDpLv[0].H, 40, $jY)
+            Start-Sleep -Milliseconds 250
+            $jB = @(Get-ChildControls -RootHandle $jDpWin.H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -like '设为高 DPI 感知 *' -and $_.Enabled })
+            if ($jB.Count -eq 1) { $jDpSelected = $true; break }
+        }
+    }
+    $jDpDlg = $null; $jDpOk = $false; $jDpDone = ''
+    if ($jDpSelected) {
+        $jDpSet2 = @(Get-ChildControls -RootHandle $jDpWin.H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -like '设为高 DPI 感知 *' })
+        if ($jDpSet2.Count -eq 1) { [void][TBGui]::Click($jDpSet2[0].H) }
+        for ($i = 0; $i -lt 50; $i++) {
+            Start-Sleep -Milliseconds 200
+            $jDpDlg = Find-JAssocDialog -ProcessId $proc.Id -Main $main -Owner $jDpWin.H -TitlePrefix '要把这些程序设成高 DPI 感知吗？'
+            if ($jDpDlg -ne $null) { break }
+        }
+        if ($jDpDlg -ne $null) {
+            $okD = @(Get-ChildControls -RootHandle $jDpDlg.H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '设为高 DPI 感知' })
+            if ($okD.Count -eq 1) { [void][TBGui]::Click($okD[0].H); $jDpOk = $true }
+        }
+        for ($i = 0; $i -lt 80; $i++) {
+            Start-Sleep -Milliseconds 250
+            $jDpDone = Find-JStatus $jDpWin.H '^设为高 DPI 感知完成：'
+            if ($jDpDone.Length -gt 0) { break }
+        }
+    }
+    $jDpNow = ''
+    try { $jDpNow = [string](Get-ItemProperty -Path $jDpPs -Name $jDpExe -ErrorAction Stop).$jDpExe } catch { }
+    $jDpTsvMade = $false
+    try { $jDpTsvMade = (Test-Path -LiteralPath $jDpTsv) -and ((Get-Item -LiteralPath $jDpTsv).Length -gt 0) } catch { }
+    Check 'J35b 列表里真点选那一行 →「设为高 DPI 感知 1 个…」→ 确认框 → 状态行报「设为高 DPI 感知完成：」、标记变成 ~ HIGHDPIAWARE RUNASADMIN（别的标记没被吃掉）、原值进 tsv' `
+        ($jDpSelected -and ($jDpDlg -ne $null) -and $jDpOk -and ($jDpDone.Length -gt 0) -and ($jDpNow -eq '~ HIGHDPIAWARE RUNASADMIN') -and $jDpTsvMade) `
+        ('选中=' + $jDpSelected + ' 确认框=' + ($jDpDlg -ne $null) + ' 状态="' + $jDpDone + '" 标记=[' + $jDpNow + '] 记录=' + $jDpTsvMade)
+
+    $jDpDlg2 = $null; $jDpOk2 = $false; $jDpDone2 = ''
+    $jDpRest2 = @(Get-ChildControls -RootHandle $jDpWin.H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '还原成设置前' })
+    if (($jDpRest2.Count -eq 1) -and $jDpRest2[0].Enabled) {
+        [void][TBGui]::Click($jDpRest2[0].H)
+        for ($i = 0; $i -lt 50; $i++) {
+            Start-Sleep -Milliseconds 200
+            $jDpDlg2 = Find-JAssocDialog -ProcessId $proc.Id -Main $main -Owner $jDpWin.H -TitlePrefix '要还原成设置前吗？'
+            if ($jDpDlg2 -ne $null) { break }
+        }
+        if ($jDpDlg2 -ne $null) {
+            $okD2 = @(Get-ChildControls -RootHandle $jDpDlg2.H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '还原' })
+            if ($okD2.Count -eq 1) { [void][TBGui]::Click($okD2[0].H); $jDpOk2 = $true }
+        }
+        for ($i = 0; $i -lt 80; $i++) {
+            Start-Sleep -Milliseconds 250
+            $jDpDone2 = Find-JStatus $jDpWin.H '^还原完成：'
+            if ($jDpDone2.Length -gt 0) { break }
+        }
+    }
+    $jDpBack = ''
+    try { $jDpBack = [string](Get-ItemProperty -Path $jDpPs -Name $jDpExe -ErrorAction Stop).$jDpExe } catch { }
+    $jDpTsvGone = -not (Test-Path -LiteralPath $jDpTsv)
+    Check 'J35c 窗口里真点「还原成设置前」→ 确认框 → 状态行报「还原完成：」、标记按记录写回 ~ RUNASADMIN、记录清空' `
+        (($jDpDlg2 -ne $null) -and $jDpOk2 -and ($jDpDone2.Length -gt 0) -and ($jDpBack -eq '~ RUNASADMIN') -and $jDpTsvGone) `
+        ('确认框=' + ($jDpDlg2 -ne $null) + ' 状态="' + $jDpDone2 + '" 标记=[' + $jDpBack + '] 记录清空=' + $jDpTsvGone)
+    Close-JWindow $jDpWin
+    Start-Sleep -Milliseconds 300
+}
+
+# ④ 文件取得所有权（窗口能开、空列表、该灰的灰 —— 加文件要走系统文件对话框，自动化点不了）
+$jToWin = Open-JWindow '文件取得所有权' '文件 / 文件夹取得所有权'
+if ($jToWin -eq $null) {
+    Check 'J36 真点「文件取得所有权」→ 窗口开着不卡、空列表状态行说清「列表里 0 项…先点添加文件」、取得所有权 / 还原 都是灰的、添加按钮可点' $false '窗口没开出来'
+} else {
+    $jToStatus = ''
+    for ($i = 0; $i -lt 80; $i++) {
+        Start-Sleep -Milliseconds 250
+        $jToStatus = Find-JStatus $jToWin.H '^列表里 \d+ 项'
+        if ($jToStatus.Length -gt 0) { break }
+    }
+    $jToKids = Get-ChildControls -RootHandle $jToWin.H
+    $jToTake = @($jToKids | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '取得所有权（选中）…' })
+    $jToRest = @($jToKids | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '还原成取得前' })
+    $jToAddF = @($jToKids | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '添加文件…' })
+    $jToAddD = @($jToKids | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '添加文件夹…' })
+    Check 'J36 真点「文件取得所有权」→ 窗口开着不卡、空列表状态行说清「列表里 0 项…先点添加文件」、取得所有权 / 还原 都是灰的、两个添加按钮可点' `
+        (($jToStatus -match '列表里 0 项') -and ($jToTake.Count -eq 1) -and (-not $jToTake[0].Enabled) `
+            -and ($jToRest.Count -eq 1) -and (-not $jToRest[0].Enabled) `
+            -and ($jToAddF.Count -eq 1) -and $jToAddF[0].Enabled -and ($jToAddD.Count -eq 1) -and $jToAddD[0].Enabled) `
+        ('状态="' + $jToStatus + '" 取得灰=' + $(if ($jToTake.Count -eq 1) { -not $jToTake[0].Enabled } else { '没找到' }) + ' 添加=' + $jToAddF.Count + '/' + $jToAddD.Count)
+    Close-JWindow $jToWin
+    Start-Sleep -Milliseconds 300
+}
+
+# ⑤ 计划任务 + 服务自启（隔离根里那个第三方服务 Start=3 + 一个系统服务 Start=2）
+$jAeWin = Open-JWindow '计划任务 + 服务自启' '计划任务 + 服务自启'
+if ($jAeWin -eq $null) {
+    Check 'J37 真点「计划任务 + 服务自启」→ 窗口开着不卡、状态行报出「共 2 项…第三方可禁用 1 个」、ListView 有行、没选中时「禁用选中…」是灰的' $false '窗口没开出来'
+    Check 'J37b 窗口里真点「禁用全部第三方…」→ 确认框 → 状态行报「禁用完成：」、那个服务的 Start 真变成 4、系统那个还是 2、原值进 tsv' $false '窗口没开出来'
+    Check 'J37c 窗口里真点「还原成禁用前」→ 确认框 → 状态行报「还原完成：」、Start 回到 3、记录清空' $false '窗口没开出来'
+} else {
+    $jAeStatus = ''
+    for ($i = 0; $i -lt 80; $i++) {
+        Start-Sleep -Milliseconds 250
+        $jAeStatus = Find-JStatus $jAeWin.H '^共 \d+ 项：计划任务'
+        if ($jAeStatus.Length -gt 0) { break }
+    }
+    $jAeKids = Get-ChildControls -RootHandle $jAeWin.H
+    $jAeLv = @($jAeKids | Where-Object { $_.Class -like '*SysListView*' })
+    $jAeOne = @($jAeKids | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '禁用选中…' })
+    $jAeAll = @($jAeKids | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '禁用全部第三方…' })
+    $jAeRest = @($jAeKids | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '还原成禁用前' })
+    Check 'J37 真点「计划任务 + 服务自启」→ 窗口开着不卡、状态行报出「共 2 项…第三方可禁用 1 个」、ListView 有行、没选中时「禁用选中…」是灰的' `
+        (($jAeStatus -match '共 2 项：计划任务 0 个、服务 2 个；第三方可禁用 1 个') -and ($jAeLv.Count -ge 1) `
+            -and ($jAeOne.Count -eq 1) -and (-not $jAeOne[0].Enabled) `
+            -and ($jAeAll.Count -eq 1) -and $jAeAll[0].Enabled `
+            -and ($jAeRest.Count -eq 1) -and (-not $jAeRest[0].Enabled)) `
+        ('状态="' + $jAeStatus + '" 列表=' + $jAeLv.Count + ' 禁用选中灰=' + $(if ($jAeOne.Count -eq 1) { -not $jAeOne[0].Enabled } else { '没找到' }))
+
+    $jAeDlg = $null; $jAeOk = $false; $jAeDone = ''
+    if (($jAeAll.Count -eq 1) -and $jAeAll[0].Enabled) {
+        [void][TBGui]::Click($jAeAll[0].H)
+        for ($i = 0; $i -lt 50; $i++) {
+            Start-Sleep -Milliseconds 200
+            $jAeDlg = Find-JAssocDialog -ProcessId $proc.Id -Main $main -Owner $jAeWin.H -TitlePrefix '要禁用这些计划任务 / 服务吗？'
+            if ($jAeDlg -ne $null) { break }
+        }
+        if ($jAeDlg -ne $null) {
+            $okA = @(Get-ChildControls -RootHandle $jAeDlg.H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '禁用' })
+            if ($okA.Count -eq 1) { [void][TBGui]::Click($okA[0].H); $jAeOk = $true }
+        }
+        for ($i = 0; $i -lt 80; $i++) {
+            Start-Sleep -Milliseconds 250
+            $jAeDone = Find-JStatus $jAeWin.H '^禁用完成：'
+            if ($jAeDone.Length -gt 0) { break }
+        }
+    }
+    $jAeStart = -1; $jAeSysStart = -1
+    try { $jAeStart = [int](Get-ItemProperty -Path ($jAePs + '\Mxx1GuiThird') -ErrorAction Stop).Start } catch { }
+    try { $jAeSysStart = [int](Get-ItemProperty -Path ($jAePs + '\Mxx1GuiSystem') -ErrorAction Stop).Start } catch { }
+    $jAeTsvMade = $false
+    try { $jAeTsvMade = (Test-Path -LiteralPath $jAeTsv) -and ((Get-Item -LiteralPath $jAeTsv).Length -gt 0) } catch { }
+    Check 'J37b 窗口里真点「禁用全部第三方…」→ 确认框 → 状态行报「禁用完成：」、那个服务的 Start 真变成 4、系统那个还是 2、原值进 tsv' `
+        (($jAeDlg -ne $null) -and $jAeOk -and ($jAeDone.Length -gt 0) -and ($jAeStart -eq 4) -and ($jAeSysStart -eq 2) -and $jAeTsvMade) `
+        ('确认框=' + ($jAeDlg -ne $null) + ' 点了=' + $jAeOk + ' 状态="' + $jAeDone + '" Start=' + $jAeStart + '/' + $jAeSysStart + ' 记录=' + $jAeTsvMade)
+
+    $jAeDlg2 = $null; $jAeOk2 = $false; $jAeDone2 = ''
+    $jAeRest2 = @(Get-ChildControls -RootHandle $jAeWin.H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '还原成禁用前' })
+    if (($jAeRest2.Count -eq 1) -and $jAeRest2[0].Enabled) {
+        [void][TBGui]::Click($jAeRest2[0].H)
+        for ($i = 0; $i -lt 50; $i++) {
+            Start-Sleep -Milliseconds 200
+            $jAeDlg2 = Find-JAssocDialog -ProcessId $proc.Id -Main $main -Owner $jAeWin.H -TitlePrefix '要还原成禁用前吗？'
+            if ($jAeDlg2 -ne $null) { break }
+        }
+        if ($jAeDlg2 -ne $null) {
+            $okA2 = @(Get-ChildControls -RootHandle $jAeDlg2.H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '还原' })
+            if ($okA2.Count -eq 1) { [void][TBGui]::Click($okA2[0].H); $jAeOk2 = $true }
+        }
+        for ($i = 0; $i -lt 80; $i++) {
+            Start-Sleep -Milliseconds 250
+            $jAeDone2 = Find-JStatus $jAeWin.H '^还原完成：'
+            if ($jAeDone2.Length -gt 0) { break }
+        }
+    }
+    $jAeBack = -1
+    try { $jAeBack = [int](Get-ItemProperty -Path ($jAePs + '\Mxx1GuiThird') -ErrorAction Stop).Start } catch { }
+    $jAeTsvGone = -not (Test-Path -LiteralPath $jAeTsv)
+    Check 'J37c 窗口里真点「还原成禁用前」→ 确认框 → 状态行报「还原完成：」、Start 回到 3、记录清空' `
+        (($jAeDlg2 -ne $null) -and $jAeOk2 -and ($jAeDone2.Length -gt 0) -and ($jAeBack -eq 3) -and $jAeTsvGone) `
+        ('确认框=' + ($jAeDlg2 -ne $null) + ' 点了=' + $jAeOk2 + ' 状态="' + $jAeDone2 + '" Start=' + $jAeBack + ' 记录清空=' + $jAeTsvGone)
+    Close-JWindow $jAeWin
+    Start-Sleep -Milliseconds 300
+}
+
+# 清掉这一组自己的夹具（别把测试键 / 记录文件留在机器上）
+foreach ($r in @($jUpPs, $jDpPs, $jAePs)) { try { if (Test-Path -LiteralPath $r) { Remove-Item -LiteralPath $r -Recurse -Force } } catch { } }
+foreach ($d in @($jUbDir, $jToDir, $jAeTasks)) { try { if (Test-Path -LiteralPath $d) { Remove-Item -LiteralPath $d -Recurse -Force } } catch { } }
+foreach ($t in @($jUbTsv, $jUpTsv, $jDpTsv, $jToTsv, $jAeTsv)) { try { if (Test-Path -LiteralPath $t) { Remove-Item -LiteralPath $t -Force } } catch { } }
 
 [void][TBGui]::CloseWindow($main)
 Start-Sleep -Milliseconds 600

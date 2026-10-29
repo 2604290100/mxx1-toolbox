@@ -1711,6 +1711,21 @@ namespace Mxx1Toolbox
                 case "uninstall":
                     OpenUninstall();
                     break;
+                case "unblock":
+                    OpenUnblock();
+                    break;
+                case "usbpower":
+                    OpenUsbPower();
+                    break;
+                case "dpiflag":
+                    OpenDpiFlag();
+                    break;
+                case "takeown":
+                    OpenTakeOwn();
+                    break;
+                case "autoextra":
+                    OpenAutoExtra();
+                    break;
                 default:
                     SetStatus("未实现的界面动作：" + t.Action);
                     Logger.Write(t.Name, "未实现的界面动作：" + t.Action);
@@ -2031,6 +2046,60 @@ namespace Mxx1Toolbox
             WindowPlacement.ShowCentered(f, this);
             SetStatus("程序和功能管理 · 只改列表登记、不删程序；改前记原值，随时能还原");
             Logger.Write("程序和功能管理", "打开窗口");
+        }
+
+        /// <summary>「解除附件管理器锁定」窗口（系统工具页 · 修复与诊断段，2026-10-29）——治下载的
+        /// Office 文档保护视图 / EXE 弹「Windows 已保护你的电脑」。点开只读扫「来自 Internet」标记
+        /// （Zone.Identifier 备用数据流）；「解除 / 还原」在窗口里过条款门 + 确认框。</summary>
+        private void OpenUnblock()
+        {
+            FileUnblockForm f = new FileUnblockForm(_theme);
+            WindowPlacement.ShowCentered(f, this);
+            SetStatus("解除附件管理器锁定 · 只删「来自 Internet」那条标记，文件内容一个字节都不动；能还原");
+            Logger.Write("解除附件管理器锁定", "打开窗口");
+        }
+
+        /// <summary>「USB 省电（断连）」窗口（系统工具页 · 设备与硬件段，2026-10-29）——治 U 盘突然掉、
+        /// 鼠标卡一下。点开只读扫 USB 枚举；「关掉省电 / 还原」在窗口里过条款门 + 确认框（要管理员）。</summary>
+        private void OpenUsbPower()
+        {
+            UsbPowerForm f = new UsbPowerForm(_theme);
+            WindowPlacement.ShowCentered(f, this);
+            SetStatus("USB 省电（断连）· 只改「允许计算机关闭此设备」这两个值；改前记原值、拔插一次才生效");
+            Logger.Write("USB 省电（断连）", "打开窗口");
+        }
+
+        /// <summary>「高 DPI 兼容」窗口（系统工具页 · 修复与诊断段，2026-10-29）——治开了缩放之后
+        /// 老程序界面糊成一片。点开只读读 HKCU 的 AppCompatFlags\Layers；「设为高 DPI 感知 / 还原」
+        /// 在窗口里过条款门 + 确认框（只写当前用户、不用管理员）。</summary>
+        private void OpenDpiFlag()
+        {
+            DpiFlagForm f = new DpiFlagForm(_theme);
+            WindowPlacement.ShowCentered(f, this);
+            SetStatus("高 DPI 兼容 · 只写当前用户的兼容性标记，别的标记不动；关掉程序重开才生效");
+            Logger.Write("高 DPI 兼容", "打开窗口");
+        }
+
+        /// <summary>「文件取得所有权」窗口（系统工具页 · 修复与诊断段，2026-10-29）——治文件 / 文件夹
+        /// 删不掉改不了、右键权限是灰的。点开只读列所有者；「取得所有权 / 还原」在窗口里过条款门 +
+        /// 确认框（要管理员）；**不替用户删任何文件**。</summary>
+        private void OpenTakeOwn()
+        {
+            FileTakeOwnForm f = new FileTakeOwnForm(_theme);
+            WindowPlacement.ShowCentered(f, this);
+            SetStatus("文件取得所有权 · 只追加「完全控制」、不删原有权限；改前记原值，不替你删文件");
+            Logger.Write("文件取得所有权", "打开窗口");
+        }
+
+        /// <summary>「计划任务 + 服务自启」窗口（系统工具页 · 修复与诊断段，2026-10-29）——治「关了自启
+        /// 它还是自己跑起来」。点开只读扫任务 XML + 服务注册表；「禁用 / 还原」在窗口里过条款门 +
+        /// 确认框；系统自带 / 驱动只报告不给动。</summary>
+        private void OpenAutoExtra()
+        {
+            AutoExtraForm f = new AutoExtraForm(_theme);
+            WindowPlacement.ShowCentered(f, this);
+            SetStatus("计划任务 + 服务自启 · 只禁用不删除；系统自带 / 驱动只报告，改前记原值、随时能还原");
+            Logger.Write("计划任务 + 服务自启", "打开窗口");
         }
 
         /// <summary>「一键换 DNS」窗口（系统工具页 · 设备与硬件段，GAP-09）——改 DNS 才写系统，窗口里过确认框。</summary>

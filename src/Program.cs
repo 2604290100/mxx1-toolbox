@@ -109,6 +109,34 @@ namespace Mxx1Toolbox
                     Application.Run(new UninstallForm(Theme.Resolve(Settings.Load().Theme)));
                     return 0;
                 }
+                // 2026-10-29 五颗新按钮的窗口（同 `pcicons` 的来路：界面里直接 new；
+                // 需要管理员时提权重开自己）。⚠️ 只有单独一个参数才开窗口 ——
+                // 带 `--json` / `--restore` / `--xxx=` 的仍然走命令行（只读，或者只在隔离根下写）。
+                if (args.Length == 1 && string.Equals(args[0], "unblock", StringComparison.OrdinalIgnoreCase))
+                {
+                    Application.Run(new FileUnblockForm(Theme.Resolve(Settings.Load().Theme)));
+                    return 0;
+                }
+                if (args.Length == 1 && string.Equals(args[0], "usbpower", StringComparison.OrdinalIgnoreCase))
+                {
+                    Application.Run(new UsbPowerForm(Theme.Resolve(Settings.Load().Theme)));
+                    return 0;
+                }
+                if (args.Length == 1 && string.Equals(args[0], "dpiflag", StringComparison.OrdinalIgnoreCase))
+                {
+                    Application.Run(new DpiFlagForm(Theme.Resolve(Settings.Load().Theme)));
+                    return 0;
+                }
+                if (args.Length == 1 && string.Equals(args[0], "takeown", StringComparison.OrdinalIgnoreCase))
+                {
+                    Application.Run(new FileTakeOwnForm(Theme.Resolve(Settings.Load().Theme)));
+                    return 0;
+                }
+                if (args.Length == 1 && string.Equals(args[0], "autoextra", StringComparison.OrdinalIgnoreCase))
+                {
+                    Application.Run(new AutoExtraForm(Theme.Resolve(Settings.Load().Theme)));
+                    return 0;
+                }
                 // `ui log` / `ui settings`：右键「常用功能」子菜单里那几个固定入口。打开主界面，
                 // 然后替用户点一下那个界面动作（否则从资源管理器点出来会"什么都不发生"）。
                 if (string.Equals(args[0], "ui", StringComparison.OrdinalIgnoreCase))
@@ -254,6 +282,11 @@ namespace Mxx1Toolbox
                     case "pcicons": return PcIconsCommand(args);
                     case "startmenu": return StartMenuCommand(args);
                     case "uninstall": return UninstallCommand(args);
+                    case "unblock": return UnblockCommand(args);
+                    case "usbpower": return UsbPowerCommand(args);
+                    case "dpiflag": return DpiFlagCommand(args);
+                    case "takeown": return TakeOwnCommand(args);
+                    case "autoextra": return AutoExtraCommand(args);
                     case "dup": return DupCommand(args);
                     case "rename": return RenameCommand(args);
                     case "privacy": return PrivacyCommand(args);
@@ -434,6 +467,11 @@ namespace Mxx1Toolbox
             Console.WriteLine("  Mxx1Toolbox.exe startup [--json]    只读列出开机自启项（禁用 / 还原只能在窗口里点：单独敲 startup 开窗口）");
             Console.WriteLine("  Mxx1Toolbox.exe eject [--json]      只读列出可移动磁盘（U 盘 / 读卡器；安全弹出只能在窗口里点：单独敲 eject 开窗口）");
             Console.WriteLine("  Mxx1Toolbox.exe pcicons [--json]    只读列出「此电脑 → 设备和驱动器」里被软件塞的图标（百度网盘这类；移除 / 还原只能在窗口里点：单独敲 pcicons 开窗口）");
+            Console.WriteLine("  Mxx1Toolbox.exe unblock [--root=目录] [--recurse] [--json]   只读列出带「来自 Internet」标记的文件（解除 / 还原只能在窗口里点：单独敲 unblock 开窗口）");
+            Console.WriteLine("  Mxx1Toolbox.exe usbpower [--json]   只读列出 USB 设备和它们的省电设置（关省电 / 还原只能在窗口里点：单独敲 usbpower 开窗口）");
+            Console.WriteLine("  Mxx1Toolbox.exe dpiflag [--json]    只读列出已有兼容性标记的程序（设成高 DPI / 还原只能在窗口里点：单独敲 dpiflag 开窗口）");
+            Console.WriteLine("  Mxx1Toolbox.exe takeown --paths=<路径|路径> [--recurse] [--json]   只读列出这些文件 / 文件夹现在归谁（取得所有权 / 还原只能在窗口里点：单独敲 takeown 开窗口）");
+            Console.WriteLine("  Mxx1Toolbox.exe autoextra [--json]  只读列出计划任务 + 自动启动的服务（禁用 / 还原只能在窗口里点：单独敲 autoextra 开窗口）");
             Console.WriteLine("  Mxx1Toolbox.exe dup <目录…> [--min-size=1MB] [--full] [--keep=oldest|shortest|first]   找内容完全相同的文件");
             Console.WriteLine("                                                        默认只读；--delete 才删（进回收站，每组留 --keep 指定的那一个；硬链接不删）");
             Console.WriteLine("  Mxx1Toolbox.exe rename <目录> [--prefix=] [--suffix=] [--find=] [--replace=] [--index-start=N] [--index-digits=N] [--ext=lower|upper]");
@@ -1984,6 +2022,509 @@ namespace Mxx1Toolbox
             }
             Console.WriteLine(PcIcons.ReportText(scan));
             return 0;
+        }
+
+        // ------------------------------------------------------------------ 2026-10-29 五颗新按钮的出口
+        // 五条守同一条口径（同 `pcicons` / `startmenu`）：**默认只读**（扫描 / 报告），
+        // 写入口只在对应的隔离根设好时才放行，否则退 2 并说清"去窗口里点"。
+        // 理由：这些动作（关 USB 省电、写兼容性标记、抢文件所有权、禁用计划任务 / 服务）
+        // 在用户自己那台机器上都得过条款门 + 确认框，命令行不该有绕过它们的那条路。
+
+        /// <summary>`unblock` / `unblock --json` / `unblock --root=&lt;目录&gt;` —— 「解除附件管理器锁定」
+        /// 的命令行出口。默认只读扫「下载」文件夹（或 `--root=` 指定的目录，加 `--recurse` 连子文件夹）；
+        /// 写入口 `--unblock=&lt;路径|路径|all&gt;` / `--restore` 只在 `MXX1_UNBLOCK_ROOT` 隔离根下放行。</summary>
+        private static int UnblockCommand(string[] args)
+        {
+            bool restore = false, recurse = false;
+            string rootArg = "", unblock = "";
+            for (int i = 1; i < args.Length; i++)
+            {
+                string a = args[i];
+                if (string.Equals(a, "--restore", StringComparison.OrdinalIgnoreCase)) { restore = true; }
+                else if (string.Equals(a, "--recurse", StringComparison.OrdinalIgnoreCase)) { recurse = true; }
+                else if (a.StartsWith("--root=", StringComparison.OrdinalIgnoreCase))
+                {
+                    rootArg = a.Substring("--root=".Length).Trim().Trim('"');
+                }
+                else if (a.StartsWith("--unblock=", StringComparison.OrdinalIgnoreCase))
+                {
+                    unblock = a.Substring("--unblock=".Length).Trim();
+                }
+            }
+
+            if (restore && unblock.Length > 0)
+            {
+                Console.Error.WriteLine("--unblock 和 --restore 只能给一个。");
+                return 2;
+            }
+
+            string root = rootArg.Length > 0 ? rootArg : FileUnblock.DefaultRoot();
+            bool truncated = false;
+            List<UnblockItem> items = FileUnblock.Scan(root, recurse, ref truncated, 5000);
+
+            if (restore || unblock.Length > 0)
+            {
+                if (!FileUnblock.WriteAllowed())
+                {
+                    Console.Error.WriteLine("解除 / 还原附件管理器锁定只能在窗口里点（「解除附件管理器锁定」那个按钮）。"
+                        + "命令行只读：unblock / unblock --json");
+                    return 2;
+                }
+                if (restore)
+                {
+                    UnblockReport r0 = FileUnblock.Restore();
+                    Console.WriteLine("action=restore");
+                    Console.WriteLine("root=" + FileUnblock.RootText());
+                    Console.WriteLine("changed=" + r0.Changed.ToString(CultureInfo.InvariantCulture));
+                    Console.WriteLine("skipped=" + r0.Skipped.ToString(CultureInfo.InvariantCulture));
+                    Console.WriteLine("failed=" + r0.Failed.ToString(CultureInfo.InvariantCulture));
+                    Console.WriteLine("result=" + (r0.Ok ? "ok" : "failed"));
+                    Console.WriteLine("message=" + OneLine(r0.Message));
+                    Console.WriteLine("record=" + FileUnblock.RecordFile());
+                    Console.WriteLine("pending=" + FileUnblock.PendingRecords().ToString(CultureInfo.InvariantCulture));
+                    return r0.Ok ? 0 : 1;
+                }
+
+                List<UnblockItem> targets = new List<UnblockItem>();
+                if (string.Equals(unblock, "all", StringComparison.OrdinalIgnoreCase))
+                {
+                    foreach (UnblockItem it in items) { if (it.Blocked) { targets.Add(it); } }
+                }
+                else
+                {
+                    foreach (string p in SplitList(unblock))
+                    {
+                        UnblockItem hit = null;
+                        foreach (UnblockItem it in items)
+                        {
+                            if (string.Equals(it.Path, p, StringComparison.OrdinalIgnoreCase)) { hit = it; break; }
+                        }
+                        if (hit == null) { hit = FileUnblock.Probe(p); }
+                        if (hit != null) { targets.Add(hit); }
+                    }
+                }
+                if (targets.Count == 0)
+                {
+                    Console.Error.WriteLine("这些路径在扫描结果里一个都没找到，没解除任何东西：" + unblock);
+                    return 1;
+                }
+                UnblockReport r1 = FileUnblock.Unblock(targets);
+                Console.WriteLine("action=unblock");
+                Console.WriteLine("root=" + FileUnblock.RootText());
+                Console.WriteLine("changed=" + r1.Changed.ToString(CultureInfo.InvariantCulture));
+                Console.WriteLine("skipped=" + r1.Skipped.ToString(CultureInfo.InvariantCulture));
+                Console.WriteLine("failed=" + r1.Failed.ToString(CultureInfo.InvariantCulture));
+                Console.WriteLine("result=" + (r1.Ok ? "ok" : "failed"));
+                Console.WriteLine("message=" + OneLine(r1.Message));
+                Console.WriteLine("record=" + FileUnblock.RecordFile());
+                Console.WriteLine("pending=" + FileUnblock.PendingRecords().ToString(CultureInfo.InvariantCulture));
+                return r1.Ok ? 0 : 1;
+            }
+
+            if (HasFlag(args, "--json"))
+            {
+                Console.WriteLine(FileUnblock.JsonReport(items, root, truncated));
+                return 0;
+            }
+            Console.WriteLine(FileUnblock.ReportText(items, root, truncated));
+            return 0;
+        }
+
+        /// <summary>`usbpower` / `usbpower --json` —— 「USB 省电（断连）」的命令行出口。默认只读扫
+        /// `HKLM\SYSTEM\CurrentControlSet\Enum\USB`；`--disable=&lt;InstanceId|…|all&gt;` / `--restore`
+        /// 只在 `MXX1_USBPOWER_ROOT` 隔离根下放行。</summary>
+        private static int UsbPowerCommand(string[] args)
+        {
+            bool restore = false;
+            string disable = "";
+            for (int i = 1; i < args.Length; i++)
+            {
+                string a = args[i];
+                if (string.Equals(a, "--restore", StringComparison.OrdinalIgnoreCase)) { restore = true; }
+                else if (a.StartsWith("--disable=", StringComparison.OrdinalIgnoreCase))
+                {
+                    disable = a.Substring("--disable=".Length).Trim();
+                }
+            }
+            if (restore && disable.Length > 0)
+            {
+                Console.Error.WriteLine("--disable 和 --restore 只能给一个。");
+                return 2;
+            }
+
+            List<UsbPowerDevice> list = UsbPower.Scan();
+
+            if (restore || disable.Length > 0)
+            {
+                if (!UsbPower.WriteAllowed())
+                {
+                    Console.Error.WriteLine("关掉 / 还原 USB 省电只能在窗口里点（「USB 省电（断连）」那个按钮）。"
+                        + "命令行只读：usbpower / usbpower --json");
+                    return 2;
+                }
+                if (restore)
+                {
+                    UsbPowerReport r0 = UsbPower.Restore();
+                    Console.WriteLine("action=restore");
+                    Console.WriteLine("root=" + UsbPower.RootText());
+                    Console.WriteLine("changed=" + r0.Changed.ToString(CultureInfo.InvariantCulture));
+                    Console.WriteLine("skipped=" + r0.Skipped.ToString(CultureInfo.InvariantCulture));
+                    Console.WriteLine("failed=" + r0.Failed.ToString(CultureInfo.InvariantCulture));
+                    Console.WriteLine("result=" + (r0.Ok ? "ok" : "failed"));
+                    Console.WriteLine("message=" + OneLine(r0.Message));
+                    Console.WriteLine("record=" + UsbPower.RecordFile());
+                    Console.WriteLine("pending=" + UsbPower.PendingRecords().ToString(CultureInfo.InvariantCulture));
+                    return r0.Ok ? 0 : 1;
+                }
+
+                List<UsbPowerDevice> targets = new List<UsbPowerDevice>();
+                if (string.Equals(disable, "all", StringComparison.OrdinalIgnoreCase))
+                {
+                    foreach (UsbPowerDevice d in list) { if (d.HasParams) { targets.Add(d); } }
+                }
+                else
+                {
+                    foreach (string wanted in SplitList(disable))
+                    {
+                        foreach (UsbPowerDevice d in list)
+                        {
+                            if (string.Equals(d.Instance, wanted, StringComparison.OrdinalIgnoreCase))
+                            {
+                                targets.Add(d);
+                                break;
+                            }
+                        }
+                    }
+                }
+                if (targets.Count == 0)
+                {
+                    Console.Error.WriteLine("这些 InstanceId 在扫描结果里一个都没找到，没改任何设备：" + disable);
+                    return 1;
+                }
+                UsbPowerReport r1 = UsbPower.DisablePowerSave(targets);
+                Console.WriteLine("action=disable");
+                Console.WriteLine("root=" + UsbPower.RootText());
+                Console.WriteLine("changed=" + r1.Changed.ToString(CultureInfo.InvariantCulture));
+                Console.WriteLine("skipped=" + r1.Skipped.ToString(CultureInfo.InvariantCulture));
+                Console.WriteLine("failed=" + r1.Failed.ToString(CultureInfo.InvariantCulture));
+                Console.WriteLine("result=" + (r1.Ok ? "ok" : "failed"));
+                Console.WriteLine("message=" + OneLine(r1.Message));
+                Console.WriteLine("record=" + UsbPower.RecordFile());
+                Console.WriteLine("pending=" + UsbPower.PendingRecords().ToString(CultureInfo.InvariantCulture));
+                return r1.Ok ? 0 : 1;
+            }
+
+            if (HasFlag(args, "--json"))
+            {
+                Console.WriteLine(UsbPower.JsonReport(list));
+                return 0;
+            }
+            Console.WriteLine(UsbPower.ReportText(list));
+            return 0;
+        }
+
+        /// <summary>`dpiflag` / `dpiflag --json` —— 「高 DPI 兼容」的命令行出口。默认只读读
+        /// `HKCU\…\AppCompatFlags\Layers`；`--set=&lt;exe|…&gt;` / `--restore` 只在
+        /// `MXX1_DPIFLAG_ROOT` 隔离根下放行。</summary>
+        private static int DpiFlagCommand(string[] args)
+        {
+            bool restore = false;
+            string set = "";
+            for (int i = 1; i < args.Length; i++)
+            {
+                string a = args[i];
+                if (string.Equals(a, "--restore", StringComparison.OrdinalIgnoreCase)) { restore = true; }
+                else if (a.StartsWith("--set=", StringComparison.OrdinalIgnoreCase))
+                {
+                    set = a.Substring("--set=".Length).Trim();
+                }
+            }
+            if (restore && set.Length > 0)
+            {
+                Console.Error.WriteLine("--set 和 --restore 只能给一个。");
+                return 2;
+            }
+
+            List<DpiFlagItem> list = DpiFlag.Scan();
+
+            if (restore || set.Length > 0)
+            {
+                if (!DpiFlag.WriteAllowed())
+                {
+                    Console.Error.WriteLine("设成高 DPI / 还原只能在窗口里点（「高 DPI 兼容」那个按钮）。"
+                        + "命令行只读：dpiflag / dpiflag --json");
+                    return 2;
+                }
+                if (restore)
+                {
+                    DpiFlagReport r0 = DpiFlag.Restore();
+                    Console.WriteLine("action=restore");
+                    Console.WriteLine("root=" + DpiFlag.RootText());
+                    Console.WriteLine("changed=" + r0.Changed.ToString(CultureInfo.InvariantCulture));
+                    Console.WriteLine("skipped=" + r0.Skipped.ToString(CultureInfo.InvariantCulture));
+                    Console.WriteLine("failed=" + r0.Failed.ToString(CultureInfo.InvariantCulture));
+                    Console.WriteLine("result=" + (r0.Ok ? "ok" : "failed"));
+                    Console.WriteLine("message=" + OneLine(r0.Message));
+                    Console.WriteLine("record=" + DpiFlag.RecordFile());
+                    Console.WriteLine("pending=" + DpiFlag.PendingRecords().ToString(CultureInfo.InvariantCulture));
+                    return r0.Ok ? 0 : 1;
+                }
+
+                List<DpiFlagItem> targets = new List<DpiFlagItem>();
+                foreach (string p in SplitList(set))
+                {
+                    DpiFlagItem hit = null;
+                    foreach (DpiFlagItem it in list)
+                    {
+                        if (string.Equals(it.Path, p, StringComparison.OrdinalIgnoreCase)) { hit = it; break; }
+                    }
+                    if (hit == null) { hit = new DpiFlagItem(); hit.Path = p; }
+                    targets.Add(hit);
+                }
+                DpiFlagReport r1 = DpiFlag.SetHighDpi(targets);
+                Console.WriteLine("action=set");
+                Console.WriteLine("root=" + DpiFlag.RootText());
+                Console.WriteLine("changed=" + r1.Changed.ToString(CultureInfo.InvariantCulture));
+                Console.WriteLine("skipped=" + r1.Skipped.ToString(CultureInfo.InvariantCulture));
+                Console.WriteLine("failed=" + r1.Failed.ToString(CultureInfo.InvariantCulture));
+                Console.WriteLine("result=" + (r1.Ok ? "ok" : "failed"));
+                Console.WriteLine("message=" + OneLine(r1.Message));
+                Console.WriteLine("record=" + DpiFlag.RecordFile());
+                Console.WriteLine("pending=" + DpiFlag.PendingRecords().ToString(CultureInfo.InvariantCulture));
+                return r1.Ok ? 0 : 1;
+            }
+
+            if (HasFlag(args, "--json"))
+            {
+                Console.WriteLine(DpiFlag.JsonReport(list));
+                return 0;
+            }
+            Console.WriteLine(DpiFlag.ReportText(list));
+            return 0;
+        }
+
+        /// <summary>`takeown --paths=&lt;…&gt;` / `takeown --json` —— 「文件取得所有权」的命令行出口。
+        /// 默认只读列出这些路径现在归谁；`--take=&lt;路径|…|all&gt;` / `--restore` 只在
+        /// `MXX1_TAKEOWN_ROOT` 隔离根下放行，而且**每个目标都必须落在那个根里面**（防止命令行
+        /// 把别的目录的所有者改掉）。</summary>
+        private static int TakeOwnCommand(string[] args)
+        {
+            bool restore = false, recurse = false;
+            string pathsArg = "", take = "";
+            for (int i = 1; i < args.Length; i++)
+            {
+                string a = args[i];
+                if (string.Equals(a, "--restore", StringComparison.OrdinalIgnoreCase)) { restore = true; }
+                else if (string.Equals(a, "--recurse", StringComparison.OrdinalIgnoreCase)) { recurse = true; }
+                else if (a.StartsWith("--paths=", StringComparison.OrdinalIgnoreCase))
+                {
+                    pathsArg = a.Substring("--paths=".Length).Trim().Trim('"');
+                }
+                else if (a.StartsWith("--take=", StringComparison.OrdinalIgnoreCase))
+                {
+                    take = a.Substring("--take=".Length).Trim();
+                }
+            }
+            if (restore && take.Length > 0)
+            {
+                Console.Error.WriteLine("--take 和 --restore 只能给一个。");
+                return 2;
+            }
+
+            if (restore)
+            {
+                if (!FileTakeOwn.WriteAllowed())
+                {
+                    Console.Error.WriteLine("取得所有权 / 还原只能在窗口里点（「文件取得所有权」那个按钮）。"
+                        + "命令行只读：takeown --paths=<路径> / takeown --paths=<路径> --json");
+                    return 2;
+                }
+                TakeOwnReport r0 = FileTakeOwn.Restore();
+                Console.WriteLine("action=restore");
+                Console.WriteLine("changed=" + r0.Changed.ToString(CultureInfo.InvariantCulture));
+                Console.WriteLine("skipped=" + r0.Skipped.ToString(CultureInfo.InvariantCulture));
+                Console.WriteLine("failed=" + r0.Failed.ToString(CultureInfo.InvariantCulture));
+                Console.WriteLine("result=" + (r0.Ok ? "ok" : "failed"));
+                Console.WriteLine("message=" + OneLine(r0.Message));
+                Console.WriteLine("record=" + FileTakeOwn.RecordFile());
+                Console.WriteLine("pending=" + FileTakeOwn.PendingRecords().ToString(CultureInfo.InvariantCulture));
+                return r0.Ok ? 0 : 1;
+            }
+
+            if (take.Length > 0)
+            {
+                if (!FileTakeOwn.WriteAllowed())
+                {
+                    Console.Error.WriteLine("取得所有权 / 还原只能在窗口里点（「文件取得所有权」那个按钮）。"
+                        + "命令行只读：takeown --paths=<路径> / takeown --paths=<路径> --json");
+                    return 2;
+                }
+                List<string> targets = new List<string>();
+                if (string.Equals(take, "all", StringComparison.OrdinalIgnoreCase))
+                {
+                    targets.AddRange(SplitList(pathsArg));
+                }
+                else
+                {
+                    targets.AddRange(SplitList(take));
+                }
+                if (targets.Count == 0)
+                {
+                    Console.Error.WriteLine("没给目标路径（--take=<路径> 或 --paths=<路径> --take=all）。");
+                    return 2;
+                }
+                foreach (string p in targets)
+                {
+                    if (!FileTakeOwn.InsideRoot(p))
+                    {
+                        Console.Error.WriteLine("这个路径不在隔离根 " + FileTakeOwn.IsoRoot()
+                            + " 里面，为了不误改别的地方，这次一个都没动：" + p);
+                        return 2;
+                    }
+                }
+                TakeOwnReport r1 = FileTakeOwn.TakeOwn(targets, recurse);
+                Console.WriteLine("action=takeown");
+                Console.WriteLine("changed=" + r1.Changed.ToString(CultureInfo.InvariantCulture));
+                Console.WriteLine("skipped=" + r1.Skipped.ToString(CultureInfo.InvariantCulture));
+                Console.WriteLine("failed=" + r1.Failed.ToString(CultureInfo.InvariantCulture));
+                Console.WriteLine("result=" + (r1.Ok ? "ok" : "failed"));
+                Console.WriteLine("message=" + OneLine(r1.Message));
+                Console.WriteLine("record=" + FileTakeOwn.RecordFile());
+                Console.WriteLine("pending=" + FileTakeOwn.PendingRecords().ToString(CultureInfo.InvariantCulture));
+                return r1.Ok ? 0 : 1;
+            }
+
+            List<string> scanPaths = SplitList(pathsArg);
+            bool truncated = false;
+            List<FileOwnItem> items = FileTakeOwn.Scan(scanPaths, recurse, ref truncated, 20000);
+            if (HasFlag(args, "--json"))
+            {
+                Console.WriteLine(FileTakeOwn.JsonReport(items));
+                return 0;
+            }
+            if (scanPaths.Count == 0)
+            {
+                Console.WriteLine("用法：takeown --paths=<文件或文件夹|用 | 分隔> [--recurse] [--json]");
+                Console.WriteLine("（命令行只读；取得所有权 / 还原只能在窗口里点）");
+                return 0;
+            }
+            Console.WriteLine(FileTakeOwn.ReportText(items));
+            return 0;
+        }
+
+        /// <summary>`autoextra` / `autoextra --json` —— 「计划任务 + 服务自启」的命令行出口。默认只读
+        /// 扫任务 XML + 服务注册表；`--disable=&lt;task:\名字|service:名字|all&gt;` / `--restore` 只在
+        /// `MXX1_AUTOEXTRA_TASKS` 隔离根下放行。</summary>
+        private static int AutoExtraCommand(string[] args)
+        {
+            bool restore = false;
+            string disable = "";
+            for (int i = 1; i < args.Length; i++)
+            {
+                string a = args[i];
+                if (string.Equals(a, "--restore", StringComparison.OrdinalIgnoreCase)) { restore = true; }
+                else if (a.StartsWith("--disable=", StringComparison.OrdinalIgnoreCase))
+                {
+                    disable = a.Substring("--disable=".Length).Trim();
+                }
+            }
+            if (restore && disable.Length > 0)
+            {
+                Console.Error.WriteLine("--disable 和 --restore 只能给一个。");
+                return 2;
+            }
+
+            List<AutoExtraItem> list = AutoExtra.Scan();
+
+            if (restore || disable.Length > 0)
+            {
+                if (!AutoExtra.TaskWriteAllowed())
+                {
+                    Console.Error.WriteLine("禁用 / 还原计划任务和服务只能在窗口里点（「计划任务 + 服务自启」那个按钮）。"
+                        + "命令行只读：autoextra / autoextra --json");
+                    return 2;
+                }
+                if (restore)
+                {
+                    AutoExtraReport r0 = AutoExtra.Restore();
+                    Console.WriteLine("action=restore");
+                    Console.WriteLine("tasks=" + AutoExtra.TasksRoot());
+                    Console.WriteLine("services=" + AutoExtra.ServicesRootText());
+                    Console.WriteLine("changed=" + r0.Changed.ToString(CultureInfo.InvariantCulture));
+                    Console.WriteLine("skipped=" + r0.Skipped.ToString(CultureInfo.InvariantCulture));
+                    Console.WriteLine("failed=" + r0.Failed.ToString(CultureInfo.InvariantCulture));
+                    Console.WriteLine("result=" + (r0.Ok ? "ok" : "failed"));
+                    Console.WriteLine("message=" + OneLine(r0.Message));
+                    Console.WriteLine("record=" + AutoExtra.RecordFile());
+                    Console.WriteLine("pending=" + AutoExtra.PendingRecords().ToString(CultureInfo.InvariantCulture));
+                    return r0.Ok ? 0 : 1;
+                }
+
+                List<AutoExtraItem> targets = new List<AutoExtraItem>();
+                if (string.Equals(disable, "all", StringComparison.OrdinalIgnoreCase))
+                {
+                    foreach (AutoExtraItem it in list) { if (it.CanChange && !it.Disabled) { targets.Add(it); } }
+                }
+                else
+                {
+                    foreach (string want in SplitList(disable))
+                    {
+                        string kind = "", id = want;
+                        int colon = want.IndexOf(':');
+                        if (colon > 0)
+                        {
+                            kind = want.Substring(0, colon).Trim().ToLowerInvariant();
+                            id = want.Substring(colon + 1).Trim();
+                        }
+                        foreach (AutoExtraItem it in list)
+                        {
+                            if (!string.Equals(it.Id, id, StringComparison.OrdinalIgnoreCase)) { continue; }
+                            if (kind.Length > 0 && !string.Equals(it.Kind, kind, StringComparison.OrdinalIgnoreCase)) { continue; }
+                            targets.Add(it);
+                            break;
+                        }
+                    }
+                }
+                if (targets.Count == 0)
+                {
+                    Console.Error.WriteLine("这些名字在扫描结果里一个都没找到，没禁用任何东西：" + disable);
+                    return 1;
+                }
+                AutoExtraReport r1 = AutoExtra.Disable(targets);
+                Console.WriteLine("action=disable");
+                Console.WriteLine("tasks=" + AutoExtra.TasksRoot());
+                Console.WriteLine("services=" + AutoExtra.ServicesRootText());
+                Console.WriteLine("changed=" + r1.Changed.ToString(CultureInfo.InvariantCulture));
+                Console.WriteLine("skipped=" + r1.Skipped.ToString(CultureInfo.InvariantCulture));
+                Console.WriteLine("failed=" + r1.Failed.ToString(CultureInfo.InvariantCulture));
+                Console.WriteLine("result=" + (r1.Ok ? "ok" : "failed"));
+                Console.WriteLine("message=" + OneLine(r1.Message));
+                Console.WriteLine("record=" + AutoExtra.RecordFile());
+                Console.WriteLine("pending=" + AutoExtra.PendingRecords().ToString(CultureInfo.InvariantCulture));
+                return r1.Ok ? 0 : 1;
+            }
+
+            if (HasFlag(args, "--json"))
+            {
+                Console.WriteLine(AutoExtra.JsonReport(list));
+                return 0;
+            }
+            Console.WriteLine(AutoExtra.ReportText(list));
+            return 0;
+        }
+
+        /// <summary>`--xxx=a|b|c` 那串按 `|` 拆开（路径里几乎不会有竖线；空格拆会把
+        /// `%ProgramFiles%\…` 这种带空格的路径拆坏，逗号 / 分号在文件名里也合法）。</summary>
+        private static List<string> SplitList(string s)
+        {
+            List<string> list = new List<string>();
+            if (s == null) { return list; }
+            foreach (string p in s.Split(new char[] { '|' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                string t = p.Trim().Trim('"');
+                if (t.Length > 0) { list.Add(t); }
+            }
+            return list;
         }
 
         /// <summary>`startmenu` / `startmenu --json` —— 「开始菜单程序管理」的命令行出口（2026-10-27

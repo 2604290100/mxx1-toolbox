@@ -70,6 +70,16 @@ function Get-Shape {
         # （把条目从列表里藏掉 / 删掉的意思），两个都带「管理列表」这层含义。
         @('startmenu-manage', 'list-window'),
         @('uninstall-manage', 'list-del'),
+        # 2026-10-29 五颗新按钮（系统工具页）：解除附件管理器锁定 = 一页纸 + 划掉的锁、
+        # USB 省电 = USB 三叉、文件取得所有权 = 一页纸 + 皇冠、计划任务 + 服务 = 钟 + 齿轮、
+        # 高 DPI 兼容 = 方框 + 往外顶的箭头。
+        # ⚠ 必须排在下面那些泛匹配之前：`usb-power` 别被 `power-` 那条吃掉（现在不撞，将来会），
+        # `file-takeown` / `file-unblock` 别被将来的 `file` 类规则吃掉。
+        @('file-unblock',  'doc-unlock'),
+        @('usb-power',     'usb'),
+        @('file-takeown',  'doc-owner'),
+        @('auto-extra',    'clock-gear'),
+        @('dpi-flag',      'dpi-scale'),
         # 「右键增强」页签那 7 个按钮（v1.5.0）：装上 = 加号、撤掉 = 减号、
         # 解除占用 = 钥匙（解锁）、常用功能 = 清单、重建 = 刷新、说明 = 文档
         @('rightmenu.unlock.on',  'key'),
@@ -301,6 +311,55 @@ function Draw-Shape {
             $G.DrawLine($Pen, 5.5, 10, 11.5, 10)
             $G.FillRectangle($Brush, 4.6, 4.4, 1.4, 1)
             $G.DrawLine($Pen, 4.5, 11.5, 11.5, 4.5)
+        }
+        'doc-unlock' {
+            # 解除附件管理器锁定：一页纸 + 右下角一把被划掉的小锁（"来自 Internet" 那条标记被删掉）
+            $G.DrawRectangle($Pen, 3.5, 3.0, 7, 10)
+            $G.DrawLine($Pen, 5.2, 6.0, 8.8, 6.0)
+            $G.DrawLine($Pen, 5.2, 8.0, 8.8, 8.0)
+            $G.DrawRectangle($Pen, 9.2, 9.2, 4.0, 3.2)
+            $G.DrawArc($Pen, 10.0, 7.6, 2.4, 2.6, 180, 180)
+            $G.DrawLine($Pen, 9.0, 13.0, 13.6, 8.8)
+        }
+        'usb' {
+            # USB 省电（断连）：USB 三叉符号 —— 一眼就是"USB 那点事"
+            $G.DrawLine($Pen, 8, 12.5, 8, 3.5)
+            $G.FillEllipse($Brush, 6.6, 11.4, 2.8, 2.8)
+            $G.DrawLine($Pen, 8, 8.6, 4.6, 6.6)
+            $G.DrawLine($Pen, 8, 8.6, 11.4, 6.6)
+            $G.FillRectangle($Brush, 3.4, 5.2, 2.4, 2.4)
+            $G.FillPolygon($Brush, @(
+                (New-Object System.Drawing.PointF(11.4, 4.0)),
+                (New-Object System.Drawing.PointF(13.6, 5.4)),
+                (New-Object System.Drawing.PointF(11.4, 6.8))
+            ))
+        }
+        'doc-owner' {
+            # 文件取得所有权：一页纸 + 顶上一顶小皇冠（"这东西归我了"）
+            $G.DrawRectangle($Pen, 3.5, 5.5, 9, 8)
+            $G.DrawLine($Pen, 5.5, 8.5, 10.5, 8.5)
+            $G.DrawLine($Pen, 5.5, 10.5, 10.5, 10.5)
+            $G.DrawLine($Pen, 4.4, 4.4, 4.4, 2.2)
+            $G.DrawLine($Pen, 11.6, 4.4, 11.6, 2.2)
+            $G.DrawLine($Pen, 4.4, 2.6, 8.0, 4.0)
+            $G.DrawLine($Pen, 8.0, 4.0, 11.6, 2.6)
+        }
+        'clock-gear' {
+            # 计划任务 + 服务自启：一个钟（定时触发）+ 右下角一小块齿轮（服务）
+            $G.DrawEllipse($Pen, 2.6, 2.6, 8.4, 8.4)
+            $G.DrawLine($Pen, 6.8, 5.0, 6.8, 7.0)
+            $G.DrawLine($Pen, 6.8, 7.0, 8.4, 7.9)
+            $G.FillEllipse($Brush, 9.6, 9.6, 3.4, 3.4)
+            $G.DrawLine($Pen, 11.3, 8.4, 11.3, 14.2)
+            $G.DrawLine($Pen, 8.4, 11.3, 14.2, 11.3)
+        }
+        'dpi-scale' {
+            # 高 DPI 兼容：一个方框 + 两条往外顶的箭头（"按 DPI 放大，别拉伸糊了"）
+            $G.DrawRectangle($Pen, 3.5, 3.5, 9, 9)
+            $G.DrawLine($Pen, 6.0, 8.0, 10.0, 8.0)
+            $G.DrawLine($Pen, 8.0, 6.0, 8.0, 10.0)
+            $G.DrawLine($Pen, 5.0, 5.0, 3.2, 3.2)
+            $G.DrawLine($Pen, 11.0, 11.0, 12.8, 12.8)
         }
         'folder' {
             $pts = @(

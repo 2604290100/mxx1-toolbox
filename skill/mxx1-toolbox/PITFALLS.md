@@ -1,9 +1,15 @@
-# 萌新工具箱 · 踩坑清单（107 条）
+# 萌新工具箱 · 踩坑清单（111 条）
 
 > 这是 skill 的**按需**文件：改测试 / 改界面探针 / 改用户可见文案之前读一次。
 > 每一条都是真踩过的，写着"根因 + 判据 + 哪个回归盯着"。序号在 `SKILL.md` 与提交信息里会被引用
 > （比如"坑 29"= 进程归属那条），所以**别重排、别删号**。
-> 最近更新：2026-10-28（坑 107：**原生 exe 的中文输出是 GBK，PowerShell 直接捕获必乱码** ——
+> 最近更新：2026-10-29（坑 108–111，五个新功能那一轮：**ADS 只能走 P/Invoke，`FileStream` 直接抛
+> `NotSupportedException`，`CreateFileW` 必须写 `EntryPoint`**；**写记录与读记录的段数必须一起改**
+> —— `r.Length < 6` 对 5 段记录 = 还原永远"没有记录"；**SDDL 所有者常是 `O:BA` 别名 → 必须
+> `RawSecurityDescriptor`**，而且"归你管吗"要认所在组（管理员新建文件所有者是
+> `BUILTIN\Administrators`）；**系统自带的东西"读不到"就按系统自带处理**，计划任务只认 XML 英文标签、
+> 禁用后要回 XML 读 `<Enabled>false</Enabled>`）。
+> 坑 107：**原生 exe 的中文输出是 GBK，PowerShell 直接捕获必乱码** ——
 > 中文版 Windows 的 w32tm / netsh / chkdsk / sfc 输出是代码页 936，脚本里 `w32tm … 2>&1` 捕获时
 > PowerShell（5.1 与 pwsh 都）按 UTF-8 解码 → 中文全乱（判据：`Leap 指示符` 变 `Leap ָʾ��`）。
 > 修法：`ProcessStartInfo + RedirectStandardOutput/Error + StandardOutputEncoding/ErrorEncoding =
@@ -988,3 +994,49 @@
           判断一律读 `Source == "system"`，路径只用来定位文件。
         - 判断：**凡是要按"这东西属于哪一层"决定行为（管理员门 / 保护名单 / 计数），
           一律在扫描/装载时把归属存成字段，别在 UI 层拿字符串路径再猜一次。**
+
+    107. **原生 exe 的中文输出是 GBK，PowerShell 直接捕获必乱码**（2026-10-28，四个系统按钮）：
+        - 中文版 Windows 的 `w32tm` / `netsh` / `chkdsk` / `sfc` 输出是代码页 **936**；
+          脚本里 `w32tm /query /status 2>&1` 捕获时 PowerShell（5.1 与 pwsh 都）按 UTF-8 解码 →
+          中文全乱（`Leap 指示符` 变 `Leap ָʾ��`）。
+        - **改法**：`ProcessStartInfo` + `RedirectStandardOutput/Error` +
+          `StandardOutputEncoding/ErrorEncoding = Encoding.GetEncoding(936)` 读字节流；
+          退出码取 `$p.ExitCode` 记进 `$NativeExit`（**不能用 `$LASTEXITCODE`** —— 那是 PowerShell
+          引擎跑原生程序才设置的，.NET `Process` 不会设）。
+        - 判据：命令行 D 组盯着 `time-sync` / `sfc-scan` / `disk-check` / `net-reset` 四条。
+
+    108. **`.NET` 读写 NTFS 备用数据流（ADS）必须走 P/Invoke，`FileStream` 会直接抛**（2026-10-29，解除附件管理器锁定）：
+        - 症状最阴的地方是**不报错也不工作**：`new FileStream("a.txt:Zone.Identifier", …)` 抛
+          `NotSupportedException`（「不支持给定路径的格式」），第一版把它包在 `try { } catch { }` 里
+          → 扫描永远 0 条，而"编译通过 + 窗口能开 + 按钮可点"全绿，只有拿真夹具一跑才看见。
+        - **改法**：`CreateFileW` / `ReadFile` / `WriteFile` / `CloseHandle`。⚠️ **`CreateFileW` 必须写
+          `EntryPoint = "CreateFileW"`** —— 只写方法名 + `CharSet = CharSet.Unicode` 实测 `err=2`
+          （打不开），补上 EntryPoint 同一条路径立刻成功；别把这一行"简化"回去。
+        - 另两条：`File.Exists("a.txt:流名")` 对 ADS **永远 false**（它只看主文件）→ 判存在只能真开一次；
+          夹具造 ADS 只能用 PowerShell 的 `Add-Content -Stream` / `Get-Item -Stream`。
+
+    109. **「还原」的判据写错一位数，整条还原链就静默死掉**（2026-10-29，USB 省电）：
+        - `UsbPower.Restore()` 里判 `if (r.Length < 6) { continue; }`，可写记录只有 **5 段**
+          （时间 / 键路径 / 值名 / 原本有没有 / 原值）→ 每一行都被 `continue` 跳过 →
+          「还原」永远报「没有待还原的记录（这台机器还没用这个窗口关过 USB 省电）」。
+        - **判据**：写记录与读记录是**两个函数**，段数一变必须两处一起改；回归里要有一条
+          "写完立刻还原"的端到端（D14f 就是这么抓到的），只测"写成功"抓不到。
+
+    110. **SDDL 里的所有者常是两字母别名，抠出来必须交给 `RawSecurityDescriptor`**（2026-10-29，文件取得所有权）：
+        - `O:BA` = `BUILTIN\Administrators`、`O:SY` = `SYSTEM`、`O:LA` = 本机管理员。
+          第一版拿"从 `O:` 读到 `G`/`D`/`S` 为止"的土办法抠，得到 `BA` 这种字符串 →
+          和 `S-1-5-…` 永远不相等 → 表现是「还原报成功，但读回核对说不一样」、记录一直挂着（D16f）。
+        - **改法**：`new RawSecurityDescriptor(sddl).Owner.Value`（它替你把别名翻成 SID）。
+        - 连带：**「这个文件归你管吗」不能只比用户 SID** —— 管理员权限下新建的文件所有者是
+          `BUILTIN\Administrators`（令牌的默认所有者就是那个组），只比用户 SID 会把自己刚建的
+          文件全标成"不是你"。判据要认 **用户 SID 或 `WindowsIdentity.GetCurrent().Groups` 里的任一组**。
+
+    111. **系统自带的东西"读不到"就按系统自带处理 —— 安全边界宁可少动**（2026-10-29，计划任务 + 服务自启）：
+        - 计划任务：`\Microsoft\` 开头的（Windows 自己的）一律只报告；服务的判据是 `ImagePath`
+          落在 `%SystemRoot%` 下（第三方软件也可能把 exe 装到 System32，但那种先不动更安全）；
+          驱动（`Type` 带驱动位）不动。**`ImagePath` 读不到的一律当系统自带**（读不到 = 不知道是谁的）。
+        - 计划任务的读取只能靠 `System32\Tasks` 下的 **XML**（UTF-16），且**只认英文标签**
+          （`<Command>` / `<Arguments>` / `<Enabled>`）—— `schtasks /query` 是本地化文本，解析不得
+          （和坑 107 是同一件事的另一面）。
+        - 禁用之后**必须回同一份 XML 读 `<Enabled>false</Enabled>`** 才算成；`schtasks` 的退出码
+          只能说明"命令没报错"。

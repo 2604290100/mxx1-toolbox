@@ -1,6 +1,6 @@
 ---
 name: mxx1-toolbox
-description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Windows button-wall launcher whose main window is a multi-row, multi-column grid of small buttons that each start another program, script, or feature. Covers its interface rules (four column compact buttons, top tabs, separator segments, light/dark theme, computed column width, grey "not wired up yet" buttons), the tools\*.json button registry, bin-tools\ auto-loaded tool buttons (tool.json), how buttons launch things (exe / script / open / builtin / macro), how the 54 系统工具 buttons open Windows components, how the 常用设置 registry switches record the original value so every change can be undone, how a run reports success or failure, the first-run consent gate (免责声明与服务条款 fingerprint), the read-only update check, Windows 7/10/11 compatibility, plus build.ps1, screenshot tool and the GUI/CLI test suites.
+description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Windows button-wall launcher whose main window is a multi-row, multi-column grid of small buttons that each start another program, script, or feature. Covers its interface rules (four column compact buttons, top tabs, separator segments, light/dark theme, computed column width, grey "not wired up yet" buttons), the tools\*.json button registry, bin-tools\ auto-loaded tool buttons (tool.json), how buttons launch things (exe / script / open / builtin / macro), how the 59 系统工具 buttons open Windows components, how the 常用设置 registry switches record the original value so every change can be undone, how a run reports success or failure, the first-run consent gate (免责声明与服务条款 fingerprint), the read-only update check, Windows 7/10/11 compatibility, plus build.ps1, screenshot tool and the GUI/CLI test suites.
 ---
 
 # 萌新工具箱（mxx1 Toolbox）
@@ -16,7 +16,35 @@ description: Use when working on "萌新工具箱 / mxx1 Toolbox" — the Window
 > **接手 / 新会话先做两件事**：读 `docs\DESIGN.md`（外观与行为的**唯一正本**）和本文件。
 > 设计一改先改 `DESIGN.md`，再同步本 skill —— 两份分叉就会出现"两套行为"。
 
-## 当前状态（2026-10-28，**v1.6.2 已发布**：内置按钮 / 图标 **185**、`status` **188**、系统工具 **54** —— 「开始菜单程序管理」+「程序和功能管理」两个管理窗口 + 打包内容规范；站点一个字没动）
+## 当前状态（2026-10-29，**未发布**：内置按钮 / 图标 **190**、`status` **193**、系统工具 **59** —— 五个新功能：解除附件管理器锁定 / USB 省电 / 高 DPI 兼容 / 文件取得所有权 / 计划任务 + 服务自启；v1.6.2 已发布、站点没动）
+
+> **⚠️ 2026-10-29 第六轮（`DESIGN.md` §12.93；条款正文没改 → 同意指纹不变 `db2c1a73f510a37c`）**：
+> 用户原话「**这5个都做吧期间我离开的时候需要拍版就记录下来，等我拍版，我去睡觉了，这些功能做完，
+> 你就自己调研功能，记录一下做到早上7点。**」五颗按钮**全挂「系统工具」页**（不动「常用设置」统计）。
+> ① **解除附件管理器锁定**（`file-unblock`，段 4 order 110，CLI `unblock`）：删 `Zone.Identifier`
+>   **备用数据流**（`ZoneId=3` = 来自 Internet）。⚠️ **.NET 的 `FileStream` 对 `a.txt:流名` 直接抛
+>   「不支持给定路径的格式」→ 必须走 P/Invoke**（`CreateFileW` **必须写 `EntryPoint`**，否则 `err=2`）。
+>   流原文 base64 进 `unblock-original.tsv`，能还原；主文件内容一个字节不动。
+> ② **USB 省电（断连）**（`usb-power`，段 1 order 32，CLI `usbpower`）：`USB\Enum\…\Device Parameters`
+>   的 `EnhancedPowerManagementEnabled` / `SelectiveSuspendEnabled` 写 0；改完拔插一次才生效。
+>   ⚠️ `Restore` 判行数 `< 5`（一行 5 段），写成 `< 6` 就一条都读不进来（D14f 抓的）。
+> ③ **高 DPI 兼容**（`dpi-flag`，段 4 order 118，CLI `dpiflag`）：`AppCompatFlags\Layers` 的
+>   `~ HIGHDPIAWARE`；**只换 DPI 三词、`RUNASADMIN` 等别的标记原样留着**。
+> ④ **文件取得所有权**（`file-takeown`，段 4 order 112，CLI `takeown`）：改所有者 + **追加**完全控制
+>   ACE（不删原有）。⚠️ 两个坑：SDDL 所有者常是 `O:BA` 别名 → 必须 `RawSecurityDescriptor`；
+>   「归你管吗」要认**你所在的组**（管理员新建文件所有者是 `BUILTIN\Administrators`）。
+> ⑤ **计划任务 + 服务自启**（`auto-extra`，段 4 order 115，CLI `autoextra`）：任务读 `System32\Tasks`
+>   的 XML（靠英文标签）、禁用走 `schtasks /change /disable` 并读回 `<Enabled>false</Enabled>`；
+>   服务读 `Services\<名>` 的 `Start`（禁用 = 4）；`\Microsoft\` 任务 / ImagePath 在 `%SystemRoot%`
+>   的服务 / 驱动**只报告不动**。
+> ⑥ **数字**：内置按钮 / 图标 185 → **190**、`status` 188 → **193**、系统工具 54 → **59**
+>   （`systemTargets=29` 不变）、常用设置 59 不变；exe **1,588,224 字节** / 190 图标。
+> ⑦ **回归**：命令行新增 **D13–D17**，全套 **594 通过 / 0 失败 / 1 环境跳过（F03）**；界面新增
+>   **J33–J37**，J 组 **96 通过 / 0 失败**、全套 **319 通过 / 0 失败 / 1 跳过**（H09 鼠标悬停）；
+>   编码体检 **339 PASS**、内联 PASS。`tests\test-map.json` 补了 5 条映射。
+> ⑧ ⚠️ 没验到：五件都欠实机人眼验收；Win7 未跑；真机从未真的 `schtasks /change` 过；
+>   **本地提交，没推送、没发版**；**站点一个字没动**（等他叫）。
+> ⑨ ⛔ 待拍板的事记在 `D:\萌新工具开发\夜巡-20261029\01-待拍板.md`。
 
 > **⚠️ 2026-10-28 第五轮（`DESIGN.md` §12.91 + §12.92；条款正文没改 → 同意指纹不变 `db2c1a73f510a37c`）**：
 > 用户上传开始菜单截图 + 控制面板「程序和功能」截图，要求「设计这两个界面的管理隐藏删除按钮，参考

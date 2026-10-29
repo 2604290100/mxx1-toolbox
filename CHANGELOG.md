@@ -2,6 +2,56 @@
 
 本文件记录每个版本改了什么。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [未发布] 五个新功能：解除附件管理器锁定 / USB 省电 / 高 DPI 兼容 / 文件取得所有权 / 计划任务 + 服务自启（2026-10-29）
+
+用户原话：「这5个都做吧期间我离开的时候需要拍版就记录下来，等我拍版，我去睡觉了，这些功能做完，
+你就自己调研功能，记录一下做到早上7点。」五颗按钮全挂在**系统工具**页（不动「常用设置」的统计）。
+
+### 新增
+
+- **「解除附件管理器锁定」**（`file-unblock`，系统工具 · 段 4 `order 110`，CLI `unblock`）：
+  下载的 Office 文档打开是保护视图 / EXE 弹「Windows 已保护你的电脑」时用。扫出被 Windows 打了
+  `Zone.Identifier` 备用数据流（`ZoneId=3` = 来自 Internet）的文件，选中点「解除选中…」/「全部解除…」
+  = **只删那条流，文件内容一个字节都不动**；流原文 base64 记进 `unblock-original.tsv`，
+  「还原锁定」按记录写回去。
+- **「USB 省电（断连）」**（`usb-power`，系统工具 · 段 1 `order 32`，CLI `usbpower`）：
+  U 盘突然掉 / 鼠标卡一下 / 移动硬盘认不到时用。把 USB 设备的
+  `EnhancedPowerManagementEnabled` / `SelectiveSuspendEnabled` 扫成列表，选中点「关掉省电（选中）…」
+  = 两个值都写 0（改完**拔插一次或重启**才生效）；改前记原值、能还原。
+- **「高 DPI 兼容」**（`dpi-flag`，系统工具 · 段 4 `order 118`，CLI `dpiflag`）：
+  笔记本开 125% / 150% 缩放后老程序糊成一片时用。设 `AppCompatFlags\Layers` 里的
+  `~ HIGHDPIAWARE`，**只换掉 DPI 那三个词、别的标记（如 `RUNASADMIN`）原样留着**；记原值、能还原。
+- **「文件取得所有权」**（`file-takeown`，系统工具 · 段 4 `order 112`，CLI `takeown`）：
+  文件 / 文件夹删不掉、改不了、右键权限是灰的时用。取得所有权 = 所有者改成你 + **追加**一条
+  「完全控制」（不删原有 ACE）；写前记 SDDL、能还原。
+- **「计划任务 + 服务自启」**（`auto-extra`，系统工具 · 段 4 `order 115`，CLI `autoextra`）：
+  「启动项管理」管不到的那两条自启路。计划任务读 `System32\Tasks` 的任务 XML、禁用走
+  `schtasks /change /disable` 并读回 `<Enabled>false</Enabled>`；服务读 `Services\<名>` 的 `Start`
+  （禁用 = 4）。`\Microsoft\` 开头的任务 / ImagePath 在 `%SystemRoot%` 的服务 / 驱动**只报告不动**。
+
+### 修复（都是这一轮新功能自己抓出来的真 bug）
+
+- **`FileUnblock` 用 `FileStream` 读 ADS 永远 0 条**：.NET 4.x 对 `a.txt:Zone.Identifier` 抛
+  「不支持给定路径的格式」→ 改 P/Invoke `CreateFileW` / `ReadFile` / `WriteFile`
+  （**`EntryPoint` 必须写**，否则 `err=2` 打不开）。
+- **`UsbPower.Restore` 判记录行数写成 `< 6`**，而写记录只有 5 段 → 一条都读不进来、
+  「还原」永远说"没有待还原的记录"→ 改 `< 5`。
+- **`FileTakeOwn.OwnerSidOf` 把 SDDL 别名当 SID**：`O:BA` / `O:SY` 抠出来是 `BA`，永远对不上
+  → 改走 `RawSecurityDescriptor`。
+- **`FileTakeOwn.IsSelf` 只比用户 SID**：管理员新建的文件所有者是 `BUILTIN\Administrators` →
+  自己刚建的文件被标成"不是你"→ 改 `IsMine()`（认用户 SID + 所在组的 SID），界面列名改「归你管吗」。
+
+### 数字与验证
+
+- 内置按钮 / 图标 **185 → 190**、`status` **188 → 193**、系统工具 **54 → 59**
+  （`systemTargets=29` 不变）、常用设置 **59 不变**；exe **1,588,224 字节** / **190** 个内嵌图标。
+- 命令行新增 **D13–D17**（隔离根端到端）：全套 **594 通过 / 0 失败 / 1 项环境跳过（F03）**。
+- 界面新增 **J33–J37**：J 组单独 **96 通过 / 0 失败**；全套 **319 通过 / 0 失败 / 1 跳过**
+  （H09 鼠标悬停，已知环境抖动）。
+- 编码体检 **339 文件 PASS**、内联语法 PASS。条款正文**没动** → 同意指纹不变 `db2c1a73f510a37c`。
+- ⚠️ **五件都欠一次实机人眼验收**（回归只验到"值写对、读回核对过、能还原"）；
+  Win7 未跑；真机从未真的写过计划任务 / 服务（只读 + 隔离根 + 假 schtasks）。
+
 ## [未发布] 修复「系统时间同步」等四个按钮的原生命中文字乱码（2026-10-28，用户截图报乱码）
 
 用户发来「系统时间同步」窗口截图：`w32tm /query /status` 的输出（Leap 指示符 / 层次 / 精度 /

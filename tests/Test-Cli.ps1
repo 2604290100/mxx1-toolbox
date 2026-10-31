@@ -1465,6 +1465,28 @@ Check 'D12i 还原：result=ok、changed=2（锁定还原 + 删除的 .reg 导�
         -and $unNoRemoveBack -and $unWeixinBack -and ($unPending -eq 0)) `
     ('changed=' + (Get-Key $unRestore.Out 'changed') + ' NoRemove没了=' + $unNoRemoveBack + ' Weixin回来=' + $unWeixinBack)
 
+# 恢复卸载是「锁定卸载」的反向单条操作（删 NoRemove 值）：还原把 lock 记录一起清掉、hide 记录不受影响。
+# 先再锁一次，让 NoRemove 回到 1。
+$unLock2 = Invoke-Exe 'uninstall --lock=HKLM64:{TEST-GUID-64}' -Env $unEnv
+$unLocked2 = (Get-ItemProperty -Path ($unRoot64Ps + '\{TEST-GUID-64}') -ErrorAction SilentlyContinue).NoRemove
+Check 'D12j 再锁定一次：result=ok、changed=1，NoRemove 又变回 1（为 D12k 恢复卸载准备现场）' `
+    (($unLock2.Code -eq 0) -and ((Get-Key $unLock2.Out 'result') -eq 'ok') -and ([int](Get-Key $unLock2.Out 'changed') -eq 1) -and ([int]$unLocked2 -eq 1)) `
+    ('NoRemove=' + $unLocked2)
+
+$unUnlock = Invoke-Exe 'uninstall --unlock=HKLM64:{TEST-GUID-64}' -Env $unEnv
+$unUnlocked = $null -eq (Get-ItemProperty -Path ($unRoot64Ps + '\{TEST-GUID-64}') -ErrorAction SilentlyContinue).NoRemove
+$unUnlockPending = [int](Get-Key $unUnlock.Out 'pending')
+$unLockRowGone = $true
+try {
+    if (Test-Path -LiteralPath $unTsv) {
+        $unLockRowGone = -not ([System.IO.File]::ReadAllText($unTsv, [System.Text.Encoding]::UTF8) -match 'lock')
+    }
+} catch { $unLockRowGone = $false }
+Check 'D12k 恢复卸载：result=ok、changed=1，NoRemove 真删掉了（卸载按钮恢复可点）、lock 记录行清掉、pending=0' `
+    (($unUnlock.Code -eq 0) -and ((Get-Key $unUnlock.Out 'result') -eq 'ok') -and ([int](Get-Key $unUnlock.Out 'changed') -eq 1) `
+        -and $unUnlocked -and $unUnlockPending -eq 0 -and $unLockRowGone) `
+    ('NoRemove没了=' + $unUnlocked + ' pending=' + $unUnlockPending + ' lock行清了=' + $unLockRowGone)
+
 foreach ($r in @($unRoot64Ps, $unRoot32Ps, $unRootCuPs)) { try { if (Test-Path -LiteralPath $r) { Remove-Item -LiteralPath $r -Recurse -Force } } catch { } }
 try { if (Test-Path -LiteralPath $unTsv) { Remove-Item -LiteralPath $unTsv -Force } } catch { }
 try { if (Test-Path -LiteralPath $unDelTsv) { Remove-Item -LiteralPath $unDelTsv -Force } } catch { }

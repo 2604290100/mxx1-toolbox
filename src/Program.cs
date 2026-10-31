@@ -2633,14 +2633,14 @@ namespace Mxx1Toolbox
 
         /// <summary>`uninstall` / `uninstall --json` —— 「程序和功能管理」的命令行出口（2026-10-27，
         /// 参考 HideUL）：默认**只读**扫三根 Uninstall。写入口（`--hide=<HKLM64|HKLM32|HKCU>:<键名>` /
-        /// `--show=…` / `--lock=…` / `--delete=…` / `--restore`）只在三根隔离根
+        /// `--show=…` / `--lock=…` / `--unlock=…` / `--delete=…` / `--restore`）只在三根隔离根
         /// （MXX1_UNINST_HKLM64 / MXX1_UNINST_HKLM32 / MXX1_UNINST_HKCU，外加记录 MXX1_UNINST_TSV /
         /// MXX1_UNINST_DELTSV / MXX1_UNINST_BACKUP）都设好时才放行，否则退 2 —— 用户自己那台机器
         /// 只能在窗口里点。单独一个 `uninstall`（不带别的参数）在 Program.Main 里就被拦去开窗口了。</summary>
         private static int UninstallCommand(string[] args)
         {
             bool restore = false;
-            string hide = "", show = "", lockv = "", del = "";
+            string hide = "", show = "", lockv = "", unlockv = "", del = "";
             for (int i = 1; i < args.Length; i++)
             {
                 string a = args[i];
@@ -2648,14 +2648,15 @@ namespace Mxx1Toolbox
                 else if (a.StartsWith("--hide=", StringComparison.OrdinalIgnoreCase)) { hide = a.Substring("--hide=".Length).Trim(); }
                 else if (a.StartsWith("--show=", StringComparison.OrdinalIgnoreCase)) { show = a.Substring("--show=".Length).Trim(); }
                 else if (a.StartsWith("--lock=", StringComparison.OrdinalIgnoreCase)) { lockv = a.Substring("--lock=".Length).Trim(); }
+                else if (a.StartsWith("--unlock=", StringComparison.OrdinalIgnoreCase)) { unlockv = a.Substring("--unlock=".Length).Trim(); }
                 else if (a.StartsWith("--delete=", StringComparison.OrdinalIgnoreCase)) { del = a.Substring("--delete=".Length).Trim(); }
             }
 
             int actions = (restore ? 1 : 0) + (hide.Length > 0 ? 1 : 0) + (show.Length > 0 ? 1 : 0)
-                + (lockv.Length > 0 ? 1 : 0) + (del.Length > 0 ? 1 : 0);
+                + (lockv.Length > 0 ? 1 : 0) + (unlockv.Length > 0 ? 1 : 0) + (del.Length > 0 ? 1 : 0);
             if (actions > 1)
             {
-                Console.Error.WriteLine("--hide / --show / --lock / --delete / --restore 只能给一个动作。");
+                Console.Error.WriteLine("--hide / --show / --lock / --unlock / --delete / --restore 只能给一个动作。");
                 return 2;
             }
 
@@ -2663,14 +2664,17 @@ namespace Mxx1Toolbox
             {
                 if (!UninstallItems.WriteAllowed())
                 {
-                    Console.Error.WriteLine("隐藏 / 显示 / 锁定 / 删除「程序和功能」条目只能在窗口里点（「程序和功能管理」那个按钮）。"
+                    Console.Error.WriteLine("隐藏 / 显示 / 锁定 / 恢复卸载 / 删除「程序和功能」条目只能在窗口里点（「程序和功能管理」那个按钮）。"
                         + "命令行只读：uninstall / uninstall --json");
                     return 2;
                 }
                 List<UninstallItem> scan = UninstallItems.Scan();
-                string action = restore ? "restore" : (hide.Length > 0 ? "hide" : (show.Length > 0 ? "show" : (lockv.Length > 0 ? "lock" : "delete")));
-                string spec = hide.Length > 0 ? hide : (show.Length > 0 ? show : (lockv.Length > 0 ? lockv : del));
-                string flag = hide.Length > 0 ? "--hide" : (show.Length > 0 ? "--show" : (lockv.Length > 0 ? "--lock" : "--delete"));
+                string action = restore ? "restore" : (hide.Length > 0 ? "hide" : (show.Length > 0 ? "show"
+                    : (lockv.Length > 0 ? "lock" : (unlockv.Length > 0 ? "unlock" : "delete"))));
+                string spec = hide.Length > 0 ? hide : (show.Length > 0 ? show
+                    : (lockv.Length > 0 ? lockv : (unlockv.Length > 0 ? unlockv : del)));
+                string flag = hide.Length > 0 ? "--hide" : (show.Length > 0 ? "--show"
+                    : (lockv.Length > 0 ? "--lock" : (unlockv.Length > 0 ? "--unlock" : "--delete")));
                 UninstallReport rep;
                 if (restore)
                 {
@@ -2683,6 +2687,7 @@ namespace Mxx1Toolbox
                     if (hide.Length > 0) { rep = UninstallItems.Hide(targets); }
                     else if (show.Length > 0) { rep = UninstallItems.Show(targets); }
                     else if (lockv.Length > 0) { rep = UninstallItems.Lock(targets); }
+                    else if (unlockv.Length > 0) { rep = UninstallItems.Unlock(targets); }
                     else { rep = UninstallItems.DeleteEntry(targets); }
                 }
                 Console.WriteLine("action=" + action);

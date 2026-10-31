@@ -47,7 +47,8 @@ namespace Mxx1Toolbox
         public string DisplayIcon = "";// DisplayIcon（列表图标来源）
         public string Root = "";       // HKLM64（64 位视图）/ HKLM32（32 位视图）/ HKCU
         public bool SystemItem;        // SystemComponent 本来就是 1 且不是工具箱隐藏的 → 只列不给动
-        public bool OurHidden;         // 是工具箱藏的（tsv 里有记录）→ 可「显示」
+        public bool OurHidden;         // 是工具箱藏的（tsv 里有 hide 记录）→ 可「显示」
+        public bool OurLocked;         // 是工具箱锁的（tsv 里有 lock 记录）→ 可「恢复卸载」
         public bool LockedUninstall;   // NoRemove=1（卸载按钮被锁）
 
         public string RootText() { return Root; }
@@ -58,6 +59,7 @@ namespace Mxx1Toolbox
         {
             if (SystemItem) { return "系统组件"; }
             if (OurHidden) { return "已隐藏"; }
+            if (OurLocked) { return "已锁定卸载"; }
             return "显示中";
         }
     }
@@ -221,10 +223,11 @@ namespace Mxx1Toolbox
         {
             LoadRoot();
             HashSet<string> ours = LoadOurKeys();
+            HashSet<string> ourLocks = LoadOurLocks();
             List<UninstallItem> list = new List<UninstallItem>();
-            AddFrom(list, _hklm64Hive, _hklm64Path, "HKLM64", ours);
-            AddFrom(list, _hklm32Hive, _hklm32Path, "HKLM32", ours);
-            AddFrom(list, _hkcuHive, _hkcuPath, "HKCU", ours);
+            AddFrom(list, _hklm64Hive, _hklm64Path, "HKLM64", ours, ourLocks);
+            AddFrom(list, _hklm32Hive, _hklm32Path, "HKLM32", ours, ourLocks);
+            AddFrom(list, _hkcuHive, _hkcuPath, "HKCU", ours, ourLocks);
             list.Sort(delegate (UninstallItem a, UninstallItem b)
             {
                 int c = string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase);
@@ -237,6 +240,18 @@ namespace Mxx1Toolbox
         /// <summary>把记录文件里「工具箱动过的键」读成集合（完整键路径，OrdinalIgnoreCase）。</summary>
         private static HashSet<string> LoadOurKeys()
         {
+            return LoadOurKeysByAction("hide");
+        }
+
+        /// <summary>把记录文件里「工具箱锁定过、还没恢复」的键读成集合（坑 105：tsv 混记多种动作，
+        /// 读回必须按动作列过滤 —— lock 行只标"工具箱锁过的"，不能拿 hide 行的逻辑混着认）。</summary>
+        private static HashSet<string> LoadOurLocks()
+        {
+            return LoadOurKeysByAction("lock");
+        }
+
+        private static HashSet<string> LoadOurKeysByAction(string action)
+        {
             HashSet<string> set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             string path = RecordFile();
             try
@@ -246,14 +261,14 @@ namespace Mxx1Toolbox
                 {
                     if (line.Trim().Length == 0 || line.StartsWith("#")) { continue; }
                     string[] f = line.Split('\t');
-                    if (f.Length >= 6 && f[2].Length > 0 && string.Equals(f[4], "hide", StringComparison.OrdinalIgnoreCase)) { set.Add(f[2]); }
+                    if (f.Length >= 6 && f[2].Length > 0 && string.Equals(f[4], action, StringComparison.OrdinalIgnoreCase)) { set.Add(f[2]); }
                 }
             }
             catch { }
             return set;
         }
 
-        private static void AddFrom(List<UninstallItem> list, string hive, string path, string root, HashSet<string> ours)
+        private static void AddFrom(List<UninstallItem> list, string hive, string path, string root, HashSet<string> ours, HashSet<string> ourLocks)
         {
             RegistryKey baseKey = null;
             RegistryKey rootKey = null;
@@ -285,6 +300,7 @@ namespace Mxx1Toolbox
                         object nr = k.GetValue("NoRemove", null);
                         it.LockedUninstall = (nr != null && Convert.ToInt32(nr, CultureInfo.InvariantCulture) == 1);
                         it.OurHidden = ours.Contains(keyFull);
+                        it.OurLocked = ourLocks.Contains(keyFull);
                         it.SystemItem = sc1 && !it.OurHidden;
                         list.Add(it);
                     }
@@ -640,6 +656,158 @@ namespace Mxx1Toolbox
             return rep;
         }
 
+        // ------------------------------------------------------------------ 恢复卸载（单条）
+
+        /// <summary>把选中的条目「恢复卸载」（解锁）：按记录把 NoRemove 删掉 / 写回原值 →
+        /// 读回核对 → 那行 lock 记录从 tsv 里清掉。只还原**工具箱锁的那条**（tsv 里有 lock 记录）；
+        /// 本来 NoRemove=1 的（程序自己 / 别的工具设的）不动 —— 对齐「显示」只还原工具箱藏的语义。</summary>
+        public static UninstallReport Unlock(List<UninstallItem> targets)
+        {
+            UninstallReport rep = new UninstallReport();
+            rep.Title = "恢复卸载";
+            LoadRoot();
+
+            List<UninstallItem> plan = new List<UninstallItem>();
+            foreach (UninstallItem it in targets)
+            {
+                if (it == null) { continue; }
+                if (it.SystemItem)
+                {
+                    rep.Skipped++;
+                    rep.Lines.Add("· 没动：" + it.Name + " —— 系统组件，这一页不碰它");
+                    continue;
+                }
+                if (!it.LockedUninstall)
+                {
+                    rep.Skipped++;
+                    rep.Lines.Add("· 没动：" + it.Name + " —— 它没有锁定（NoRemove 不是 1）");
+                    continue;
+                }
+                if (!it.OurLocked)
+                {
+                    rep.Skipped++;
+                    rep.Lines.Add("· 没动：" + it.Name + " —— 这条的 NoRemove 不是工具箱写的（程序自己 / 别的工具设的），工具箱不动它");
+                    continue;
+                }
+                plan.Add(it);
+            }
+            if (plan.Count == 0)
+            {
+                rep.Ok = true;
+                rep.Message = "没有需要恢复卸载的条目";
+                rep.Lines.Insert(0, "扫描根：" + RootText());
+                return rep;
+            }
+
+            string path = RecordFile();
+            rep.BackupPath = path;
+            List<string> lines = new List<string>();
+            try
+            {
+                if (System.IO.File.Exists(path)) { lines.AddRange(System.IO.File.ReadAllLines(path, Encoding.UTF8)); }
+            }
+            catch (Exception ex)
+            {
+                rep.Ok = false;
+                rep.Message = "读不到原值记录：" + ex.Message;
+                rep.Lines.Add("× " + rep.Message);
+                return rep;
+            }
+
+            HashSet<string> keys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (UninstallItem it in plan) { keys.Add(it.KeyFull); }
+            List<string> keep = new List<string>();
+            foreach (string raw in lines)
+            {
+                if (raw.Trim().Length == 0) { continue; }
+                if (raw.StartsWith("#")) { continue; }
+                string[] f = raw.Split('\t');
+                if (f.Length < 6)
+                {
+                    keep.Add(raw);
+                    continue;
+                }
+                if (f[4] != "lock") { keep.Add(raw); continue; }   // hide 记录不是这条要处理的（坑 105：按动作列过滤）
+                if (!keys.Contains(f[2])) { keep.Add(raw); continue; }
+
+                string error;
+                bool ok = RestoreNoRemove(f[2], f[6], out error);
+                if (ok)
+                {
+                    rep.Changed++;
+                    rep.Lines.Add("√ " + f[3] + " —— 已恢复卸载（读回核对在）");
+                }
+                else
+                {
+                    rep.Skipped++;
+                    rep.Lines.Add("· 没恢复：" + f[3] + " —— " + error);
+                    keep.Add(raw);
+                }
+            }
+
+            try
+            {
+                if (keep.Count == 0)
+                {
+                    if (System.IO.File.Exists(path)) { System.IO.File.Delete(path); }
+                }
+                else if (System.IO.File.Exists(path))
+                {
+                    StringBuilder sb = new StringBuilder();
+                    sb.AppendLine(TsvHeader[0]);
+                    foreach (string k in keep) { sb.AppendLine(k); }
+                    System.IO.File.WriteAllText(path, sb.ToString(), new UTF8Encoding(false));
+                }
+            }
+            catch (Exception ex)
+            {
+                rep.Lines.Add("· 记录文件收尾没成：" + ex.Message);
+            }
+
+            if (rep.Changed == 0 && rep.Skipped == 0)
+            {
+                rep.Ok = true;
+                rep.Message = "没有需要恢复的记录";
+                rep.Lines.Insert(0, rep.Message);
+                return rep;
+            }
+            rep.Ok = (rep.Skipped == 0);
+            rep.Message = (rep.Skipped == 0)
+                ? ("恢复了卸载 " + rep.Changed + " 条，记录已清掉")
+                : ("恢复了卸载 " + rep.Changed + " 条，" + rep.Skipped + " 条没成");
+            rep.Lines.Add("");
+            rep.Lines.Add("汇总：" + rep.Message);
+            LastError = rep.Ok ? "" : rep.Message;
+            return rep;
+        }
+
+        /// <summary>按记录还原 NoRemove：原值 absent → 删值；原值 0 → 写 0（lock 记录的原值不会 1 ——
+        /// Lock 前 NoRemove=1 的会直接跳过）。写完读回核对。</summary>
+        private static bool RestoreNoRemove(string keyFull, string before, out string error)
+        {
+            error = "";
+            try
+            {
+                if (string.Equals(before, "absent", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (!DeleteValue(keyFull, "NoRemove", out error)) { return false; }
+                    return ReadDword(keyFull, "NoRemove") == "absent";
+                }
+                if (before == "0")
+                {
+                    if (!WriteDword(keyFull, "NoRemove", 0, out error)) { return false; }
+                    return ReadDword(keyFull, "NoRemove") == "0";
+                }
+                error = "记录里原值看不懂（" + before + "）";
+                return false;
+            }
+            catch (Exception ex)
+            {
+                error = ex.Message;
+                return false;
+            }
+        }
+
         // ------------------------------------------------------------------ 删除条目
 
         /// <summary>把选中的条目从「程序和功能」列表里删掉：**先整条导出 .reg 备份 → 删子键 →
@@ -935,6 +1103,170 @@ namespace Mxx1Toolbox
             rep.Message = (rep.Skipped == 0)
                 ? ("还原了 " + rep.Changed + " 条，记录已清空")
                 : ("还原了 " + rep.Changed + " 条，" + rep.Skipped + " 条没成（原因在每一行后面）");
+            rep.Lines.Add("");
+            rep.Lines.Add("汇总：" + rep.Message);
+            LastError = rep.Ok ? "" : rep.Message;
+            return rep;
+        }
+
+        /// <summary>单条「还原更改前」：把这一条的工具箱改动（隐藏 hide 记录 / 锁定 lock 记录 /
+        /// 删除的 .reg 备份）全部按记录还原；别条的记录原样留着。只还原**工具箱动过**的 ——
+        /// 本来就这样 / 别的工具改的不碰。右键菜单那条「还原更改前…」就是它。</summary>
+        public static UninstallReport RestoreOne(UninstallItem target)
+        {
+            UninstallReport rep = new UninstallReport();
+            rep.Title = "还原更改前";
+            LoadRoot();
+            if (target == null)
+            {
+                rep.Ok = true;
+                rep.Message = "没有选中条目";
+                return rep;
+            }
+
+            string path = RecordFile();
+            rep.BackupPath = path;
+            List<string> lines = new List<string>();
+            try
+            {
+                if (System.IO.File.Exists(path)) { lines.AddRange(System.IO.File.ReadAllLines(path, Encoding.UTF8)); }
+            }
+            catch (Exception ex)
+            {
+                rep.Ok = false;
+                rep.Message = "读不到改动记录：" + ex.Message;
+                rep.Lines.Add("× " + rep.Message);
+                return rep;
+            }
+
+            List<string> keep = new List<string>();
+            foreach (string raw in lines)
+            {
+                if (raw.Trim().Length == 0) { continue; }
+                if (raw.StartsWith("#")) { continue; }
+                string[] f = raw.Split('\t');
+                if (f.Length < 6)
+                {
+                    keep.Add(raw);
+                    continue;
+                }
+                if (!string.Equals(f[2], target.KeyFull, StringComparison.OrdinalIgnoreCase)) { keep.Add(raw); continue; }
+                string action = f[4];
+                string error;
+                bool ok;
+                if (action == "hide")
+                {
+                    ok = ShowOne(f[2], f[5], out error);
+                }
+                else if (action == "lock")
+                {
+                    ok = RestoreLock(f[2], f[6], out error);
+                }
+                else
+                {
+                    ok = false;
+                    error = "记录里的动作看不懂（" + action + "）";
+                }
+                if (ok)
+                {
+                    rep.Changed++;
+                    rep.Lines.Add("√ " + f[3] + " —— " + (action == "hide" ? "已显示回来" : "已解锁卸载"));
+                }
+                else
+                {
+                    rep.Skipped++;
+                    rep.Lines.Add("· 没还原：" + f[3] + " —— " + error);
+                    keep.Add(raw);
+                }
+            }
+
+            try
+            {
+                if (keep.Count == 0)
+                {
+                    if (System.IO.File.Exists(path)) { System.IO.File.Delete(path); }
+                }
+                else if (System.IO.File.Exists(path))
+                {
+                    StringBuilder sb = new StringBuilder();
+                    sb.AppendLine(TsvHeader[0]);
+                    sb.AppendLine("# （下面这几行是上次没还原成的，还留着）");
+                    foreach (string k in keep) { sb.AppendLine(k); }
+                    System.IO.File.WriteAllText(path, sb.ToString(), new UTF8Encoding(false));
+                }
+            }
+            catch (Exception ex)
+            {
+                rep.Lines.Add("· 改动记录收尾没成：" + ex.Message);
+            }
+
+            // 删除记录：只导回这一条的 .reg
+            string delPath = DeletedRecordFile();
+            List<string> delKeep = new List<string>();
+            List<string> delLines = new List<string>();
+            try
+            {
+                if (System.IO.File.Exists(delPath)) { delLines.AddRange(System.IO.File.ReadAllLines(delPath, Encoding.UTF8)); }
+            }
+            catch (Exception ex)
+            {
+                rep.Lines.Add("· 读不到删除记录：" + ex.Message);
+            }
+            foreach (string raw in delLines)
+            {
+                if (raw.Trim().Length == 0) { continue; }
+                if (raw.StartsWith("#")) { continue; }
+                string[] f = raw.Split('\t');
+                if (f.Length < 5)
+                {
+                    delKeep.Add(raw);
+                    continue;
+                }
+                if (!string.Equals(f[2], target.KeyFull, StringComparison.OrdinalIgnoreCase)) { delKeep.Add(raw); continue; }
+                string error;
+                if (RestoreDeleted(f[4], out error))
+                {
+                    rep.Changed++;
+                    rep.Lines.Add("√ " + f[3] + " —— 已导回注册表（列表里会重新出现这条）");
+                }
+                else
+                {
+                    rep.Skipped++;
+                    rep.Lines.Add("· 没导回：" + f[3] + " —— " + error + "（备份在 " + f[4] + "）");
+                    delKeep.Add(raw);
+                }
+            }
+            try
+            {
+                if (delKeep.Count == 0)
+                {
+                    if (System.IO.File.Exists(delPath)) { System.IO.File.Delete(delPath); }
+                }
+                else if (System.IO.File.Exists(delPath))
+                {
+                    StringBuilder sb = new StringBuilder();
+                    sb.AppendLine(DelTsvHeader[0]);
+                    sb.AppendLine("# （下面这几行是上次没导回的，还留着）");
+                    foreach (string k in delKeep) { sb.AppendLine(k); }
+                    System.IO.File.WriteAllText(delPath, sb.ToString(), new UTF8Encoding(false));
+                }
+            }
+            catch (Exception ex)
+            {
+                rep.Lines.Add("· 删除记录收尾没成：" + ex.Message);
+            }
+
+            if (rep.Changed == 0 && rep.Skipped == 0)
+            {
+                rep.Ok = true;
+                rep.Message = "这条没有需要还原的记录（工具箱还没动过它 / 改动已经还原过了）";
+                rep.Lines.Insert(0, rep.Message);
+                return rep;
+            }
+            rep.Ok = (rep.Skipped == 0);
+            rep.Message = (rep.Skipped == 0)
+                ? ("还原了这条的 " + rep.Changed + " 项改动，记录已清掉")
+                : ("还原了 " + rep.Changed + " 项，" + rep.Skipped + " 项没成（原因在每一行后面）");
             rep.Lines.Add("");
             rep.Lines.Add("汇总：" + rep.Message);
             LastError = rep.Ok ? "" : rep.Message;

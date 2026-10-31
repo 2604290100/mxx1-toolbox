@@ -4632,6 +4632,62 @@ Context Menu Manager Plus / DSH Desktop / 电脑管家 / 豆包 / EaseResto）�
   下载的文件真的不再弹保护视图 / U 盘真的不掉线 / 老程序真的不糊了 / 真的能删掉那个文件夹 /
   那个计划任务真的不再自己跑。
 
+### 12.94 「恢复卸载」+ 右键「还原更改前…」（2026-10-31，用户报的缺口）
+
+用户原话：「**程序和功能管理这个按钮，只有锁定卸载功能，没有恢复卸载功能**」+「**右键缺少还原更改前功能**」。
+锁定卸载与隐藏/显示不同：隐藏/显示是成对按钮，锁定只有「锁定卸载」没有反向「恢复卸载」；且右键的
+「还原成操作前」会一次性退掉这一条的全部改动，没有"只还原这一条、按工具箱改动逐项退"的单条入口。
+
+#### ① 恢复卸载（Unlock）
+
+- 后端 `src\UninstallItems.cs`：`UninstallItem` 加 `OurLocked`（这条的锁定是本工具箱记的）；
+  `Scan()` 用 `LoadOurLocksByAction(action)` 按动作列 = `lock` 加载锁标记（坑 105 的同源问题：
+  同一 tsv 混记 hide / lock 多动作，读回必须按动作过滤，hide 行原样保留）。
+  `Unlock(targets)`：跳过 SystemItem / !LockedUninstall / !OurLocked → 读 tsv → **只处理
+  `f[4]=="lock"` 的行** → `RestoreNoRemove(f[2], f[6], out error)` 成功则剔行、失败 Skipped 保留
+  → keep 空删 tsv → rep 汇总。`RestoreNoRemove(keyFull, before)`：absent → DeleteValue 后读回
+  =="absent"；"0" → WriteDword 0 后读回 =="0"；其它报「记录里原值看不懂」（写前记原值 → 写 →
+  逐处读回核对 → 按记录还原，铁律不变）。
+- 窗口 `src\UninstallForm.cs`：按钮行 6 列改 **7 列**（隐藏 / 显示 / 锁定卸载 / **恢复卸载** /
+  还原 / 关闭），`_unlock` 文本「恢复卸载」，HKLM 根条目带「（要管理员）」；`_miUnlock` 右键项；
+  `DoUnlockOne`（选中校验 → 条款门 → 确认框「要恢复卸载吗？」→ NeedsAdmin 提权 → `Unlock` →
+  Finish「恢复卸载」）。`UpdateButtons()`：`_unlock.Enabled = !_busy && it != null && it.OurLocked
+  && !it.SystemItem`。
+- 命令行 `src\Program.cs`：`uninstall --unlock=` 解析 / 计数 / 冲突文案 / 执行分支（隔离根放行，
+  与 `--lock` 同门）。
+- ⭐ 产品 bug 顺手修掉（J32g 抓的）：锁定完成 `RefreshState` 重扫重填列表会**清掉选中行**，
+  导致「恢复卸载」按钮（Enabled 依赖选中项的 OurLocked）一直是灰的、点了没反应。
+  修法：`RefreshState` 开头记住 `prevKey = Selected().KeyFull`，Fill 之后按 KeyFull 重新选中该行
+  —— 操作完成重扫后保留选中，锁定完立刻能点「恢复卸载」这一对。
+
+#### ② 右键「还原更改前…」（RestoreOne）
+
+- 后端 `UninstallItems.RestoreOne(target)`：只处理 `f[2] == target.KeyFull`（OrdinalIgnoreCase）的
+  hide / lock 记录（ShowOne / RestoreLock 各走各），成功剔行；删除记录只导回这一条 .reg
+  （RestoreDeleted）；**别条记录原样保留**（这才是「只还原这一条」）；无记录时明说
+  「这条没有需要还原的记录」。
+- 窗口：右键菜单插入 `_miRestoreOne`（Text「还原更改前…」，在「删除条目…」之后、分隔符之前），
+  `DoRestoreOne`（确认框「要还原这条的更改吗？」→ 提权 → `RestoreOne` → Finish「还原更改前」）；
+  `_miRestoreOne.Enabled = !_busy && it != null && !it.SystemItem && (it.OurHidden || it.OurLocked)`。
+
+#### ③ 回归编号（命令行 D12j/D12k / 界面 J32g/J32h）
+
+- 命令行 **D12j**（再锁一次）/ **D12k**（`--unlock`：result=ok changed=1 NoRemove 删掉 pending=0
+  tsv 无 `lock` 行、hide 行保留）；全套 **595 通过 / 1 失败（O07 环境假红：剪贴板被外部抖音文案
+  改写，复跑 O 组 20/0 全绿）/ 1 跳过（F03）**。
+- 界面 **J32g**（再锁定 → 真点「恢复卸载」→ 确认框 → 状态「恢复卸载完成：」→ 三根 NoRemove 全删掉、
+  lock 记录清掉）/ **J32h**（再锁定 → 右键该行 → 键盘导航选「还原更改前…」→ 确认框 → 状态
+  「还原更改前完成：」→ NoRemove 复原、这条的 lock 记录清掉）；J 组 **98 通过 / 0 失败**。
+- ⚠️ 测试机制三个坑（J32h 三轮才绿）：① ContextMenuStrip 菜单项是**自绘的、无 HWND 子控件**，
+  `Get-ChildControls` 永远找不到「还原更改前…」→ 只能等菜单**宿主顶层窗**
+  （Class = `WindowsForms10.Window*`）出现，再用 **keybd_event 全局按键**（TBGui 新增
+  `GlobalKey(vk)`）键盘导航；② **WinForms 键盘导航会跳过 ToolStripSeparator** —— 菜单项顺序
+  0 隐藏/1 显示/2 锁定/3 恢复卸载/4 分隔符/5 删除条目/6 还原更改前/7 分隔符/8 在注册表定位，
+  Home 归位后 **Down 5 次**才到「还原更改前…」（Down 6 次会越过到「在注册表定位」，误开 regedit，
+  实测踩过、已清理）；③ 窗口不在前台时第一次右键只激活不弹菜单 → 右键前 `Focus` + 超时补一次右键。
+- ⚠️ 没验到：真机从未实际写 Uninstall 注册表（只读 + 隔离根）——「恢复卸载后卸载按钮真的能点 /
+  还原更改前在控制面板真的生效」要用户实机验收；Win7 未跑。
+
 ### 15.1 分层：不是每次都要全量（2026-10-06 定的）
 
 用户 2026-10-06 的原话：「**单独改一个功能或者添加一个功能不应该影响到其他功能，那其他功能就不用测试**」。

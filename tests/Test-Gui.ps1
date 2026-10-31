@@ -413,6 +413,27 @@ public class TBGui
         mouse_event(0x0004, 0, 0, 0, IntPtr.Zero);      // LEFTUP
     }
 
+    // 右键真点（J32h 弹 ContextMenuStrip 用）：WM 的右键消息弹不出 WinForms 的右键菜单
+    // （要 WM_CONTEXTMENU 或真实鼠标事件），这里走真实鼠标，和 RealClick 同一套。
+    public static void RealRightClick(int x, int y)
+    {
+        SetCursorPos(x, y);
+        System.Threading.Thread.Sleep(80);
+        mouse_event(0x0008, 0, 0, 0, IntPtr.Zero);      // RIGHTDOWN
+        System.Threading.Thread.Sleep(60);
+        mouse_event(0x0010, 0, 0, 0, IntPtr.Zero);      // RIGHTUP
+    }
+
+    // 全局按键（keybd_event，发给当前焦点窗口）：ContextMenuStrip 的菜单项是自绘的、
+    // 没有子控件句柄可点，菜单弹出来后只能靠键盘导航（Home 归位 / 方向键 / 回车）。
+    [DllImport("user32.dll")] private static extern void keybd_event(byte vk, byte scan, uint flags, IntPtr extra);
+    public static void GlobalKey(int vk)
+    {
+        keybd_event((byte)vk, 0, 0, IntPtr.Zero);
+        System.Threading.Thread.Sleep(30);
+        keybd_event((byte)vk, 0, 2, IntPtr.Zero);       // KEYEVENTF_KEYUP
+    }
+
     // 鼠标底下那个**具体控件**（WindowAt 会往上找顶层窗口，这里要的就是子控件本身）：
     // 真点之前先确认这一格是我们那个链接，别点到用户别的窗口上去。
     public static IntPtr HandleAt(int x, int y)
@@ -5243,6 +5264,158 @@ if ($jUnBtn.Count -ne 1) {
         Check 'J32f 窗口里真点「还原成操作前」→ 确认框 → 状态行报「还原完成：」、NoRemove 复原、记录清空' `
             (($jUnDlg4 -ne $null) -and $jUnOk4 -and ($jUnDone4.Length -gt 0) -and $jUnNoRemoveBack -and $jUnTsvGone) `
             ('确认框=' + ($jUnDlg4 -ne $null) + ' 点了=' + $jUnOk4 + ' 状态="' + $jUnDone4 + '" NoRemove 没了=' + $jUnNoRemoveBack + ' 记录清空=' + $jUnTsvGone)
+
+        # ⑥ 恢复卸载（管理员）：先再锁一次（NoRemove 回到 1）→ 真点「恢复卸载」→ 确认框 →
+        #    状态行报「恢复卸载完成：」、三根 NoRemove 全删掉、lock 记录清掉（记录文件空了 / 没了）
+        $jUnLockSelected2 = $false
+        if (($jUnWin -ne $null) -and ($jUnLv.Count -ge 1)) {
+            foreach ($jY in @(24, 28, 32, 36, 40, 44, 48, 52, 56, 60, 64)) {
+                [void][TBGui]::MouseDown($jUnLv[0].H, 40, $jY)
+                Start-Sleep -Milliseconds 250
+                $jB = @(Get-ChildControls -RootHandle $jUnWin.H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -like '锁定卸载*' -and $_.Enabled })
+                if ($jB.Count -eq 1) { $jUnLockSelected2 = $true; break }
+            }
+        }
+        $jUnLockBtn2 = @(Get-ChildControls -RootHandle $jUnWin.H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -like '锁定卸载*' })
+        $jUnDlg5 = $null; $jUnOk5 = $false; $jUnDone5 = ''
+        if ($jUnLockSelected2 -and ($jUnLockBtn2.Count -eq 1)) {
+            [void][TBGui]::Click($jUnLockBtn2[0].H)
+            for ($i = 0; $i -lt 40; $i++) {
+                Start-Sleep -Milliseconds 200
+                $jUnDlg5 = Find-JAssocDialog -ProcessId $proc.Id -Main $main -Owner $jUnWin.H -TitlePrefix '要锁定卸载按钮吗？'
+                if ($jUnDlg5 -ne $null) { break }
+            }
+            if ($jUnDlg5 -ne $null) {
+                $jOk5 = @(Get-ChildControls -RootHandle $jUnDlg5.H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '锁定卸载' })
+                if ($jOk5.Count -eq 1) { [void][TBGui]::Click($jOk5[0].H); $jUnOk5 = $true }
+            }
+            for ($i = 0; $i -lt 80; $i++) {
+                Start-Sleep -Milliseconds 250
+                $jUnDone5 = Find-JStatus $jUnWin.H '^锁定卸载完成：'
+                if ($jUnDone5.Length -gt 0) { break }
+            }
+        }
+        $jUnUnlockBtn = @(Get-ChildControls -RootHandle $jUnWin.H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -like '恢复卸载*' })
+        $jUnDlg6 = $null; $jUnOk6 = $false; $jUnDone6 = ''
+        if ($jUnOk5 -and ($jUnUnlockBtn.Count -eq 1) -and $jUnUnlockBtn[0].Enabled) {
+            [void][TBGui]::Click($jUnUnlockBtn[0].H)
+            for ($i = 0; $i -lt 40; $i++) {
+                Start-Sleep -Milliseconds 200
+                $jUnDlg6 = Find-JAssocDialog -ProcessId $proc.Id -Main $main -Owner $jUnWin.H -TitlePrefix '要恢复卸载吗？'
+                if ($jUnDlg6 -ne $null) { break }
+            }
+            if ($jUnDlg6 -ne $null) {
+                $jOk6 = @(Get-ChildControls -RootHandle $jUnDlg6.H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '恢复卸载' })
+                if ($jOk6.Count -eq 1) { [void][TBGui]::Click($jOk6[0].H); $jUnOk6 = $true }
+            }
+            for ($i = 0; $i -lt 80; $i++) {
+                Start-Sleep -Milliseconds 250
+                $jUnDone6 = Find-JStatus $jUnWin.H '^恢复卸载完成：'
+                if ($jUnDone6.Length -gt 0) { break }
+            }
+        }
+        $jUnUnlockedAll = $true
+        foreach ($rp in @(($jUn64Ps + '\{TEST-GUID-64}'), ($jUn32Ps + '\Weixin'), ($jUnCuPs + '\GuiApp'))) {
+            if (Test-Path -LiteralPath $rp) {
+                $v = (Get-ItemProperty -Path $rp -ErrorAction SilentlyContinue).NoRemove
+                if ($null -ne $v) { $jUnUnlockedAll = $false; break }
+            }
+        }
+        $jUnLockTsvGone = $true
+        try {
+            if (Test-Path -LiteralPath $jUnTsv) {
+                $jUnLockTsvGone = -not ([System.IO.File]::ReadAllText($jUnTsv, [System.Text.Encoding]::UTF8) -match 'lock')
+            }
+        } catch { $jUnLockTsvGone = $false }
+        Check 'J32g 再锁定 → 窗口里真点「恢复卸载」→ 确认框 → 状态行报「恢复卸载完成：」、三根 NoRemove 全删掉、lock 记录清掉' `
+            ($jUnOk5 -and ($jUnDlg6 -ne $null) -and $jUnOk6 -and ($jUnDone6.Length -gt 0) -and $jUnUnlockedAll -and $jUnLockTsvGone) `
+            ('再锁定=' + $jUnOk5 + ' 确认框=' + ($jUnDlg6 -ne $null) + ' 点了=' + $jUnOk6 + ' 状态="' + $jUnDone6 + '" NoRemove 全没=' + $jUnUnlockedAll + ' lock 记录清了=' + $jUnLockTsvGone)
+
+        # ⑦ 右键「还原更改前…」（管理员）：再锁一条（NoRemove 回到 1）→ 真右键那一行 →
+        #    右键菜单弹出 → 点「还原更改前…」→ 确认框 → 状态行报「还原更改前完成：」、NoRemove 复原、
+        #    这条的 lock 记录清掉
+        $jUnLockSelected3 = $false
+        $jUnRowY = 24
+        if (($jUnWin -ne $null) -and ($jUnLv.Count -ge 1)) {
+            foreach ($jY in @(24, 28, 32, 36, 40, 44, 48, 52, 56, 60, 64)) {
+                [void][TBGui]::MouseDown($jUnLv[0].H, 40, $jY)
+                Start-Sleep -Milliseconds 250
+                $jB = @(Get-ChildControls -RootHandle $jUnWin.H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -like '锁定卸载*' -and $_.Enabled })
+                if ($jB.Count -eq 1) { $jUnLockSelected3 = $true; $jUnRowY = $jY; break }
+            }
+        }
+        $jUnLockBtn3 = @(Get-ChildControls -RootHandle $jUnWin.H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -like '锁定卸载*' })
+        $jUnDlg7 = $null; $jUnOk7 = $false
+        if ($jUnLockSelected3 -and ($jUnLockBtn3.Count -eq 1)) {
+            [void][TBGui]::Click($jUnLockBtn3[0].H)
+            for ($i = 0; $i -lt 40; $i++) {
+                Start-Sleep -Milliseconds 200
+                $jUnDlg7 = Find-JAssocDialog -ProcessId $proc.Id -Main $main -Owner $jUnWin.H -TitlePrefix '要锁定卸载按钮吗？'
+                if ($jUnDlg7 -ne $null) { break }
+            }
+            if ($jUnDlg7 -ne $null) {
+                $jOk7 = @(Get-ChildControls -RootHandle $jUnDlg7.H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '锁定卸载' })
+                if ($jOk7.Count -eq 1) { [void][TBGui]::Click($jOk7[0].H); $jUnOk7 = $true }
+            }
+            for ($i = 0; $i -lt 80; $i++) {
+                Start-Sleep -Milliseconds 250
+                $jUnDone7 = Find-JStatus $jUnWin.H '^锁定卸载完成：'
+                if ($jUnDone7.Length -gt 0) { break }
+            }
+        }
+        $jUnCtx = $null
+        if ($jUnOk7 -and ($jUnLv.Count -ge 1)) {
+            $jLvR = [TBGui]::Rect($jUnLv[0].H)
+            [void][TBGui]::Focus($jUnWin.H)          # 窗口不在前台时，第一次右键只会激活它、不弹菜单 → 先拉到前台
+            Start-Sleep -Milliseconds 400
+            $jRcX = $jLvR[0] + 40; $jRcY = $jLvR[1] + $jUnRowY
+            [TBGui]::RealRightClick($jRcX, $jRcY)
+            for ($i = 0; $i -lt 40; $i++) {
+                Start-Sleep -Milliseconds 200
+                # ContextMenuStrip 的宿主窗口是 WindowsForms10.Window.* 的顶层窗（菜单项是自绘的，
+                # 没有子控件句柄 —— Get-ChildControls 一层永远找不到「还原更改前…」，只能等菜单窗口出现）
+                foreach ($jT in @(Get-TopWindows -ProcessId $proc.Id)) {
+                    if (($jT.H -eq $jUnWin.H) -or ($jT.H -eq $main)) { continue }
+                    if ($jT.Class -like 'WindowsForms10.Window*') { $jUnCtx = $jT; break }
+                }
+                if ($jUnCtx -ne $null) { break }
+                if ($i -eq 15) { [TBGui]::RealRightClick($jRcX, $jRcY) }   # 第一次右键只激活了窗口 → 补一次才弹菜单
+            }
+        }
+        $jUnDlg8 = $null; $jUnOk8 = $false; $jUnDone8 = ''
+        if ($jUnCtx -ne $null) {
+            # 菜单项顺序：0 隐藏这个… / 1 显示这个… / 2 锁定卸载 / 3 恢复卸载 / 4 分隔符 /
+            # 5 删除条目… / 6 还原更改前… —— 键盘导航：Home 归到第一项（0），Down 5 次到「还原更改前…」
+            # （0→1→2→3→5→6，跳过分隔符；按 6 次会越过到「在注册表定位」，踩过：误开 regedit），回车
+            [void][TBGui]::GlobalKey(0x24)          # VK_HOME
+            Start-Sleep -Milliseconds 150
+            foreach ($jK in 1..5) { [void][TBGui]::GlobalKey(0x28); Start-Sleep -Milliseconds 120 }   # VK_DOWN ×5
+            [void][TBGui]::GlobalKey(0x0D)          # VK_RETURN
+            for ($i = 0; $i -lt 40; $i++) {
+                Start-Sleep -Milliseconds 200
+                $jUnDlg8 = Find-JAssocDialog -ProcessId $proc.Id -Main $main -Owner $jUnWin.H -TitlePrefix '要还原这条的更改吗？'
+                if ($jUnDlg8 -ne $null) { break }
+            }
+            if ($jUnDlg8 -ne $null) {
+                $jOk8 = @(Get-ChildControls -RootHandle $jUnDlg8.H | Where-Object { $_.Class -like '*BUTTON*' -and $_.Text -eq '还原' })
+                if ($jOk8.Count -eq 1) { [void][TBGui]::Click($jOk8[0].H); $jUnOk8 = $true }
+            }
+            for ($i = 0; $i -lt 80; $i++) {
+                Start-Sleep -Milliseconds 250
+                $jUnDone8 = Find-JStatus $jUnWin.H '^还原更改前完成：'
+                if ($jUnDone8.Length -gt 0) { break }
+            }
+        }
+        $jUnRestored3 = $true
+        foreach ($rp in @(($jUn64Ps + '\{TEST-GUID-64}'), ($jUn32Ps + '\Weixin'), ($jUnCuPs + '\GuiApp'))) {
+            if (Test-Path -LiteralPath $rp) {
+                $v = (Get-ItemProperty -Path $rp -ErrorAction SilentlyContinue).NoRemove
+                if ($null -ne $v) { $jUnRestored3 = $false; break }
+            }
+        }
+        Check 'J32h 再锁定 → 右键该行 → 菜单「还原更改前…」→ 确认框 → 状态行报「还原更改前完成：」、NoRemove 复原、这条的 lock 记录清掉' `
+            ($jUnOk7 -and ($jUnCtx -ne $null) -and ($jUnDlg8 -ne $null) -and $jUnOk8 -and ($jUnDone8.Length -gt 0) -and $jUnRestored3) `
+            ('再锁定=' + $jUnOk7 + ' 菜单=' + ($jUnCtx -ne $null) + ' 确认框=' + ($jUnDlg8 -ne $null) + ' 点了=' + $jUnOk8 + ' 状态="' + $jUnDone8 + '" NoRemove 复原=' + $jUnRestored3)
     }
     Close-JWindow $jUnWin
     Start-Sleep -Milliseconds 300

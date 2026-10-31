@@ -40,13 +40,16 @@ namespace Mxx1Toolbox
         private readonly Button _hide = new Button();
         private readonly Button _show = new Button();
         private readonly Button _lock = new Button();
+        private readonly Button _unlock = new Button();
         private readonly Button _restore = new Button();
         private readonly Button _refresh = new Button();
         private readonly ContextMenuStrip _menu = new ContextMenuStrip();
         private readonly ToolStripMenuItem _miHide = new ToolStripMenuItem("隐藏这个…");
         private readonly ToolStripMenuItem _miShow = new ToolStripMenuItem("显示这个…");
         private readonly ToolStripMenuItem _miLock = new ToolStripMenuItem("锁定卸载");
+        private readonly ToolStripMenuItem _miUnlock = new ToolStripMenuItem("恢复卸载");
         private readonly ToolStripMenuItem _miDelete = new ToolStripMenuItem("删除条目…（先备份，可导回）");
+        private readonly ToolStripMenuItem _miRestoreOne = new ToolStripMenuItem("还原更改前…");
         private readonly ToolStripMenuItem _miRegedit = new ToolStripMenuItem("打开注册表位置");
         private readonly ToolStripMenuItem _miKey = new ToolStripMenuItem("复制键路径");
 
@@ -89,7 +92,8 @@ namespace Mxx1Toolbox
             intro.MaximumSize = new Size(990, 0);
             intro.Text = "控制面板「程序和功能」/ 设置「应用」列表 = 注册表三根 Uninstall 下的登记（一根一个程序）。"
                 + "选中一行：点「隐藏这个…」把这条从列表藏起来（SystemComponent=1，程序本体不删、照常能用）；"
-                + "「显示这个…」把工具箱藏过的放回列表；「锁定卸载」让卸载按钮变灰防手滑；"
+                + "「显示这个…」把工具箱藏过的放回列表；「锁定卸载」让卸载按钮变灰防手滑、"
+                + "「恢复卸载」把工具箱锁过的解锁（NoRemove 删掉，卸载按钮恢复可点）；"
                 + "右键「删除条目…」先从列表摘掉（先备份 .reg、可导回）—— 正适合「工商银行安全控件 (仅用做移除)」那种。"
                 + "系统组件（○ 红色）只列出不动。";
             intro.Margin = new Padding(2, 0, 2, 8);
@@ -144,9 +148,9 @@ namespace Mxx1Toolbox
             TableLayoutPanel buttons = new TableLayoutPanel();
             buttons.Dock = DockStyle.Fill;
             buttons.AutoSize = true;
-            buttons.ColumnCount = 6;
+            buttons.ColumnCount = 7;
             buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
-            for (int i = 0; i < 5; i++) { buttons.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize)); }
+            for (int i = 0; i < 6; i++) { buttons.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize)); }
             _hide.Text = "隐藏这个…";
             StyleButton(_hide, 140);
             _hide.Click += delegate { DoHideOne(); };
@@ -156,6 +160,9 @@ namespace Mxx1Toolbox
             _lock.Text = "锁定卸载";
             StyleButton(_lock, 116);
             _lock.Click += delegate { DoLockOne(); };
+            _unlock.Text = "恢复卸载";
+            StyleButton(_unlock, 116);
+            _unlock.Click += delegate { DoUnlockOne(); };
             _restore.Text = "还原成操作前";
             StyleButton(_restore, 132);
             _restore.Click += delegate { DoRestore(); };
@@ -167,21 +174,26 @@ namespace Mxx1Toolbox
             buttons.Controls.Add(_hide, 1, 0);
             buttons.Controls.Add(_show, 2, 0);
             buttons.Controls.Add(_lock, 3, 0);
-            buttons.Controls.Add(_restore, 4, 0);
-            buttons.Controls.Add(close, 5, 0);
+            buttons.Controls.Add(_unlock, 4, 0);
+            buttons.Controls.Add(_restore, 5, 0);
+            buttons.Controls.Add(close, 6, 0);
             root.Controls.Add(buttons, 0, 4);
 
             _miHide.Click += delegate { DoHideOne(); };
             _miShow.Click += delegate { DoShowOne(); };
             _miLock.Click += delegate { DoLockOne(); };
+            _miUnlock.Click += delegate { DoUnlockOne(); };
             _miDelete.Click += delegate { DoDeleteOne(); };
+            _miRestoreOne.Click += delegate { DoRestoreOne(); };
             _miRegedit.Click += delegate { OpenRegedit(); };
             _miKey.Click += delegate { CopyKey(); };
             _menu.Items.Add(_miHide);
             _menu.Items.Add(_miShow);
             _menu.Items.Add(_miLock);
+            _menu.Items.Add(_miUnlock);
             _menu.Items.Add(new ToolStripSeparator());
             _menu.Items.Add(_miDelete);
+            _menu.Items.Add(_miRestoreOne);
             _menu.Items.Add(new ToolStripSeparator());
             _menu.Items.Add(_miRegedit);
             _menu.Items.Add(_miKey);
@@ -259,6 +271,11 @@ namespace Mxx1Toolbox
             _status.Text = "正在读三根 Uninstall…";
             Application.DoEvents();
 
+            // 记住刚才选中的那一行（操作完成重扫列表后，还让它选中着 ——
+            // 这样「锁定卸载」完立刻能点「恢复卸载」这一对，不用重新点行）
+            UninstallItem prev = Selected();
+            string prevKey = prev != null ? prev.KeyFull : "";
+
             List<UninstallItem> items;
             try
             {
@@ -284,6 +301,19 @@ namespace Mxx1Toolbox
             });
             _all = items;
             Fill(items);
+            if (prevKey.Length > 0)
+            {
+                foreach (ListViewItem row in _list.Items)
+                {
+                    UninstallItem it = row.Tag as UninstallItem;
+                    if (it != null && string.Equals(it.KeyFull, prevKey, StringComparison.OrdinalIgnoreCase))
+                    {
+                        row.Selected = true;
+                        row.Focused = true;
+                        break;
+                    }
+                }
+            }
 
             int shown = 0, hidden = 0, sys = 0;
             foreach (UninstallItem it in items)
@@ -450,18 +480,23 @@ namespace Mxx1Toolbox
             _miShow.Enabled = _show.Enabled;
             _lock.Enabled = !_busy && shown && !it.LockedUninstall;
             _miLock.Enabled = _lock.Enabled;
+            _unlock.Enabled = !_busy && it != null && it.OurLocked && !it.SystemItem;
+            _miUnlock.Enabled = _unlock.Enabled;
             _miDelete.Enabled = !_busy && shown;
+            _miRestoreOne.Enabled = !_busy && it != null && !it.SystemItem && (it.OurHidden || it.OurLocked);
             _miRegedit.Enabled = it != null;
             _miKey.Enabled = it != null;
             if (it != null && !it.SystemItem && !it.OurHidden && NeedsAdmin(it))
             {
                 _hide.Text = "隐藏这个…（要管理员）";
                 _lock.Text = "锁定卸载（要管理员）";
+                _unlock.Text = "恢复卸载（要管理员）";
             }
             else
             {
                 _hide.Text = "隐藏这个…";
                 _lock.Text = "锁定卸载";
+                _unlock.Text = "恢复卸载";
             }
             int pending = 0;
             try { pending = UninstallItems.PendingRecords(); } catch { }
@@ -647,6 +682,88 @@ namespace Mxx1Toolbox
             Logger.Write("程序和功能管理", "锁定卸载：" + it.KeyFull + "（" + it.Name + "）");
             UninstallReport rep = UninstallItems.Lock(new List<UninstallItem> { it });
             Finish(rep, "锁定卸载");
+        }
+
+        // ------------------------------------------------------------------ 恢复卸载（单条）
+
+        private void DoUnlockOne()
+        {
+            if (_busy) { return; }
+            UninstallItem it = Selected();
+            if (it == null) { Flash("先选中一行。"); return; }
+            if (it.SystemItem) { Flash("这是系统组件，这一页不碰它。"); return; }
+            if (!it.OurLocked) { Flash("这条不是工具箱锁的（NoRemove 不是工具箱写的），工具箱不动它。"); return; }
+            if (!Consent.EnsureAccepted(this, _theme, "要恢复这条的卸载锁定"))
+            {
+                Flash("没有同意《免责声明与服务条款》，这个动作被拦下了。");
+                return;
+            }
+
+            string body = "要把「" + it.Name + "」的卸载按钮恢复可点吗？" + Environment.NewLine + Environment.NewLine
+                + "  键路径：" + it.KeyFull + Environment.NewLine + Environment.NewLine
+                + "恢复卸载 = 按「锁定卸载」时记下的原值把 NoRemove 删掉 / 写回（正常情况下是删掉）——"
+                + "「程序和功能」里这条的「卸载」按钮恢复可点。程序本体没动。"
+                + Environment.NewLine + Environment.NewLine
+                + "改之前会读一遍原值记录（" + UninstallItems.RecordFile() + "），写完读回核对、那行记录清掉。";
+            using (ConfirmForm f = new ConfirmForm("要恢复卸载吗？", body, "恢复卸载", _theme))
+            {
+                if (f.ShowDialog(this) != DialogResult.OK) { return; }
+            }
+
+            if (NeedsAdmin(it) && !Launcher.IsAdmin())
+            {
+                OfferElevation("恢复卸载");
+                return;
+            }
+
+            SetBusyUi(true);
+            _status.ForeColor = _theme.BarText;
+            _status.Text = "正在恢复「" + it.Name + "」的卸载…";
+            Application.DoEvents();
+            Logger.Write("程序和功能管理", "恢复卸载：" + it.KeyFull + "（" + it.Name + "）");
+            UninstallReport rep = UninstallItems.Unlock(new List<UninstallItem> { it });
+            Finish(rep, "恢复卸载");
+        }
+
+        // ------------------------------------------------------------------ 还原更改前（单条，右键）
+
+        private void DoRestoreOne()
+        {
+            if (_busy) { return; }
+            UninstallItem it = Selected();
+            if (it == null) { Flash("先选中一行。"); return; }
+            if (it.SystemItem) { Flash("这是系统组件，这一页不碰它。"); return; }
+            if (!Consent.EnsureAccepted(this, _theme, "要还原这条在工具箱动过的设置"))
+            {
+                Flash("没有同意《免责声明与服务条款》，这个动作被拦下了。");
+                return;
+            }
+
+            string body = "要把「" + it.Name + "」还原成工具箱动它之前的样子吗？" + Environment.NewLine + Environment.NewLine
+                + "  键路径：" + it.KeyFull + Environment.NewLine + Environment.NewLine
+                + "这条之前在工具箱里动过：隐藏（SystemComponent）/ 锁定卸载（NoRemove）都会按记录退回去；"
+                + "如果这条之前被「删除条目…」删过，也会把备份 .reg 导回注册表。"
+                + "程序本体没动。"
+                + Environment.NewLine + Environment.NewLine
+                + "改之前会读一遍原值记录（" + UninstallItems.RecordFile() + "），写完读回核对、这条的记录清掉（别条的不动）。";
+            using (ConfirmForm f = new ConfirmForm("要还原这条的更改吗？", body, "还原", _theme))
+            {
+                if (f.ShowDialog(this) != DialogResult.OK) { return; }
+            }
+
+            if (NeedsAdmin(it) && !Launcher.IsAdmin())
+            {
+                OfferElevation("还原更改前");
+                return;
+            }
+
+            SetBusyUi(true);
+            _status.ForeColor = _theme.BarText;
+            _status.Text = "正在还原「" + it.Name + "」…";
+            Application.DoEvents();
+            Logger.Write("程序和功能管理", "还原更改前：" + it.KeyFull + "（" + it.Name + "）");
+            UninstallReport rep = UninstallItems.RestoreOne(it);
+            Finish(rep, "还原更改前");
         }
 
         // ------------------------------------------------------------------ 删除条目（单条）

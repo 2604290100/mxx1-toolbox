@@ -483,7 +483,7 @@
       "gui": [
         "J"
       ],
-      "note": "2026-10-27「程序和功能管理」（参考 HideUL，管控制面板「程序和功能」/ 设置「应用」列表条目的 隐藏（SystemComponent=1）/显示（按记录还原）/锁定卸载（NoRemove=1）/删除条目（reg.exe export 备份 .reg → 删子键 → 记录；还原时 reg.exe import 导回））。后端 = 只读扫三根 Uninstall（HKLM64 / HKLM32 / HKCU，只列有 DisplayName 的 + 工具箱自己藏过的）+ 系统组件（SystemComponent 本来就是 1 且非本工具所藏）只列不动。命令行判据 D12–D12i（隔离根 MXX1_UNINST_HKLM64 + MXX1_UNINST_HKLM32 + MXX1_UNINST_HKCU + MXX1_UNINST_TSV + MXX1_UNINST_DELTSV + MXX1_UNINST_BACKUP，绝不碰真实 Uninstall；D12c 盯「没有隔离就退 2」；D12d 验隐藏后 SystemComponent 真=1 且 tsv 记原值；D12f 验显示/还原后值回原样、被别的工具改过跳过；D12h 验删除条目后 .reg 备份真在且子键没了；D12i 验还原把 .reg 导回）；界面 J32 起真从按钮开窗口、真点「隐藏这个…」「还原成操作前」并读回注册表与记录文件"
+      "note": "2026-10-27「程序和功能管理」（参考 HideUL，管控制面板「程序和功能」/ 设置「应用」列表条目的 隐藏（SystemComponent=1）/显示（按记录还原）/锁定卸载（NoRemove=1）/恢复卸载（2026-10-31 补：按记录删 NoRemove，lock 记录清掉、hide 记录不受影响）/删除条目（reg.exe export 备份 .reg → 删子键 → 记录；还原时 reg.exe import 导回））。后端 = 只读扫三根 Uninstall（HKLM64 / HKLM32 / HKCU，只列有 DisplayName 的 + 工具箱自己藏过的/锁过的）+ 系统组件（SystemComponent 本来就是 1 且非本工具所藏）只列不动。命令行判据 D12–D12k（隔离根 MXX1_UNINST_HKLM64 + MXX1_UNINST_HKLM32 + MXX1_UNINST_HKCU + MXX1_UNINST_TSV + MXX1_UNINST_DELTSV + MXX1_UNINST_BACKUP，绝不碰真实 Uninstall；D12c 盯「没有隔离就退 2」；D12d 验隐藏后 SystemComponent 真=1 且 tsv 记原值；D12f 验显示/还原后值回原样、被别的工具改过跳过；D12h 验删除条目后 .reg 备份真在且子键没了；D12i 验还原把 .reg 导回；D12j/k 验恢复卸载 —— 再锁定后 --unlock 把 NoRemove 删掉、lock 记录行清掉）；界面 J32 起真从按钮开窗口、真点「隐藏这个…」「锁定卸载」「恢复卸载」「还原成操作前」、右键「还原更改前…」并读回注册表与记录文件"
     },
     {
       "paths": [
